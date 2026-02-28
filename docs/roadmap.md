@@ -5,7 +5,7 @@
 | Task | Status |
 |------|--------|
 | **1. App Shell + Basic Chat** | |
-| Initialize Electron + React + TypeScript project (macOS + Windows) | Not Started |
+| Initialize Electron + React + TypeScript project (macOS + Windows) | Done |
 | Python backend with FastAPI (local API server managed by Electron) | Not Started |
 | SQLite database and schema setup | Not Started |
 | App chrome with left nav sidebar | Not Started |
