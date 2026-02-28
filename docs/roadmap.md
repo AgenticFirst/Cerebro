@@ -14,7 +14,7 @@
 | IPC bridge between renderer and main process | Not Started |
 | Persistent chat history | Not Started |
 | **2. Integrations** | |
-| Integrations screen (Keys, Models sections) | Not Started |
+| Integrations screen (Keys, Models sections) | Done |
 | Secure credential storage (OS keychain) | Not Started |
 | Model provider selection and presets (Anthropic, OpenAI, Google) | Not Started |
 | Connection status indicators | Not Started |

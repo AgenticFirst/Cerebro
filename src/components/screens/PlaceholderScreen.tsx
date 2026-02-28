@@ -3,7 +3,6 @@ import {
   Zap,
   Activity,
   ShieldCheck,
-  Plug,
   Store,
   Settings,
 } from 'lucide-react';
@@ -29,11 +28,6 @@ const SCREEN_META: Record<string, { icon: typeof Users; title: string; descripti
     icon: ShieldCheck,
     title: 'Approvals',
     description: 'Review and approve or deny pending actions that require your sign-off before executing.',
-  },
-  integrations: {
-    icon: Plug,
-    title: 'Integrations',
-    description: 'Set up API keys, connect accounts, configure model providers, and manage channels.',
   },
   marketplace: {
     icon: Store,
