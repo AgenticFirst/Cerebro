@@ -209,13 +209,13 @@ Cerebro is designed around two ideas:
 
 Left nav:
 
-* Chat  
-* Experts  
-* Routines  
-* Activity  
-* Approvals (only visible when pending)  
-* Connections  
-* Marketplace  
+* Chat
+* Experts
+* Routines
+* Activity
+* Approvals (only visible when pending)
+* Integrations
+* Marketplace
 * Settings
 
 ## **7.2 Chat (primary surface)**

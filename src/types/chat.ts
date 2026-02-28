@@ -6,7 +6,7 @@ export type Screen =
   | 'routines'
   | 'activity'
   | 'approvals'
-  | 'connections'
+  | 'integrations'
   | 'marketplace'
   | 'settings';
 

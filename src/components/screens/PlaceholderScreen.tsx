@@ -30,9 +30,9 @@ const SCREEN_META: Record<string, { icon: typeof Users; title: string; descripti
     title: 'Approvals',
     description: 'Review and approve or deny pending actions that require your sign-off before executing.',
   },
-  connections: {
+  integrations: {
     icon: Plug,
-    title: 'Connections',
+    title: 'Integrations',
     description: 'Set up API keys, connect accounts, configure model providers, and manage channels.',
   },
   marketplace: {

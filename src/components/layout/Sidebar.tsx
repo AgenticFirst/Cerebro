@@ -30,7 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'routines', label: 'Routines', icon: Zap },
   { id: 'activity', label: 'Activity', icon: Activity },
   { id: 'approvals', label: 'Approvals', icon: ShieldCheck },
-  { id: 'connections', label: 'Connections', icon: Plug },
+  { id: 'integrations', label: 'Integrations', icon: Plug },
   { id: 'marketplace', label: 'Marketplace', icon: Store },
 ];
 
