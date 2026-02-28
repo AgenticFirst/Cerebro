@@ -54,7 +54,9 @@ export default function LocalModelCard({
   const isVerifying = !!downloadProgress && downloadProgress.status === 'verifying';
   const isInterrupted = model.status === 'interrupted';
   const isDownloaded = model.status === 'downloaded';
-  const isAvailable = model.status === 'available';
+  // Treat 'downloading' with no active download progress as 'available'
+  // (cancel was triggered, backend thread hasn't finished cleanup yet)
+  const isAvailable = model.status === 'available' || (model.status === 'downloading' && !downloadProgress);
 
   const insufficientDisk =
     isAvailable && diskSpace ? diskSpace.free < model.size_bytes * 1.1 : false;

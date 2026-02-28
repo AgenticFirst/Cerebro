@@ -141,12 +141,17 @@ async def download_progress(model_id: str):
 
 
 @router.post("/{model_id}/download/cancel")
-async def cancel_download(model_id: str):
+async def cancel_download(model_id: str, request: Request):
     if _download_manager is None:
         raise HTTPException(status_code=500, detail="Download manager not initialized")
 
+    # If no active download, clean up state (idempotent)
     if _download_manager.active_model_id != model_id:
-        raise HTTPException(status_code=404, detail="No active download for this model")
+        models_dir = get_models_dir(request)
+        state = get_model_state(models_dir, model_id)
+        if state.get("status") == "downloading":
+            remove_model_state(models_dir, model_id)
+        return {"ok": True, "message": "No active download"}
 
     _download_manager.cancel()
     return {"ok": True, "message": "Download cancellation requested"}

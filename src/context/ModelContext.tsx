@@ -189,7 +189,7 @@ export function ModelProvider({ children }: { children: ReactNode }) {
         path: `/models/${modelId}/download/progress`,
       });
 
-      window.cerebro.onStream(streamId, (event) => {
+      const unsub = window.cerebro.onStream(streamId, (event) => {
         if (!mountedRef.current) return;
 
         if (event.event === 'data') {
@@ -202,6 +202,7 @@ export function ModelProvider({ children }: { children: ReactNode }) {
             });
 
             if (data.status === 'completed' || data.status === 'cancelled' || data.status === 'error') {
+              unsub();
               // Remove from active downloads after a brief delay so UI can show final state
               setTimeout(() => {
                 if (mountedRef.current) {
@@ -210,7 +211,6 @@ export function ModelProvider({ children }: { children: ReactNode }) {
                     next.delete(modelId);
                     return next;
                   });
-                  // Refresh catalog to get updated model status
                   refreshCatalog();
                   refreshDiskSpace();
                 }
@@ -220,24 +220,46 @@ export function ModelProvider({ children }: { children: ReactNode }) {
             // ignore parse errors
           }
         } else if (event.event === 'end' || event.event === 'error') {
+          unsub();
+          // Stream closed — clean up and refresh
           setActiveDownloads((prev) => {
             const next = new Map(prev);
             next.delete(modelId);
             return next;
           });
           refreshCatalog();
+          refreshDiskSpace();
         }
       });
     },
     [refreshCatalog, refreshDiskSpace],
   );
 
-  const cancelDownload = useCallback(async (modelId: string) => {
-    await window.cerebro.invoke({
-      method: 'POST',
-      path: `/models/${modelId}/download/cancel`,
-    });
-  }, []);
+  const cancelDownload = useCallback(
+    async (modelId: string) => {
+      await window.cerebro.invoke({
+        method: 'POST',
+        path: `/models/${modelId}/download/cancel`,
+      });
+      // Immediately clear the active download from UI so the progress bar disappears
+      setActiveDownloads((prev) => {
+        const next = new Map(prev);
+        next.delete(modelId);
+        return next;
+      });
+      // Refresh catalog immediately and again after a short delay
+      // to pick up backend state changes (file deletion + state reset)
+      refreshCatalog();
+      refreshDiskSpace();
+      setTimeout(() => {
+        if (mountedRef.current) {
+          refreshCatalog();
+          refreshDiskSpace();
+        }
+      }, 2000);
+    },
+    [refreshCatalog, refreshDiskSpace],
+  );
 
   const deleteModel = useCallback(
     async (modelId: string) => {

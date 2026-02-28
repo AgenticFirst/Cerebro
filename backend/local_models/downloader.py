@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import threading
 import time
 from datetime import datetime, timezone
 from typing import Any
 
-from .catalog import set_model_state
+from .catalog import remove_model_state, set_model_state
 from .schemas import DownloadProgressEvent
+
+log = logging.getLogger(__name__)
 
 
 class DownloadManager:
@@ -43,39 +46,70 @@ class DownloadManager:
 
         self._thread = threading.Thread(
             target=self._download_sync,
-            args=(model_id, catalog_entry, models_dir),
+            args=(model_id, catalog_entry, models_dir, self.progress_queue, self._cancel_event, self._loop),
             daemon=True,
         )
         self._thread.start()
 
     def cancel(self) -> None:
-        """Request cancellation of the active download."""
+        """Request cancellation of the active download.
+
+        Immediately marks the manager as inactive so a new download can start.
+        The background thread will finish cleanup using its own captured references.
+        """
         if self._cancel_event:
             self._cancel_event.set()
+        # Clear active state immediately so is_active returns False
+        # and a new download can be started right away.
+        self.active_model_id = None
+        self._cancel_event = None
+        self._thread = None
 
-    def _emit(self, event: DownloadProgressEvent) -> None:
-        """Thread-safe push to the asyncio queue."""
-        if self._loop and self.progress_queue:
-            self._loop.call_soon_threadsafe(self.progress_queue.put_nowait, event)
+    @staticmethod
+    def _delete_model_file(catalog_entry: dict[str, Any], models_dir: str) -> None:
+        """Delete the downloaded model file from disk after cancellation."""
+        hf_filename = catalog_entry.get("hf_filename", "")
+        if not hf_filename:
+            return
+        file_path = os.path.join(models_dir, hf_filename)
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                log.info("Deleted cancelled model file: %s", file_path)
+        except OSError as e:
+            log.warning("Failed to delete model file %s: %s", file_path, e)
 
     def _download_sync(
         self,
         model_id: str,
         catalog_entry: dict[str, Any],
         models_dir: str,
+        queue: asyncio.Queue[DownloadProgressEvent],
+        cancel_event: threading.Event,
+        loop: asyncio.AbstractEventLoop,
     ) -> None:
-        """Synchronous download running in a background thread."""
+        """Synchronous download running in a background thread.
+
+        All shared state (queue, cancel_event, loop) is passed as arguments
+        so this thread is self-contained even if cancel() clears the manager's
+        instance variables before we finish.
+        """
+
+        def emit(event: DownloadProgressEvent) -> None:
+            """Thread-safe push to the asyncio queue."""
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+            except RuntimeError:
+                pass  # loop closed
+
         try:
             from huggingface_hub import hf_hub_download
 
             total_bytes = catalog_entry["size_bytes"]
             hf_repo = catalog_entry["hf_repo"]
             hf_filename = catalog_entry["hf_filename"]
-            cancel_event = self._cancel_event
 
             # Build a tqdm-compatible class that reports progress and checks cancellation
-            manager = self
-
             class _ProgressBar:
                 """tqdm-compatible progress bar passed to hf_hub_download."""
 
@@ -89,8 +123,9 @@ class DownloadManager:
                 def update(self, n: int = 1) -> None:
                     self.n += n
 
-                    # Check for cancellation
-                    if cancel_event and cancel_event.is_set():
+                    # Check for cancellation — use BaseException subclass
+                    # so hf_hub_download's `except Exception` handlers can't swallow it
+                    if cancel_event.is_set():
                         raise _CancelledError()
 
                     # Throttle progress events to every 300ms
@@ -104,7 +139,7 @@ class DownloadManager:
                     self._last_report = now
                     self._last_bytes = self.n
 
-                    manager._emit(
+                    emit(
                         DownloadProgressEvent(
                             status="downloading",
                             downloaded_bytes=self.n,
@@ -144,13 +179,17 @@ class DownloadManager:
                 tqdm_class=_ProgressBar,
             )
 
-            if cancel_event and cancel_event.is_set():
-                set_model_state(models_dir, model_id, status="interrupted")
-                self._emit(DownloadProgressEvent(status="cancelled"))
+            # Check for cancellation after download completed
+            # (in case the exception was swallowed)
+            if cancel_event.is_set():
+                log.info("Download cancelled for %s (post-completion)", model_id)
+                self._delete_model_file(catalog_entry, models_dir)
+                remove_model_state(models_dir, model_id)
+                emit(DownloadProgressEvent(status="cancelled"))
                 return
 
             # Verification
-            self._emit(DownloadProgressEvent(status="verifying"))
+            emit(DownloadProgressEvent(status="verifying"))
 
             # Update state
             now_str = datetime.now(timezone.utc).isoformat()
@@ -162,7 +201,8 @@ class DownloadManager:
                 downloaded_at=now_str,
             )
 
-            self._emit(
+            log.info("Download completed for %s at %s", model_id, file_path)
+            emit(
                 DownloadProgressEvent(
                     status="completed",
                     downloaded_bytes=total_bytes,
@@ -172,31 +212,44 @@ class DownloadManager:
             )
 
         except _CancelledError:
-            set_model_state(models_dir, model_id, status="interrupted")
-            self._emit(DownloadProgressEvent(status="cancelled"))
+            log.info("Download cancelled for %s", model_id)
+            self._delete_model_file(catalog_entry, models_dir)
+            remove_model_state(models_dir, model_id)
+            emit(DownloadProgressEvent(status="cancelled"))
 
         except OSError as e:
+            log.error("Download OS error for %s: %s", model_id, e)
+            self._delete_model_file(catalog_entry, models_dir)
+            remove_model_state(models_dir, model_id)
             if e.errno == 28:  # ENOSPC
-                set_model_state(models_dir, model_id, status="interrupted")
-                self._emit(
+                emit(
                     DownloadProgressEvent(
                         status="error",
                         error="Disk full. Free up space and try again.",
                     )
                 )
             else:
-                set_model_state(models_dir, model_id, status="interrupted")
-                self._emit(DownloadProgressEvent(status="error", error=str(e)))
+                emit(DownloadProgressEvent(status="error", error=str(e)))
 
         except Exception as e:
-            set_model_state(models_dir, model_id, status="interrupted")
-            self._emit(DownloadProgressEvent(status="error", error=str(e)))
+            log.error("Download error for %s: %s", model_id, e, exc_info=True)
+            self._delete_model_file(catalog_entry, models_dir)
+            remove_model_state(models_dir, model_id)
+            emit(DownloadProgressEvent(status="error", error=str(e)))
 
         finally:
-            self.active_model_id = None
-            self._cancel_event = None
-            self._thread = None
+            # Only clean up manager state if WE are still the active download.
+            # If cancel() already cleared it (or a new download started),
+            # don't clobber the new state.
+            if self.active_model_id == model_id:
+                self.active_model_id = None
+                self._cancel_event = None
+                self._thread = None
 
 
-class _CancelledError(Exception):
-    """Internal signal for download cancellation."""
+class _CancelledError(BaseException):
+    """Download cancellation signal.
+
+    Inherits from BaseException (not Exception) so that broad
+    ``except Exception`` handlers inside hf_hub_download cannot swallow it.
+    """

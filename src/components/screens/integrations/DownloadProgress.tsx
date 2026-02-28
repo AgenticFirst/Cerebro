@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { X } from 'lucide-react';
 import type { DownloadProgress as DownloadProgressType } from '../../../types/models';
 
@@ -26,6 +27,8 @@ function formatEta(seconds: number): string {
 }
 
 export default function DownloadProgress({ progress, onCancel }: DownloadProgressProps) {
+  const [confirming, setConfirming] = useState(false);
+
   const percent =
     progress.total_bytes > 0
       ? Math.min(100, Math.round((progress.downloaded_bytes / progress.total_bytes) * 100))
@@ -58,13 +61,34 @@ export default function DownloadProgress({ progress, onCancel }: DownloadProgres
         </span>
         <div className="flex items-center gap-2">
           <span className="font-medium text-text-secondary">{percent}%</span>
-          <button
-            onClick={onCancel}
-            className="p-0.5 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors cursor-pointer"
-            title="Cancel download"
-          >
-            <X size={12} />
-          </button>
+          {confirming ? (
+            <div className="flex items-center gap-1.5 animate-fade-in">
+              <span className="text-text-tertiary">Cancel?</span>
+              <button
+                onClick={() => {
+                  setConfirming(false);
+                  onCancel();
+                }}
+                className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors cursor-pointer"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setConfirming(false)}
+                className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-bg-hover text-text-secondary hover:bg-bg-elevated transition-colors cursor-pointer"
+              >
+                No
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirming(true)}
+              className="p-0.5 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors cursor-pointer"
+              title="Cancel download"
+            >
+              <X size={12} />
+            </button>
+          )}
         </div>
       </div>
     </div>
