@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   MessageSquare,
   Users,
@@ -12,27 +12,134 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
+  type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useChat } from '../../context/ChatContext';
 import type { Conversation, Screen } from '../../types/chat';
 
+/* ── Nav structure: grouped by function ───────────────────────── */
+
 interface NavItem {
   id: Screen;
   label: string;
-  icon: typeof MessageSquare;
+  icon: LucideIcon;
   badge?: number;
 }
 
-const NAV_ITEMS: NavItem[] = [
+// Primary — daily-use surfaces
+const NAV_PRIMARY: NavItem[] = [
   { id: 'chat', label: 'Chat', icon: MessageSquare },
   { id: 'experts', label: 'Experts', icon: Users },
   { id: 'routines', label: 'Routines', icon: Zap },
+];
+
+// Oversight — monitoring & control
+const NAV_OVERSIGHT: NavItem[] = [
   { id: 'activity', label: 'Activity', icon: Activity },
   { id: 'approvals', label: 'Approvals', icon: ShieldCheck },
+];
+
+// Extensions — setup & expand
+const NAV_EXTENSIONS: NavItem[] = [
   { id: 'integrations', label: 'Integrations', icon: Plug },
   { id: 'marketplace', label: 'Marketplace', icon: Store },
 ];
+
+/* ── NavButton ────────────────────────────────────────────────── */
+
+function NavButton({
+  item,
+  isActive,
+  collapsed,
+  onClick,
+}: {
+  item: NavItem;
+  isActive: boolean;
+  collapsed: boolean;
+  onClick: () => void;
+}) {
+  const Icon = item.icon;
+
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'group relative w-full flex items-center rounded-md',
+        'transition-all duration-150 ease-[cubic-bezier(0.4,0,0.2,1)] cursor-pointer',
+        collapsed ? 'justify-center p-2' : 'gap-2.5 px-2.5 py-[7px]',
+        isActive
+          ? 'nav-item-active text-text-primary font-medium'
+          : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]',
+      )}
+      title={collapsed ? item.label : undefined}
+    >
+      {/* Icon container */}
+      <div
+        className={clsx(
+          'flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0',
+          'transition-all duration-150',
+          isActive
+            ? 'bg-accent/15 text-accent'
+            : 'text-text-tertiary group-hover:text-text-secondary',
+        )}
+      >
+        <Icon size={14} strokeWidth={isActive ? 2 : 1.5} />
+      </div>
+
+      {!collapsed && (
+        <span className="text-[13px] leading-none">{item.label}</span>
+      )}
+
+      {/* Badge */}
+      {!collapsed && item.badge != null && item.badge > 0 && (
+        <span className="ml-auto text-[10px] font-semibold bg-accent/15 text-accent px-1.5 py-0.5 rounded-full tabular-nums">
+          {item.badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/* ── NavGroup ─────────────────────────────────────────────────── */
+
+function NavGroup({
+  items,
+  activeScreen,
+  collapsed,
+  onNavClick,
+}: {
+  items: NavItem[];
+  activeScreen: Screen;
+  collapsed: boolean;
+  onNavClick: (screen: Screen) => void;
+}) {
+  return (
+    <div className="space-y-px">
+      {items.map((item) => (
+        <NavButton
+          key={item.id}
+          item={item}
+          isActive={activeScreen === item.id}
+          collapsed={collapsed}
+          onClick={() => onNavClick(item.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ── Ghost separator ──────────────────────────────────────────── */
+
+function GhostSeparator({ collapsed }: { collapsed: boolean }) {
+  return (
+    <div className={clsx('my-2', collapsed ? 'mx-2' : 'mx-3')}>
+      <div className="border-t border-white/[0.04]" />
+    </div>
+  );
+}
+
+/* ── Conversation list ────────────────────────────────────────── */
 
 interface GroupedConversations {
   label: string;
@@ -64,6 +171,8 @@ function groupByTime(conversations: Conversation[]): GroupedConversations[] {
     .filter(([, convs]) => convs.length > 0)
     .map(([label, convs]) => ({ label, conversations: convs }));
 }
+
+/* ── Sidebar ──────────────────────────────────────────────────── */
 
 export default function Sidebar() {
   const {
@@ -100,156 +209,158 @@ export default function Sidebar() {
   return (
     <div
       className={clsx(
-        'flex-shrink-0 flex flex-col bg-bg-surface border-r border-border-subtle h-full',
-        'transition-all duration-200 ease-in-out',
+        'flex-shrink-0 flex flex-col bg-bg-surface h-full',
+        'border-r border-white/[0.06]',
+        'transition-all duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]',
         collapsed ? 'w-[56px]' : 'w-[260px]',
       )}
     >
-      {/* Collapse toggle */}
-      <div className={clsx('flex items-center p-2', collapsed ? 'justify-center' : 'justify-end')}>
+      {/* ── Header: collapse toggle ──────────────────────────── */}
+      <div className={clsx(
+        'flex items-center h-11',
+        collapsed ? 'justify-center px-2' : 'justify-between px-3',
+      )}>
+        {!collapsed && (
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary select-none">
+            Cerebro
+          </span>
+        )}
         <button
           onClick={() => setCollapsed(!collapsed)}
           className={clsx(
-            'flex items-center justify-center rounded-lg p-1.5',
-            'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover',
+            'flex items-center justify-center rounded-md p-1.5',
+            'text-text-tertiary hover:text-text-secondary hover:bg-white/[0.04]',
             'transition-colors duration-150 cursor-pointer',
           )}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
         </button>
       </div>
 
-      {/* New chat button */}
-      <div className={clsx('px-2', collapsed ? 'mb-2' : 'mb-1')}>
+      {/* ── New chat button ──────────────────────────────────── */}
+      <div className={clsx('px-2.5', collapsed ? 'mb-2' : 'mb-1.5')}>
         <button
           onClick={handleNewChat}
           className={clsx(
-            'flex items-center rounded-lg',
-            'text-sm font-medium text-text-primary',
-            'bg-accent/10 hover:bg-accent/20',
-            'border border-accent/20',
-            'transition-colors duration-150 cursor-pointer',
-            collapsed ? 'justify-center p-2 w-full' : 'gap-2 px-3 py-2.5 w-full',
+            'flex items-center rounded-md',
+            'text-[13px] font-medium text-text-primary',
+            'bg-accent/10 hover:bg-accent/[0.18]',
+            'border border-accent/20 hover:border-accent/30',
+            'transition-all duration-150 cursor-pointer',
+            collapsed ? 'justify-center p-2 w-full' : 'gap-2 px-2.5 py-2 w-full',
           )}
           title="New Chat"
         >
-          <Plus size={16} className="text-accent flex-shrink-0" />
+          <Plus size={15} className="text-accent flex-shrink-0" strokeWidth={2} />
           {!collapsed && 'New Chat'}
         </button>
       </div>
 
-      {/* Navigation items */}
-      <nav className="px-2 py-1 space-y-0.5">
-        {NAV_ITEMS.map((item) => {
-          const isActive = activeScreen === item.id;
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.id}
-              onClick={() => handleNavClick(item.id)}
-              className={clsx(
-                'w-full flex items-center rounded-lg',
-                'transition-colors duration-150 cursor-pointer',
-                collapsed ? 'justify-center p-2' : 'gap-2.5 px-3 py-2',
-                isActive
-                  ? 'bg-accent-muted text-text-primary'
-                  : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
-              )}
-              title={collapsed ? item.label : undefined}
-            >
-              <Icon size={16} className="flex-shrink-0" />
-              {!collapsed && <span className="text-sm">{item.label}</span>}
-              {!collapsed && item.badge != null && item.badge > 0 && (
-                <span className="ml-auto text-[10px] font-medium bg-accent/20 text-accent px-1.5 py-0.5 rounded-full">
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      {/* ── Navigation ───────────────────────────────────────── */}
+      <nav className="px-2.5">
+        {/* Primary: Chat, Experts, Routines */}
+        <NavGroup
+          items={NAV_PRIMARY}
+          activeScreen={activeScreen}
+          collapsed={collapsed}
+          onNavClick={handleNavClick}
+        />
+
+        <GhostSeparator collapsed={collapsed} />
+
+        {/* Oversight: Activity, Approvals */}
+        <NavGroup
+          items={NAV_OVERSIGHT}
+          activeScreen={activeScreen}
+          collapsed={collapsed}
+          onNavClick={handleNavClick}
+        />
+
+        <GhostSeparator collapsed={collapsed} />
+
+        {/* Extensions: Integrations, Marketplace */}
+        <NavGroup
+          items={NAV_EXTENSIONS}
+          activeScreen={activeScreen}
+          collapsed={collapsed}
+          onNavClick={handleNavClick}
+        />
       </nav>
 
-      {/* Separator */}
-      <div className="mx-3 my-2 border-t border-border-subtle" />
-
-      {/* Conversation list (only shown when on chat screen and not collapsed) */}
-      {activeScreen === 'chat' && !collapsed && (
-        <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-2">
-          {grouped.length === 0 && (
-            <div className="px-3 py-4 text-xs text-text-tertiary text-center">
-              No conversations yet
-            </div>
-          )}
-          {grouped.map((group) => (
-            <div key={group.label} className="mb-2">
-              <div className="px-2 py-1.5 text-[10px] font-medium text-text-tertiary uppercase tracking-wider">
-                {group.label}
+      {/* ── Conversation history (Chat screen, expanded only) ── */}
+      {activeScreen === 'chat' && !collapsed ? (
+        <>
+          <GhostSeparator collapsed={collapsed} />
+          <div className="flex-1 overflow-y-auto scrollbar-thin px-2.5 pb-2">
+            {grouped.length === 0 && (
+              <div className="px-3 py-6 text-[11px] text-text-tertiary text-center">
+                No conversations yet
               </div>
-              {group.conversations.map((conv) => {
-                const isActive = conv.id === activeConversationId;
-                const isHovered = conv.id === hoveredConvId;
-                return (
-                  <div
-                    key={conv.id}
-                    className="relative"
-                    onMouseEnter={() => setHoveredConvId(conv.id)}
-                    onMouseLeave={() => setHoveredConvId(null)}
-                  >
-                    <button
-                      onClick={() => setActiveConversation(conv.id)}
-                      className={clsx(
-                        'w-full text-left px-3 py-2 rounded-lg text-sm truncate pr-8',
-                        'transition-colors duration-150 cursor-pointer',
-                        isActive
-                          ? 'bg-accent-muted text-text-primary border-l-2 border-accent'
-                          : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
-                      )}
-                    >
-                      {conv.title}
-                    </button>
-                    {isHovered && (
-                      <button
-                        onClick={(e) => handleDelete(e, conv.id)}
-                        className={clsx(
-                          'absolute right-1.5 top-1/2 -translate-y-1/2',
-                          'p-1 rounded-md',
-                          'text-text-tertiary hover:text-red-400 hover:bg-red-400/10',
-                          'transition-colors duration-150 cursor-pointer',
-                        )}
-                        title="Delete conversation"
+            )}
+            {grouped.map((group) => (
+              <div key={group.label} className="mb-1.5">
+                <div className="px-2 pt-3 pb-1 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.08em] select-none">
+                  {group.label}
+                </div>
+                <div className="space-y-px">
+                  {group.conversations.map((conv) => {
+                    const isActive = conv.id === activeConversationId;
+                    const isHovered = conv.id === hoveredConvId;
+                    return (
+                      <div
+                        key={conv.id}
+                        className="relative group/conv"
+                        onMouseEnter={() => setHoveredConvId(conv.id)}
+                        onMouseLeave={() => setHoveredConvId(null)}
                       >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+                        <button
+                          onClick={() => setActiveConversation(conv.id)}
+                          className={clsx(
+                            'w-full text-left px-2.5 py-[6px] rounded-md text-[13px] truncate',
+                            'transition-all duration-150 cursor-pointer',
+                            isHovered ? 'pr-8' : '',
+                            isActive
+                              ? 'bg-white/[0.06] text-text-primary font-medium shadow-[inset_2px_0_0_0_var(--color-accent)]'
+                              : 'text-text-secondary/80 hover:text-text-secondary hover:bg-white/[0.03]',
+                          )}
+                        >
+                          {conv.title}
+                        </button>
+                        {isHovered && (
+                          <button
+                            onClick={(e) => handleDelete(e, conv.id)}
+                            className={clsx(
+                              'absolute right-1 top-1/2 -translate-y-1/2',
+                              'p-1 rounded-md',
+                              'text-text-tertiary hover:text-red-400 hover:bg-red-400/10',
+                              'transition-colors duration-100 cursor-pointer',
+                            )}
+                            title="Delete conversation"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="flex-1" />
       )}
 
-      {/* Chat list spacer when collapsed or on other screen */}
-      {(activeScreen !== 'chat' || collapsed) && <div className="flex-1" />}
-
-      {/* Settings */}
-      <div className="p-2 border-t border-border-subtle">
-        <button
+      {/* ── Settings (footer) ────────────────────────────────── */}
+      <div className="px-2.5 py-2 border-t border-white/[0.04]">
+        <NavButton
+          item={{ id: 'settings', label: 'Settings', icon: Settings }}
+          isActive={activeScreen === 'settings'}
+          collapsed={collapsed}
           onClick={() => handleNavClick('settings')}
-          className={clsx(
-            'w-full flex items-center rounded-lg',
-            'transition-colors duration-150 cursor-pointer',
-            collapsed ? 'justify-center p-2' : 'gap-2.5 px-3 py-2',
-            activeScreen === 'settings'
-              ? 'bg-accent-muted text-text-primary'
-              : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
-          )}
-          title={collapsed ? 'Settings' : undefined}
-        >
-          <Settings size={16} className="flex-shrink-0" />
-          {!collapsed && <span className="text-sm">Settings</span>}
-        </button>
+        />
       </div>
     </div>
   );
