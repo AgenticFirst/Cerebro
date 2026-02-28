@@ -7,6 +7,13 @@ export const IPC_CHANNELS = {
   STREAM_CANCEL: 'backend:stream-cancel',
   // Stream events are sent on dynamic channels: `backend:stream-event:${streamId}`
   streamEvent: (streamId: string) => `backend:stream-event:${streamId}`,
+
+  // Credential storage
+  CREDENTIAL_SET: 'credential:set',
+  CREDENTIAL_HAS: 'credential:has',
+  CREDENTIAL_DELETE: 'credential:delete',
+  CREDENTIAL_CLEAR: 'credential:clear',
+  CREDENTIAL_LIST: 'credential:list',
 } as const;
 
 // --- Backend Request/Response ---
@@ -41,6 +48,41 @@ export interface StreamEvent {
   data: string;
 }
 
+// --- Credential Storage ---
+
+export interface CredentialSetRequest {
+  service: string;
+  key: string;
+  value: string;
+  label?: string;
+}
+
+export interface CredentialIdentifier {
+  service: string;
+  key: string;
+}
+
+export interface CredentialInfo {
+  service: string;
+  key: string;
+  label?: string;
+  updatedAt: string;
+}
+
+export interface CredentialResult<T = void> {
+  ok: boolean;
+  error?: string;
+  data?: T;
+}
+
+export interface CredentialAPI {
+  set(request: CredentialSetRequest): Promise<CredentialResult>;
+  has(service: string, key: string): Promise<boolean>;
+  delete(service: string, key: string): Promise<CredentialResult>;
+  clear(service?: string): Promise<CredentialResult>;
+  list(service?: string): Promise<CredentialInfo[]>;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -49,4 +91,5 @@ export interface CerebroAPI {
   startStream(request: StreamRequest): Promise<string>;
   cancelStream(streamId: string): Promise<void>;
   onStream(streamId: string, callback: (event: StreamEvent) => void): () => void;
+  credentials: CredentialAPI;
 }

@@ -16,7 +16,7 @@
 | Automate persistent chat history test cases | Done |
 | **2. Integrations** | |
 | Integrations screen (Keys, Models sections) | Done |
-| Secure credential storage (OS keychain) | Not Started |
+| Secure credential storage (OS keychain) | Done |
 | Model provider selection and presets (Anthropic, OpenAI, Google) | Not Started |
 | Connection status indicators | Not Started |
 | **3. Memory** | |

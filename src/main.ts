@@ -7,7 +7,8 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import started from 'electron-squirrel-startup';
 import { IPC_CHANNELS } from './types/ipc';
-import type { BackendRequest, BackendResponse, BackendStatus, StreamRequest, StreamEvent } from './types/ipc';
+import type { BackendRequest, BackendResponse, BackendStatus, StreamRequest, StreamEvent, CredentialSetRequest, CredentialIdentifier } from './types/ipc';
+import { initCredentialStore, setCredential, hasCredential, deleteCredential, clearCredentials, listCredentials } from './credentials';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -350,6 +351,28 @@ function registerIpcHandlers(): void {
       activeStreams.delete(streamId);
     }
   });
+
+  // --- Credential storage ---
+
+  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_SET, async (_event, request: CredentialSetRequest) => {
+    return setCredential(request.service, request.key, request.value, request.label);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_HAS, async (_event, request: CredentialIdentifier) => {
+    return hasCredential(request.service, request.key);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_DELETE, async (_event, request: CredentialIdentifier) => {
+    return deleteCredential(request.service, request.key);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_CLEAR, async (_event, service?: string) => {
+    return clearCredentials(service);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_LIST, async (_event, service?: string) => {
+    return listCredentials(service);
+  });
 }
 
 // --- Window creation ---
@@ -385,6 +408,7 @@ const createWindow = () => {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', () => {
+  initCredentialStore();
   registerIpcHandlers();
   createWindow();
   startPythonBackend().catch((err) => {

@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
 import { Eye, EyeOff, Shield, HardDrive } from 'lucide-react';
 import clsx from 'clsx';
 import { AnthropicIcon, OpenAIIcon, GoogleIcon } from '../../icons/BrandIcons';
@@ -18,6 +18,7 @@ interface Provider {
   textColor: string;
   icon: ComponentType<{ size?: number; className?: string }>;
   placeholder: string;
+  keyPrefix: string;
   models: Model[];
 }
 
@@ -30,6 +31,7 @@ const PROVIDERS: Provider[] = [
     textColor: 'text-amber-400',
     icon: AnthropicIcon,
     placeholder: 'sk-ant-api03-...',
+    keyPrefix: 'sk-ant-',
     models: [
       { id: 'claude-opus-4', name: 'Claude Opus 4', context: '200K', enabled: true },
       { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', context: '200K', enabled: true },
@@ -44,6 +46,7 @@ const PROVIDERS: Provider[] = [
     textColor: 'text-emerald-400',
     icon: OpenAIIcon,
     placeholder: 'sk-proj-...',
+    keyPrefix: 'sk-',
     models: [
       { id: 'gpt-4o', name: 'GPT-4o', context: '128K', enabled: true },
       { id: 'gpt-4o-mini', name: 'GPT-4o mini', context: '128K', enabled: false },
@@ -58,6 +61,7 @@ const PROVIDERS: Provider[] = [
     textColor: 'text-blue-400',
     icon: GoogleIcon,
     placeholder: 'AIza...',
+    keyPrefix: 'AIza',
     models: [
       { id: 'gemini-2-5-pro', name: 'Gemini 2.5 Pro', context: '1M', enabled: true },
       { id: 'gemini-2-0-flash', name: 'Gemini 2.0 Flash', context: '1M', enabled: false },
@@ -88,9 +92,50 @@ function ProviderCard({ provider }: { provider: Provider }) {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [models, setModels] = useState(provider.models);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
 
-  const hasKey = apiKey.length > 0;
   const Icon = provider.icon;
+  const inputHasValue = apiKey.length > 0;
+
+  useEffect(() => {
+    window.cerebro.credentials.has(provider.id, 'api_key').then(setSaved);
+  }, [provider.id]);
+
+  const handleSave = async () => {
+    setError('');
+    setWarning('');
+
+    if (!apiKey.startsWith(provider.keyPrefix)) {
+      setWarning(`Key doesn't start with expected prefix "${provider.keyPrefix}" — saving anyway`);
+    }
+
+    setSaving(true);
+    const result = await window.cerebro.credentials.set({
+      service: provider.id,
+      key: 'api_key',
+      value: apiKey,
+      label: `${provider.name} API Key`,
+    });
+    setSaving(false);
+
+    if (result.ok) {
+      setSaved(true);
+      setApiKey('');
+    } else {
+      setError(result.error ?? 'Failed to save credential');
+    }
+  };
+
+  const handleRemove = async () => {
+    const result = await window.cerebro.credentials.delete(provider.id, 'api_key');
+    if (result.ok) {
+      setSaved(false);
+      setWarning('');
+    }
+  };
 
   const toggleModel = (modelId: string) => {
     setModels((prev) =>
@@ -119,12 +164,20 @@ function ProviderCard({ provider }: { provider: Provider }) {
           <div
             className={clsx(
               'w-1.5 h-1.5 rounded-full',
-              hasKey ? 'bg-emerald-400' : 'bg-text-tertiary',
+              saved ? 'bg-emerald-400' : 'bg-text-tertiary',
             )}
           />
-          <span className={clsx('text-xs', hasKey ? 'text-emerald-400' : 'text-text-tertiary')}>
-            {hasKey ? 'Connected' : 'Not configured'}
+          <span className={clsx('text-xs', saved ? 'text-emerald-400' : 'text-text-tertiary')}>
+            {saved ? 'Connected' : 'Not configured'}
           </span>
+          {saved && (
+            <button
+              onClick={handleRemove}
+              className="text-xs text-text-tertiary hover:text-red-400 transition-colors cursor-pointer ml-2"
+            >
+              Remove
+            </button>
+          )}
         </div>
       </div>
 
@@ -138,8 +191,8 @@ function ProviderCard({ provider }: { provider: Provider }) {
             <input
               type={showKey ? 'text' : 'password'}
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={provider.placeholder}
+              onChange={(e) => { setApiKey(e.target.value); setError(''); }}
+              placeholder={saved ? 'Key saved securely \u2014 enter new key to replace' : provider.placeholder}
               className="w-full bg-bg-base border border-border-default rounded-md px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary/50 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-colors"
             />
             <button
@@ -150,17 +203,24 @@ function ProviderCard({ provider }: { provider: Provider }) {
             </button>
           </div>
           <button
+            onClick={handleSave}
             className={clsx(
               'px-3 py-2 rounded-md text-xs font-medium transition-colors',
-              hasKey
+              inputHasValue && !saving
                 ? 'bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 cursor-pointer'
                 : 'bg-bg-elevated text-text-tertiary border border-border-subtle cursor-not-allowed',
             )}
-            disabled={!hasKey}
+            disabled={!inputHasValue || saving}
           >
-            Verify
+            {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
+        {warning && (
+          <p className="text-xs text-amber-400 mt-1.5">{warning}</p>
+        )}
+        {error && (
+          <p className="text-xs text-red-400 mt-1.5">{error}</p>
+        )}
       </div>
 
       {/* Models */}
@@ -223,7 +283,7 @@ export default function ModelsSection() {
       <div className="mt-6 flex items-start gap-3 px-4 py-3 rounded-lg bg-accent/[0.06] border border-accent/10">
         <Shield size={16} className="text-accent flex-shrink-0 mt-0.5" />
         <p className="text-xs text-text-secondary leading-relaxed">
-          API keys are stored locally on your device and never transmitted to external servers.
+          API keys are encrypted using your OS keychain and stored locally. They are never transmitted to external servers.
         </p>
       </div>
     </div>
