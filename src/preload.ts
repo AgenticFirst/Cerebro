@@ -1,6 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from './types/ipc';
-import type { BackendRequest, BackendResponse, BackendStatus, StreamRequest, StreamEvent, CerebroAPI, CredentialSetRequest, CredentialResult, CredentialInfo } from './types/ipc';
+import type {
+  BackendRequest,
+  BackendResponse,
+  BackendStatus,
+  StreamRequest,
+  StreamEvent,
+  CerebroAPI,
+  CredentialSetRequest,
+  CredentialResult,
+  CredentialInfo,
+} from './types/ipc';
 
 const api: CerebroAPI = {
   invoke<T = unknown>(request: BackendRequest): Promise<BackendResponse<T>> {

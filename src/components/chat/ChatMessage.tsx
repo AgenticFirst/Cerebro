@@ -19,15 +19,12 @@ export default function ChatMessage({ message }: ChatMessageProps) {
   return (
     <div className="animate-fade-in">
       <div className="flex items-center gap-2 mb-1.5">
-        <span className={clsx(
-          'text-xs font-medium',
-          isUser ? 'text-accent' : 'text-text-secondary',
-        )}>
+        <span
+          className={clsx('text-xs font-medium', isUser ? 'text-accent' : 'text-text-secondary')}
+        >
           {isUser ? 'You' : 'Cerebro'}
         </span>
-        <span className="text-xs text-text-tertiary">
-          {formatTime(message.createdAt)}
-        </span>
+        <span className="text-xs text-text-tertiary">{formatTime(message.createdAt)}</span>
       </div>
 
       {/* Tool calls (before text content) */}
@@ -44,9 +41,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         <div
           className={clsx(
             'rounded-xl px-4 py-3',
-            isUser
-              ? 'bg-accent-muted text-text-primary'
-              : 'text-text-secondary',
+            isUser ? 'bg-accent-muted text-text-primary' : 'text-text-secondary',
           )}
         >
           {isUser ? (

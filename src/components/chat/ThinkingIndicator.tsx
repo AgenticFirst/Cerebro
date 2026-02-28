@@ -22,7 +22,8 @@ export default function ThinkingIndicator() {
         <Icon size={16} className="transition-opacity duration-150" />
       </div>
       <span className="text-xs text-text-secondary">
-        Cerebro is thinking<span className="thinking-dots" />
+        Cerebro is thinking
+        <span className="thinking-dots" />
       </span>
     </div>
   );

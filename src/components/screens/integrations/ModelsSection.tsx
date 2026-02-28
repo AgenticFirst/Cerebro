@@ -138,9 +138,7 @@ function ProviderCard({ provider }: { provider: Provider }) {
   };
 
   const toggleModel = (modelId: string) => {
-    setModels((prev) =>
-      prev.map((m) => (m.id === modelId ? { ...m, enabled: !m.enabled } : m)),
-    );
+    setModels((prev) => prev.map((m) => (m.id === modelId ? { ...m, enabled: !m.enabled } : m)));
   };
 
   return (
@@ -191,8 +189,13 @@ function ProviderCard({ provider }: { provider: Provider }) {
             <input
               type={showKey ? 'text' : 'password'}
               value={apiKey}
-              onChange={(e) => { setApiKey(e.target.value); setError(''); }}
-              placeholder={saved ? 'Key saved securely \u2014 enter new key to replace' : provider.placeholder}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                setError('');
+              }}
+              placeholder={
+                saved ? 'Key saved securely \u2014 enter new key to replace' : provider.placeholder
+              }
               className="w-full bg-bg-base border border-border-default rounded-md px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary/50 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-colors"
             />
             <button
@@ -215,12 +218,8 @@ function ProviderCard({ provider }: { provider: Provider }) {
             {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
-        {warning && (
-          <p className="text-xs text-amber-400 mt-1.5">{warning}</p>
-        )}
-        {error && (
-          <p className="text-xs text-red-400 mt-1.5">{error}</p>
-        )}
+        {warning && <p className="text-xs text-amber-400 mt-1.5">{warning}</p>}
+        {error && <p className="text-xs text-red-400 mt-1.5">{error}</p>}
       </div>
 
       {/* Models */}
@@ -283,7 +282,8 @@ export default function ModelsSection() {
       <div className="mt-6 flex items-start gap-3 px-4 py-3 rounded-lg bg-accent/[0.06] border border-accent/10">
         <Shield size={16} className="text-accent flex-shrink-0 mt-0.5" />
         <p className="text-xs text-text-secondary leading-relaxed">
-          API keys are encrypted using your OS keychain and stored locally. They are never transmitted to external servers.
+          API keys are encrypted using your OS keychain and stored locally. They are never
+          transmitted to external servers.
         </p>
       </div>
     </div>

@@ -7,8 +7,23 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import started from 'electron-squirrel-startup';
 import { IPC_CHANNELS } from './types/ipc';
-import type { BackendRequest, BackendResponse, BackendStatus, StreamRequest, StreamEvent, CredentialSetRequest, CredentialIdentifier } from './types/ipc';
-import { initCredentialStore, setCredential, hasCredential, deleteCredential, clearCredentials, listCredentials } from './credentials';
+import type {
+  BackendRequest,
+  BackendResponse,
+  BackendStatus,
+  StreamRequest,
+  StreamEvent,
+  CredentialSetRequest,
+  CredentialIdentifier,
+} from './types/ipc';
+import {
+  initCredentialStore,
+  setCredential,
+  hasCredential,
+  deleteCredential,
+  clearCredentials,
+  listCredentials,
+} from './credentials';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -167,12 +182,16 @@ function attachCrashHandler(): void {
 
     if (restartCount < MAX_RESTARTS) {
       restartCount++;
-      console.log(`[Cerebro] Restarting Python backend (attempt ${restartCount}/${MAX_RESTARTS})...`);
+      console.log(
+        `[Cerebro] Restarting Python backend (attempt ${restartCount}/${MAX_RESTARTS})...`,
+      );
       startPythonBackend().catch((err) => {
         console.error('[Cerebro] Failed to restart Python backend:', err);
       });
     } else {
-      console.error('[Cerebro] Max restart attempts reached. Python backend will not be restarted.');
+      console.error(
+        '[Cerebro] Max restart attempts reached. Python backend will not be restarted.',
+      );
     }
   });
 }
@@ -210,7 +229,9 @@ function makeBackendRequest<T = unknown>(request: BackendRequest): Promise<Backe
 
     const req = http.request(options, (res) => {
       let data = '';
-      res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      res.on('data', (chunk: Buffer) => {
+        data += chunk.toString();
+      });
       res.on('end', () => {
         let parsed: T;
         try {
@@ -269,7 +290,7 @@ function registerIpcHandlers(): void {
     const parsedUrl = new URL(url);
 
     const headers: Record<string, string> = {
-      'Accept': 'text/event-stream',
+      Accept: 'text/event-stream',
       'Content-Type': 'application/json',
     };
 
@@ -395,9 +416,7 @@ const createWindow = () => {
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
   }
 
   // Open the DevTools.

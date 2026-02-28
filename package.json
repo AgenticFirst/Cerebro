@@ -11,6 +11,8 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"*.{json,js,ts}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"*.{json,js,ts}\"",
     "test": "npm run test:frontend && npm run test:backend",
     "test:frontend": "vitest run",
     "test:backend": "cd backend && venv/bin/python -m pytest -v"
@@ -41,7 +43,9 @@
     "@vitejs/plugin-react": "^4.7.0",
     "electron": "40.6.1",
     "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",
+    "prettier": "^3.8.1",
     "typescript": "~4.5.4",
     "vite": "^5.4.21",
     "vitest": "^3.2.4"

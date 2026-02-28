@@ -56,9 +56,7 @@ export default function ToolCallCard({ toolCall }: ToolCallCardProps) {
           <Icon size={14} className="text-text-secondary" />
           <StatusDot status={toolCall.status} />
         </div>
-        <span className="flex-1 text-xs text-text-secondary truncate">
-          {toolCall.description}
-        </span>
+        <span className="flex-1 text-xs text-text-secondary truncate">{toolCall.description}</span>
         <StatusIcon status={toolCall.status} />
         <ChevronRight
           size={12}

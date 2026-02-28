@@ -1,33 +1,30 @@
-import {
-  Users,
-  Zap,
-  Activity,
-  ShieldCheck,
-  Store,
-  Settings,
-} from 'lucide-react';
+import { Users, Zap, Activity, ShieldCheck, Store, Settings } from 'lucide-react';
 import type { Screen } from '../../types/chat';
 
 const SCREEN_META: Record<string, { icon: typeof Users; title: string; description: string }> = {
   experts: {
     icon: Users,
     title: 'Experts',
-    description: 'Specialized agents that handle tasks in specific domains. Cerebro routes your requests to the right expert.',
+    description:
+      'Specialized agents that handle tasks in specific domains. Cerebro routes your requests to the right expert.',
   },
   routines: {
     icon: Zap,
     title: 'Routines',
-    description: 'Reusable, executable playbooks. Create them from chat or browse saved routines here.',
+    description:
+      'Reusable, executable playbooks. Create them from chat or browse saved routines here.',
   },
   activity: {
     icon: Activity,
     title: 'Activity',
-    description: 'Timeline of all runs — see logs, outputs, timestamps, and drill into any execution.',
+    description:
+      'Timeline of all runs — see logs, outputs, timestamps, and drill into any execution.',
   },
   approvals: {
     icon: ShieldCheck,
     title: 'Approvals',
-    description: 'Review and approve or deny pending actions that require your sign-off before executing.',
+    description:
+      'Review and approve or deny pending actions that require your sign-off before executing.',
   },
   marketplace: {
     icon: Store,
@@ -57,12 +54,8 @@ export default function PlaceholderScreen({ screen }: PlaceholderScreenProps) {
         <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-5">
           <Icon size={24} className="text-accent" />
         </div>
-        <h1 className="text-2xl font-medium text-text-primary mb-2">
-          {meta.title}
-        </h1>
-        <p className="text-sm text-text-secondary leading-relaxed mb-6">
-          {meta.description}
-        </p>
+        <h1 className="text-2xl font-medium text-text-primary mb-2">{meta.title}</h1>
+        <p className="text-sm text-text-secondary leading-relaxed mb-6">{meta.description}</p>
         <span className="text-xs text-text-tertiary bg-bg-elevated px-3 py-1.5 rounded-full border border-border-subtle">
           Coming soon
         </span>

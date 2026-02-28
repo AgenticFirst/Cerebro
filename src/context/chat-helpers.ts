@@ -1,15 +1,15 @@
-import type { Conversation, Message } from "../types/chat";
+import type { Conversation, Message } from '../types/chat';
 
 // ── Pure helpers ─────────────────────────────────────────────────
 
 export function generateId(): string {
-  return crypto.randomUUID().replace(/-/g, "");
+  return crypto.randomUUID().replace(/-/g, '');
 }
 
 export function titleFromContent(content: string): string {
   const trimmed = content.trim();
   if (trimmed.length <= 40) return trimmed;
-  return trimmed.slice(0, 40) + "...";
+  return trimmed.slice(0, 40) + '...';
 }
 
 // ── Backend API types (snake_case matching JSON) ─────────────────
@@ -42,7 +42,7 @@ export function fromApiMessage(m: ApiMessage): Message {
   return {
     id: m.id,
     conversationId: m.conversation_id,
-    role: m.role as Message["role"],
+    role: m.role as Message['role'],
     content: m.content,
     model: m.model ?? undefined,
     tokenCount: m.token_count ?? undefined,

@@ -6,15 +6,15 @@ import {
   useEffect,
   useRef,
   type ReactNode,
-} from "react";
-import type { Conversation, Message, Screen, ToolCall } from "../types/chat";
-import type { BackendResponse } from "../types/ipc";
+} from 'react';
+import type { Conversation, Message, Screen, ToolCall } from '../types/chat';
+import type { BackendResponse } from '../types/ipc';
 import {
   generateId,
   titleFromContent,
   fromApiConversation,
   type ApiConversationList,
-} from "./chat-helpers";
+} from './chat-helpers';
 
 interface ChatState {
   conversations: Conversation[];
@@ -28,16 +28,8 @@ interface ChatState {
 interface ChatActions {
   createConversation: (firstMessage?: string) => string;
   setActiveConversation: (id: string | null) => void;
-  addMessage: (
-    conversationId: string,
-    role: Message["role"],
-    content: string,
-  ) => void;
-  updateMessage: (
-    conversationId: string,
-    messageId: string,
-    partial: Partial<Message>,
-  ) => void;
+  addMessage: (conversationId: string, role: Message['role'], content: string) => void;
+  updateMessage: (conversationId: string, messageId: string, partial: Partial<Message>) => void;
   deleteConversation: (id: string) => void;
   setActiveScreen: (screen: Screen) => void;
   sendMessage: (content: string) => void;
@@ -53,20 +45,18 @@ const ChatContext = createContext<ChatContextValue | null>(null);
 // ── API functions (fire-and-forget for writes) ───────────────────
 
 async function apiLoadConversations(): Promise<Conversation[]> {
-  const res: BackendResponse<ApiConversationList> = await window.cerebro.invoke(
-    {
-      method: "GET",
-      path: "/conversations",
-    },
-  );
+  const res: BackendResponse<ApiConversationList> = await window.cerebro.invoke({
+    method: 'GET',
+    path: '/conversations',
+  });
   if (!res.ok) throw new Error(`Failed to load conversations: ${res.status}`);
   return res.data.conversations.map(fromApiConversation);
 }
 
 function apiCreateConversation(id: string, title: string): Promise<unknown> {
   return window.cerebro.invoke({
-    method: "POST",
-    path: "/conversations",
+    method: 'POST',
+    path: '/conversations',
     body: { id, title },
   });
 }
@@ -76,7 +66,7 @@ function apiCreateMessage(
   msg: { id: string; role: string; content: string },
 ): Promise<unknown> {
   return window.cerebro.invoke({
-    method: "POST",
+    method: 'POST',
     path: `/conversations/${convId}/messages`,
     body: msg,
   });
@@ -84,28 +74,28 @@ function apiCreateMessage(
 
 function apiDeleteConversation(id: string): Promise<unknown> {
   return window.cerebro.invoke({
-    method: "DELETE",
+    method: 'DELETE',
     path: `/conversations/${id}`,
   });
 }
 
 // Demo tool calls for simulation
-const DEMO_TOOL_CALLS: Omit<ToolCall, "id">[] = [
+const DEMO_TOOL_CALLS: Omit<ToolCall, 'id'>[] = [
   {
-    name: "search_knowledge",
-    description: "Searching knowledge base for relevant context",
-    arguments: { query: "user preferences and history" },
+    name: 'search_knowledge',
+    description: 'Searching knowledge base for relevant context',
+    arguments: { query: 'user preferences and history' },
     output:
-      "Found 3 relevant context entries:\n- User prefers concise responses\n- Previous conversation about project planning\n- Timezone: EST",
-    status: "success",
+      'Found 3 relevant context entries:\n- User prefers concise responses\n- Previous conversation about project planning\n- Timezone: EST',
+    status: 'success',
   },
   {
-    name: "analyze_intent",
-    description: "Analyzing request to determine best approach",
-    arguments: { intent: "general_question" },
+    name: 'analyze_intent',
+    description: 'Analyzing request to determine best approach',
+    arguments: { intent: 'general_question' },
     output:
-      "Intent classified as: general conversation\nConfidence: 0.94\nRouting: direct response (no routine needed)",
-    status: "success",
+      'Intent classified as: general conversation\nConfidence: 0.94\nRouting: direct response (no routine needed)',
+    status: 'success',
   },
 ];
 
@@ -137,13 +127,11 @@ What would you like to work on?`;
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversationId, setActiveConversationIdState] = useState<
-    string | null
-  >(null);
+  const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeScreen, setActiveScreen] = useState<Screen>("chat");
+  const [activeScreen, setActiveScreen] = useState<Screen>('chat');
   const abortRef = useRef<AbortController | null>(null);
 
   // ── Load conversations from backend on startup ─────────────────
@@ -156,7 +144,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       for (let i = 0; i < maxRetries; i++) {
         try {
           const status = await window.cerebro.getStatus();
-          if (status === "healthy") break;
+          if (status === 'healthy') break;
         } catch {
           /* backend not ready */
         }
@@ -176,7 +164,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           return [...inFlight, ...loaded];
         });
       } catch (err) {
-        console.error("Failed to load conversations:", err);
+        console.error('Failed to load conversations:', err);
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -191,9 +179,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const createConversation = useCallback((firstMessage?: string) => {
     const id = generateId();
     const now = new Date();
-    const title = firstMessage
-      ? titleFromContent(firstMessage)
-      : "New conversation";
+    const title = firstMessage ? titleFromContent(firstMessage) : 'New conversation';
     const conversation: Conversation = {
       id,
       title,
@@ -210,12 +196,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const setActiveConversation = useCallback((id: string | null) => {
     setActiveConversationIdState(id);
     if (id !== null) {
-      setActiveScreen("chat");
+      setActiveScreen('chat');
     }
   }, []);
 
   const addMessage = useCallback(
-    (conversationId: string, role: Message["role"], content: string) => {
+    (conversationId: string, role: Message['role'], content: string) => {
       const message: Message = {
         id: generateId(),
         conversationId,
@@ -234,9 +220,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             : c,
         ),
       );
-      apiCreateMessage(conversationId, { id: message.id, role, content }).catch(
-        console.error,
-      );
+      apiCreateMessage(conversationId, { id: message.id, role, content }).catch(console.error);
       return message.id;
     },
     [],
@@ -249,9 +233,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           c.id === conversationId
             ? {
                 ...c,
-                messages: c.messages.map((m) =>
-                  m.id === messageId ? { ...m, ...partial } : m,
-                ),
+                messages: c.messages.map((m) => (m.id === messageId ? { ...m, ...partial } : m)),
               }
             : c,
         ),
@@ -262,9 +244,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const deleteConversation = useCallback((id: string) => {
     setConversations((prev) => prev.filter((c) => c.id !== id));
-    setActiveConversationIdState((current) =>
-      current === id ? null : current,
-    );
+    setActiveConversationIdState((current) => (current === id ? null : current));
     apiDeleteConversation(id).catch(console.error);
   }, []);
 
@@ -278,9 +258,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const sleep = (ms: number) =>
         new Promise<void>((resolve, reject) => {
           const timer = setTimeout(resolve, ms);
-          signal.addEventListener("abort", () => {
+          signal.addEventListener('abort', () => {
             clearTimeout(timer);
-            reject(new DOMException("Aborted", "AbortError"));
+            reject(new DOMException('Aborted', 'AbortError'));
           });
         });
 
@@ -291,8 +271,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const thinkingMessage: Message = {
           id: assistantId,
           conversationId,
-          role: "assistant",
-          content: "",
+          role: 'assistant',
+          content: '',
           createdAt: new Date(),
           isThinking: true,
           toolCalls: [],
@@ -321,7 +301,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           const tc: ToolCall = {
             ...demo,
             id: generateId(),
-            status: "running",
+            status: 'running',
             startedAt: new Date(),
           };
           toolCalls.push(tc);
@@ -333,7 +313,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           if (signal.aborted) return;
 
           // Complete the tool call
-          tc.status = "success";
+          tc.status = 'success';
           tc.completedAt = new Date();
           updateMessage(conversationId, assistantId, {
             toolCalls: [...toolCalls],
@@ -351,12 +331,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         });
 
         const words = DEMO_RESPONSE.split(/(\s+)/);
-        let accumulated = "";
+        let accumulated = '';
         const chunkSize = 3;
 
         for (let i = 0; i < words.length; i += chunkSize) {
           if (signal.aborted) return;
-          accumulated += words.slice(i, i + chunkSize).join("");
+          accumulated += words.slice(i, i + chunkSize).join('');
           updateMessage(conversationId, assistantId, { content: accumulated });
           await sleep(30);
         }
@@ -368,11 +348,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         });
         apiCreateMessage(conversationId, {
           id: assistantId,
-          role: "assistant",
+          role: 'assistant',
           content: DEMO_RESPONSE,
         }).catch(console.error);
       } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") return;
+        if (e instanceof DOMException && e.name === 'AbortError') return;
         throw e;
       } finally {
         setIsStreaming(false);
@@ -389,15 +369,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (!convId) {
         convId = createConversation(content);
       }
-      addMessage(convId, "user", content);
+      addMessage(convId, 'user', content);
       simulateResponse(convId);
     },
     [activeConversationId, createConversation, addMessage, simulateResponse],
   );
 
-  const activeConversation = conversations.find(
-    (c) => c.id === activeConversationId,
-  );
+  const activeConversation = conversations.find((c) => c.id === activeConversationId);
 
   return (
     <ChatContext.Provider
@@ -425,6 +403,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
 export function useChat(): ChatContextValue {
   const ctx = useContext(ChatContext);
-  if (!ctx) throw new Error("useChat must be used within ChatProvider");
+  if (!ctx) throw new Error('useChat must be used within ChatProvider');
   return ctx;
 }

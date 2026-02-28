@@ -1,11 +1,6 @@
 import type { ComponentType } from 'react';
 import clsx from 'clsx';
-import {
-  GoogleCalendarIcon,
-  GmailIcon,
-  NotionIcon,
-  SlackIcon,
-} from '../../icons/BrandIcons';
+import { GoogleCalendarIcon, GmailIcon, NotionIcon, SlackIcon } from '../../icons/BrandIcons';
 
 interface Service {
   id: string;

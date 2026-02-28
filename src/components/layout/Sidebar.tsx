@@ -87,9 +87,7 @@ function NavButton({
         <Icon size={14} strokeWidth={isActive ? 2 : 1.5} />
       </div>
 
-      {!collapsed && (
-        <span className="text-[13px] leading-none">{item.label}</span>
-      )}
+      {!collapsed && <span className="text-[13px] leading-none">{item.label}</span>}
 
       {/* Badge */}
       {!collapsed && item.badge != null && item.badge > 0 && (
@@ -217,10 +215,12 @@ export default function Sidebar() {
       )}
     >
       {/* ── Header: collapse toggle ──────────────────────────── */}
-      <div className={clsx(
-        'flex items-center h-11',
-        collapsed ? 'justify-center px-2' : 'justify-between px-3',
-      )}>
+      <div
+        className={clsx(
+          'flex items-center h-11',
+          collapsed ? 'justify-center px-2' : 'justify-between px-3',
+        )}
+      >
         {!collapsed && (
           <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary select-none">
             Cerebro
