@@ -10,7 +10,6 @@
 | SQLite database and schema setup | Done |
 | App chrome with left nav sidebar | Done |
 | Chat UI with message input, streaming responses, and markdown rendering | Done |
-| LLM provider integration (Cerebro lead expert) | Not Started |
 | IPC bridge between renderer and main process | Not Started |
 | Persistent chat history | Not Started |
 | **2. Integrations** | |
@@ -46,36 +45,53 @@
 | Cerebro routine proposal logic (detect repeatable intent) | Not Started |
 | Preview execution with streaming logs | Not Started |
 | Cron scheduler for scheduled routines | Not Started |
-| **7. Activity + Approvals** | |
+| **7. Cerebro Core Intelligence** | |
+| Cerebro system prompt architecture (role definition, tool registry, context/memory injection) | Not Started |
+| Agent conversation loop (message → LLM → tool calls → response agentic cycle) | Not Started |
+| Expert/team proposal and vibe engineering (propose → preview → add expert) | Not Started |
+| Run initiation and orchestration (start runs, stream events to UI, produce Run Records) | Not Started |
+| **8. Activity + Approvals** | |
 | Activity screen (run timeline with filters) | Not Started |
 | Run drill-down view (logs, timestamps, outputs, errors) | Not Started |
 | Approvals screen (pending items, approve/deny) | Not Started |
 | Approval gates in execution engine (pause/resume) | Not Started |
 | Approve/deny flow with run continuation or stop | Not Started |
 | Approval badge in nav (visible only when pending) | Not Started |
-| **8. Connectors + Channels** | |
+| **9. Connectors + Channels** | |
 | Connector interface and OAuth flow support | Not Started |
 | Launch connectors (Google Calendar, Gmail, Notion) | Not Started |
 | Connectors section in Integrations | Not Started |
 | Connector actions for the execution engine | Not Started |
 | Channels section in Integrations (Telegram, WhatsApp, Email) | Not Started |
-| **9. Remote Access** | |
+| **10. Remote Access** | |
 | Outbound relay client (persistent WebSocket) | Not Started |
 | Remote Access UI in Integrations (toggle, status, webhook URL) | Not Started |
 | Identity pairing flows (Telegram, WhatsApp, Email) | Not Started |
 | Inbound event handler (validate and route) | Not Started |
 | Default safety policy (read-only auto, writes need approval) | Not Started |
 | Test Remote Access button | Not Started |
-| **10. Marketplace** | |
+| **11. Sandbox Environment** | |
+| Workspace/project directory model (user-designated allowed paths) | Not Started |
+| File-system permission model (read-only, read-write, and denied zones) | Not Started |
+| Sandbox enforcement layer in execution engine | Not Started |
+| Sandbox configuration UI in Settings | Not Started |
+| Default sandbox policy (conservative: app-data only, user opts in to broader access) | Not Started |
+| **12. Marketplace** | |
 | Pack format definition | Not Started |
 | Marketplace screen (browse, search, detail view) | Not Started |
 | Install/uninstall packs | Not Started |
 | Update detection and flow | Not Started |
 | First-party launch packs | Not Started |
-| **11. Code View, Export/Import + Polish** | |
+| **13. Code View, Export/Import + Polish** | |
 | Code View for all artifacts (JSON/TypeScript) | Not Started |
 | Export/import for routines, experts, and packs | Not Started |
 | Fix & Retry flow (propose patch, retry from failed step) | Not Started |
 | Routine editor with Action graph detail view | Not Started |
 | Expert/Team vibe engineering (propose → preview → add) | Not Started |
-| Onboarding, notifications, and performance polish | Not Started |
+| Notifications and performance polish | Not Started |
+| **14. Onboarding & App Tour** | |
+| First-run welcome flow (connect first model provider, enter API key) | Not Started |
+| Interactive app tour (highlight Chat, Experts, Routines, Integrations) | Not Started |
+| Guided first conversation with Cerebro (scripted intro showcasing capabilities) | Not Started |
+| Setup progress checklist (what's configured, what's remaining) | Not Started |
+| Contextual tooltips for key features on first visit | Not Started |

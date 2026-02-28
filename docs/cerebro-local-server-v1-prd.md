@@ -592,6 +592,50 @@ For any user request, Cerebro chooses one:
 * Routine execution is performed by the runtime.  
 * Cerebro initiates runs, streams ordered events to the UI, and ensures all runs produce Run Records in Activity.
 
+## **12\) Sandbox Environment**
+
+### **12.1 Problem**
+
+Cerebro and experts can execute actions that touch the local file system — reading files for context, writing outputs, running scripts. Without constraints, a routine or expert could modify, delete, or read files anywhere on the user's machine. This is especially dangerous when running third-party packs from the Marketplace.
+
+### **12.2 Workspace model**
+
+Users designate one or more **workspace directories** that Cerebro is allowed to access. Everything outside designated workspaces is denied by default.
+
+* A workspace is a directory path on the local file system (e.g., `~/Projects/cerebro-data`, `~/Documents/work`).
+* Users can add, remove, and reconfigure workspaces at any time from Settings.
+
+### **12.3 Permission levels**
+
+Each workspace directory supports three permission levels:
+
+* **Read-only** — Cerebro can read files but cannot create, modify, or delete them.
+* **Read-write** — Cerebro can read, create, modify, and delete files within the directory.
+* **Denied** — Access is explicitly blocked (useful for excluding subdirectories within an allowed workspace).
+
+Permissions are per-directory with subdirectory granularity. A denied rule on a subdirectory overrides a read-write rule on its parent.
+
+### **12.4 Default policy**
+
+The default sandbox policy is **conservative**:
+
+* Only the app's own data directory (`app.getPath('userData')`) is accessible with read-write permissions.
+* All other file-system paths are denied.
+* Users explicitly opt in to grant broader access by adding workspaces.
+
+### **12.5 Enforcement**
+
+* The execution engine checks every file-system action against the sandbox policy **before executing**.
+* Violations are **blocked** (the action fails with a clear error) and **logged** in the Run Record.
+* Sandbox enforcement applies to all execution paths: direct expert actions, routine steps, and Marketplace pack code.
+
+### **12.6 UI (Settings → Sandbox)**
+
+* Configured workspaces listed with path, permission level, and edit/remove controls.
+* "Add Workspace" button with directory picker.
+* Visual indicator of the default policy (app-data only).
+* First-run onboarding prompts the user to configure workspace access if they attempt an action that requires it.
+
 ## **20\) Functional requirements summary (V0)**
 
 * Chat with Cerebro \+ expert selector \+ routine draft cards  
@@ -607,6 +651,7 @@ For any user request, Cerebro chooses one:
 * Export/import for routines and experts  
 * Memory (context files \+ scoped recall \+ run scratchpad)  
 * Remote Access outbound relay \+ test
+* Sandbox environment with workspace-scoped file-system permissions
 
 ## **21\) Non-functional requirements (V0)**
 
