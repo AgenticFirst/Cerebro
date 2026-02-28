@@ -90,11 +90,13 @@ async function startPythonBackend(): Promise<void> {
   const port = await getFreePort();
   const pythonPath = resolvePythonPath();
   const scriptPath = path.join(app.getAppPath(), 'backend', 'main.py');
+  const dbPath = path.join(app.getPath('userData'), 'cerebro.db');
 
   console.log(`[Cerebro] Starting Python backend on port ${port}...`);
   console.log(`[Cerebro] Python path: ${pythonPath}`);
+  console.log(`[Cerebro] Database path: ${dbPath}`);
 
-  const proc = spawn(pythonPath, [scriptPath, '--port', String(port)], {
+  const proc = spawn(pythonPath, [scriptPath, '--port', String(port), '--db-path', dbPath], {
     stdio: ['ignore', 'pipe', 'pipe'],
     cwd: path.join(app.getAppPath(), 'backend'),
   });

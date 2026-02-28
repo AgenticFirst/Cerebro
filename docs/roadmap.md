@@ -7,7 +7,7 @@
 | **1. App Shell + Basic Chat** | |
 | Initialize Electron + React + TypeScript project (macOS + Windows) | Done |
 | Python backend with FastAPI (local API server managed by Electron) | Done |
-| SQLite database and schema setup | Not Started |
+| SQLite database and schema setup | Done |
 | App chrome with left nav sidebar | Not Started |
 | Chat UI with message input, streaming responses, and markdown rendering | Not Started |
 | LLM provider integration (Cerebro lead expert) | Not Started |
