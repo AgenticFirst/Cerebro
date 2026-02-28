@@ -8,8 +8,8 @@
 | Initialize Electron + React + TypeScript project (macOS + Windows) | Done |
 | Python backend with FastAPI (local API server managed by Electron) | Done |
 | SQLite database and schema setup | Done |
-| App chrome with left nav sidebar | Not Started |
-| Chat UI with message input, streaming responses, and markdown rendering | Not Started |
+| App chrome with left nav sidebar | Done |
+| Chat UI with message input, streaming responses, and markdown rendering | Done |
 | LLM provider integration (Cerebro lead expert) | Not Started |
 | IPC bridge between renderer and main process | Not Started |
 | Persistent chat history | Not Started |

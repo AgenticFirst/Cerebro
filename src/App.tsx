@@ -1,11 +1,12 @@
-import './index.css';
+import './styles/app.css';
+import { ChatProvider } from './context/ChatContext';
+import AppLayout from './components/layout/AppLayout';
 
 function App() {
   return (
-    <div className="app">
-      <h1>Cerebro</h1>
-      <p>Your team of experts, powered by AI</p>
-    </div>
+    <ChatProvider>
+      <AppLayout />
+    </ChatProvider>
   );
 }
 
