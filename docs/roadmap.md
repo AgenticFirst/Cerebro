@@ -11,7 +11,9 @@
 | App chrome with left nav sidebar | Done |
 | Chat UI with message input, streaming responses, and markdown rendering | Done |
 | IPC bridge between renderer and main process | Done |
-| Persistent chat history | Not Started |
+| Persistent chat history | Done |
+| Set up test infrastructure and create Chat test plan (living document) | Done |
+| Automate persistent chat history test cases | Done |
 | **2. Integrations** | |
 | Integrations screen (Keys, Models sections) | Done |
 | Secure credential storage (OS keychain) | Not Started |
