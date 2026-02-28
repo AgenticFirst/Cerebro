@@ -1,10 +1,13 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { spawn, ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import http from 'node:http';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import started from 'electron-squirrel-startup';
+import { IPC_CHANNELS } from './types/ipc';
+import type { BackendRequest, BackendResponse, BackendStatus, StreamRequest, StreamEvent } from './types/ipc';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -14,9 +17,13 @@ if (started) {
 // --- Python backend state ---
 let pythonProcess: ChildProcess | null = null;
 let backendPort: number | null = null;
+let backendStatus: BackendStatus = 'stopped';
 let isIntentionalShutdown = false;
 let restartCount = 0;
 const MAX_RESTARTS = 3;
+
+// Active SSE streams (streamId → http.ClientRequest)
+const activeStreams = new Map<string, http.ClientRequest>();
 
 // --- Utility functions ---
 
@@ -92,6 +99,7 @@ async function startPythonBackend(): Promise<void> {
   const scriptPath = path.join(app.getAppPath(), 'backend', 'main.py');
   const dbPath = path.join(app.getPath('userData'), 'cerebro.db');
 
+  backendStatus = 'starting';
   console.log(`[Cerebro] Starting Python backend on port ${port}...`);
   console.log(`[Cerebro] Python path: ${pythonPath}`);
   console.log(`[Cerebro] Database path: ${dbPath}`);
@@ -117,6 +125,7 @@ async function startPythonBackend(): Promise<void> {
   attachCrashHandler();
 
   await waitForHealthCheck(port);
+  backendStatus = 'healthy';
   console.log(`[Cerebro] Python backend is ready on port ${port}`);
 }
 
@@ -137,6 +146,7 @@ function stopPythonBackend(): Promise<void> {
 
     proc.once('exit', () => {
       clearTimeout(killTimeout);
+      backendStatus = 'stopped';
       console.log('[Cerebro] Python backend stopped');
       resolve();
     });
@@ -151,6 +161,7 @@ function attachCrashHandler(): void {
   pythonProcess.once('exit', (code, signal) => {
     if (isIntentionalShutdown) return;
 
+    backendStatus = 'unhealthy';
     console.log(`[Cerebro] Python backend exited unexpectedly (code=${code}, signal=${signal})`);
 
     if (restartCount < MAX_RESTARTS) {
@@ -161,6 +172,182 @@ function attachCrashHandler(): void {
       });
     } else {
       console.error('[Cerebro] Max restart attempts reached. Python backend will not be restarted.');
+    }
+  });
+}
+
+// --- IPC Bridge ---
+
+function makeBackendRequest<T = unknown>(request: BackendRequest): Promise<BackendResponse<T>> {
+  return new Promise((resolve) => {
+    if (backendPort === null || backendStatus !== 'healthy') {
+      resolve({ ok: false, status: 0, data: { error: 'Backend not available' } as T });
+      return;
+    }
+
+    const url = `http://127.0.0.1:${backendPort}${request.path}`;
+    const parsedUrl = new URL(url);
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...request.headers,
+    };
+
+    const bodyStr = request.body != null ? JSON.stringify(request.body) : undefined;
+    if (bodyStr) {
+      headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
+    }
+
+    const options: http.RequestOptions = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: request.method,
+      headers,
+      timeout: 30_000,
+    };
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      res.on('end', () => {
+        let parsed: T;
+        try {
+          parsed = JSON.parse(data);
+        } catch {
+          parsed = data as T;
+        }
+        resolve({
+          ok: res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode ?? 0,
+          data: parsed,
+        });
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ ok: false, status: 0, data: { error: err.message } as T });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, status: 0, data: { error: 'Request timed out' } as T });
+    });
+
+    if (bodyStr) {
+      req.write(bodyStr);
+    }
+    req.end();
+  });
+}
+
+function registerIpcHandlers(): void {
+  // Generic backend request proxy
+  ipcMain.handle(IPC_CHANNELS.BACKEND_REQUEST, async (_event, request: BackendRequest) => {
+    return makeBackendRequest(request);
+  });
+
+  // Backend status check
+  ipcMain.handle(IPC_CHANNELS.BACKEND_STATUS, async () => {
+    return backendStatus;
+  });
+
+  // Start SSE stream
+  ipcMain.handle(IPC_CHANNELS.STREAM_START, async (event, request: StreamRequest) => {
+    const streamId = crypto.randomUUID();
+    const webContents = event.sender;
+    const channel = IPC_CHANNELS.streamEvent(streamId);
+
+    if (backendPort === null || backendStatus !== 'healthy') {
+      webContents.send(channel, { event: 'error', data: 'Backend not available' } as StreamEvent);
+      webContents.send(channel, { event: 'end', data: '' } as StreamEvent);
+      return streamId;
+    }
+
+    const url = `http://127.0.0.1:${backendPort}${request.path}`;
+    const parsedUrl = new URL(url);
+
+    const headers: Record<string, string> = {
+      'Accept': 'text/event-stream',
+      'Content-Type': 'application/json',
+    };
+
+    const bodyStr = request.body != null ? JSON.stringify(request.body) : undefined;
+    if (bodyStr) {
+      headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
+    }
+
+    const options: http.RequestOptions = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: request.method,
+      headers,
+    };
+
+    const req = http.request(options, (res) => {
+      let buffer = '';
+
+      res.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString();
+
+        // Parse SSE lines
+        const lines = buffer.split('\n');
+        // Keep the last potentially incomplete line in the buffer
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed === '') continue;
+
+          if (trimmed.startsWith('data: ')) {
+            const data = trimmed.slice(6);
+            if (!webContents.isDestroyed()) {
+              webContents.send(channel, { event: 'data', data } as StreamEvent);
+            }
+          }
+        }
+      });
+
+      res.on('end', () => {
+        activeStreams.delete(streamId);
+        if (!webContents.isDestroyed()) {
+          webContents.send(channel, { event: 'end', data: '' } as StreamEvent);
+        }
+      });
+
+      res.on('error', (err) => {
+        activeStreams.delete(streamId);
+        if (!webContents.isDestroyed()) {
+          webContents.send(channel, { event: 'error', data: err.message } as StreamEvent);
+          webContents.send(channel, { event: 'end', data: '' } as StreamEvent);
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      activeStreams.delete(streamId);
+      if (!webContents.isDestroyed()) {
+        webContents.send(channel, { event: 'error', data: err.message } as StreamEvent);
+        webContents.send(channel, { event: 'end', data: '' } as StreamEvent);
+      }
+    });
+
+    if (bodyStr) {
+      req.write(bodyStr);
+    }
+    req.end();
+
+    activeStreams.set(streamId, req);
+    return streamId;
+  });
+
+  // Cancel SSE stream
+  ipcMain.handle(IPC_CHANNELS.STREAM_CANCEL, async (_event, streamId: string) => {
+    const req = activeStreams.get(streamId);
+    if (req) {
+      req.destroy();
+      activeStreams.delete(streamId);
     }
   });
 }
@@ -198,6 +385,7 @@ const createWindow = () => {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', () => {
+  registerIpcHandlers();
   createWindow();
   startPythonBackend().catch((err) => {
     console.error('[Cerebro] Failed to start Python backend:', err);
