@@ -19,7 +19,7 @@ const components: Components = {
             margin: 0,
             borderRadius: '0.75rem',
             background: 'var(--color-bg-base)',
-            border: '1px solid var(--color-border-subtle)',
+            border: 'none',
             fontSize: '0.875rem',
           }}
         >

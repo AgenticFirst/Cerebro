@@ -239,7 +239,7 @@ export default function Sidebar() {
       </div>
 
       {/* ── New chat button ──────────────────────────────────── */}
-      <div className={clsx('px-2.5', collapsed ? 'mb-2' : 'mb-1.5')}>
+      <div className="px-2.5">
         <button
           onClick={handleNewChat}
           className={clsx(
@@ -256,6 +256,8 @@ export default function Sidebar() {
           {!collapsed && 'New Chat'}
         </button>
       </div>
+
+      <GhostSeparator collapsed={collapsed} />
 
       {/* ── Navigation ───────────────────────────────────────── */}
       <nav className="px-2.5">

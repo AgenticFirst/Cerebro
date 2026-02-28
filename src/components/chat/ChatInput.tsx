@@ -46,7 +46,7 @@ export default function ChatInput({ onSend, isStreaming = false }: ChatInputProp
   return (
     <div
       className={clsx(
-        'relative flex items-end gap-2 rounded-xl border px-4 py-3',
+        'relative flex items-center gap-2 rounded-xl border px-4 py-3',
         'bg-bg-elevated border-border-subtle',
         'transition-all duration-200',
         'focus-within:border-border-accent focus-within:glow-cyan',
