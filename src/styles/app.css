@@ -163,3 +163,16 @@ body {
 .prose a:hover {
   text-decoration: underline;
 }
+
+/* Thinking dots animation */
+@keyframes thinkingDots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+}
+
+.thinking-dots::after {
+  content: '';
+  animation: thinkingDots 1.2s steps(1) infinite;
+}
