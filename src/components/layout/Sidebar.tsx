@@ -179,6 +179,7 @@ export default function Sidebar() {
     conversations,
     activeConversationId,
     activeScreen,
+    isLoading,
     createConversation,
     setActiveConversation,
     setActiveScreen,
@@ -297,7 +298,7 @@ export default function Sidebar() {
           <div className="flex-1 overflow-y-auto scrollbar-thin px-2.5 pb-2">
             {grouped.length === 0 && (
               <div className="px-3 py-6 text-[11px] text-text-tertiary text-center">
-                No conversations yet
+                {isLoading ? 'Loading...' : 'No conversations yet'}
               </div>
             )}
             {grouped.map((group) => (

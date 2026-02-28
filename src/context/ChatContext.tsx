@@ -1,11 +1,13 @@
-import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import type { Conversation, Message, Screen, ToolCall } from '../types/chat';
+import type { BackendResponse } from '../types/ipc';
 
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
   isStreaming: boolean;
   isThinking: boolean;
+  isLoading: boolean;
   activeScreen: Screen;
 }
 
@@ -26,7 +28,92 @@ type ChatContextValue = ChatState & ChatActions & {
 const ChatContext = createContext<ChatContextValue | null>(null);
 
 function generateId(): string {
-  return crypto.randomUUID();
+  return crypto.randomUUID().replace(/-/g, '');
+}
+
+// ── Backend API types (snake_case matching JSON) ─────────────────
+
+interface ApiMessage {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  model: string | null;
+  token_count: number | null;
+  created_at: string;
+}
+
+interface ApiConversation {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: ApiMessage[];
+}
+
+interface ApiConversationList {
+  conversations: ApiConversation[];
+}
+
+// ── Mapping helpers ──────────────────────────────────────────────
+
+function fromApiMessage(m: ApiMessage): Message {
+  return {
+    id: m.id,
+    conversationId: m.conversation_id,
+    role: m.role as Message['role'],
+    content: m.content,
+    model: m.model ?? undefined,
+    tokenCount: m.token_count ?? undefined,
+    createdAt: new Date(m.created_at),
+  };
+}
+
+function fromApiConversation(c: ApiConversation): Conversation {
+  return {
+    id: c.id,
+    title: c.title,
+    createdAt: new Date(c.created_at),
+    updatedAt: new Date(c.updated_at),
+    messages: c.messages.map(fromApiMessage),
+  };
+}
+
+// ── API functions (fire-and-forget for writes) ───────────────────
+
+async function apiLoadConversations(): Promise<Conversation[]> {
+  const res: BackendResponse<ApiConversationList> = await window.cerebro.invoke({
+    method: 'GET',
+    path: '/conversations',
+  });
+  if (!res.ok) throw new Error(`Failed to load conversations: ${res.status}`);
+  return res.data.conversations.map(fromApiConversation);
+}
+
+function apiCreateConversation(id: string, title: string): Promise<unknown> {
+  return window.cerebro.invoke({
+    method: 'POST',
+    path: '/conversations',
+    body: { id, title },
+  });
+}
+
+function apiCreateMessage(
+  convId: string,
+  msg: { id: string; role: string; content: string },
+): Promise<unknown> {
+  return window.cerebro.invoke({
+    method: 'POST',
+    path: `/conversations/${convId}/messages`,
+    body: msg,
+  });
+}
+
+function apiDeleteConversation(id: string): Promise<unknown> {
+  return window.cerebro.invoke({
+    method: 'DELETE',
+    path: `/conversations/${id}`,
+  });
 }
 
 function titleFromContent(content: string): string {
@@ -84,21 +171,62 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [activeScreen, setActiveScreen] = useState<Screen>('chat');
   const abortRef = useRef<AbortController | null>(null);
+
+  // ── Load conversations from backend on startup ─────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      // Wait for backend to become healthy (retry up to 15s)
+      const maxRetries = 15;
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          const status = await window.cerebro.getStatus();
+          if (status === 'healthy') break;
+        } catch { /* backend not ready */ }
+        if (cancelled) return;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+
+      if (cancelled) return;
+
+      try {
+        const loaded = await apiLoadConversations();
+        if (cancelled) return;
+        // Merge: keep any in-flight conversations created during load
+        setConversations((prev) => {
+          const loadedIds = new Set(loaded.map((c) => c.id));
+          const inFlight = prev.filter((c) => !loadedIds.has(c.id));
+          return [...inFlight, ...loaded];
+        });
+      } catch (err) {
+        console.error('Failed to load conversations:', err);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
   const createConversation = useCallback((firstMessage?: string) => {
     const id = generateId();
     const now = new Date();
+    const title = firstMessage ? titleFromContent(firstMessage) : 'New conversation';
     const conversation: Conversation = {
       id,
-      title: firstMessage ? titleFromContent(firstMessage) : 'New conversation',
+      title,
       createdAt: now,
       updatedAt: now,
       messages: [],
     };
     setConversations((prev) => [conversation, ...prev]);
     setActiveConversationIdState(id);
+    apiCreateConversation(id, title).catch(console.error);
     return id;
   }, []);
 
@@ -125,6 +253,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             : c,
         ),
       );
+      apiCreateMessage(conversationId, { id: message.id, role, content }).catch(console.error);
       return message.id;
     },
     [],
@@ -152,6 +281,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       setConversations((prev) => prev.filter((c) => c.id !== id));
       setActiveConversationIdState((current) => (current === id ? null : current));
+      apiDeleteConversation(id).catch(console.error);
     },
     [],
   );
@@ -245,6 +375,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           content: DEMO_RESPONSE,
           isStreaming: false,
         });
+        apiCreateMessage(conversationId, {
+          id: assistantId,
+          role: 'assistant',
+          content: DEMO_RESPONSE,
+        }).catch(console.error);
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') return;
         throw e;
@@ -278,6 +413,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         activeConversationId,
         isStreaming,
         isThinking,
+        isLoading,
         activeScreen,
         activeConversation,
         createConversation,
