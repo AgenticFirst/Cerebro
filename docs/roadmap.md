@@ -10,7 +10,7 @@
 | SQLite database and schema setup | Done |
 | App chrome with left nav sidebar | Done |
 | Chat UI with message input, streaming responses, and markdown rendering | Done |
-| IPC bridge between renderer and main process | Not Started |
+| IPC bridge between renderer and main process | Done |
 | Persistent chat history | Not Started |
 | **2. Integrations** | |
 | Integrations screen (Keys, Models sections) | Done |
