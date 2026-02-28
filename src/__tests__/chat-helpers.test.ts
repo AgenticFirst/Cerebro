@@ -3,8 +3,8 @@ import {
   generateId,
   titleFromContent,
   fromApiConversation,
-} from "../chat-helpers";
-import type { ApiConversation } from "../chat-helpers";
+} from "../context/chat-helpers";
+import type { ApiConversation } from "../context/chat-helpers";
 
 describe("generateId", () => {
   it("returns a 32-char hex string with no dashes", () => {
