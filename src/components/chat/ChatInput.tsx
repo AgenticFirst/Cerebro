@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, type KeyboardEvent, type ChangeEvent } from 'react';
 import { ArrowUp, Square } from 'lucide-react';
 import clsx from 'clsx';
+import ModelSelector from './ModelSelector';
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -44,14 +45,18 @@ export default function ChatInput({ onSend, isStreaming = false }: ChatInputProp
   const hasContent = value.trim().length > 0;
 
   return (
-    <div
-      className={clsx(
-        'relative flex items-center gap-2 rounded-xl border px-4 py-3',
-        'bg-bg-elevated border-border-subtle',
-        'transition-all duration-200',
-        'focus-within:border-border-accent focus-within:glow-cyan',
-      )}
-    >
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center px-1">
+        <ModelSelector />
+      </div>
+      <div
+        className={clsx(
+          'relative flex items-center gap-2 rounded-xl border px-4 py-3',
+          'bg-bg-elevated border-border-subtle',
+          'transition-all duration-200',
+          'focus-within:border-border-accent focus-within:glow-cyan',
+        )}
+      >
       <textarea
         ref={textareaRef}
         value={value}
@@ -81,6 +86,7 @@ export default function ChatInput({ onSend, isStreaming = false }: ChatInputProp
       >
         {isStreaming ? <Square size={14} /> : <ArrowUp size={16} />}
       </button>
+      </div>
     </div>
   );
 }

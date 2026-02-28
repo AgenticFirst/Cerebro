@@ -14,6 +14,10 @@ from database import get_db, init_db
 import models  # noqa: F401
 from models import Conversation, Message
 
+from local_models.catalog import recover_interrupted
+from local_models.router import init_singletons
+from local_models.router import router as models_router
+
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -21,10 +25,18 @@ async def lifespan(application: FastAPI):
     os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
     init_db(db_path)
     print(f"[Cerebro] Database initialized at {db_path}")
+
+    models_dir = application.state.models_dir
+    os.makedirs(models_dir, exist_ok=True)
+    recover_interrupted(models_dir)
+    init_singletons()
+    print(f"[Cerebro] Models directory: {models_dir}")
+
     yield
 
 
 app = FastAPI(title="Cerebro Backend", lifespan=lifespan)
+app.include_router(models_router, prefix="/models")
 
 
 @app.get("/health")
@@ -134,8 +146,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--db-path", type=str, default=os.path.join(".", "cerebro.db"))
+    parser.add_argument("--models-dir", type=str, default=os.path.join(".", "models"))
     args = parser.parse_args()
 
     app.state.db_path = os.path.abspath(args.db_path)
+    app.state.models_dir = os.path.abspath(args.models_dir)
 
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")

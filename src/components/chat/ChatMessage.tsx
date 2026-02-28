@@ -53,6 +53,11 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           )}
         </div>
       )}
+
+      {/* Model attribution */}
+      {!isUser && message.model && !message.isStreaming && !message.isThinking && (
+        <p className="text-[10px] text-text-tertiary mt-1 px-1">{message.model}</p>
+      )}
     </div>
   );
 }

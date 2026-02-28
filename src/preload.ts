@@ -10,6 +10,7 @@ import type {
   CredentialSetRequest,
   CredentialResult,
   CredentialInfo,
+  DiskSpace,
 } from './types/ipc';
 
 const api: CerebroAPI = {
@@ -57,6 +58,15 @@ const api: CerebroAPI = {
     },
     list(service?: string): Promise<CredentialInfo[]> {
       return ipcRenderer.invoke(IPC_CHANNELS.CREDENTIAL_LIST, service);
+    },
+  },
+
+  models: {
+    getDir(): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.MODELS_GET_DIR);
+    },
+    getDiskSpace(): Promise<DiskSpace> {
+      return ipcRenderer.invoke(IPC_CHANNELS.MODELS_DISK_SPACE);
     },
   },
 };

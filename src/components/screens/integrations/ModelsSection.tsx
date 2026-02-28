@@ -1,7 +1,9 @@
 import { useState, useEffect, type ComponentType } from 'react';
-import { Eye, EyeOff, Shield, HardDrive } from 'lucide-react';
+import { Eye, EyeOff, Shield, Cpu } from 'lucide-react';
 import clsx from 'clsx';
 import { AnthropicIcon, OpenAIIcon, GoogleIcon } from '../../icons/BrandIcons';
+import { useModels } from '../../../context/ModelContext';
+import LocalModelCard from './LocalModelCard';
 
 interface Model {
   id: string;
@@ -246,6 +248,83 @@ function ProviderCard({ provider }: { provider: Provider }) {
   );
 }
 
+function formatDiskSpace(bytes: number): string {
+  return `${(bytes / 1_000_000_000).toFixed(0)} GB`;
+}
+
+function LocalModelsSection() {
+  const {
+    catalog,
+    engineStatus,
+    activeDownloads,
+    diskSpace,
+    hardware,
+    recommendedModelId,
+    isLoading,
+    downloadModel,
+    cancelDownload,
+    deleteModel,
+    loadModel,
+    unloadModel,
+  } = useModels();
+
+  return (
+    <div className="mt-8">
+      <div className="flex items-center gap-2 mb-1">
+        <Cpu size={16} className="text-accent" />
+        <h3 className="text-sm font-medium text-text-primary">Local Models</h3>
+      </div>
+      <p className="text-xs text-text-tertiary mb-4">
+        Download and run models directly on your machine. No API key required.
+      </p>
+
+      {/* Hardware recommendation banner */}
+      {hardware && !isLoading && (
+        <div className="mb-4 px-3 py-2.5 rounded-lg bg-accent/[0.06] border border-accent/10">
+          <p className="text-xs text-text-secondary leading-relaxed">
+            Your machine has <span className="font-medium text-text-primary">{hardware.total_ram_gb} GB RAM</span>
+            {hardware.gpu_name && (
+              <> with <span className="font-medium text-text-primary">{hardware.gpu_name}</span></>
+            )}
+            {recommendedModelId && (
+              <> — we recommend <span className="font-medium text-accent">
+                {catalog.find((m) => m.id === recommendedModelId)?.name ?? recommendedModelId}
+              </span> for the best experience</>
+            )}
+            .
+          </p>
+        </div>
+      )}
+
+      {/* Model cards */}
+      <div className="space-y-3">
+        {catalog.map((model) => (
+          <LocalModelCard
+            key={model.id}
+            model={model}
+            engineStatus={engineStatus}
+            downloadProgress={activeDownloads.get(model.id)}
+            diskSpace={diskSpace}
+            isRecommended={model.id === recommendedModelId}
+            onDownload={downloadModel}
+            onCancelDownload={cancelDownload}
+            onDelete={deleteModel}
+            onLoad={loadModel}
+            onUnload={unloadModel}
+          />
+        ))}
+      </div>
+
+      {/* Disk space indicator */}
+      {diskSpace && (
+        <p className="text-xs text-text-tertiary mt-3">
+          Disk Space: {formatDiskSpace(diskSpace.free)} free of {formatDiskSpace(diskSpace.total)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function ModelsSection() {
   return (
     <div>
@@ -262,21 +341,7 @@ export default function ModelsSection() {
       </div>
 
       {/* Local Models */}
-      <div className="mt-8">
-        <h3 className="text-sm font-medium text-text-primary mb-3">Local Models</h3>
-        <div className="border-2 border-dashed border-border-default rounded-xl py-8 px-6 flex flex-col items-center text-center">
-          <div className="w-10 h-10 rounded-xl bg-bg-elevated border border-border-subtle flex items-center justify-center mb-3">
-            <HardDrive size={16} className="text-text-tertiary" />
-          </div>
-          <span className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-1.5">
-            Coming Soon
-          </span>
-          <p className="text-xs text-text-tertiary max-w-sm leading-relaxed">
-            Download and run models locally with Ollama, llama.cpp, and other local inference
-            engines.
-          </p>
-        </div>
-      </div>
+      <LocalModelsSection />
 
       {/* Security Note */}
       <div className="mt-6 flex items-start gap-3 px-4 py-3 rounded-lg bg-accent/[0.06] border border-accent/10">

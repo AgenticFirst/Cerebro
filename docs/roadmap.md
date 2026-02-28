@@ -17,6 +17,7 @@
 | **2. Integrations** | |
 | Integrations screen (Keys, Models sections) | Done |
 | Secure credential storage (OS keychain) | Done |
+| Local model support (download, manage, run GGUF models locally) | Done |
 | Model provider selection and presets (Anthropic, OpenAI, Google) | Not Started |
 | Connection status indicators | Not Started |
 | **3. Memory** | |

@@ -14,6 +14,10 @@ export const IPC_CHANNELS = {
   CREDENTIAL_DELETE: 'credential:delete',
   CREDENTIAL_CLEAR: 'credential:clear',
   CREDENTIAL_LIST: 'credential:list',
+
+  // Models
+  MODELS_GET_DIR: 'models:get-dir',
+  MODELS_DISK_SPACE: 'models:disk-space',
 } as const;
 
 // --- Backend Request/Response ---
@@ -23,6 +27,7 @@ export interface BackendRequest {
   path: string;
   body?: unknown;
   headers?: Record<string, string>;
+  timeout?: number;
 }
 
 export interface BackendResponse<T = unknown> {
@@ -83,6 +88,18 @@ export interface CredentialAPI {
   list(service?: string): Promise<CredentialInfo[]>;
 }
 
+// --- Models ---
+
+export interface DiskSpace {
+  free: number;
+  total: number;
+}
+
+export interface ModelsAPI {
+  getDir(): Promise<string>;
+  getDiskSpace(): Promise<DiskSpace>;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -92,4 +109,5 @@ export interface CerebroAPI {
   cancelStream(streamId: string): Promise<void>;
   onStream(streamId: string, callback: (event: StreamEvent) => void): () => void;
   credentials: CredentialAPI;
+  models: ModelsAPI;
 }

@@ -120,10 +120,17 @@ async function startPythonBackend(): Promise<void> {
   console.log(`[Cerebro] Python path: ${pythonPath}`);
   console.log(`[Cerebro] Database path: ${dbPath}`);
 
-  const proc = spawn(pythonPath, [scriptPath, '--port', String(port), '--db-path', dbPath], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    cwd: path.join(app.getAppPath(), 'backend'),
-  });
+  const modelsDir = path.join(app.getPath('userData'), 'models');
+  fs.mkdirSync(modelsDir, { recursive: true });
+
+  const proc = spawn(
+    pythonPath,
+    [scriptPath, '--port', String(port), '--db-path', dbPath, '--models-dir', modelsDir],
+    {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: path.join(app.getAppPath(), 'backend'),
+    },
+  );
 
   proc.stdout?.on('data', (data: Buffer) => {
     const lines = data.toString().trim().split('\n');
@@ -224,7 +231,7 @@ function makeBackendRequest<T = unknown>(request: BackendRequest): Promise<Backe
       path: parsedUrl.pathname + parsedUrl.search,
       method: request.method,
       headers,
-      timeout: 30_000,
+      timeout: request.timeout ?? 30_000,
     };
 
     const req = http.request(options, (res) => {
@@ -393,6 +400,21 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.CREDENTIAL_LIST, async (_event, service?: string) => {
     return listCredentials(service);
+  });
+
+  // --- Models ---
+
+  ipcMain.handle(IPC_CHANNELS.MODELS_GET_DIR, async () => {
+    return path.join(app.getPath('userData'), 'models');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MODELS_DISK_SPACE, async () => {
+    const modelsDir = path.join(app.getPath('userData'), 'models');
+    const stats = fs.statfsSync(modelsDir);
+    return {
+      free: stats.bfree * stats.bsize,
+      total: stats.blocks * stats.bsize,
+    };
   });
 }
 
