@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -86,3 +86,28 @@ class KnowledgeEntry(Base):
         String(32), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class Expert(Base):
+    __tablename__ = "experts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    slug: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
+    name: Mapped[str] = mapped_column(String(255))
+    domain: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    description: Mapped[str] = mapped_column(Text)
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    type: Mapped[str] = mapped_column(String(20), default="expert")       # expert | team
+    source: Mapped[str] = mapped_column(String(20), default="user")       # builtin | user | marketplace
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    tool_access: Mapped[str | None] = mapped_column(Text, nullable=True)           # JSON list
+    policies: Mapped[str | None] = mapped_column(Text, nullable=True)              # JSON object
+    required_connections: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    recommended_routines: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    team_members: Mapped[str | None] = mapped_column(Text, nullable=True)          # JSON [{expert_id, role, order}]
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    version: Mapped[str | None] = mapped_column(String(20), nullable=True, default="1.0.0")
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)

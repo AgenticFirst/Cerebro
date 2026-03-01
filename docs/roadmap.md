@@ -30,13 +30,14 @@
 | Quick-add suggestions for Profile and Style context files | Not Started |
 | Automated tests for Memory system (API, extraction, recall, embeddings) | Not Started |
 | **4. Experts** | |
-| Expert data model and schema | Not Started |
+| Expert data model and schema | Done |
 | Experts screen (Cerebro at top, installed expert cards) | Not Started |
 | Expert selector tray in Chat | Not Started |
 | Expert-scoped memory and context | Not Started |
 | Built-in starter experts (Executive Assistant, Fitness Coach) | Not Started |
 | Expert management (enable, disable, pin) | Not Started |
 | Cerebro routing logic (delegate to appropriate expert) | Not Started |
+| Write test plan and automated test cases | Not Started |
 | **5. Execution Engine** | |
 | Action interface (connectors, channels, transformers, model calls) | Not Started |
 | DAG executor with topological ordering and event streaming | Not Started |

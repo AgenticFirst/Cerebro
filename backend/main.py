@@ -20,6 +20,7 @@ from local_models.router import init_singletons
 from local_models.router import router as models_router
 from cloud_providers.router import router as cloud_router
 from memory.router import router as memory_router
+from experts.router import router as experts_router
 
 
 @asynccontextmanager
@@ -42,6 +43,7 @@ app = FastAPI(title="Cerebro Backend", lifespan=lifespan)
 app.include_router(models_router, prefix="/models")
 app.include_router(cloud_router, prefix="/cloud")
 app.include_router(memory_router, prefix="/memory")
+app.include_router(experts_router, prefix="/experts")
 
 
 @app.get("/health")
