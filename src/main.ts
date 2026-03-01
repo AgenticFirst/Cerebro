@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
 import path from 'node:path';
 import { spawn, ChildProcess } from 'node:child_process';
 import net from 'node:net';
@@ -496,6 +496,7 @@ const createWindow = () => {
     minWidth: 800,
     minHeight: 600,
     title: 'Cerebro',
+    icon: path.join(app.getAppPath(), 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -518,6 +519,15 @@ const createWindow = () => {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', () => {
+  // Set Dock icon on macOS (needed during dev — packaged builds use packagerConfig.icon)
+  if (process.platform === 'darwin') {
+    const iconPath = path.join(app.getAppPath(), 'assets', 'icon.png');
+    const icon = nativeImage.createFromPath(iconPath);
+    if (!icon.isEmpty()) {
+      app.dock.setIcon(icon);
+    }
+  }
+
   initCredentialStore();
   registerIpcHandlers();
   createWindow();

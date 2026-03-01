@@ -12,6 +12,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     name: 'Cerebro',
+    icon: './assets/icon',
   },
   rebuildConfig: {},
   makers: [
