@@ -27,6 +27,7 @@
 | Inject context files into system prompts | Done |
 | Semantic recall storage with auto-extraction from chat | Done |
 | Memory viewer in Settings (view, search, delete by scope) | Done |
+| Quick-add suggestions for Profile and Style context files | Not Started |
 | Automated tests for Memory system (API, extraction, recall, embeddings) | Not Started |
 | **4. Experts** | |
 | Expert data model and schema | Not Started |
