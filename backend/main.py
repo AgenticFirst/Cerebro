@@ -19,6 +19,7 @@ from local_models.catalog import recover_interrupted
 from local_models.router import init_singletons
 from local_models.router import router as models_router
 from cloud_providers.router import router as cloud_router
+from memory.router import router as memory_router
 
 
 @asynccontextmanager
@@ -40,6 +41,7 @@ async def lifespan(application: FastAPI):
 app = FastAPI(title="Cerebro Backend", lifespan=lifespan)
 app.include_router(models_router, prefix="/models")
 app.include_router(cloud_router, prefix="/cloud")
+app.include_router(memory_router, prefix="/memory")
 
 
 @app.get("/health")
