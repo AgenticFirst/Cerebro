@@ -1,8 +1,10 @@
-import { useState, useEffect, type ComponentType } from 'react';
-import { Eye, EyeOff, Shield, Cpu, Info } from 'lucide-react';
+import { useState, useEffect, useCallback, type ComponentType } from 'react';
+import { Eye, EyeOff, Shield, Cpu, Info, Plus, ExternalLink, HelpCircle, KeyRound } from 'lucide-react';
 import clsx from 'clsx';
 import { AnthropicIcon, OpenAIIcon, GoogleIcon, HuggingFaceIcon } from '../../icons/BrandIcons';
 import { useModels } from '../../../context/ModelContext';
+import { useProviders } from '../../../context/ProviderContext';
+import type { CloudProvider, ConnectionStatus } from '../../../types/providers';
 import LocalModelCard from './LocalModelCard';
 
 interface Model {
@@ -22,6 +24,8 @@ interface Provider {
   placeholder: string;
   keyPrefix: string;
   models: Model[];
+  docsUrl?: string;
+  modelIdHint?: string;
 }
 
 const PROVIDERS: Provider[] = [
@@ -34,6 +38,8 @@ const PROVIDERS: Provider[] = [
     icon: AnthropicIcon,
     placeholder: 'sk-ant-api03-...',
     keyPrefix: 'sk-ant-',
+    docsUrl: 'https://docs.anthropic.com/en/docs/about-claude/models',
+    modelIdHint: 'e.g. claude-opus-4, claude-sonnet-4-5',
     models: [
       { id: 'claude-opus-4', name: 'Claude Opus 4', context: '200K', enabled: true },
       { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', context: '200K', enabled: true },
@@ -49,10 +55,13 @@ const PROVIDERS: Provider[] = [
     icon: OpenAIIcon,
     placeholder: 'sk-proj-...',
     keyPrefix: 'sk-',
+    docsUrl: 'https://developers.openai.com/api/docs/models',
+    modelIdHint: 'e.g. gpt-4.1, gpt-4.1-mini, o4-mini',
     models: [
-      { id: 'gpt-4o', name: 'GPT-4o', context: '128K', enabled: true },
-      { id: 'gpt-4o-mini', name: 'GPT-4o mini', context: '128K', enabled: false },
-      { id: 'o1', name: 'o1', context: '200K', enabled: false },
+      { id: 'gpt-4.1', name: 'GPT-4.1', context: '1M', enabled: true },
+      { id: 'gpt-4.1-mini', name: 'GPT-4.1 mini', context: '1M', enabled: true },
+      { id: 'gpt-4.1-nano', name: 'GPT-4.1 nano', context: '1M', enabled: false },
+      { id: 'o4-mini', name: 'o4-mini', context: '200K', enabled: false },
     ],
   },
   {
@@ -64,9 +73,11 @@ const PROVIDERS: Provider[] = [
     icon: GoogleIcon,
     placeholder: 'AIza...',
     keyPrefix: 'AIza',
+    docsUrl: 'https://ai.google.dev/gemini-api/docs/models',
+    modelIdHint: 'e.g. gemini-2.5-pro, gemini-2.0-flash',
     models: [
-      { id: 'gemini-2-5-pro', name: 'Gemini 2.5 Pro', context: '1M', enabled: true },
-      { id: 'gemini-2-0-flash', name: 'Gemini 2.0 Flash', context: '1M', enabled: false },
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', context: '1M', enabled: true },
+      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', context: '1M', enabled: false },
     ],
   },
   {
@@ -101,17 +112,139 @@ function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void 
   );
 }
 
+// ── Connection status badge ──────────────────────────────────────
+
+function ConnectionBadge({
+  status,
+  error,
+}: {
+  status: ConnectionStatus;
+  error?: string;
+}) {
+  const config: Record<
+    ConnectionStatus,
+    { dot: string; label: string; labelColor: string; pulse?: boolean }
+  > = {
+    not_configured: {
+      dot: 'bg-text-tertiary',
+      label: 'Not configured',
+      labelColor: 'text-text-tertiary',
+    },
+    key_saved: {
+      dot: 'bg-amber-400',
+      label: 'Key saved',
+      labelColor: 'text-amber-400',
+    },
+    verifying: {
+      dot: 'bg-amber-400',
+      label: 'Verifying...',
+      labelColor: 'text-amber-400',
+      pulse: true,
+    },
+    connected: {
+      dot: 'bg-emerald-400',
+      label: 'Connected',
+      labelColor: 'text-emerald-400',
+    },
+    error: {
+      dot: 'bg-red-400',
+      label: 'Error',
+      labelColor: 'text-red-400',
+    },
+  };
+
+  const c = config[status];
+
+  return (
+    <div className="flex items-center gap-1.5" title={status === 'error' && error ? error : undefined}>
+      <div
+        className={clsx('w-1.5 h-1.5 rounded-full', c.dot, c.pulse && 'animate-pulse')}
+      />
+      <span className={clsx('text-xs', c.labelColor)}>{c.label}</span>
+    </div>
+  );
+}
+
+function ApiKeyAlert({
+  providerName,
+  onClose,
+}: {
+  providerName: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Dialog */}
+      <div className="relative bg-bg-surface border border-border-subtle rounded-xl shadow-2xl w-full max-w-sm mx-4 animate-fade-in">
+        <div className="px-5 pt-5 pb-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center">
+              <KeyRound size={18} className="text-accent" />
+            </div>
+            <h3 className="text-sm font-medium text-text-primary">API key required</h3>
+          </div>
+          <p className="text-xs text-text-secondary leading-relaxed">
+            To enable models from {providerName}, add your API key in the field above first.
+            Your key is stored securely in your OS keychain and never leaves your machine.
+          </p>
+        </div>
+        <div className="border-t border-border-subtle px-5 py-3 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 rounded-md text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 transition-colors cursor-pointer"
+          >
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProviderCard({ provider }: { provider: Provider }) {
+  const {
+    enabledModels,
+    toggleModel,
+    connectionStatus,
+    verifyConnection,
+    refreshConnectionStatus,
+    setProviderStatus,
+    customModels,
+    addCustomModel,
+    removeCustomModel,
+  } = useProviders();
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [models, setModels] = useState(provider.models);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
+  const [customModelId, setCustomModelId] = useState('');
+  const [showKeyAlert, setShowKeyAlert] = useState(false);
 
   const Icon = provider.icon;
   const inputHasValue = apiKey.length > 0;
+  const isCloudProvider = provider.id !== 'huggingface';
+
+  // Connection state from provider context
+  const providerConnection = connectionStatus[provider.id] ?? { status: 'not_configured' as ConnectionStatus };
+  const isVerifying = providerConnection.status === 'verifying';
+  const hasKey = providerConnection.status !== 'not_configured';
+
+  // Guard: require API key before enabling models
+  const requireKey = useCallback(
+    (action: () => void) => {
+      if (!hasKey) {
+        setShowKeyAlert(true);
+        return;
+      }
+      action();
+    },
+    [hasKey],
+  );
 
   useEffect(() => {
     window.cerebro.credentials.has(provider.id, 'api_key').then(setSaved);
@@ -137,6 +270,10 @@ function ProviderCard({ provider }: { provider: Provider }) {
     if (result.ok) {
       setSaved(true);
       setApiKey('');
+      // Immediately set status to key_saved
+      if (isCloudProvider) {
+        setProviderStatus(provider.id, { status: 'key_saved' });
+      }
     } else {
       setError(result.error ?? 'Failed to save credential');
     }
@@ -147,11 +284,17 @@ function ProviderCard({ provider }: { provider: Provider }) {
     if (result.ok) {
       setSaved(false);
       setWarning('');
+      // Immediately set status to not_configured (don't wait for async backend propagation)
+      if (isCloudProvider) {
+        setProviderStatus(provider.id, { status: 'not_configured' });
+      }
     }
   };
 
-  const toggleModel = (modelId: string) => {
-    setModels((prev) => prev.map((m) => (m.id === modelId ? { ...m, enabled: !m.enabled } : m)));
+  const handleTest = () => {
+    if (isCloudProvider) {
+      verifyConnection(provider.id as CloudProvider);
+    }
   };
 
   return (
@@ -172,15 +315,24 @@ function ProviderCard({ provider }: { provider: Provider }) {
           <div className="text-xs text-text-tertiary">{provider.subtitle}</div>
         </div>
         <div className="flex items-center gap-1.5">
-          <div
-            className={clsx(
-              'w-1.5 h-1.5 rounded-full',
-              saved ? 'bg-emerald-400' : 'bg-text-tertiary',
-            )}
-          />
-          <span className={clsx('text-xs', saved ? 'text-emerald-400' : 'text-text-tertiary')}>
-            {saved ? 'Connected' : 'Not configured'}
-          </span>
+          {isCloudProvider ? (
+            <ConnectionBadge
+              status={providerConnection.status}
+              error={providerConnection.error}
+            />
+          ) : (
+            <>
+              <div
+                className={clsx(
+                  'w-1.5 h-1.5 rounded-full',
+                  saved ? 'bg-emerald-400' : 'bg-text-tertiary',
+                )}
+              />
+              <span className={clsx('text-xs', saved ? 'text-emerald-400' : 'text-text-tertiary')}>
+                {saved ? 'Connected' : 'Not configured'}
+              </span>
+            </>
+          )}
           {saved && (
             <button
               onClick={handleRemove}
@@ -230,17 +382,46 @@ function ProviderCard({ provider }: { provider: Provider }) {
           >
             {saving ? 'Saving...' : 'Save'}
           </button>
+          {isCloudProvider && saved && (
+            <button
+              onClick={handleTest}
+              disabled={isVerifying}
+              className={clsx(
+                'px-3 py-2 rounded-md text-xs font-medium transition-colors border',
+                isVerifying
+                  ? 'bg-bg-elevated text-text-tertiary border-border-subtle cursor-not-allowed'
+                  : 'bg-bg-elevated text-text-secondary hover:text-text-primary hover:bg-bg-hover border-border-subtle cursor-pointer',
+              )}
+            >
+              {isVerifying ? 'Testing...' : 'Test'}
+            </button>
+          )}
         </div>
         {warning && <p className="text-xs text-amber-400 mt-1.5">{warning}</p>}
         {error && <p className="text-xs text-red-400 mt-1.5">{error}</p>}
+        {providerConnection.status === 'error' && providerConnection.error && (
+          <p className="text-xs text-red-400 mt-1.5">{providerConnection.error}</p>
+        )}
       </div>
 
       {/* Models or info note */}
       {provider.models.length > 0 ? (
         <div className="px-4 pb-3.5">
-          <label className="text-xs font-medium text-text-secondary mb-2 block">Models</label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-medium text-text-secondary">Models</label>
+            {provider.docsUrl && (
+              <a
+                href={provider.docsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[10px] text-text-tertiary hover:text-accent transition-colors"
+              >
+                View all models <ExternalLink size={9} />
+              </a>
+            )}
+          </div>
           <div className="space-y-px">
-            {models.map((model) => (
+            {provider.models.map((model) => (
               <div
                 key={model.id}
                 className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-white/[0.02] transition-colors"
@@ -251,9 +432,88 @@ function ProviderCard({ provider }: { provider: Provider }) {
                     {model.context}
                   </span>
                 </div>
-                <Toggle enabled={model.enabled} onToggle={() => toggleModel(model.id)} />
+                <Toggle
+                  enabled={enabledModels.has(model.id)}
+                  onToggle={() => requireKey(() => toggleModel(model.id, !enabledModels.has(model.id)))}
+                />
               </div>
             ))}
+            {/* Custom models for this provider */}
+            {customModels
+              .filter((m) => m.provider === provider.id)
+              .map((model) => (
+                <div
+                  key={model.id}
+                  className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-white/[0.02] transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-text-primary font-mono">{model.id}</span>
+                    <span className="text-[10px] font-medium text-text-tertiary bg-bg-elevated px-1.5 py-0.5 rounded">
+                      custom
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Toggle
+                      enabled={enabledModels.has(model.id)}
+                      onToggle={() => requireKey(() => toggleModel(model.id, !enabledModels.has(model.id)))}
+                    />
+                    <button
+                      onClick={() => removeCustomModel(model.id)}
+                      className="text-[10px] text-text-tertiary hover:text-red-400 transition-colors cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+          {/* Add custom model input */}
+          <div className="mt-2 flex gap-2 items-center">
+            <div className="flex-1 relative group">
+              <input
+                type="text"
+                value={customModelId}
+                onChange={(e) => setCustomModelId(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && customModelId.trim()) {
+                    requireKey(() => {
+                      addCustomModel(provider.id as CloudProvider, customModelId);
+                      setCustomModelId('');
+                    });
+                  }
+                }}
+                placeholder={provider.modelIdHint ?? 'Enter model ID...'}
+                className="w-full bg-bg-base border border-border-default rounded-md px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-tertiary/50 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-colors"
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 group-hover:opacity-100 opacity-50 transition-opacity">
+                <div className="relative">
+                  <HelpCircle size={12} className="text-text-tertiary cursor-help peer" />
+                  <div className="absolute bottom-full right-0 mb-1.5 w-52 px-2.5 py-2 rounded-md bg-bg-elevated border border-border-subtle shadow-lg text-[10px] text-text-secondary leading-relaxed hidden peer-hover:block z-50">
+                    Enter the exact model ID string from the provider's API docs. This is what gets
+                    sent as the <span className="font-mono text-accent">model</span> parameter.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (customModelId.trim()) {
+                  requireKey(() => {
+                    addCustomModel(provider.id as CloudProvider, customModelId);
+                    setCustomModelId('');
+                  });
+                }
+              }}
+              disabled={!customModelId.trim()}
+              className={clsx(
+                'p-1.5 rounded-md transition-colors',
+                customModelId.trim()
+                  ? 'text-accent hover:bg-accent/10 cursor-pointer'
+                  : 'text-text-tertiary cursor-not-allowed',
+              )}
+            >
+              <Plus size={14} />
+            </button>
           </div>
         </div>
       ) : (
@@ -266,6 +526,14 @@ function ProviderCard({ provider }: { provider: Provider }) {
             </p>
           </div>
         </div>
+      )}
+
+      {/* API key required modal */}
+      {showKeyAlert && (
+        <ApiKeyAlert
+          providerName={provider.name}
+          onClose={() => setShowKeyAlert(false)}
+        />
       )}
     </div>
   );

@@ -19,8 +19,8 @@
 | Secure credential storage (OS keychain) | Done |
 | Local model support (download, manage, run GGUF models locally) | Done |
 | HuggingFace integration (token for authenticated downloads) | Done |
-| Model provider selection and presets (Anthropic, OpenAI, Google) | Not Started |
-| Connection status indicators | Not Started |
+| Model provider selection and presets (Anthropic, OpenAI, Google) | Done |
+| Connection status indicators | Done |
 | **3. Memory** | |
 | Memory directory structure and context files (`profile.md`, `style.md`) | Not Started |
 | Context file editor in Settings | Not Started |

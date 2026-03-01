@@ -13,11 +13,12 @@ from database import get_db, init_db
 
 # Import models so they register with Base.metadata before create_all()
 import models  # noqa: F401
-from models import Conversation, Message
+from models import Conversation, Message, Setting
 
 from local_models.catalog import recover_interrupted
 from local_models.router import init_singletons
 from local_models.router import router as models_router
+from cloud_providers.router import router as cloud_router
 
 
 @asynccontextmanager
@@ -38,6 +39,7 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(title="Cerebro Backend", lifespan=lifespan)
 app.include_router(models_router, prefix="/models")
+app.include_router(cloud_router, prefix="/cloud")
 
 
 @app.get("/health")
@@ -60,6 +62,18 @@ def push_credential(body: CredentialPush):
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────
+
+
+class SettingUpsert(BaseModel):
+    value: str
+
+
+class SettingResponse(BaseModel):
+    key: str
+    value: str
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class ConversationCreate(BaseModel):
@@ -99,6 +113,45 @@ class ConversationResponse(BaseModel):
 
 class ConversationListResponse(BaseModel):
     conversations: list[ConversationResponse]
+
+
+# ── Settings endpoints ────────────────────────────────────────────
+
+
+@app.get("/settings", response_model=list[SettingResponse])
+def list_settings(db=Depends(get_db)):
+    return db.query(Setting).order_by(Setting.key).all()
+
+
+@app.get("/settings/{key}", response_model=SettingResponse)
+def get_setting(key: str, db=Depends(get_db)):
+    setting = db.get(Setting, key)
+    if not setting:
+        raise HTTPException(status_code=404, detail="Setting not found")
+    return setting
+
+
+@app.put("/settings/{key}", response_model=SettingResponse)
+def upsert_setting(key: str, body: SettingUpsert, db=Depends(get_db)):
+    setting = db.get(Setting, key)
+    if setting:
+        setting.value = body.value
+        setting.updated_at = models._utcnow()
+    else:
+        setting = Setting(key=key, value=body.value)
+        db.add(setting)
+    db.commit()
+    db.refresh(setting)
+    return setting
+
+
+@app.delete("/settings/{key}", status_code=204)
+def delete_setting(key: str, db=Depends(get_db)):
+    setting = db.get(Setting, key)
+    if setting:
+        db.delete(setting)
+        db.commit()
+    return Response(status_code=204)
 
 
 # ── Conversation endpoints ────────────────────────────────────────

@@ -31,6 +31,14 @@ if (started) {
   app.quit();
 }
 
+// Mapping of provider service names → backend env credential keys
+const CREDENTIAL_ENV_KEYS: Record<string, string> = {
+  huggingface: 'HF_TOKEN',
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  google: 'GOOGLE_API_KEY',
+};
+
 // --- Python backend state ---
 let pythonProcess: ChildProcess | null = null;
 let backendPort: number | null = null;
@@ -133,11 +141,13 @@ async function startPythonBackend(): Promise<void> {
   const modelsDir = path.join(app.getPath('userData'), 'models');
   fs.mkdirSync(modelsDir, { recursive: true });
 
-  // Read HF token from credential store to pass as env var at startup
+  // Pass all stored provider keys as env vars at startup
   const spawnEnv: Record<string, string> = { ...process.env } as Record<string, string>;
-  const hfToken = getCredential('huggingface', 'api_key');
-  if (hfToken) {
-    spawnEnv.HF_TOKEN = hfToken;
+  for (const [service, envKey] of Object.entries(CREDENTIAL_ENV_KEYS)) {
+    const value = getCredential(service, 'api_key');
+    if (value) {
+      spawnEnv[envKey] = value;
+    }
   }
 
   const proc = spawn(
@@ -333,6 +343,29 @@ function registerIpcHandlers(): void {
     };
 
     const req = http.request(options, (res) => {
+      // If the backend returned an HTTP error, collect the body and emit an error event
+      if (res.statusCode && res.statusCode >= 400) {
+        let errorBody = '';
+        res.on('data', (chunk: Buffer) => {
+          errorBody += chunk.toString();
+        });
+        res.on('end', () => {
+          activeStreams.delete(streamId);
+          if (!webContents.isDestroyed()) {
+            let errorMsg = `Backend error (${res.statusCode})`;
+            try {
+              const parsed = JSON.parse(errorBody);
+              if (parsed.detail) errorMsg = parsed.detail;
+            } catch {
+              // use default message
+            }
+            webContents.send(channel, { event: 'error', data: errorMsg } as StreamEvent);
+            webContents.send(channel, { event: 'end', data: '' } as StreamEvent);
+          }
+        });
+        return;
+      }
+
       let buffer = '';
 
       res.on('data', (chunk: Buffer) => {
@@ -402,10 +435,13 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.CREDENTIAL_SET, async (_event, request: CredentialSetRequest) => {
     const result = setCredential(request.service, request.key, request.value, request.label);
-    if (result.ok && request.service === 'huggingface') {
-      pushCredentialToBackend('HF_TOKEN', 'huggingface', 'api_key').catch((err) => {
-        console.error('[Cerebro] Failed to push HF token to backend:', err);
-      });
+    if (result.ok && request.key === 'api_key') {
+      const envKey = CREDENTIAL_ENV_KEYS[request.service];
+      if (envKey) {
+        pushCredentialToBackend(envKey, request.service, 'api_key').catch((err) => {
+          console.error(`[Cerebro] Failed to push ${request.service} key to backend:`, err);
+        });
+      }
     }
     return result;
   });
@@ -416,10 +452,13 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.CREDENTIAL_DELETE, async (_event, request: CredentialIdentifier) => {
     const result = deleteCredential(request.service, request.key);
-    if (result.ok && request.service === 'huggingface') {
-      pushCredentialToBackend('HF_TOKEN', 'huggingface', 'api_key').catch((err) => {
-        console.error('[Cerebro] Failed to clear HF token on backend:', err);
-      });
+    if (result.ok && request.key === 'api_key') {
+      const envKey = CREDENTIAL_ENV_KEYS[request.service];
+      if (envKey) {
+        pushCredentialToBackend(envKey, request.service, 'api_key').catch((err) => {
+          console.error(`[Cerebro] Failed to clear ${request.service} key on backend:`, err);
+        });
+      }
     }
     return result;
   });

@@ -9,6 +9,8 @@ import {
 } from 'react';
 import type { Conversation, Message, Screen, ToolCall } from '../types/chat';
 import type { BackendResponse, StreamEvent } from '../types/ipc';
+import type { SelectedModel } from '../types/providers';
+import { useProviders } from './ProviderContext';
 import {
   generateId,
   titleFromContent,
@@ -83,6 +85,7 @@ const NO_MODEL_RESPONSE =
   'No model is currently loaded. Go to **Integrations** to download and load a local model, or configure a cloud API key.';
 
 export function ChatProvider({ children }: { children: ReactNode }) {
+  const { selectedModel } = useProviders();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -94,6 +97,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Keep ref in sync so async callbacks always see latest state
   conversationsRef.current = conversations;
+
+  // Store selectedModel in a ref so sendMessage always has the latest value
+  const selectedModelRef = useRef<SelectedModel | null>(null);
+  selectedModelRef.current = selectedModel;
 
   // ── Load conversations from backend on startup ─────────────────
   useEffect(() => {
@@ -209,16 +216,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     apiDeleteConversation(id).catch(console.error);
   }, []);
 
-  // Stream a response from the local LLM
-  const streamLlmResponse = useCallback(
-    async (conversationId: string, modelName?: string) => {
+  // ── Shared streaming helper ────────────────────────────────────
+  const streamResponse = useCallback(
+    async (
+      conversationId: string,
+      modelDisplayName: string,
+      streamPath: string,
+      streamBody: Record<string, unknown>,
+    ) => {
       const assistantId = generateId();
       const thinkingMessage: Message = {
         id: assistantId,
         conversationId,
         role: 'assistant',
         content: '',
-        model: modelName,
+        model: modelDisplayName,
         createdAt: new Date(),
         isThinking: true,
       };
@@ -236,17 +248,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         ),
       );
 
-      // Gather conversation messages for the LLM from the ref (always current)
-      const conv = conversationsRef.current.find((c) => c.id === conversationId);
-      const chatMessages = (conv?.messages ?? [])
-        .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content))
-        .map((m) => ({ role: m.role, content: m.content }));
-
       try {
         const streamId = await window.cerebro.startStream({
           method: 'POST',
-          path: '/models/chat',
-          body: { messages: chatMessages, stream: true },
+          path: streamPath,
+          body: streamBody,
         });
 
         setIsThinking(false);
@@ -268,6 +274,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   updateMessage(conversationId, assistantId, { content: accumulated });
                 }
                 if (data.done) {
+                  // Check if this is an error response (finish_reason "error" with no content)
+                  if (data.finish_reason === 'error') {
+                    const errorDetail = data.usage?.error || 'Request failed';
+                    unsub();
+                    reject(new Error(errorDetail));
+                    return;
+                  }
                   unsub();
                   resolve();
                 }
@@ -276,7 +289,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               }
             } else if (event.event === 'end') {
               unsub();
-              resolve();
+              // If stream ended with no content at all, treat as error
+              if (!accumulated) {
+                reject(new Error('No response received from the model. Check your API key and model configuration.'));
+              } else {
+                resolve();
+              }
             } else if (event.event === 'error') {
               unsub();
               reject(new Error(event.data));
@@ -310,7 +328,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [updateMessage],
   );
 
-  // Fallback when no model is loaded
+  // Fallback when no model is selected
   const showNoModelMessage = useCallback(
     (conversationId: string) => {
       const assistantId = generateId();
@@ -349,24 +367,71 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
       addMessage(convId, 'user', content);
 
-      // Check if a model is loaded by querying engine status
-      window.cerebro
-        .invoke<{ state: string; loaded_model_id: string | null }>({
-          method: 'GET',
-          path: '/models/status',
-        })
-        .then((res) => {
-          if (res.ok && res.data.state === 'ready' && res.data.loaded_model_id) {
-            streamLlmResponse(convId!, res.data.loaded_model_id);
-          } else {
+      const model = selectedModelRef.current;
+
+      // Build message history including the just-sent user message.
+      // We can't rely on conversationsRef (state hasn't flushed yet),
+      // so we read the ref and append the current message manually.
+      const conv = conversationsRef.current.find((c) => c.id === convId);
+      const priorMessages = (conv?.messages ?? [])
+        .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content))
+        .map((m) => ({ role: m.role, content: m.content }));
+      const chatMessages = [...priorMessages, { role: 'user', content }];
+
+      if (!model) {
+        // No model selected — check if a local model is loaded (backward compat)
+        window.cerebro
+          .invoke<{ state: string; loaded_model_id: string | null }>({
+            method: 'GET',
+            path: '/models/status',
+          })
+          .then((res) => {
+            if (res.ok && res.data.state === 'ready' && res.data.loaded_model_id) {
+              streamResponse(convId!, res.data.loaded_model_id, '/models/chat', {
+                messages: chatMessages,
+                stream: true,
+              });
+            } else {
+              showNoModelMessage(convId!);
+            }
+          })
+          .catch(() => {
             showNoModelMessage(convId!);
-          }
-        })
-        .catch(() => {
-          showNoModelMessage(convId!);
+          });
+        return;
+      }
+
+      if (model.source === 'local') {
+        // Local model — check engine status then stream
+        window.cerebro
+          .invoke<{ state: string; loaded_model_id: string | null }>({
+            method: 'GET',
+            path: '/models/status',
+          })
+          .then((res) => {
+            if (res.ok && res.data.state === 'ready' && res.data.loaded_model_id) {
+              streamResponse(convId!, model.displayName, '/models/chat', {
+                messages: chatMessages,
+                stream: true,
+              });
+            } else {
+              showNoModelMessage(convId!);
+            }
+          })
+          .catch(() => {
+            showNoModelMessage(convId!);
+          });
+      } else {
+        // Cloud model — stream from /cloud/chat
+        streamResponse(convId!, model.displayName, '/cloud/chat', {
+          provider: model.provider,
+          model: model.modelId,
+          messages: chatMessages,
+          stream: true,
         });
+      }
     },
-    [activeConversationId, createConversation, addMessage, streamLlmResponse, showNoModelMessage],
+    [activeConversationId, createConversation, addMessage, streamResponse, showNoModelMessage],
   );
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
