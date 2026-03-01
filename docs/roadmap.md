@@ -95,6 +95,8 @@
 | Routine editor with Action graph detail view | Not Started |
 | Expert/Team vibe engineering (propose → preview → add) | Not Started |
 | Notifications and performance polish | Not Started |
+| Add README.md and CONTRIBUTORS.md | Not Started |
+| Add general project documentation (architecture, setup, dev guide) | Not Started |
 | **14. Onboarding & App Tour** | |
 | First-run welcome flow (connect first model provider, enter API key) | Not Started |
 | Interactive app tour (highlight Chat, Experts, Routines, Integrations) | Not Started |
