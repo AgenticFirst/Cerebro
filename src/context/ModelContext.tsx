@@ -59,6 +59,8 @@ export function ModelProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  // Track SSE unsubscribe functions per model so cancel can clean them up
+  const sseUnsubRefs = useRef<Map<string, () => void>>(new Map());
 
   useEffect(() => {
     mountedRef.current = true;
@@ -170,6 +172,13 @@ export function ModelProvider({ children }: { children: ReactNode }) {
         throw new Error(data.detail ?? 'Failed to start download');
       }
 
+      // Clean up any previous SSE listener for this model (e.g. from a cancelled download)
+      const prevUnsub = sseUnsubRefs.current.get(modelId);
+      if (prevUnsub) {
+        prevUnsub();
+        sseUnsubRefs.current.delete(modelId);
+      }
+
       // Set initial download progress
       setActiveDownloads((prev) => {
         const next = new Map(prev);
@@ -203,6 +212,7 @@ export function ModelProvider({ children }: { children: ReactNode }) {
 
             if (data.status === 'completed' || data.status === 'cancelled' || data.status === 'error') {
               unsub();
+              sseUnsubRefs.current.delete(modelId);
               // Remove from active downloads after a brief delay so UI can show final state
               setTimeout(() => {
                 if (mountedRef.current) {
@@ -221,6 +231,7 @@ export function ModelProvider({ children }: { children: ReactNode }) {
           }
         } else if (event.event === 'end' || event.event === 'error') {
           unsub();
+          sseUnsubRefs.current.delete(modelId);
           // Stream closed — clean up and refresh
           setActiveDownloads((prev) => {
             const next = new Map(prev);
@@ -231,12 +242,22 @@ export function ModelProvider({ children }: { children: ReactNode }) {
           refreshDiskSpace();
         }
       });
+
+      // Store the unsub so cancelDownload can kill this listener
+      sseUnsubRefs.current.set(modelId, unsub);
     },
     [refreshCatalog, refreshDiskSpace],
   );
 
   const cancelDownload = useCallback(
     async (modelId: string) => {
+      // Kill the old SSE listener FIRST so it can't interfere with future state
+      const unsub = sseUnsubRefs.current.get(modelId);
+      if (unsub) {
+        unsub();
+        sseUnsubRefs.current.delete(modelId);
+      }
+
       await window.cerebro.invoke({
         method: 'POST',
         path: `/models/${modelId}/download/cancel`,

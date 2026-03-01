@@ -67,17 +67,19 @@ class DownloadManager:
 
     @staticmethod
     def _delete_model_file(catalog_entry: dict[str, Any], models_dir: str) -> None:
-        """Delete the downloaded model file from disk after cancellation."""
+        """Delete the downloaded model file and any partial .incomplete files."""
         hf_filename = catalog_entry.get("hf_filename", "")
         if not hf_filename:
             return
-        file_path = os.path.join(models_dir, hf_filename)
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                log.info("Deleted cancelled model file: %s", file_path)
-        except OSError as e:
-            log.warning("Failed to delete model file %s: %s", file_path, e)
+        # Delete both the final file and the .incomplete partial file
+        for suffix in ("", ".incomplete"):
+            file_path = os.path.join(models_dir, hf_filename + suffix)
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    log.info("Deleted model file: %s", file_path)
+            except OSError as e:
+                log.warning("Failed to delete model file %s: %s", file_path, e)
 
     def _download_sync(
         self,
@@ -177,6 +179,7 @@ class DownloadManager:
                 filename=hf_filename,
                 local_dir=models_dir,
                 tqdm_class=_ProgressBar,
+                force_download=True,
             )
 
             # Check for cancellation after download completed

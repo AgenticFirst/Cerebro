@@ -35,21 +35,28 @@ export default function DownloadProgress({ progress, onCancel }: DownloadProgres
       : 0;
 
   const isVerifying = progress.status === 'verifying';
+  const isStarting = !isVerifying && progress.total_bytes === 0;
 
   return (
     <div className="space-y-2">
       {/* Progress bar */}
       <div className="h-2 rounded-full bg-bg-base overflow-hidden">
-        <div
-          className="h-full rounded-full bg-accent transition-all duration-300 ease-out"
-          style={{ width: `${isVerifying ? 100 : percent}%` }}
-        />
+        {isStarting ? (
+          <div className="h-full w-full bg-accent/40 animate-pulse rounded-full" />
+        ) : (
+          <div
+            className="h-full rounded-full bg-accent transition-all duration-300 ease-out"
+            style={{ width: `${isVerifying ? 100 : percent}%` }}
+          />
+        )}
       </div>
 
       {/* Stats line */}
       <div className="flex items-center justify-between text-xs text-text-tertiary">
         <span>
-          {isVerifying ? (
+          {isStarting ? (
+            'Starting download...'
+          ) : isVerifying ? (
             'Verifying download...'
           ) : (
             <>
