@@ -1,4 +1,4 @@
-import { Users, Zap, Activity, ShieldCheck, Store, Settings } from 'lucide-react';
+import { Users, Zap, Activity, ShieldCheck, Store } from 'lucide-react';
 import type { Screen } from '../../types/chat';
 
 const SCREEN_META: Record<string, { icon: typeof Users; title: string; description: string }> = {
@@ -30,11 +30,6 @@ const SCREEN_META: Record<string, { icon: typeof Users; title: string; descripti
     icon: Store,
     title: 'Marketplace',
     description: 'Browse and install expert packs, action packs, and routine templates.',
-  },
-  settings: {
-    icon: Settings,
-    title: 'Settings',
-    description: 'Memory, context files, preferences, and app configuration.',
   },
 };
 

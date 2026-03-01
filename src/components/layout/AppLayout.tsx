@@ -3,6 +3,7 @@ import Sidebar from './Sidebar';
 import ChatView from '../chat/ChatView';
 import WelcomeView from '../chat/WelcomeView';
 import IntegrationsScreen from '../screens/IntegrationsScreen';
+import SettingsScreen from '../screens/SettingsScreen';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 
 export default function AppLayout() {
@@ -23,6 +24,9 @@ export default function AppLayout() {
     }
     if (activeScreen === 'integrations') {
       return <IntegrationsScreen />;
+    }
+    if (activeScreen === 'settings') {
+      return <SettingsScreen />;
     }
     return <PlaceholderScreen screen={activeScreen} />;
   };
