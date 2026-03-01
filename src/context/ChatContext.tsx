@@ -11,6 +11,7 @@ import type { Conversation, Message, Screen, ToolCall } from '../types/chat';
 import type { BackendResponse, StreamEvent } from '../types/ipc';
 import type { SelectedModel } from '../types/providers';
 import { useProviders } from './ProviderContext';
+import { useMemory } from './MemoryContext';
 import {
   generateId,
   titleFromContent,
@@ -86,6 +87,7 @@ const NO_MODEL_RESPONSE =
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { selectedModel } = useProviders();
+  const { getSystemPrompt, triggerExtraction } = useMemory();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -101,6 +103,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Store selectedModel in a ref so sendMessage always has the latest value
   const selectedModelRef = useRef<SelectedModel | null>(null);
   selectedModelRef.current = selectedModel;
+
+  // Store memory functions in refs for async access
+  const getSystemPromptRef = useRef(getSystemPrompt);
+  getSystemPromptRef.current = getSystemPrompt;
+  const triggerExtractionRef = useRef(triggerExtraction);
+  triggerExtractionRef.current = triggerExtraction;
 
   // ── Load conversations from backend on startup ─────────────────
   useEffect(() => {
@@ -312,6 +320,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           role: 'assistant',
           content: accumulated,
         }).catch(console.error);
+
+        // Trigger memory extraction (fire-and-forget)
+        if (accumulated) {
+          const recentPair = [
+            ...(streamBody.messages as Array<{ role: string; content: string }> || []).slice(-1),
+            { role: 'assistant', content: accumulated },
+          ];
+          triggerExtractionRef.current(conversationId, recentPair);
+        }
       } catch (e) {
         const errorMsg =
           e instanceof Error ? e.message : 'An error occurred while generating a response.';
@@ -378,58 +395,73 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         .map((m) => ({ role: m.role, content: m.content }));
       const chatMessages = [...priorMessages, { role: 'user', content }];
 
-      if (!model) {
-        // No model selected — check if a local model is loaded (backward compat)
-        window.cerebro
-          .invoke<{ state: string; loaded_model_id: string | null }>({
-            method: 'GET',
-            path: '/models/status',
-          })
-          .then((res) => {
+      // Fetch memory-assembled system prompt, then dispatch to model
+      const dispatch = async (messagesWithMemory: Array<{ role: string; content: string }>) => {
+        if (!model) {
+          // No model selected — check if a local model is loaded (backward compat)
+          try {
+            const res = await window.cerebro.invoke<{
+              state: string;
+              loaded_model_id: string | null;
+            }>({ method: 'GET', path: '/models/status' });
             if (res.ok && res.data.state === 'ready' && res.data.loaded_model_id) {
-              streamResponse(convId!, res.data.loaded_model_id, '/models/chat', {
-                messages: chatMessages,
+              await streamResponse(convId!, res.data.loaded_model_id, '/models/chat', {
+                messages: messagesWithMemory,
                 stream: true,
               });
             } else {
               showNoModelMessage(convId!);
             }
-          })
-          .catch(() => {
+          } catch {
             showNoModelMessage(convId!);
-          });
-        return;
-      }
+          }
+          return;
+        }
 
-      if (model.source === 'local') {
-        // Local model — check engine status then stream
-        window.cerebro
-          .invoke<{ state: string; loaded_model_id: string | null }>({
-            method: 'GET',
-            path: '/models/status',
-          })
-          .then((res) => {
+        if (model.source === 'local') {
+          try {
+            const res = await window.cerebro.invoke<{
+              state: string;
+              loaded_model_id: string | null;
+            }>({ method: 'GET', path: '/models/status' });
             if (res.ok && res.data.state === 'ready' && res.data.loaded_model_id) {
-              streamResponse(convId!, model.displayName, '/models/chat', {
-                messages: chatMessages,
+              await streamResponse(convId!, model.displayName, '/models/chat', {
+                messages: messagesWithMemory,
                 stream: true,
               });
             } else {
               showNoModelMessage(convId!);
             }
-          })
-          .catch(() => {
+          } catch {
             showNoModelMessage(convId!);
+          }
+        } else {
+          // Cloud model — stream from /cloud/chat
+          await streamResponse(convId!, model.displayName, '/cloud/chat', {
+            provider: model.provider,
+            model: model.modelId,
+            messages: messagesWithMemory,
+            stream: true,
           });
-      } else {
-        // Cloud model — stream from /cloud/chat
-        streamResponse(convId!, model.displayName, '/cloud/chat', {
-          provider: model.provider,
-          model: model.modelId,
-          messages: chatMessages,
-          stream: true,
-        });
-      }
+        }
+      };
+
+      // Assemble system prompt from memory, then dispatch
+      (async () => {
+        let messagesWithMemory = chatMessages;
+        try {
+          const systemPrompt = await getSystemPromptRef.current(chatMessages);
+          if (systemPrompt) {
+            messagesWithMemory = [
+              { role: 'system', content: systemPrompt },
+              ...chatMessages,
+            ];
+          }
+        } catch {
+          // Memory is non-critical — proceed without it
+        }
+        await dispatch(messagesWithMemory);
+      })();
     },
     [activeConversationId, createConversation, addMessage, streamResponse, showNoModelMessage],
   );

@@ -22,11 +22,11 @@
 | Model provider selection and presets (Anthropic, OpenAI, Google) | Done |
 | Connection status indicators | Done |
 | **3. Memory** | |
-| Memory directory structure and context files (`profile.md`, `style.md`) | Not Started |
-| Context file editor in Settings | Not Started |
-| Inject context files into system prompts | Not Started |
-| Semantic recall storage with auto-extraction from chat | Not Started |
-| Memory viewer in Settings (view, search, delete by scope) | Not Started |
+| Memory directory structure and context files (`profile.md`, `style.md`) | Done |
+| Context file editor in Settings | Done |
+| Inject context files into system prompts | Done |
+| Semantic recall storage with auto-extraction from chat | Done |
+| Memory viewer in Settings (view, search, delete by scope) | Done |
 | **4. Experts** | |
 | Expert data model and schema | Not Started |
 | Experts screen (Cerebro at top, installed expert cards) | Not Started |
