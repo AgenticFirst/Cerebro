@@ -1,7 +1,7 @@
 import { useState, useEffect, type ComponentType } from 'react';
-import { Eye, EyeOff, Shield, Cpu } from 'lucide-react';
+import { Eye, EyeOff, Shield, Cpu, Info } from 'lucide-react';
 import clsx from 'clsx';
-import { AnthropicIcon, OpenAIIcon, GoogleIcon } from '../../icons/BrandIcons';
+import { AnthropicIcon, OpenAIIcon, GoogleIcon, HuggingFaceIcon } from '../../icons/BrandIcons';
 import { useModels } from '../../../context/ModelContext';
 import LocalModelCard from './LocalModelCard';
 
@@ -68,6 +68,17 @@ const PROVIDERS: Provider[] = [
       { id: 'gemini-2-5-pro', name: 'Gemini 2.5 Pro', context: '1M', enabled: true },
       { id: 'gemini-2-0-flash', name: 'Gemini 2.0 Flash', context: '1M', enabled: false },
     ],
+  },
+  {
+    id: 'huggingface',
+    name: 'Hugging Face',
+    subtitle: 'Model downloads',
+    color: 'bg-yellow-500/15',
+    textColor: 'text-yellow-400',
+    icon: HuggingFaceIcon,
+    placeholder: 'hf_...',
+    keyPrefix: 'hf_',
+    models: [],
   },
 ];
 
@@ -224,26 +235,38 @@ function ProviderCard({ provider }: { provider: Provider }) {
         {error && <p className="text-xs text-red-400 mt-1.5">{error}</p>}
       </div>
 
-      {/* Models */}
-      <div className="px-4 pb-3.5">
-        <label className="text-xs font-medium text-text-secondary mb-2 block">Models</label>
-        <div className="space-y-px">
-          {models.map((model) => (
-            <div
-              key={model.id}
-              className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-white/[0.02] transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-text-primary">{model.name}</span>
-                <span className="text-[10px] font-medium text-text-tertiary bg-bg-elevated px-1.5 py-0.5 rounded">
-                  {model.context}
-                </span>
+      {/* Models or info note */}
+      {provider.models.length > 0 ? (
+        <div className="px-4 pb-3.5">
+          <label className="text-xs font-medium text-text-secondary mb-2 block">Models</label>
+          <div className="space-y-px">
+            {models.map((model) => (
+              <div
+                key={model.id}
+                className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-white/[0.02] transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-text-primary">{model.name}</span>
+                  <span className="text-[10px] font-medium text-text-tertiary bg-bg-elevated px-1.5 py-0.5 rounded">
+                    {model.context}
+                  </span>
+                </div>
+                <Toggle enabled={model.enabled} onToggle={() => toggleModel(model.id)} />
               </div>
-              <Toggle enabled={model.enabled} onToggle={() => toggleModel(model.id)} />
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="px-4 pb-3.5">
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-md bg-white/[0.02]">
+            <Info size={14} className="text-text-tertiary flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-text-tertiary leading-relaxed">
+              Token enables authenticated downloads with faster speeds and higher rate limits for
+              supported local models.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -282,14 +305,23 @@ function LocalModelsSection() {
       {hardware && !isLoading && (
         <div className="mb-4 px-3 py-2.5 rounded-lg bg-accent/[0.06] border border-accent/10">
           <p className="text-xs text-text-secondary leading-relaxed">
-            Your machine has <span className="font-medium text-text-primary">{hardware.total_ram_gb} GB RAM</span>
+            Your machine has{' '}
+            <span className="font-medium text-text-primary">{hardware.total_ram_gb} GB RAM</span>
             {hardware.gpu_name && (
-              <> with <span className="font-medium text-text-primary">{hardware.gpu_name}</span></>
+              <>
+                {' '}
+                with <span className="font-medium text-text-primary">{hardware.gpu_name}</span>
+              </>
             )}
             {recommendedModelId && (
-              <> — we recommend <span className="font-medium text-accent">
-                {catalog.find((m) => m.id === recommendedModelId)?.name ?? recommendedModelId}
-              </span> for the best experience</>
+              <>
+                {' '}
+                — we recommend{' '}
+                <span className="font-medium text-accent">
+                  {catalog.find((m) => m.id === recommendedModelId)?.name ?? recommendedModelId}
+                </span>{' '}
+                for the best experience
+              </>
             )}
             .
           </p>

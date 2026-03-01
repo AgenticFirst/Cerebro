@@ -19,6 +19,7 @@ import type {
 import {
   initCredentialStore,
   setCredential,
+  getCredential,
   hasCredential,
   deleteCredential,
   clearCredentials,
@@ -109,6 +110,15 @@ function waitForHealthCheck(port: number): Promise<void> {
   });
 }
 
+async function pushCredentialToBackend(envKey: string, service: string, credKey: string): Promise<void> {
+  const value = getCredential(service, credKey);
+  await makeBackendRequest({
+    method: 'POST',
+    path: '/credentials',
+    body: { key: envKey, value },
+  });
+}
+
 async function startPythonBackend(): Promise<void> {
   const port = await getFreePort();
   const pythonPath = resolvePythonPath();
@@ -123,12 +133,20 @@ async function startPythonBackend(): Promise<void> {
   const modelsDir = path.join(app.getPath('userData'), 'models');
   fs.mkdirSync(modelsDir, { recursive: true });
 
+  // Read HF token from credential store to pass as env var at startup
+  const spawnEnv: Record<string, string> = { ...process.env } as Record<string, string>;
+  const hfToken = getCredential('huggingface', 'api_key');
+  if (hfToken) {
+    spawnEnv.HF_TOKEN = hfToken;
+  }
+
   const proc = spawn(
     pythonPath,
     [scriptPath, '--port', String(port), '--db-path', dbPath, '--models-dir', modelsDir],
     {
       stdio: ['ignore', 'pipe', 'pipe'],
       cwd: path.join(app.getAppPath(), 'backend'),
+      env: spawnEnv,
     },
   );
 
@@ -383,7 +401,13 @@ function registerIpcHandlers(): void {
   // --- Credential storage ---
 
   ipcMain.handle(IPC_CHANNELS.CREDENTIAL_SET, async (_event, request: CredentialSetRequest) => {
-    return setCredential(request.service, request.key, request.value, request.label);
+    const result = setCredential(request.service, request.key, request.value, request.label);
+    if (result.ok && request.service === 'huggingface') {
+      pushCredentialToBackend('HF_TOKEN', 'huggingface', 'api_key').catch((err) => {
+        console.error('[Cerebro] Failed to push HF token to backend:', err);
+      });
+    }
+    return result;
   });
 
   ipcMain.handle(IPC_CHANNELS.CREDENTIAL_HAS, async (_event, request: CredentialIdentifier) => {
@@ -391,7 +415,13 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.CREDENTIAL_DELETE, async (_event, request: CredentialIdentifier) => {
-    return deleteCredential(request.service, request.key);
+    const result = deleteCredential(request.service, request.key);
+    if (result.ok && request.service === 'huggingface') {
+      pushCredentialToBackend('HF_TOKEN', 'huggingface', 'api_key').catch((err) => {
+        console.error('[Cerebro] Failed to clear HF token on backend:', err);
+      });
+    }
+    return result;
   });
 
   ipcMain.handle(IPC_CHANNELS.CREDENTIAL_CLEAR, async (_event, service?: string) => {

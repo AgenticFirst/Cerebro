@@ -37,16 +37,20 @@ class DownloadManager:
         models_dir: str,
     ) -> None:
         """Start a download in a background thread."""
+        from credentials import get_credential
+
         self._loop = asyncio.get_event_loop()
         self.active_model_id = model_id
         self.progress_queue = asyncio.Queue()
         self._cancel_event = threading.Event()
 
+        hf_token = get_credential("HF_TOKEN")
+
         set_model_state(models_dir, model_id, status="downloading")
 
         self._thread = threading.Thread(
             target=self._download_sync,
-            args=(model_id, catalog_entry, models_dir, self.progress_queue, self._cancel_event, self._loop),
+            args=(model_id, catalog_entry, models_dir, self.progress_queue, self._cancel_event, self._loop, hf_token),
             daemon=True,
         )
         self._thread.start()
@@ -89,6 +93,7 @@ class DownloadManager:
         queue: asyncio.Queue[DownloadProgressEvent],
         cancel_event: threading.Event,
         loop: asyncio.AbstractEventLoop,
+        hf_token: str | None = None,
     ) -> None:
         """Synchronous download running in a background thread.
 
@@ -174,12 +179,14 @@ class DownloadManager:
                 def __exit__(self, *args: Any) -> None:
                     self.close()
 
+            log.info("Using HF token: %s", "yes" if hf_token else "no")
             file_path = hf_hub_download(
                 repo_id=hf_repo,
                 filename=hf_filename,
                 local_dir=models_dir,
                 tqdm_class=_ProgressBar,
                 force_download=True,
+                token=hf_token,
             )
 
             # Check for cancellation after download completed

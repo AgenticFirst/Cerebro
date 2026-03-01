@@ -18,6 +18,7 @@
 | Integrations screen (Keys, Models sections) | Done |
 | Secure credential storage (OS keychain) | Done |
 | Local model support (download, manage, run GGUF models locally) | Done |
+| HuggingFace integration (token for authenticated downloads) | Done |
 | Model provider selection and presets (Anthropic, OpenAI, Google) | Not Started |
 | Connection status indicators | Not Started |
 | **3. Memory** | |
@@ -98,3 +99,5 @@
 | Guided first conversation with Cerebro (scripted intro showcasing capabilities) | Not Started |
 | Setup progress checklist (what's configured, what's remaining) | Not Started |
 | Contextual tooltips for key features on first visit | Not Started |
+| **V1** | |
+| HuggingFace Inference API integration | Not Started |

@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 
+from credentials import get_credential, set_credential
 from database import get_db, init_db
 
 # Import models so they register with Base.metadata before create_all()
@@ -41,6 +42,20 @@ app.include_router(models_router, prefix="/models")
 
 @app.get("/health")
 def health():
+    return {"status": "ok"}
+
+
+# ── Credential push (from Electron main process) ─────────────────
+
+
+class CredentialPush(BaseModel):
+    key: str
+    value: str | None = None
+
+
+@app.post("/credentials")
+def push_credential(body: CredentialPush):
+    set_credential(body.key, body.value)
     return {"status": "ok"}
 
 
