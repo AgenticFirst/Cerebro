@@ -31,7 +31,7 @@
 | Automated tests for Memory system (API, extraction, recall, embeddings) | Not Started |
 | **4. Experts** | |
 | Expert data model and schema | Done |
-| Experts screen (Cerebro at top, installed expert cards) | Not Started |
+| Experts screen (Cerebro at top, installed expert cards) | Done |
 | Expert selector tray in Chat | Not Started |
 | Expert-scoped memory and context | Not Started |
 | Built-in starter experts (Executive Assistant, Fitness Coach) | Not Started |

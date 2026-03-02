@@ -309,33 +309,39 @@ export default function ExpertsScreen() {
           }}
         >
           {/* SVG connector lines */}
-          <svg
-            className="absolute pointer-events-none"
-            style={{ top: 0, left: 0, width: 0, height: 0, overflow: 'visible' }}
-          >
-            <defs>
-              <filter id="connectorGlow">
-                <feGaussianBlur stdDeviation="1.5" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-            </defs>
-            {layout.connectors.map((c, i) => {
-              const midY = (c.fromY + c.toY) / 2;
-              return (
-                <path
-                  key={i}
-                  d={`M ${c.fromX} ${c.fromY} C ${c.fromX} ${midY}, ${c.toX} ${midY}, ${c.toX} ${c.toY}`}
-                  fill="none"
-                  stroke="rgba(255,255,255,0.07)"
-                  strokeWidth={1.5}
-                  filter="url(#connectorGlow)"
-                />
-              );
-            })}
-          </svg>
+          {layout.connectors.length > 0 && (
+            <svg
+              className="absolute pointer-events-none"
+              style={{ left: -3000, top: -3000, width: 6000, height: 6000 }}
+            >
+              <g transform="translate(3000, 3000)">
+                {layout.connectors.map((c, i) => {
+                  const midY = (c.fromY + c.toY) / 2;
+                  const d = `M ${c.fromX} ${c.fromY} C ${c.fromX} ${midY}, ${c.toX} ${midY}, ${c.toX} ${c.toY}`;
+                  return (
+                    <g key={i}>
+                      {/* Glow layer */}
+                      <path
+                        d={d}
+                        fill="none"
+                        stroke="rgba(6, 182, 212, 0.15)"
+                        strokeWidth={6}
+                        strokeLinecap="round"
+                      />
+                      {/* Main line */}
+                      <path
+                        d={d}
+                        fill="none"
+                        stroke="rgba(6, 182, 212, 0.35)"
+                        strokeWidth={1.5}
+                        strokeLinecap="round"
+                      />
+                    </g>
+                  );
+                })}
+              </g>
+            </svg>
+          )}
 
           {/* Team group boxes */}
           {layout.teamGroups.map((group) => {
@@ -395,14 +401,14 @@ export default function ExpertsScreen() {
               {/* Connector stub */}
               <svg
                 className="absolute pointer-events-none"
-                style={{ top: -V_GAP, left: '50%', width: 0, height: 0, overflow: 'visible' }}
+                style={{ top: -V_GAP, left: '50%', width: 2, height: V_GAP }}
               >
                 <line
-                  x1={0}
+                  x1={1}
                   y1={0}
-                  x2={0}
+                  x2={1}
                   y2={V_GAP - 10}
-                  stroke="rgba(255,255,255,0.05)"
+                  stroke="rgba(6, 182, 212, 0.2)"
                   strokeWidth={1.5}
                   strokeDasharray="4 4"
                 />
