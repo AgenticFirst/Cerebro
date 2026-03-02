@@ -23,6 +23,7 @@ from cloud_providers.router import router as cloud_router
 from memory.router import router as memory_router
 from experts.router import router as experts_router
 from agent_runs.router import router as agent_runs_router
+from search.router import router as search_router
 
 
 @asynccontextmanager
@@ -51,6 +52,7 @@ app.include_router(cloud_router, prefix="/cloud")
 app.include_router(memory_router, prefix="/memory")
 app.include_router(experts_router, prefix="/experts")
 app.include_router(agent_runs_router, prefix="/agent-runs")
+app.include_router(search_router, prefix="/search")
 
 
 @app.get("/health")

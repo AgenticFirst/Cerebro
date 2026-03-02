@@ -35,7 +35,7 @@
 | Convert Experts into full agents, with individual models and memory | Done |
 | Expert selector tray in Chat | Done |
 | Expert-scoped memory and context | Done |
-| Web search agent tool (search API integration for grounded answers) | Not Started |
+| Web search agent tool (search API integration for grounded answers) | Done |
 | Expert management (enable, disable, pin) | Not Started |
 | Built-in starter experts (Executive Assistant, Fitness Coach) | Not Started |
 | Write test plan and automated test cases | Not Started |

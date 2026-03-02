@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { ChevronRight, Search, Brain, Zap, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { ChevronRight, Search, Brain, Zap, Globe, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { ToolCall } from '../../types/chat';
 
 const TOOL_ICONS: Record<string, typeof Search> = {
   search_knowledge: Search,
   analyze_intent: Brain,
+  web_search: Globe,
 };
 
 function StatusDot({ status }: { status: ToolCall['status'] }) {

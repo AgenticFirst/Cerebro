@@ -39,6 +39,7 @@ const CREDENTIAL_ENV_KEYS: Record<string, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
   google: 'GOOGLE_API_KEY',
+  tavily: 'TAVILY_API_KEY',
 };
 
 // --- Python backend state ---

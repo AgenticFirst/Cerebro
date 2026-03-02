@@ -83,6 +83,23 @@ export function HuggingFaceIcon({ size = 24, className }: IconProps) {
   );
 }
 
+export function TavilyIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15.5v-3.07l-3.25 1.88-.75-1.3L10.25 13 7 11.01l.75-1.3L11 11.59V8.5h1.5v3.09l3.25-1.88.75 1.3L13.25 13l3.25 1.99-.75 1.3L12.5 14.4v3.1H11z" />
+    </svg>
+  );
+}
+
+export function BraveIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M19.478 4.764L17.951 2.2a.393.393 0 0 0-.399-.2l-2.26.4-1.194-.8a.39.39 0 0 0-.434 0l-1.194.8-1.194-.8a.39.39 0 0 0-.434 0l-1.194.8-2.26-.4a.393.393 0 0 0-.399.2L5.46 4.764a.39.39 0 0 0 .044.453l1.278 1.436-.268 1.965a.39.39 0 0 0 .144.36l4.966 3.826a.39.39 0 0 0 .476 0l4.966-3.826a.39.39 0 0 0 .144-.36l-.268-1.965 1.278-1.436a.39.39 0 0 0 .044-.453zm-3.01 6.02l-4.468 3.44-4.468-3.44.208-1.526-1.122-1.26L8.054 3.23l1.844.326 1.194-.8.908.61.908-.61 1.194.8 1.844-.326 1.436 2.768-1.122 1.26z" />
+      <path d="M12 12.5l-3.5 2.5.5 3.5c.1.7.4 1.4.8 2l2.2 1.5 2.2-1.5c.4-.6.7-1.3.8-2l.5-3.5z" />
+    </svg>
+  );
+}
+
 export function WhatsAppIcon({ size = 24, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
