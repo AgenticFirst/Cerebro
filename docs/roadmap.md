@@ -35,9 +35,8 @@
 | Convert Experts into full agents, with individual models and memory | Not Started |
 | Expert selector tray in Chat | Not Started |
 | Expert-scoped memory and context | Not Started |
-| Built-in starter experts (Executive Assistant, Fitness Coach) | Not Started |
 | Expert management (enable, disable, pin) | Not Started |
-| Cerebro routing logic (delegate to appropriate expert) | Not Started |
+| Built-in starter experts (Executive Assistant, Fitness Coach) | Not Started |
 | Write test plan and automated test cases | Not Started |
 | **5. Execution Engine** | |
 | Action interface (connectors, channels, transformers, model calls) | Not Started |
@@ -55,6 +54,7 @@
 | Cron scheduler for scheduled routines | Not Started |
 | **7. Cerebro Core Intelligence** | |
 | Cerebro system prompt architecture (role definition, tool registry, context/memory injection) | Not Started |
+| Cerebro routing logic (delegate to appropriate expert) | Not Started |
 | Agent conversation loop (message → LLM → tool calls → response agentic cycle) | Not Started |
 | Expert/team proposal and vibe engineering (propose → preview → add expert) | Not Started |
 | Team orchestration tech design and implementation (coordinator agent, delegation, fan-out) | Not Started |

@@ -7,7 +7,7 @@ Each adapter is an async generator that yields ``ChatStreamEvent`` objects
 from __future__ import annotations
 
 import json
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 import httpx
 
@@ -29,6 +29,171 @@ def get_provider_key(provider: str) -> str | None:
     return get_credential(cred_key)
 
 
+# ── Tool format converters ──────────────────────────────────────
+
+
+def _tools_to_anthropic(tools: list[dict]) -> list[dict]:
+    """Convert generic tool defs to Anthropic format."""
+    return [
+        {
+            "name": t["name"],
+            "description": t["description"],
+            "input_schema": t["parameters"],
+        }
+        for t in tools
+    ]
+
+
+def _tools_to_openai(tools: list[dict]) -> list[dict]:
+    """Convert generic tool defs to OpenAI function-calling format."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["parameters"],
+            },
+        }
+        for t in tools
+    ]
+
+
+def _tools_to_google(tools: list[dict]) -> list[dict]:
+    """Convert generic tool defs to Gemini format."""
+    return [
+        {
+            "functionDeclarations": [
+                {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["parameters"],
+                }
+                for t in tools
+            ]
+        }
+    ]
+
+
+def _messages_to_anthropic(messages: list[dict]) -> tuple[list[str], list[dict]]:
+    """Convert messages to Anthropic format, handling tool calls and results."""
+    system_parts: list[str] = []
+    chat_messages: list[dict] = []
+    for m in messages:
+        role = m.get("role", "")
+        if role == "system":
+            system_parts.append(m.get("content", ""))
+        elif role == "assistant":
+            content_parts: list[dict] = []
+            if m.get("content"):
+                content_parts.append({"type": "text", "text": m["content"]})
+            for tc in m.get("tool_calls") or []:
+                args = tc.get("arguments", "{}")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {}
+                content_parts.append({
+                    "type": "tool_use",
+                    "id": tc["id"],
+                    "name": tc["name"],
+                    "input": args,
+                })
+            chat_messages.append({"role": "assistant", "content": content_parts or m.get("content", "")})
+        elif role == "tool":
+            chat_messages.append({
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": m.get("tool_call_id", ""),
+                    "content": m.get("content", ""),
+                }],
+            })
+        else:
+            chat_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+    return system_parts, chat_messages
+
+
+def _messages_to_openai(messages: list[dict]) -> list[dict]:
+    """Convert messages to OpenAI format, handling tool calls and results."""
+    oai_messages: list[dict] = []
+    for m in messages:
+        role = m.get("role", "")
+        if role == "tool":
+            oai_messages.append({
+                "role": "tool",
+                "tool_call_id": m.get("tool_call_id", ""),
+                "content": m.get("content", ""),
+            })
+        elif role == "assistant" and m.get("tool_calls"):
+            msg: dict[str, Any] = {"role": "assistant"}
+            if m.get("content"):
+                msg["content"] = m["content"]
+            else:
+                msg["content"] = None
+            msg["tool_calls"] = [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": tc.get("arguments", "{}") if isinstance(tc.get("arguments"), str) else json.dumps(tc.get("arguments", {})),
+                    },
+                }
+                for tc in m["tool_calls"]
+            ]
+            oai_messages.append(msg)
+        else:
+            oai_messages.append({"role": role, "content": m.get("content", "")})
+    return oai_messages
+
+
+def _messages_to_google(messages: list[dict]) -> tuple[list[str], list[dict]]:
+    """Convert messages to Gemini format, handling tool calls and results."""
+    system_parts: list[str] = []
+    gemini_contents: list[dict] = []
+    for m in messages:
+        role = m.get("role", "")
+        if role == "system":
+            system_parts.append(m.get("content", ""))
+        elif role == "tool":
+            gemini_contents.append({
+                "role": "user",
+                "parts": [{
+                    "functionResponse": {
+                        "name": m.get("tool_name", "tool"),
+                        "response": {"result": m.get("content", "")},
+                    }
+                }],
+            })
+        elif role == "assistant" and m.get("tool_calls"):
+            parts: list[dict] = []
+            if m.get("content"):
+                parts.append({"text": m["content"]})
+            for tc in m["tool_calls"]:
+                args = tc.get("arguments", "{}")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {}
+                parts.append({
+                    "functionCall": {
+                        "name": tc["name"],
+                        "args": args,
+                    }
+                })
+            gemini_contents.append({"role": "model", "parts": parts})
+        else:
+            g_role = "model" if role == "assistant" else "user"
+            gemini_contents.append({
+                "role": g_role,
+                "parts": [{"text": m.get("content", "")}],
+            })
+    return system_parts, gemini_contents
+
+
 # ── Anthropic ────────────────────────────────────────────────────
 
 
@@ -39,15 +204,9 @@ async def stream_anthropic(
     max_tokens: int,
     top_p: float,
     api_key: str,
+    tools: list[dict] | None = None,
 ) -> AsyncGenerator[ChatStreamEvent, None]:
-    # Separate system messages (Anthropic uses a top-level `system` param)
-    system_parts: list[str] = []
-    chat_messages: list[dict] = []
-    for m in messages:
-        if m["role"] == "system":
-            system_parts.append(m["content"])
-        else:
-            chat_messages.append({"role": m["role"], "content": m["content"]})
+    system_parts, chat_messages = _messages_to_anthropic(messages)
 
     body: dict = {
         "model": model,
@@ -59,6 +218,8 @@ async def stream_anthropic(
     }
     if system_parts:
         body["system"] = "\n\n".join(system_parts)
+    if tools:
+        body["tools"] = _tools_to_anthropic(tools)
 
     headers = {
         "x-api-key": api_key,
@@ -83,6 +244,10 @@ async def stream_anthropic(
                                       usage={"error": detail})
                 return
 
+            # Track active tool use blocks
+            active_tool: dict[str, Any] | None = None
+            active_tool_json = ""
+
             async for line in response.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -96,11 +261,33 @@ async def stream_anthropic(
 
                 event_type = data.get("type", "")
 
-                if event_type == "content_block_delta":
+                if event_type == "content_block_start":
+                    block = data.get("content_block", {})
+                    if block.get("type") == "tool_use":
+                        active_tool = {"id": block["id"], "name": block["name"]}
+                        active_tool_json = ""
+
+                elif event_type == "content_block_delta":
                     delta = data.get("delta", {})
-                    text = delta.get("text", "")
-                    if text:
-                        yield ChatStreamEvent(token=text)
+                    delta_type = delta.get("type", "")
+                    if delta_type == "text_delta":
+                        text = delta.get("text", "")
+                        if text:
+                            yield ChatStreamEvent(token=text)
+                    elif delta_type == "input_json_delta" and active_tool:
+                        active_tool_json += delta.get("partial_json", "")
+
+                elif event_type == "content_block_stop":
+                    if active_tool:
+                        yield ChatStreamEvent(
+                            tool_calls=[{
+                                "id": active_tool["id"],
+                                "name": active_tool["name"],
+                                "arguments": active_tool_json,
+                            }]
+                        )
+                        active_tool = None
+                        active_tool_json = ""
 
                 elif event_type == "message_delta":
                     stop_reason = data.get("delta", {}).get("stop_reason")
@@ -126,15 +313,20 @@ async def stream_openai(
     max_tokens: int,
     top_p: float,
     api_key: str,
+    tools: list[dict] | None = None,
 ) -> AsyncGenerator[ChatStreamEvent, None]:
-    body = {
+    oai_messages = _messages_to_openai(messages)
+
+    body: dict[str, Any] = {
         "model": model,
-        "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+        "messages": oai_messages,
         "temperature": temperature,
         "max_completion_tokens": max_tokens,
         "top_p": top_p,
         "stream": True,
     }
+    if tools:
+        body["tools"] = _tools_to_openai(tools)
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -158,11 +350,24 @@ async def stream_openai(
                                       usage={"error": detail})
                 return
 
+            # Accumulate tool calls across streaming chunks
+            pending_tool_calls: dict[int, dict[str, str]] = {}
+
             async for line in response.aiter_lines():
                 if not line.startswith("data: "):
                     continue
                 data_str = line[6:]
                 if data_str.strip() == "[DONE]":
+                    # Emit accumulated tool calls before done
+                    if pending_tool_calls:
+                        calls = []
+                        for _idx, tc in sorted(pending_tool_calls.items()):
+                            calls.append({
+                                "id": tc.get("id", ""),
+                                "name": tc.get("name", ""),
+                                "arguments": tc.get("arguments", ""),
+                            })
+                        yield ChatStreamEvent(tool_calls=calls)
                     yield ChatStreamEvent(done=True, finish_reason="stop")
                     return
                 try:
@@ -181,7 +386,33 @@ async def stream_openai(
                 if content:
                     yield ChatStreamEvent(token=content)
 
+                # Accumulate tool call deltas
+                delta_tool_calls = delta.get("tool_calls")
+                if delta_tool_calls:
+                    for tc_delta in delta_tool_calls:
+                        idx = tc_delta.get("index", 0)
+                        if idx not in pending_tool_calls:
+                            pending_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc_delta.get("id"):
+                            pending_tool_calls[idx]["id"] = tc_delta["id"]
+                        func = tc_delta.get("function", {})
+                        if func.get("name"):
+                            pending_tool_calls[idx]["name"] = func["name"]
+                        if func.get("arguments"):
+                            pending_tool_calls[idx]["arguments"] += func["arguments"]
+
                 if finish_reason:
+                    # Emit accumulated tool calls before finish
+                    if pending_tool_calls:
+                        calls = []
+                        for _idx, tc in sorted(pending_tool_calls.items()):
+                            calls.append({
+                                "id": tc.get("id", ""),
+                                "name": tc.get("name", ""),
+                                "arguments": tc.get("arguments", ""),
+                            })
+                        yield ChatStreamEvent(tool_calls=calls)
+                        pending_tool_calls.clear()
                     usage = data.get("usage")
                     yield ChatStreamEvent(done=True, finish_reason=finish_reason, usage=usage)
                     return
@@ -199,19 +430,9 @@ async def stream_google(
     max_tokens: int,
     top_p: float,
     api_key: str,
+    tools: list[dict] | None = None,
 ) -> AsyncGenerator[ChatStreamEvent, None]:
-    # Convert to Gemini format: role "assistant" → "model", content → parts array
-    system_parts: list[str] = []
-    gemini_contents: list[dict] = []
-    for m in messages:
-        if m["role"] == "system":
-            system_parts.append(m["content"])
-        else:
-            role = "model" if m["role"] == "assistant" else "user"
-            gemini_contents.append({
-                "role": role,
-                "parts": [{"text": m["content"]}],
-            })
+    system_parts, gemini_contents = _messages_to_google(messages)
 
     body: dict = {
         "contents": gemini_contents,
@@ -225,6 +446,8 @@ async def stream_google(
         body["systemInstruction"] = {
             "parts": [{"text": "\n\n".join(system_parts)}],
         }
+    if tools:
+        body["tools"] = _tools_to_google(tools)
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={api_key}"
 
@@ -252,10 +475,21 @@ async def stream_google(
                 candidates = data.get("candidates", [])
                 if candidates:
                     parts = candidates[0].get("content", {}).get("parts", [])
+                    tool_calls_batch: list[dict] = []
                     for part in parts:
                         text = part.get("text", "")
                         if text:
                             yield ChatStreamEvent(token=text)
+                        fc = part.get("functionCall")
+                        if fc:
+                            import uuid
+                            tool_calls_batch.append({
+                                "id": f"call_{uuid.uuid4().hex[:8]}",
+                                "name": fc.get("name", ""),
+                                "arguments": json.dumps(fc.get("args", {})),
+                            })
+                    if tool_calls_batch:
+                        yield ChatStreamEvent(tool_calls=tool_calls_batch)
 
                 # Check for usage metadata (signals end)
                 usage = data.get("usageMetadata")

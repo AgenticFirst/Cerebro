@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 # ── Catalog ──────────────────────────────────────────────────────
 
-ModelTier = Literal["starter", "balanced", "power"]
+ModelTier = Literal["starter", "balanced", "power", "agent"]
 ModelStatus = Literal["available", "downloading", "downloaded", "interrupted"]
 Architecture = Literal["dense", "moe"]
 
@@ -33,6 +33,7 @@ class ModelInfo(BaseModel):
     hf_filename: str
     requires_ram_gb: int
     recommended_ram_gb: int
+    supports_tools: bool = False
     # On-disk state (defaults for "not downloaded")
     status: ModelStatus = "available"
     file_path: str | None = None
@@ -111,9 +112,10 @@ class ChatRequest(BaseModel):
 
 
 class ChatStreamEvent(BaseModel):
-    """SSE event for chat streaming. Either a token chunk or a done signal."""
+    """SSE event for chat streaming. Either a token chunk, tool call, or a done signal."""
 
     token: str | None = None
     done: bool = False
     finish_reason: str | None = None
     usage: dict | None = None
+    tool_calls: list[dict] | None = None  # [{id, name, arguments}]

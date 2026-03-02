@@ -28,7 +28,21 @@ async def cloud_chat(body: CloudChatRequest):
     if not adapter:
         raise HTTPException(status_code=400, detail=f"Unknown provider: {body.provider}")
 
-    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+    messages = []
+    for m in body.messages:
+        msg: dict = {"role": m.role}
+        if m.content is not None:
+            msg["content"] = m.content
+        if m.tool_calls:
+            msg["tool_calls"] = [tc.model_dump() for tc in m.tool_calls]
+        if m.tool_call_id:
+            msg["tool_call_id"] = m.tool_call_id
+        messages.append(msg)
+
+    # Convert tool definitions for the adapter
+    tools_dicts = None
+    if body.tools:
+        tools_dicts = [t.model_dump() for t in body.tools]
 
     async def event_stream() -> AsyncGenerator[str, None]:
         try:
@@ -39,6 +53,7 @@ async def cloud_chat(body: CloudChatRequest):
                 max_tokens=body.max_tokens,
                 top_p=body.top_p,
                 api_key=api_key,
+                tools=tools_dicts,
             ):
                 yield f"data: {event.model_dump_json()}\n\n"
         except Exception as e:
