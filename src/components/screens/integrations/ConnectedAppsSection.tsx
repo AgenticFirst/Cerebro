@@ -139,7 +139,7 @@ function TavilyCard() {
     setStatus('verifying');
     setError('');
     try {
-      const res = await window.cerebro.backend.request({
+      const res = await window.cerebro.invoke({
         method: 'POST',
         path: '/search/verify',
       });

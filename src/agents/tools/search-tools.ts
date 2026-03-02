@@ -88,8 +88,14 @@ export function createWebSearch(ctx: ToolContext): AgentTool {
 
       // Handle error responses from the backend (e.g. no API key)
       if (!res.results) {
-        const errMsg = (res as any)?.detail ?? 'No search results returned.';
-        return textResult(`Web search error: ${errMsg}`);
+        const detail = (res as any)?.detail ?? '';
+        if (detail.toLowerCase().includes('no tavily api key') || detail.toLowerCase().includes('api key')) {
+          return textResult(
+            'Web search is not available — no Tavily API key is configured. ' +
+            'Tell the user they can add a free Tavily API key in Integrations → Connected Apps to enable web search.',
+          );
+        }
+        return textResult(`Web search error: ${detail || 'No search results returned.'}`);
       }
 
       if (res.results.length === 0) {

@@ -37,7 +37,7 @@
 | Expert-scoped memory and context | Done |
 | Web search agent tool (search API integration for grounded answers) | Done |
 | Expert management (enable, disable, pin) | Not Started |
-| Built-in starter experts (Executive Assistant, Fitness Coach) | Not Started |
+| Built-in starter experts templates (only Fitness Coach (Workout Expert) for v0) | Not Started |
 | Write test plan and automated test cases | Not Started |
 | **5. Execution Engine** | |
 | Action interface (connectors, channels, transformers, model calls) | Not Started |
