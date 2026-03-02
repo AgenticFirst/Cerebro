@@ -99,8 +99,10 @@ class LoadModelRequest(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    role: Literal["system", "user", "assistant"]
+    role: Literal["system", "user", "assistant", "tool"]
     content: str
+    tool_calls: list[dict] | None = None  # For assistant messages with tool calls
+    tool_call_id: str | None = None  # For tool result messages
 
 
 class ChatRequest(BaseModel):
@@ -109,6 +111,7 @@ class ChatRequest(BaseModel):
     max_tokens: int = 4096
     stream: bool = True
     top_p: float = 0.95
+    tools: list[dict] | None = None  # [{name, description, parameters}]
 
 
 class ChatStreamEvent(BaseModel):

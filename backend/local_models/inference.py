@@ -108,6 +108,7 @@ class InferenceEngine:
         temperature: float = 0.7,
         max_tokens: int = 4096,
         top_p: float = 0.95,
+        tools: list[dict] | None = None,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         """Stream chat completions, yielding token events."""
         if self._model is None:
@@ -121,19 +122,41 @@ class InferenceEngine:
         def _run_inference() -> None:
             try:
                 log.info("Starting inference with %d messages", len(messages))
-                response = self._model.create_chat_completion(
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    top_p=top_p,
-                    stream=True,
-                )
+
+                # Build kwargs
+                kwargs: dict = {
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "top_p": top_p,
+                    "stream": True,
+                }
+
+                # Add tools if provided (for tool-capable models)
+                if tools:
+                    # Convert to llama-cpp format
+                    llama_tools = []
+                    for t in tools:
+                        llama_tools.append({
+                            "type": "function",
+                            "function": {
+                                "name": t["name"],
+                                "description": t.get("description", ""),
+                                "parameters": t.get("parameters", {}),
+                            },
+                        })
+                    kwargs["tools"] = llama_tools
+
+                response = self._model.create_chat_completion(**kwargs)
 
                 token_count = 0
+                pending_tool_calls: dict[int, dict] = {}
+
                 for chunk in response:
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    choice = chunk.get("choices", [{}])[0]
+                    delta = choice.get("delta", {})
                     content = delta.get("content")
-                    finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
+                    finish_reason = choice.get("finish_reason")
 
                     if content:
                         token_count += 1
@@ -142,7 +165,37 @@ class InferenceEngine:
                             ChatStreamEvent(token=content),
                         )
 
+                    # Handle tool call deltas
+                    delta_tool_calls = delta.get("tool_calls")
+                    if delta_tool_calls:
+                        for tc_delta in delta_tool_calls:
+                            idx = tc_delta.get("index", 0)
+                            if idx not in pending_tool_calls:
+                                pending_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
+                            if tc_delta.get("id"):
+                                pending_tool_calls[idx]["id"] = tc_delta["id"]
+                            func = tc_delta.get("function", {})
+                            if func.get("name"):
+                                pending_tool_calls[idx]["name"] = func["name"]
+                            if func.get("arguments"):
+                                pending_tool_calls[idx]["arguments"] += func["arguments"]
+
                     if finish_reason:
+                        # Emit tool calls if any
+                        if pending_tool_calls:
+                            calls = []
+                            for _idx, tc in sorted(pending_tool_calls.items()):
+                                calls.append({
+                                    "id": tc.get("id", ""),
+                                    "name": tc.get("name", ""),
+                                    "arguments": tc.get("arguments", ""),
+                                })
+                            loop.call_soon_threadsafe(
+                                queue.put_nowait,
+                                ChatStreamEvent(tool_calls=calls),
+                            )
+                            pending_tool_calls.clear()
+
                         usage = chunk.get("usage")
                         loop.call_soon_threadsafe(
                             queue.put_nowait,

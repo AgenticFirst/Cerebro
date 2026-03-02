@@ -30,6 +30,8 @@ export interface Message {
   content: string;
   model?: string;
   tokenCount?: number;
+  expertId?: string;
+  agentRunId?: string;
   createdAt: Date;
   isStreaming?: boolean;
   isThinking?: boolean;

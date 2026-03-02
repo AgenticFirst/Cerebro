@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { X, Copy, Check, Trash2, UserPlus, XCircle, Users } from 'lucide-react';
 import clsx from 'clsx';
 import type { Expert } from '../../../context/ExpertContext';
+import ExpertModelSelector from '../../experts/ExpertModelSelector';
+import ExpertMemoryTab from '../../experts/ExpertMemoryTab';
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -340,6 +342,11 @@ export default function ExpertDetailPanel({
               />
             </Section>
 
+            {/* Model Override */}
+            <Section label="MODEL">
+              <ExpertModelSelector expert={expert} onUpdate={onUpdate} />
+            </Section>
+
             {/* Settings */}
             <Section label="SETTINGS">
               <div className="space-y-3">
@@ -358,6 +365,11 @@ export default function ExpertDetailPanel({
                   />
                 </div>
               </div>
+            </Section>
+
+            {/* Expert Memory */}
+            <Section label="MEMORY">
+              <ExpertMemoryTab expert={expert} />
             </Section>
 
             {/* Info */}

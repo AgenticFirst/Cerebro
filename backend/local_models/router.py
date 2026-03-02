@@ -232,7 +232,15 @@ async def chat(body: ChatRequest):
     if not _inference_engine.is_ready:
         raise HTTPException(status_code=400, detail="No model loaded")
 
-    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+    # Convert messages, preserving tool_calls and tool_call_id for multi-turn tool use
+    messages = []
+    for m in body.messages:
+        msg: dict = {"role": m.role, "content": m.content}
+        if m.tool_calls:
+            msg["tool_calls"] = m.tool_calls
+        if m.tool_call_id:
+            msg["tool_call_id"] = m.tool_call_id
+        messages.append(msg)
 
     async def event_stream() -> AsyncGenerator[str, None]:
         assert _inference_engine is not None
@@ -241,6 +249,7 @@ async def chat(body: ChatRequest):
             temperature=body.temperature,
             max_tokens=body.max_tokens,
             top_p=body.top_p,
+            tools=body.tools,
         ):
             yield f"data: {event.model_dump_json()}\n\n"
 

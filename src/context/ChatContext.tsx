@@ -8,9 +8,10 @@ import {
   type ReactNode,
 } from 'react';
 import type { Conversation, Message, Screen, ToolCall } from '../types/chat';
-import type { BackendResponse, StreamEvent } from '../types/ipc';
-import type { SelectedModel } from '../types/providers';
+import type { BackendResponse, StreamEvent, RendererAgentEvent } from '../types/ipc';
+import type { SelectedModel, ProviderConnectionState } from '../types/providers';
 import { useProviders } from './ProviderContext';
+import { useModels } from './ModelContext';
 import { useMemory } from './MemoryContext';
 import {
   generateId,
@@ -19,6 +20,12 @@ import {
   type ApiConversationList,
 } from './chat-helpers';
 
+export interface ChatError {
+  title: string;
+  message: string;
+  navigateTo?: Screen;
+}
+
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
@@ -26,6 +33,8 @@ interface ChatState {
   isThinking: boolean;
   isLoading: boolean;
   activeScreen: Screen;
+  activeExpertId: string | null;
+  chatError: ChatError | null;
 }
 
 interface ChatActions {
@@ -36,6 +45,8 @@ interface ChatActions {
   deleteConversation: (id: string) => void;
   setActiveScreen: (screen: Screen) => void;
   sendMessage: (content: string) => void;
+  setActiveExpertId: (id: string | null) => void;
+  dismissChatError: () => void;
 }
 
 type ChatContextValue = ChatState &
@@ -66,7 +77,7 @@ function apiCreateConversation(id: string, title: string): Promise<unknown> {
 
 function apiCreateMessage(
   convId: string,
-  msg: { id: string; role: string; content: string },
+  msg: { id: string; role: string; content: string; expert_id?: string; agent_run_id?: string },
 ): Promise<unknown> {
   return window.cerebro.invoke({
     method: 'POST',
@@ -86,7 +97,8 @@ const NO_MODEL_RESPONSE =
   'No model is currently loaded. Go to **Integrations** to download and load a local model, or configure a cloud API key.';
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const { selectedModel } = useProviders();
+  const { selectedModel, connectionStatus } = useProviders();
+  const { engineStatus } = useModels();
   const { getSystemPrompt, triggerExtraction } = useMemory();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
@@ -94,19 +106,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [isThinking, setIsThinking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [activeScreen, setActiveScreen] = useState<Screen>('chat');
-  const abortRef = useRef<AbortController | null>(null);
+  const [activeExpertId, setActiveExpertId] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<ChatError | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
 
   // Keep ref in sync so async callbacks always see latest state
   conversationsRef.current = conversations;
 
-  // Store selectedModel in a ref so sendMessage always has the latest value
+  // Store refs so sendMessage always sees latest values
   const selectedModelRef = useRef<SelectedModel | null>(null);
   selectedModelRef.current = selectedModel;
 
+  const engineStatusRef = useRef(engineStatus);
+  engineStatusRef.current = engineStatus;
+
+  const connectionStatusRef = useRef<Record<string, ProviderConnectionState>>({});
+  connectionStatusRef.current = connectionStatus;
+
   // Store memory functions in refs for async access
-  const getSystemPromptRef = useRef(getSystemPrompt);
-  getSystemPromptRef.current = getSystemPrompt;
   const triggerExtractionRef = useRef(triggerExtraction);
   triggerExtractionRef.current = triggerExtraction;
 
@@ -218,27 +235,63 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const dismissChatError = useCallback(() => setChatError(null), []);
+
   const deleteConversation = useCallback((id: string) => {
     setConversations((prev) => prev.filter((c) => c.id !== id));
     setActiveConversationIdState((current) => (current === id ? null : current));
     apiDeleteConversation(id).catch(console.error);
   }, []);
 
-  // ── Shared streaming helper ────────────────────────────────────
-  const streamResponse = useCallback(
-    async (
-      conversationId: string,
-      modelDisplayName: string,
-      streamPath: string,
-      streamBody: Record<string, unknown>,
-    ) => {
+  const sendMessage = useCallback(
+    (content: string) => {
+      // ── Guard: require a usable model before doing anything ──
+      const sel = selectedModelRef.current;
+      const localReady = engineStatusRef.current.state === 'ready';
+      let modelUsable = false;
+
+      if (sel) {
+        if (sel.source === 'local') {
+          // Local model: engine must be ready
+          modelUsable = localReady;
+        } else if (sel.source === 'cloud' && sel.provider) {
+          // Cloud model: provider must have a key configured
+          const cs = connectionStatusRef.current[sel.provider];
+          modelUsable = !!cs && cs.status !== 'not_configured';
+        }
+      }
+
+      // Fallback: even if selected_model is stale, a loaded local model is usable
+      if (!modelUsable && localReady) {
+        modelUsable = true;
+      }
+
+      if (!modelUsable) {
+        setChatError({
+          title: 'No model configured',
+          message:
+            'Set up a model provider (Anthropic, OpenAI, or Google) or download a local model before chatting.',
+          navigateTo: 'integrations',
+        });
+        return;
+      }
+
+      let convId = activeConversationId;
+      if (!convId) {
+        convId = createConversation(content);
+      }
+      addMessage(convId, 'user', content);
+
+      const expertId = activeExpertId;
+
+      // Create placeholder assistant message
       const assistantId = generateId();
       const thinkingMessage: Message = {
         id: assistantId,
-        conversationId,
+        conversationId: convId,
         role: 'assistant',
         content: '',
-        model: modelDisplayName,
+        expertId: expertId ?? undefined,
         createdAt: new Date(),
         isThinking: true,
       };
@@ -246,7 +299,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setIsThinking(true);
       setConversations((prev) =>
         prev.map((c) =>
-          c.id === conversationId
+          c.id === convId
             ? {
                 ...c,
                 messages: [...c.messages, thinkingMessage],
@@ -256,214 +309,141 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         ),
       );
 
-      try {
-        const streamId = await window.cerebro.startStream({
-          method: 'POST',
-          path: streamPath,
-          body: streamBody,
-        });
-
-        setIsThinking(false);
-        setIsStreaming(true);
-        updateMessage(conversationId, assistantId, {
-          isThinking: false,
-          isStreaming: true,
-        });
-
-        let accumulated = '';
-
-        await new Promise<void>((resolve, reject) => {
-          const unsub = window.cerebro.onStream(streamId, (event: StreamEvent) => {
-            if (event.event === 'data') {
-              try {
-                const data = JSON.parse(event.data);
-                if (data.token) {
-                  accumulated += data.token;
-                  updateMessage(conversationId, assistantId, { content: accumulated });
-                }
-                if (data.done) {
-                  // Check if this is an error response (finish_reason "error" with no content)
-                  if (data.finish_reason === 'error') {
-                    const errorDetail = data.usage?.error || 'Request failed';
-                    unsub();
-                    reject(new Error(errorDetail));
-                    return;
-                  }
-                  unsub();
-                  resolve();
-                }
-              } catch {
-                // ignore parse errors
-              }
-            } else if (event.event === 'end') {
-              unsub();
-              // If stream ended with no content at all, treat as error
-              if (!accumulated) {
-                reject(new Error('No response received from the model. Check your API key and model configuration.'));
-              } else {
-                resolve();
-              }
-            } else if (event.event === 'error') {
-              unsub();
-              reject(new Error(event.data));
-            }
-          });
-        });
-
-        // Finalize
-        updateMessage(conversationId, assistantId, {
-          content: accumulated,
-          isStreaming: false,
-        });
-        apiCreateMessage(conversationId, {
-          id: assistantId,
-          role: 'assistant',
-          content: accumulated,
-        }).catch(console.error);
-
-        // Trigger memory extraction (fire-and-forget)
-        if (accumulated) {
-          const recentPair = [
-            ...(streamBody.messages as Array<{ role: string; content: string }> || []).slice(-1),
-            { role: 'assistant', content: accumulated },
-          ];
-          triggerExtractionRef.current(conversationId, recentPair);
-        }
-      } catch (e) {
-        const errorMsg =
-          e instanceof Error ? e.message : 'An error occurred while generating a response.';
-        updateMessage(conversationId, assistantId, {
-          content: `Error: ${errorMsg}`,
-          isThinking: false,
-          isStreaming: false,
-        });
-      } finally {
-        setIsStreaming(false);
-        setIsThinking(false);
-      }
-    },
-    [updateMessage],
-  );
-
-  // Fallback when no model is selected
-  const showNoModelMessage = useCallback(
-    (conversationId: string) => {
-      const assistantId = generateId();
-      const message: Message = {
-        id: assistantId,
-        conversationId,
-        role: 'assistant',
-        content: NO_MODEL_RESPONSE,
-        createdAt: new Date(),
-      };
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === conversationId
-            ? {
-                ...c,
-                messages: [...c.messages, message],
-                updatedAt: new Date(),
-              }
-            : c,
-        ),
-      );
-      apiCreateMessage(conversationId, {
-        id: assistantId,
-        role: 'assistant',
-        content: NO_MODEL_RESPONSE,
-      }).catch(console.error);
-    },
-    [],
-  );
-
-  const sendMessage = useCallback(
-    (content: string) => {
-      let convId = activeConversationId;
-      if (!convId) {
-        convId = createConversation(content);
-      }
-      addMessage(convId, 'user', content);
-
-      const model = selectedModelRef.current;
-
-      // Build message history including the just-sent user message.
-      // We can't rely on conversationsRef (state hasn't flushed yet),
-      // so we read the ref and append the current message manually.
-      const conv = conversationsRef.current.find((c) => c.id === convId);
-      const priorMessages = (conv?.messages ?? [])
-        .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content))
-        .map((m) => ({ role: m.role, content: m.content }));
-      const chatMessages = [...priorMessages, { role: 'user', content }];
-
-      // Fetch memory-assembled system prompt, then dispatch to model
-      const dispatch = async (messagesWithMemory: Array<{ role: string; content: string }>) => {
-        if (!model) {
-          // No model selected — check if a local model is loaded (backward compat)
-          try {
-            const res = await window.cerebro.invoke<{
-              state: string;
-              loaded_model_id: string | null;
-            }>({ method: 'GET', path: '/models/status' });
-            if (res.ok && res.data.state === 'ready' && res.data.loaded_model_id) {
-              await streamResponse(convId!, res.data.loaded_model_id, '/models/chat', {
-                messages: messagesWithMemory,
-                stream: true,
-              });
-            } else {
-              showNoModelMessage(convId!);
-            }
-          } catch {
-            showNoModelMessage(convId!);
-          }
-          return;
-        }
-
-        if (model.source === 'local') {
-          try {
-            const res = await window.cerebro.invoke<{
-              state: string;
-              loaded_model_id: string | null;
-            }>({ method: 'GET', path: '/models/status' });
-            if (res.ok && res.data.state === 'ready' && res.data.loaded_model_id) {
-              await streamResponse(convId!, model.displayName, '/models/chat', {
-                messages: messagesWithMemory,
-                stream: true,
-              });
-            } else {
-              showNoModelMessage(convId!);
-            }
-          } catch {
-            showNoModelMessage(convId!);
-          }
-        } else {
-          // Cloud model — stream from /cloud/chat
-          await streamResponse(convId!, model.displayName, '/cloud/chat', {
-            provider: model.provider,
-            model: model.modelId,
-            messages: messagesWithMemory,
-            stream: true,
-          });
-        }
-      };
-
-      // Assemble system prompt from memory, then dispatch
-      (async () => {
-        let messagesWithMemory = chatMessages;
+      // Route through agent system
+      const runAgent = async () => {
         try {
-          const systemPrompt = await getSystemPromptRef.current(chatMessages);
-          if (systemPrompt) {
-            messagesWithMemory = [
-              { role: 'system', content: systemPrompt },
-              ...chatMessages,
-            ];
+          const runId = await window.cerebro.agent.run({
+            conversationId: convId!,
+            content,
+            expertId,
+          });
+
+          setIsThinking(false);
+          setIsStreaming(true);
+          updateMessage(convId!, assistantId, { isThinking: false, isStreaming: true });
+
+          let accumulated = '';
+          const toolCalls: ToolCall[] = [];
+
+          const unsub = window.cerebro.agent.onEvent(runId, (event: RendererAgentEvent) => {
+            switch (event.type) {
+              case 'text_delta':
+                accumulated += event.delta;
+                updateMessage(convId!, assistantId, { content: accumulated });
+                break;
+
+              case 'tool_start':
+                toolCalls.push({
+                  id: event.toolCallId,
+                  name: event.toolName,
+                  description: event.toolName,
+                  arguments: event.args as Record<string, unknown>,
+                  status: 'running',
+                  startedAt: new Date(),
+                });
+                updateMessage(convId!, assistantId, { toolCalls: [...toolCalls] });
+                break;
+
+              case 'tool_end': {
+                const tc = toolCalls.find((t) => t.id === event.toolCallId);
+                if (tc) {
+                  tc.status = event.isError ? 'error' : 'success';
+                  tc.output = event.result;
+                  tc.completedAt = new Date();
+                  updateMessage(convId!, assistantId, { toolCalls: [...toolCalls] });
+                }
+                break;
+              }
+
+              case 'done':
+                unsub();
+                setIsStreaming(false);
+                updateMessage(convId!, assistantId, {
+                  content: event.messageContent || accumulated,
+                  isStreaming: false,
+                  agentRunId: runId,
+                });
+                // Persist final message
+                apiCreateMessage(convId!, {
+                  id: assistantId,
+                  role: 'assistant',
+                  content: event.messageContent || accumulated,
+                  expert_id: expertId ?? undefined,
+                  agent_run_id: runId,
+                }).catch(console.error);
+                break;
+
+              case 'error': {
+                unsub();
+                setIsStreaming(false);
+                setIsThinking(false);
+
+                const isNoModel =
+                  /no model/i.test(event.error) || /not.*available/i.test(event.error);
+
+                if (isNoModel) {
+                  setConversations((prev) =>
+                    prev.map((c) =>
+                      c.id === convId
+                        ? { ...c, messages: c.messages.filter((m) => m.id !== assistantId) }
+                        : c,
+                    ),
+                  );
+                  setChatError({
+                    title: 'No model configured',
+                    message:
+                      'Set up a model provider (Anthropic, OpenAI, or Google) or download a local model before chatting.',
+                    navigateTo: 'integrations',
+                  });
+                } else {
+                  updateMessage(convId!, assistantId, {
+                    content: `Error: ${event.error}`,
+                    isThinking: false,
+                    isStreaming: false,
+                  });
+                }
+                break;
+              }
+            }
+          });
+        } catch (e) {
+          const errorMsg =
+            e instanceof Error ? e.message : 'An error occurred while starting the agent.';
+          setIsStreaming(false);
+          setIsThinking(false);
+
+          // Detect "no model" errors and show modal instead of inline error
+          const isNoModel =
+            /no model/i.test(errorMsg) || /not.*available/i.test(errorMsg);
+
+          if (isNoModel) {
+            // Remove the thinking placeholder — no point showing an error bubble
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === convId
+                  ? { ...c, messages: c.messages.filter((m) => m.id !== assistantId) }
+                  : c,
+              ),
+            );
+            setChatError({
+              title: 'No model configured',
+              message:
+                'Set up a model provider (Anthropic, OpenAI, or Google) or download a local model before chatting.',
+              navigateTo: 'integrations',
+            });
+          } else {
+            updateMessage(convId!, assistantId, {
+              content: `Error: ${errorMsg}`,
+              isThinking: false,
+              isStreaming: false,
+            });
           }
-        } catch {
-          // Memory is non-critical — proceed without it
         }
-        await dispatch(messagesWithMemory);
-      })();
+      };
+
+      runAgent();
     },
-    [activeConversationId, createConversation, addMessage, streamResponse, showNoModelMessage],
+    [activeConversationId, activeExpertId, createConversation, addMessage, updateMessage],
   );
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
@@ -477,6 +457,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         isThinking,
         isLoading,
         activeScreen,
+        activeExpertId,
+        chatError,
         activeConversation,
         createConversation,
         setActiveConversation,
@@ -485,6 +467,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         deleteConversation,
         setActiveScreen,
         sendMessage,
+        setActiveExpertId,
+        dismissChatError,
       }}
     >
       {children}

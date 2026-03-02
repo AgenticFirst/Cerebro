@@ -32,9 +32,9 @@
 | **4. Experts** | |
 | Expert data model and schema | Done |
 | Experts screen (Cerebro at top, installed expert cards) | Done |
-| Convert Experts into full agents, with individual models and memory | Not Started |
-| Expert selector tray in Chat | Not Started |
-| Expert-scoped memory and context | Not Started |
+| Convert Experts into full agents, with individual models and memory | Done |
+| Expert selector tray in Chat | Done |
+| Expert-scoped memory and context | Done |
 | Expert management (enable, disable, pin) | Not Started |
 | Built-in starter experts (Executive Assistant, Fitness Coach) | Not Started |
 | Write test plan and automated test cases | Not Started |

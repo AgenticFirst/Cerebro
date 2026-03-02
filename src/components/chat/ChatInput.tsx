@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, type KeyboardEvent, type ChangeEvent } f
 import { ArrowUp, Square } from 'lucide-react';
 import clsx from 'clsx';
 import ModelSelector from './ModelSelector';
+import ExpertTray from './ExpertTray';
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -49,6 +50,7 @@ export default function ChatInput({ onSend, isStreaming = false }: ChatInputProp
       <div className="flex items-center px-1">
         <ModelSelector />
       </div>
+      <ExpertTray />
       <div
         className={clsx(
           'relative flex items-center gap-2 rounded-xl border px-4 py-3',

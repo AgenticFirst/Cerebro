@@ -68,19 +68,10 @@ export class AgentRuntime {
       }
     }
 
-    // Resolve model
+    // Resolve model — throw so the renderer catch block can show a modal
     const resolvedModel = await resolveModel(expertModelConfig, this.backendPort);
     if (!resolvedModel) {
-      const errorEvent: RendererAgentEvent = {
-        type: 'error',
-        runId,
-        error: 'No model is currently available. Go to Integrations to configure a model.',
-      };
-      const channel = `agent:event:${runId}`;
-      if (!webContents.isDestroyed()) {
-        webContents.send(channel, errorEvent);
-      }
-      return runId;
+      throw new Error('No model is currently available. Go to Integrations to configure a model.');
     }
 
     // Fetch memory-assembled system prompt

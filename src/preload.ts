@@ -11,6 +11,9 @@ import type {
   CredentialResult,
   CredentialInfo,
   DiskSpace,
+  AgentRunRequest,
+  RendererAgentEvent,
+  ActiveRunInfo,
 } from './types/ipc';
 
 const api: CerebroAPI = {
@@ -67,6 +70,28 @@ const api: CerebroAPI = {
     },
     getDiskSpace(): Promise<DiskSpace> {
       return ipcRenderer.invoke(IPC_CHANNELS.MODELS_DISK_SPACE);
+    },
+  },
+
+  agent: {
+    run(request: AgentRunRequest): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.AGENT_RUN, request);
+    },
+    cancel(runId: string): Promise<boolean> {
+      return ipcRenderer.invoke(IPC_CHANNELS.AGENT_CANCEL, runId);
+    },
+    activeRuns(): Promise<ActiveRunInfo[]> {
+      return ipcRenderer.invoke(IPC_CHANNELS.AGENT_ACTIVE_RUNS);
+    },
+    onEvent(runId: string, callback: (event: RendererAgentEvent) => void): () => void {
+      const channel = IPC_CHANNELS.agentEvent(runId);
+      const listener = (_event: Electron.IpcRendererEvent, data: RendererAgentEvent) => {
+        callback(data);
+      };
+      ipcRenderer.on(channel, listener);
+      return () => {
+        ipcRenderer.removeListener(channel, listener);
+      };
     },
   },
 };

@@ -13,6 +13,13 @@ import type { BackendResponse } from '../types/ipc';
 export type ExpertType = 'expert' | 'team';
 export type ExpertSource = 'builtin' | 'user' | 'marketplace';
 
+export interface ExpertModelConfig {
+  source: 'local' | 'cloud';
+  provider?: string | null;
+  model_id: string;
+  display_name: string;
+}
+
 export interface Expert {
   id: string;
   slug: string | null;
@@ -30,6 +37,9 @@ export interface Expert {
   recommendedRoutines: string[] | null;
   teamMembers: Array<{ expertId: string; role: string; order: number }> | null;
   avatarUrl: string | null;
+  modelConfigData: ExpertModelConfig | null;
+  maxTurns: number;
+  tokenBudget: number;
   version: string;
   lastActiveAt: string | null;
   createdAt: string;
@@ -63,6 +73,9 @@ interface ApiExpert {
   recommended_routines: string[] | null;
   team_members: Array<{ expert_id: string; role: string; order: number }> | null;
   avatar_url: string | null;
+  model_config_data: ExpertModelConfig | null;
+  max_turns: number;
+  token_budget: number;
   version: string;
   last_active_at: string | null;
   created_at: string;
@@ -91,6 +104,9 @@ function toExpert(api: ApiExpert): Expert {
       order: m.order,
     })) ?? null,
     avatarUrl: api.avatar_url,
+    modelConfigData: api.model_config_data ?? null,
+    maxTurns: api.max_turns ?? 10,
+    tokenBudget: api.token_budget ?? 25000,
     version: api.version,
     lastActiveAt: api.last_active_at,
     createdAt: api.created_at,

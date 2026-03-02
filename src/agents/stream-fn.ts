@@ -8,8 +8,7 @@
 import http from 'node:http';
 import type { ResolvedModel } from './types';
 
-// We import types but use dynamic construction since pi-ai's types are complex
-import { createAssistantMessageEventStream } from '@mariozechner/pi-ai/utils/event-stream';
+import { createAssistantMessageEventStream } from '@mariozechner/pi-ai';
 import type { AssistantMessageEventStream } from '@mariozechner/pi-ai';
 
 interface StreamFnContext {

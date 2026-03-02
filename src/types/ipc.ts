@@ -106,6 +106,37 @@ export interface ModelsAPI {
   getDiskSpace(): Promise<DiskSpace>;
 }
 
+// --- Agent System ---
+
+export interface AgentRunRequest {
+  conversationId: string;
+  content: string;
+  expertId?: string | null;
+}
+
+export type RendererAgentEvent =
+  | { type: 'run_start'; runId: string }
+  | { type: 'turn_start'; turn: number }
+  | { type: 'text_delta'; delta: string }
+  | { type: 'tool_start'; toolCallId: string; toolName: string; args: unknown }
+  | { type: 'tool_end'; toolCallId: string; toolName: string; result: string; isError: boolean }
+  | { type: 'done'; runId: string; messageContent: string }
+  | { type: 'error'; runId: string; error: string };
+
+export interface ActiveRunInfo {
+  runId: string;
+  conversationId: string;
+  expertId: string | null;
+  startedAt: number;
+}
+
+export interface AgentAPI {
+  run(request: AgentRunRequest): Promise<string>;
+  cancel(runId: string): Promise<boolean>;
+  activeRuns(): Promise<ActiveRunInfo[]>;
+  onEvent(runId: string, callback: (event: RendererAgentEvent) => void): () => void;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -116,4 +147,5 @@ export interface CerebroAPI {
   onStream(streamId: string, callback: (event: StreamEvent) => void): () => void;
   credentials: CredentialAPI;
   models: ModelsAPI;
+  agent: AgentAPI;
 }
