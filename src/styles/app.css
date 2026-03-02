@@ -191,3 +191,73 @@ body {
   content: '';
   animation: thinkingDots 1.2s steps(1) infinite;
 }
+
+/* Cerebro brain pulse — expanding ring */
+@keyframes pulseGlow {
+  from {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  to {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Expert card entrance */
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-card-in {
+  animation: cardIn 0.4s ease-out both;
+}
+
+/* ── Canvas (Experts Screen) ──────────────────────────────────── */
+
+/* Space-themed grid background */
+.canvas-grid {
+  background-color: var(--color-bg-base);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(6, 182, 212, 0.03) 0%, transparent 100%),
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 48px 48px, 48px 48px;
+}
+
+/* Node entrance animation */
+@keyframes nodeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.animate-node-in {
+  animation: nodeIn 0.4s cubic-bezier(0, 0, 0.2, 1) both;
+}
+
+/* Panel slide from right */
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.25s ease-out;
+}

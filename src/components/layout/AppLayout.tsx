@@ -2,6 +2,7 @@ import { useChat } from '../../context/ChatContext';
 import Sidebar from './Sidebar';
 import ChatView from '../chat/ChatView';
 import WelcomeView from '../chat/WelcomeView';
+import ExpertsScreen from '../screens/ExpertsScreen';
 import IntegrationsScreen from '../screens/IntegrationsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
@@ -21,6 +22,9 @@ export default function AppLayout() {
       ) : (
         <WelcomeView onSend={sendMessage} />
       );
+    }
+    if (activeScreen === 'experts') {
+      return <ExpertsScreen />;
     }
     if (activeScreen === 'integrations') {
       return <IntegrationsScreen />;
