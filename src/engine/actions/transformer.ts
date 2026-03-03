@@ -6,6 +6,7 @@
  *
  * SAFETY: No eval(), no new Function(), no arbitrary JS execution.
  * Filter predicates use expr-eval (safe expression evaluator).
+ * Note: expr-eval uses `and`/`or`/`not` keywords (not `&&`/`||`/`!`).
  * Template rendering uses Mustache (logic-less, no code execution).
  * This is critical because routine definitions may come from marketplace packs.
  */
