@@ -8,6 +8,13 @@ def _hex_id() -> str:
     return uuid.uuid4().hex
 
 
+def _create_routine(client, name="Test Routine"):
+    """Helper: create a routine and return its ID."""
+    r = client.post("/routines", json={"name": name})
+    assert r.status_code == 201
+    return r.json()["id"]
+
+
 def _create_run(client, **overrides):
     """Helper: create a run and return the response body."""
     body = {
@@ -26,10 +33,11 @@ def _create_run(client, **overrides):
 
 
 def test_create_run(client):
+    routine_id = _create_routine(client, name="Engine Test Routine")
     run_id = _hex_id()
     r = client.post("/engine/runs", json={
         "id": run_id,
-        "routine_id": "rtn-abc",
+        "routine_id": routine_id,
         "run_type": "routine",
         "trigger": "manual",
         "dag_json": '{"steps":[]}',
@@ -39,7 +47,7 @@ def test_create_run(client):
     body = r.json()
     assert body["id"] == run_id
     assert body["status"] == "running"
-    assert body["routine_id"] == "rtn-abc"
+    assert body["routine_id"] == routine_id
     assert body["total_steps"] == 3
     assert body["completed_steps"] == 0
     assert body["dag_json"] == '{"steps":[]}'
@@ -55,18 +63,20 @@ def test_list_runs_empty(client):
 
 
 def test_list_runs_with_filters(client):
-    _create_run(client, routine_id="rtn-1", trigger="manual")
-    _create_run(client, routine_id="rtn-2", trigger="schedule")
-    _create_run(client, routine_id="rtn-1", trigger="chat")
+    rtn_1 = _create_routine(client, name="Filter Routine 1")
+    rtn_2 = _create_routine(client, name="Filter Routine 2")
+    _create_run(client, routine_id=rtn_1, trigger="manual")
+    _create_run(client, routine_id=rtn_2, trigger="schedule")
+    _create_run(client, routine_id=rtn_1, trigger="chat")
 
     # Filter by routine_id
-    r = client.get("/engine/runs", params={"routine_id": "rtn-1"})
+    r = client.get("/engine/runs", params={"routine_id": rtn_1})
     assert r.json()["total"] == 2
 
     # Filter by trigger
     r = client.get("/engine/runs", params={"trigger": "schedule"})
     assert r.json()["total"] == 1
-    assert r.json()["runs"][0]["routine_id"] == "rtn-2"
+    assert r.json()["runs"][0]["routine_id"] == rtn_2
 
     # Filter by status (all should be "running")
     r = client.get("/engine/runs", params={"status": "running"})

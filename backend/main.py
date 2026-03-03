@@ -25,6 +25,7 @@ from experts.router import router as experts_router
 from agent_runs.router import router as agent_runs_router
 from search.router import router as search_router
 from engine.router import router as engine_router
+from routines.router import router as routines_router
 
 
 @asynccontextmanager
@@ -55,6 +56,7 @@ app.include_router(experts_router, prefix="/experts")
 app.include_router(agent_runs_router, prefix="/agent-runs")
 app.include_router(search_router, prefix="/search")
 app.include_router(engine_router, prefix="/engine")
+app.include_router(routines_router, prefix="/routines")
 
 
 @app.get("/health")

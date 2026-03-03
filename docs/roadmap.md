@@ -47,7 +47,7 @@
 | Event streaming system (main process → renderer) | Done |
 | Run Record persistence and state management | Done |
 | **6. Routines** | |
-| Routine data model and schema | Not Started |
+| Routine data model and schema | Done |
 | Routines screen (list, toggle, trigger summary, Run Now) | Not Started |
 | Run Now with live inline logs in Chat | Not Started |
 | Routine Proposal Cards in Chat (propose → preview → save) | Not Started |

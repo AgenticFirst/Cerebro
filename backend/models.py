@@ -133,11 +133,47 @@ class AgentRun(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class Routine(Base):
+    __tablename__ = "routines"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text, default="")
+    plain_english_steps: Mapped[str | None] = mapped_column(Text, nullable=True)
+        # JSON list of strings: ["Pull calendar events", "Check todo backlog", "Draft plan"]
+    dag_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+        # JSON DAGDefinition — the compiled action graph
+    trigger_type: Mapped[str] = mapped_column(String(20), default="manual")
+        # "manual" | "cron" | "webhook"
+    cron_expression: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    default_runner_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("experts.id", ondelete="SET NULL"), nullable=True
+    )
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    approval_gates: Mapped[str | None] = mapped_column(Text, nullable=True)
+        # JSON list of step IDs/names that require approval
+    required_connections: Mapped[str | None] = mapped_column(Text, nullable=True)
+        # JSON list of connection service names, e.g. ["google_calendar", "gmail"]
+    source: Mapped[str] = mapped_column(String(20), default="user")
+        # "user" | "chat" | "marketplace"
+    source_conversation_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_run_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+        # "completed" | "failed" | "cancelled" — denormalized for list display
+    run_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class RunRecord(Base):
     __tablename__ = "run_records"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
-    routine_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    routine_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("routines.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     expert_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("experts.id", ondelete="SET NULL"), nullable=True)
     conversation_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), index=True, default="created")  # created | running | completed | failed | cancelled
