@@ -52,6 +52,7 @@
 | Run Now with live inline logs in Chat | Done |
 | Routine Proposal Cards in Chat (propose → preview → save) | Done |
 | Cerebro routine proposal logic (detect repeatable intent) | Done |
+| Persist routine proposal and engine run metadata on messages | Done |
 | Preview execution with streaming logs | Not Started |
 | Cron scheduler for scheduled routines | Not Started |
 | **7. Cerebro Core Intelligence** | |
@@ -109,7 +110,6 @@
 | Setup progress checklist (what's configured, what's remaining) | Not Started |
 | Contextual tooltips for key features on first visit | Not Started |
 | **V1** | |
-| Persist routine proposal and engine run metadata on messages | Not Started |
 | HuggingFace Inference API integration | Not Started |
 | Brave Search integration for tool calling | Not Started |
 | Add full support for audio understanding | Not Started |

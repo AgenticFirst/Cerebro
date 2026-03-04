@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { generateId, titleFromContent, fromApiConversation } from '../context/chat-helpers';
-import type { ApiConversation } from '../context/chat-helpers';
+import { generateId, titleFromContent, fromApiConversation, fromApiMessage } from '../context/chat-helpers';
+import type { ApiConversation, ApiMessage } from '../context/chat-helpers';
 
 describe('generateId', () => {
   it('returns a 32-char hex string with no dashes', () => {
@@ -38,6 +38,9 @@ describe('fromApiConversation', () => {
           content: 'Hello',
           model: null,
           token_count: null,
+          expert_id: null,
+          agent_run_id: null,
+          metadata: null,
           created_at: '2025-01-15T10:30:00Z',
         },
       ],
@@ -55,5 +58,78 @@ describe('fromApiConversation', () => {
     expect(conv.messages[0].createdAt).toBeInstanceOf(Date);
     expect(conv.messages[0].model).toBeUndefined();
     expect(conv.messages[0].tokenCount).toBeUndefined();
+  });
+});
+
+describe('fromApiMessage', () => {
+  const base: ApiMessage = {
+    id: 'msg1',
+    conversation_id: 'conv1',
+    role: 'assistant',
+    content: 'Hello',
+    model: null,
+    token_count: null,
+    expert_id: null,
+    agent_run_id: null,
+    metadata: null,
+    created_at: '2025-06-01T12:00:00Z',
+  };
+
+  it('hydrates expertId and agentRunId from API fields', () => {
+    const msg = fromApiMessage({ ...base, expert_id: 'exp1', agent_run_id: 'run1' });
+    expect(msg.expertId).toBe('exp1');
+    expect(msg.agentRunId).toBe('run1');
+  });
+
+  it('hydrates engineRunId from metadata', () => {
+    const msg = fromApiMessage({ ...base, metadata: { engine_run_id: 'engine42' } });
+    expect(msg.engineRunId).toBe('engine42');
+  });
+
+  it('hydrates routineProposal from metadata with correct type mapping', () => {
+    const msg = fromApiMessage({
+      ...base,
+      metadata: {
+        routine_proposal: {
+          name: 'Morning Routine',
+          description: 'Start the day',
+          steps: ['Check calendar', 'Draft plan'],
+          trigger_type: 'cron',
+          cron_expression: '0 8 * * *',
+          default_runner_id: 'runner1',
+          required_connections: ['google_calendar'],
+          approval_gates: ['step2'],
+          status: 'saved',
+          saved_routine_id: 'routine1',
+        },
+      },
+    });
+    expect(msg.routineProposal).toBeDefined();
+    expect(msg.routineProposal!.name).toBe('Morning Routine');
+    expect(msg.routineProposal!.triggerType).toBe('cron');
+    expect(msg.routineProposal!.cronExpression).toBe('0 8 * * *');
+    expect(msg.routineProposal!.defaultRunnerId).toBe('runner1');
+    expect(msg.routineProposal!.requiredConnections).toEqual(['google_calendar']);
+    expect(msg.routineProposal!.approvalGates).toEqual(['step2']);
+    expect(msg.routineProposal!.status).toBe('saved');
+    expect(msg.routineProposal!.savedRoutineId).toBe('routine1');
+  });
+
+  it('handles null metadata gracefully', () => {
+    const msg = fromApiMessage({ ...base, metadata: null });
+    expect(msg.engineRunId).toBeUndefined();
+    expect(msg.routineProposal).toBeUndefined();
+  });
+
+  it('handles empty metadata gracefully', () => {
+    const msg = fromApiMessage({ ...base, metadata: {} });
+    expect(msg.engineRunId).toBeUndefined();
+    expect(msg.routineProposal).toBeUndefined();
+  });
+
+  it('sets expertId and agentRunId to undefined when null', () => {
+    const msg = fromApiMessage(base);
+    expect(msg.expertId).toBeUndefined();
+    expect(msg.agentRunId).toBeUndefined();
   });
 });

@@ -15,6 +15,7 @@ import type { RoutineProposal } from '../../types/chat';
 import { useChat } from '../../context/ChatContext';
 import { useRoutines } from '../../context/RoutineContext';
 import { compileLinearDAG } from '../../engine/dag/compiler';
+import { apiPatchMessageMetadata, toApiProposal } from '../../context/chat-helpers';
 
 interface RoutineProposalCardProps {
   proposal: RoutineProposal;
@@ -83,9 +84,11 @@ export default function RoutineProposalCard({
         sourceConversationId: conversationId,
       });
       if (routine) {
-        updateMessage(conversationId, messageId, {
-          routineProposal: { ...proposal, status: 'saved', savedRoutineId: routine.id },
-        });
+        const saved = { ...proposal, status: 'saved' as const, savedRoutineId: routine.id };
+        updateMessage(conversationId, messageId, { routineProposal: saved });
+        apiPatchMessageMetadata(conversationId, messageId, {
+          routine_proposal: toApiProposal(saved),
+        }).catch(console.error);
       } else {
         setError('Failed to save routine. Please try again.');
       }
@@ -112,15 +115,19 @@ export default function RoutineProposalCard({
       });
 
       // Update proposal status on the original message
-      updateMessage(conversationId, messageId, {
-        routineProposal: { ...proposal, status: 'previewing' },
-      });
+      const previewing = { ...proposal, status: 'previewing' as const };
+      updateMessage(conversationId, messageId, { routineProposal: previewing });
+      apiPatchMessageMetadata(conversationId, messageId, {
+        routine_proposal: toApiProposal(previewing),
+      }).catch(console.error);
 
       // Create a new assistant message for the RunLogCard and attach the engineRunId
+      // Pass metadata in the initial POST to avoid a race with a separate PATCH
       const previewMsgId = addMessage(
         conversationId,
         'assistant',
         `Preview run for **${proposal.name}**...`,
+        { engine_run_id: runId },
       );
       updateMessage(conversationId, previewMsgId, { engineRunId: runId });
     } catch (err) {
@@ -135,9 +142,11 @@ export default function RoutineProposalCard({
   };
 
   const handleDismiss = () => {
-    updateMessage(conversationId, messageId, {
-      routineProposal: { ...proposal, status: 'dismissed' },
-    });
+    const dismissed = { ...proposal, status: 'dismissed' as const };
+    updateMessage(conversationId, messageId, { routineProposal: dismissed });
+    apiPatchMessageMetadata(conversationId, messageId, {
+      routine_proposal: toApiProposal(dismissed),
+    }).catch(console.error);
   };
 
   return (

@@ -19,6 +19,7 @@ import {
   generateId,
   titleFromContent,
   fromApiConversation,
+  toApiProposal,
   type ApiConversationList,
 } from './chat-helpers';
 
@@ -42,7 +43,7 @@ interface ChatState {
 interface ChatActions {
   createConversation: (firstMessage?: string) => string;
   setActiveConversation: (id: string | null) => void;
-  addMessage: (conversationId: string, role: Message['role'], content: string) => string;
+  addMessage: (conversationId: string, role: Message['role'], content: string, metadata?: Record<string, unknown>) => string;
   updateMessage: (conversationId: string, messageId: string, partial: Partial<Message>) => void;
   deleteConversation: (id: string) => void;
   setActiveScreen: (screen: Screen) => void;
@@ -79,7 +80,7 @@ function apiCreateConversation(id: string, title: string): Promise<unknown> {
 
 function apiCreateMessage(
   convId: string,
-  msg: { id: string; role: string; content: string; expert_id?: string; agent_run_id?: string },
+  msg: { id: string; role: string; content: string; expert_id?: string; agent_run_id?: string; metadata?: Record<string, unknown> },
 ): Promise<unknown> {
   return window.cerebro.invoke({
     method: 'POST',
@@ -197,7 +198,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addMessage = useCallback(
-    (conversationId: string, role: Message['role'], content: string) => {
+    (conversationId: string, role: Message['role'], content: string, metadata?: Record<string, unknown>) => {
       const message: Message = {
         id: generateId(),
         conversationId,
@@ -216,7 +217,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             : c,
         ),
       );
-      apiCreateMessage(conversationId, { id: message.id, role, content }).catch(console.error);
+      apiCreateMessage(conversationId, { id: message.id, role, content, metadata }).catch(console.error);
       return message.id;
     },
     [],
@@ -352,6 +353,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           let accumulated = '';
           let thinkingCleared = false;
           const toolCalls: ToolCall[] = [];
+          let accEngineRunId: string | undefined;
+          let accRoutineProposal: import('../types/chat').RoutineProposal | undefined;
 
           const clearThinking = () => {
             if (!thinkingCleared) {
@@ -394,6 +397,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 if (event.toolName === 'run_routine' && !event.isError) {
                   const marker = event.result.match(/\[ENGINE_RUN_ID:([^\]]+)\]/);
                   if (marker) {
+                    accEngineRunId = marker[1];
                     updateMessage(convId!, assistantId, { engineRunId: marker[1] });
                   }
                 }
@@ -402,18 +406,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   try {
                     const parsed = JSON.parse(event.result);
                     if (parsed.type === 'routine_proposal') {
+                      accRoutineProposal = {
+                        name: parsed.name,
+                        description: parsed.description ?? '',
+                        steps: parsed.steps,
+                        triggerType: parsed.triggerType,
+                        cronExpression: parsed.cronExpression,
+                        defaultRunnerId: parsed.defaultRunnerId,
+                        requiredConnections: parsed.requiredConnections ?? [],
+                        approvalGates: parsed.approvalGates ?? [],
+                        status: 'proposed',
+                      };
                       updateMessage(convId!, assistantId, {
-                        routineProposal: {
-                          name: parsed.name,
-                          description: parsed.description ?? '',
-                          steps: parsed.steps,
-                          triggerType: parsed.triggerType,
-                          cronExpression: parsed.cronExpression,
-                          defaultRunnerId: parsed.defaultRunnerId,
-                          requiredConnections: parsed.requiredConnections ?? [],
-                          approvalGates: parsed.approvalGates ?? [],
-                          status: 'proposed',
-                        },
+                        routineProposal: accRoutineProposal,
                       });
                     }
                   } catch { /* not valid JSON, treat as normal result */ }
@@ -421,7 +426,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 break;
               }
 
-              case 'done':
+              case 'done': {
                 unsub();
                 clearThinking();
                 setIsStreaming(false);
@@ -431,6 +436,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   isStreaming: false,
                   agentRunId: runId,
                 });
+                // Build metadata for persistence
+                const doneMetadata: Record<string, unknown> = {};
+                if (accEngineRunId) doneMetadata.engine_run_id = accEngineRunId;
+                if (accRoutineProposal) doneMetadata.routine_proposal = toApiProposal(accRoutineProposal);
                 // Persist final message
                 apiCreateMessage(convId!, {
                   id: assistantId,
@@ -438,8 +447,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   content: event.messageContent || accumulated,
                   expert_id: expertId ?? undefined,
                   agent_run_id: runId,
+                  metadata: Object.keys(doneMetadata).length > 0 ? doneMetadata : undefined,
                 }).catch(console.error);
                 break;
+              }
 
               case 'error': {
                 unsub();
@@ -560,6 +571,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             id: msgId,
             role: 'assistant',
             content,
+            metadata: { engine_run_id: runId },
           }).catch(console.error);
           // Bump backend metadata (fire-and-forget)
           window.cerebro

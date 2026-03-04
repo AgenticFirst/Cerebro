@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -43,9 +44,19 @@ class Message(Base):
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expert_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("experts.id", ondelete="SET NULL"), nullable=True)
     agent_run_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column("metadata", Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
+
+    @property
+    def metadata_parsed(self) -> dict | None:
+        if not self.metadata_json:
+            return None
+        try:
+            return json.loads(self.metadata_json)
+        except (json.JSONDecodeError, TypeError):
+            return None
 
 
 class Setting(Base):

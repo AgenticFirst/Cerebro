@@ -1,12 +1,13 @@
 import argparse
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import selectinload
 
 from credentials import get_credential, set_credential
@@ -106,6 +107,11 @@ class MessageCreate(BaseModel):
     token_count: int | None = None
     expert_id: str | None = None
     agent_run_id: str | None = None
+    metadata: dict | None = None
+
+
+class MessageUpdate(BaseModel):
+    metadata: dict | None = None
 
 
 class MessageResponse(BaseModel):
@@ -117,9 +123,10 @@ class MessageResponse(BaseModel):
     token_count: int | None
     expert_id: str | None = None
     agent_run_id: str | None = None
+    metadata: dict | None = Field(None, validation_alias="metadata_parsed")
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class ConversationResponse(BaseModel):
@@ -215,9 +222,24 @@ def create_message(conv_id: str, body: MessageCreate, db=Depends(get_db)):
         token_count=body.token_count,
         expert_id=body.expert_id,
         agent_run_id=body.agent_run_id,
+        metadata_json=json.dumps(body.metadata) if body.metadata else None,
     )
     db.add(msg)
     conv.updated_at = models._utcnow()
+    db.commit()
+    db.refresh(msg)
+    return msg
+
+
+@app.patch("/conversations/{conv_id}/messages/{msg_id}", response_model=MessageResponse)
+def patch_message(conv_id: str, msg_id: str, body: MessageUpdate, db=Depends(get_db)):
+    msg = db.query(Message).filter(Message.id == msg_id, Message.conversation_id == conv_id).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if body.metadata is not None:
+        existing = msg.metadata_parsed or {}
+        merged = {**existing, **body.metadata}
+        msg.metadata_json = json.dumps(merged)
     db.commit()
     db.refresh(msg)
     return msg
