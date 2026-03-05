@@ -93,6 +93,7 @@ export default function RoutineCard({
                 e.stopPropagation();
                 onDelete();
               }}
+              aria-label={`Delete ${routine.name}`}
               className="p-1 rounded text-text-tertiary hover:text-red-400 hover:bg-red-400/10 transition-colors"
             >
               <Trash2 size={14} />

@@ -186,7 +186,11 @@ export default function RoutineList() {
                 onClick={() => setEditingRoutineId(routine.id)}
                 onToggle={() => toggleEnabled(routine)}
                 onRun={() => runRoutine(routine.id)}
-                onDelete={() => deleteRoutine(routine.id)}
+                onDelete={() => {
+                  if (window.confirm(`Delete "${routine.name}"? This cannot be undone.`)) {
+                    deleteRoutine(routine.id);
+                  }
+                }}
               />
             ))}
           </div>

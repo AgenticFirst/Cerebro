@@ -64,8 +64,13 @@ def list_routines(
     if source is not None:
         q = q.filter(Routine.source == source)
     if search:
-        pattern = f"%{search}%"
-        q = q.filter(or_(Routine.name.ilike(pattern), Routine.description.ilike(pattern)))
+        # Escape LIKE wildcards so user input is matched literally
+        safe = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{safe}%"
+        q = q.filter(or_(
+            Routine.name.ilike(pattern, escape="\\"),
+            Routine.description.ilike(pattern, escape="\\"),
+        ))
 
     total = q.count()
     routines = (

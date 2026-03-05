@@ -43,6 +43,8 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
   const runCallbackRef = useRef<RunRoutineCallback | null>(null);
+  const routinesRef = useRef<Routine[]>(routines);
+  routinesRef.current = routines;
 
   const registerRunCallback = useCallback((cb: RunRoutineCallback) => {
     runCallbackRef.current = cb;
@@ -148,7 +150,7 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
   );
 
   const runRoutine = useCallback(async (id: string) => {
-    const routine = routines.find((r) => r.id === id);
+    const routine = routinesRef.current.find((r) => r.id === id);
     if (!routine?.dagJson) return;
 
     if (runCallbackRef.current) {
@@ -156,7 +158,7 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
     } else {
       console.warn('runRoutine called but no run callback registered (ChatProvider may not be mounted)');
     }
-  }, [routines]);
+  }, []);
 
   return (
     <RoutineContext.Provider

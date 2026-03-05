@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
+
+TriggerType = Literal["manual", "cron", "webhook"]
 
 
 # ── Request Schemas ──────────────────────────────────────────────
@@ -15,7 +18,7 @@ class RoutineCreate(BaseModel):
     description: str = ""
     plain_english_steps: list[str] | None = None
     dag_json: str | None = None
-    trigger_type: str = "manual"
+    trigger_type: TriggerType = "manual"
     cron_expression: str | None = None
     default_runner_id: str | None = None
     approval_gates: list[str] | None = None
@@ -29,7 +32,7 @@ class RoutineUpdate(BaseModel):
     description: str | None = None
     plain_english_steps: list[str] | None = None
     dag_json: str | None = None
-    trigger_type: str | None = None
+    trigger_type: TriggerType | None = None
     cron_expression: str | None = None
     default_runner_id: str | None = None
     is_enabled: bool | None = None

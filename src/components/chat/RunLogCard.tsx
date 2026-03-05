@@ -303,7 +303,7 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
           <button
             onClick={handleCancel}
             className="p-0.5 rounded hover:bg-bg-hover text-text-tertiary hover:text-red-400 transition-colors cursor-pointer"
-            title="Cancel run"
+            aria-label="Cancel run"
           >
             <X size={12} />
           </button>

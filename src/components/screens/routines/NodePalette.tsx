@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { ACTION_META, ACTION_TYPES } from '../../../utils/step-defaults';
 
+/** Action types that have a working execution handler. */
+const AVAILABLE_TYPES = ACTION_TYPES.filter((t) => t !== 'connector' && t !== 'channel');
+
 export default function NodePalette() {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -22,7 +25,7 @@ export default function NodePalette() {
           </div>
 
           <div className="py-1">
-            {ACTION_TYPES.map((type) => {
+            {AVAILABLE_TYPES.map((type) => {
               const meta = ACTION_META[type];
               const Icon = meta.icon;
               return (
@@ -58,7 +61,7 @@ export default function NodePalette() {
         <button
           onClick={() => setIsOpen(true)}
           className="w-9 h-9 rounded-lg bg-bg-surface border border-border-subtle flex items-center justify-center text-text-tertiary hover:text-accent hover:border-accent/30 transition-colors shadow-lg"
-          title="Add action"
+          aria-label="Add action"
         >
           <Plus size={18} />
         </button>

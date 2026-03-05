@@ -84,15 +84,15 @@ export function toRoutine(api: ApiRoutine): Routine {
 
 export function toApiBody(input: CreateRoutineInput): Record<string, unknown> {
   const body: Record<string, unknown> = { name: input.name };
-  if (input.description) body.description = input.description;
-  if (input.plainEnglishSteps) body.plain_english_steps = input.plainEnglishSteps;
-  if (input.dagJson) body.dag_json = input.dagJson;
-  if (input.triggerType) body.trigger_type = input.triggerType;
-  if (input.cronExpression) body.cron_expression = input.cronExpression;
-  if (input.defaultRunnerId) body.default_runner_id = input.defaultRunnerId;
-  if (input.approvalGates) body.approval_gates = input.approvalGates;
-  if (input.requiredConnections) body.required_connections = input.requiredConnections;
-  if (input.source) body.source = input.source;
-  if (input.sourceConversationId) body.source_conversation_id = input.sourceConversationId;
+  if (input.description !== undefined) body.description = input.description;
+  if (input.plainEnglishSteps !== undefined) body.plain_english_steps = input.plainEnglishSteps;
+  if (input.dagJson !== undefined) body.dag_json = input.dagJson;
+  if (input.triggerType !== undefined) body.trigger_type = input.triggerType;
+  if (input.cronExpression !== undefined) body.cron_expression = input.cronExpression;
+  if (input.defaultRunnerId !== undefined) body.default_runner_id = input.defaultRunnerId;
+  if (input.approvalGates !== undefined) body.approval_gates = input.approvalGates;
+  if (input.requiredConnections !== undefined) body.required_connections = input.requiredConnections;
+  if (input.source !== undefined) body.source = input.source;
+  if (input.sourceConversationId !== undefined) body.source_conversation_id = input.sourceConversationId;
   return body;
 }

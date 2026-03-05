@@ -292,6 +292,7 @@ export default function StepConfigPanel({
         </h3>
         <button
           onClick={onClose}
+          aria-label="Close step configuration"
           className="p-1 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
         >
           <X size={16} />

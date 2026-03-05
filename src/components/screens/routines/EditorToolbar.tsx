@@ -138,6 +138,7 @@ export default function EditorToolbar({
       {/* Left: Back + Name */}
       <button
         onClick={() => setEditingRoutineId(null)}
+        aria-label="Back to routine list"
         className="p-1.5 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
       >
         <ArrowLeft size={16} />
@@ -218,7 +219,7 @@ export default function EditorToolbar({
           onClick={onAutoLayout}
           disabled={!hasNodes}
           className="p-1.5 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          title="Auto-layout"
+          aria-label="Auto-layout"
         >
           <LayoutGrid size={15} />
         </button>

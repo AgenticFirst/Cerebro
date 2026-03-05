@@ -61,8 +61,8 @@ export function createRunRoutine(ctx: ToolContext): AgentTool {
       // 2. Bump backend metadata
       try {
         await backendRequest(ctx.backendPort, 'POST', `/routines/${match.id}/run`);
-      } catch {
-        // Non-critical — continue with execution
+      } catch (err) {
+        console.warn(`[run_routine] Failed to bump run metadata for "${match.name}":`, err);
       }
 
       // 3. Execute the DAG

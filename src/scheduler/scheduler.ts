@@ -195,8 +195,8 @@ export class RoutineScheduler {
     // Bump backend run metadata
     try {
       await this.backendRequest('POST', `/routines/${routine.id}/run`);
-    } catch {
-      // Non-critical
+    } catch (err) {
+      console.warn(`[Scheduler] Failed to bump run metadata for "${routine.name}":`, err);
     }
 
     // Execute
