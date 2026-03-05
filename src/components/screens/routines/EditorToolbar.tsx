@@ -1,16 +1,20 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
-  Save,
   Play,
   LayoutGrid,
+  Trash2,
   Power,
   Hand,
   Clock,
   Webhook,
+  Check,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Routine, TriggerType } from '../../../types/routines';
+import type { SaveStatus } from '../../../hooks/useRoutineCanvas';
 import { useRoutines } from '../../../context/RoutineContext';
 import Toggle from '../../ui/Toggle';
 import SchedulePicker from '../../ui/SchedulePicker';
@@ -31,6 +35,7 @@ interface EditorToolbarProps {
   routine: Routine;
   isDirty: boolean;
   hasNodes: boolean;
+  saveStatus: SaveStatus;
   onSave: () => Promise<void>;
   onAutoLayout: () => void;
 }
@@ -39,14 +44,14 @@ export default function EditorToolbar({
   routine,
   isDirty,
   hasNodes,
+  saveStatus,
   onSave,
   onAutoLayout,
 }: EditorToolbarProps) {
-  const { setEditingRoutineId, updateRoutine, toggleEnabled, runRoutine } =
+  const { setEditingRoutineId, updateRoutine, deleteRoutine, toggleEnabled, runRoutine } =
     useRoutines();
 
   const [name, setName] = useState(routine.name);
-  const [isSaving, setIsSaving] = useState(false);
   const [showTriggerMenu, setShowTriggerMenu] = useState(false);
   const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
@@ -99,15 +104,6 @@ export default function EditorToolbar({
       updateRoutine(routine.id, { name: trimmed });
     } else {
       setName(routine.name);
-    }
-  };
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      await onSave();
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -227,6 +223,19 @@ export default function EditorToolbar({
           <LayoutGrid size={15} />
         </button>
 
+        <button
+          onClick={() => {
+            if (window.confirm('Delete this routine?')) {
+              deleteRoutine(routine.id);
+              setEditingRoutineId(null);
+            }
+          }}
+          className="p-1.5 rounded-md text-text-tertiary hover:text-red-400 hover:bg-red-400/10 transition-colors"
+          title="Delete routine"
+        >
+          <Trash2 size={15} />
+        </button>
+
         <div className="flex items-center gap-1.5">
           <Power
             size={12}
@@ -240,24 +249,38 @@ export default function EditorToolbar({
           />
         </div>
 
-        <button
-          onClick={handleSave}
-          disabled={!isDirty || isSaving}
-          className={clsx(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-            isDirty
-              ? 'bg-accent text-bg-base hover:bg-accent-hover'
-              : 'bg-bg-elevated text-text-tertiary cursor-not-allowed',
-          )}
-        >
-          <Save size={13} />
-          {isSaving ? 'Saving...' : 'Save'}
-        </button>
+        {/* Autosave status indicator */}
+        {saveStatus === 'saving' && (
+          <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-text-tertiary">
+            <Loader2 size={13} className="animate-spin" />
+            Saving...
+          </span>
+        )}
+        {saveStatus === 'saved' && (
+          <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-green-400">
+            <Check size={13} />
+            Saved
+          </span>
+        )}
+        {saveStatus === 'error' && (
+          <button
+            onClick={onSave}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-red-400 hover:text-red-300 transition-colors"
+          >
+            <AlertCircle size={13} />
+            Save failed — retry
+          </button>
+        )}
+        {saveStatus === 'idle' && isDirty && (
+          <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-text-tertiary/60">
+            Unsaved
+          </span>
+        )}
 
         <button
           onClick={() => runRoutine(routine.id)}
-          disabled={!routine.isEnabled || !routine.dagJson || isDirty}
-          title={isDirty ? 'Save changes before running' : undefined}
+          disabled={!routine.isEnabled || !routine.dagJson || saveStatus === 'saving'}
+          title={saveStatus === 'saving' ? 'Saving in progress...' : undefined}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-bg-elevated text-text-secondary hover:text-text-primary hover:bg-bg-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
           <Play size={13} />

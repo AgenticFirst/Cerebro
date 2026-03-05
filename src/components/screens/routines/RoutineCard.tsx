@@ -1,4 +1,5 @@
-import { Play, Hand, Clock, Webhook } from 'lucide-react';
+import { useState } from 'react';
+import { Play, Hand, Clock, Webhook, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Routine } from '../../../types/routines';
 import Toggle from '../../ui/Toggle';
@@ -32,6 +33,7 @@ interface RoutineCardProps {
   onClick: () => void;
   onToggle: () => void;
   onRun: () => void;
+  onDelete?: () => void;
 }
 
 export default function RoutineCard({
@@ -40,13 +42,17 @@ export default function RoutineCard({
   onClick,
   onToggle,
   onRun,
+  onDelete,
 }: RoutineCardProps) {
+  const [isHovered, setIsHovered] = useState(false);
   const trigger = TRIGGER_META[routine.triggerType] ?? TRIGGER_META.manual;
   const TriggerIcon = trigger.icon;
 
   return (
     <div
       onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       className="bg-bg-surface border border-border-subtle rounded-lg p-4 cursor-pointer hover:border-border-default transition-colors animate-card-in"
       style={{ animationDelay: `${index * 40}ms` }}
     >
@@ -79,10 +85,23 @@ export default function RoutineCard({
           )}
         </div>
 
-        {/* Right: toggle */}
-        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events,jsx-a11y/no-static-element-interactions */}
-        <div onClick={(e) => e.stopPropagation()}>
-          <Toggle checked={routine.isEnabled} onChange={onToggle} />
+        {/* Right: delete + toggle */}
+        <div className="flex items-center gap-1.5">
+          {isHovered && onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="p-1 rounded text-text-tertiary hover:text-red-400 hover:bg-red-400/10 transition-colors"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events,jsx-a11y/no-static-element-interactions */}
+          <div onClick={(e) => e.stopPropagation()}>
+            <Toggle checked={routine.isEnabled} onChange={onToggle} />
+          </div>
         </div>
       </div>
 

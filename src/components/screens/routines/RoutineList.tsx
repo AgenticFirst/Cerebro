@@ -16,6 +16,7 @@ export default function RoutineList() {
     cronCount,
     loadRoutines,
     createRoutine,
+    deleteRoutine,
     toggleEnabled,
     runRoutine,
     setEditingRoutineId,
@@ -185,6 +186,7 @@ export default function RoutineList() {
                 onClick={() => setEditingRoutineId(routine.id)}
                 onToggle={() => toggleEnabled(routine)}
                 onRun={() => runRoutine(routine.id)}
+                onDelete={() => deleteRoutine(routine.id)}
               />
             ))}
           </div>

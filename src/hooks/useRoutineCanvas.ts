@@ -53,13 +53,19 @@ function wouldCreateCycle(
 
 // ── Hook ──────────────────────────────────────────────────────
 
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
 export function useRoutineCanvas(routine: Routine) {
   const { updateRoutine } = useRoutines();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const initializedRef = useRef(false);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSavingRef = useRef(false);
+  const savedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initialize from routine.dagJson on first load or routine change
   useEffect(() => {
@@ -213,13 +219,64 @@ export function useRoutineCanvas(routine: Routine) {
     setIsDirty(true);
   }, [setNodes, edges]);
 
-  // ── Save to backend ──
+  // ── Autosave effect ──
+
+  useEffect(() => {
+    if (!isDirty || isSavingRef.current) return;
+
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+
+    autosaveTimerRef.current = setTimeout(async () => {
+      isSavingRef.current = true;
+      setSaveStatus('saving');
+      try {
+        const dag = flowToDag(nodes, edges);
+        await updateRoutine(routine.id, { dag_json: JSON.stringify(dag) });
+        setIsDirty(false);
+        setSaveStatus('saved');
+        if (savedResetTimerRef.current) clearTimeout(savedResetTimerRef.current);
+        savedResetTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (err) {
+        console.error('[Autosave] Failed:', err);
+        setSaveStatus('error');
+      } finally {
+        isSavingRef.current = false;
+      }
+    }, 1000);
+
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, [nodes, edges, isDirty, routine.id, updateRoutine]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (savedResetTimerRef.current) clearTimeout(savedResetTimerRef.current);
+    };
+  }, []);
+
+  // ── Save to backend (manual) ──
 
   const saveToBackend = useCallback(async () => {
-    const dag = flowToDag(nodes, edges);
-    const dagJson = JSON.stringify(dag);
-    await updateRoutine(routine.id, { dag_json: dagJson });
-    setIsDirty(false);
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    isSavingRef.current = true;
+    setSaveStatus('saving');
+    try {
+      const dag = flowToDag(nodes, edges);
+      const dagJson = JSON.stringify(dag);
+      await updateRoutine(routine.id, { dag_json: dagJson });
+      setIsDirty(false);
+      setSaveStatus('saved');
+      if (savedResetTimerRef.current) clearTimeout(savedResetTimerRef.current);
+      savedResetTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (err) {
+      console.error('[Save] Failed:', err);
+      setSaveStatus('error');
+    } finally {
+      isSavingRef.current = false;
+    }
   }, [nodes, edges, routine.id, updateRoutine]);
 
   return {
@@ -237,5 +294,6 @@ export function useRoutineCanvas(routine: Routine) {
     runAutoLayout,
     saveToBackend,
     isDirty,
+    saveStatus,
   };
 }

@@ -38,6 +38,7 @@ function CanvasInner({ routine }: { routine: Routine }) {
     runAutoLayout,
     saveToBackend,
     isDirty,
+    saveStatus,
   } = useRoutineCanvas(routine);
 
   const { screenToFlowPosition } = useReactFlow();
@@ -100,6 +101,7 @@ function CanvasInner({ routine }: { routine: Routine }) {
         routine={routine}
         isDirty={isDirty}
         hasNodes={nodes.length > 0}
+        saveStatus={saveStatus}
         onSave={saveToBackend}
         onAutoLayout={runAutoLayout}
       />
