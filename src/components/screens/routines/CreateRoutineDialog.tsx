@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Hand, Clock, Webhook } from 'lucide-react';
 import clsx from 'clsx';
 import type { CreateRoutineInput, TriggerType } from '../../../types/routines';
+import type { DayOfWeek } from '../../../utils/cron-helpers';
+import { scheduleToCron, WEEKDAYS } from '../../../utils/cron-helpers';
+import SchedulePicker from '../../ui/SchedulePicker';
 
 interface CreateRoutineDialogProps {
   isOpen: boolean;
@@ -17,7 +20,8 @@ export default function CreateRoutineDialog({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [triggerType, setTriggerType] = useState<TriggerType>('manual');
-  const [cronExpression, setCronExpression] = useState('');
+  const [scheduleDays, setScheduleDays] = useState<DayOfWeek[]>([...WEEKDAYS]);
+  const [scheduleTime, setScheduleTime] = useState('09:00');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -26,7 +30,8 @@ export default function CreateRoutineDialog({
       setName('');
       setDescription('');
       setTriggerType('manual');
-      setCronExpression('');
+      setScheduleDays([...WEEKDAYS]);
+      setScheduleTime('09:00');
       setTimeout(() => nameRef.current?.focus(), 50);
     }
   }, [isOpen]);
@@ -36,7 +41,7 @@ export default function CreateRoutineDialog({
   const canSubmit =
     name.trim() &&
     !isSubmitting &&
-    (triggerType !== 'cron' || cronExpression.trim());
+    (triggerType !== 'cron' || scheduleDays.length > 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,8 +53,8 @@ export default function CreateRoutineDialog({
         description: description.trim(),
         triggerType,
       };
-      if (triggerType === 'cron' && cronExpression.trim()) {
-        input.cronExpression = cronExpression.trim();
+      if (triggerType === 'cron' && scheduleDays.length > 0) {
+        input.cronExpression = scheduleToCron({ days: scheduleDays, time: scheduleTime });
       }
       const success = await onCreate(input);
       if (success) onClose();
@@ -140,18 +145,17 @@ export default function CreateRoutineDialog({
             </div>
           </div>
 
-          {/* Cron Expression (conditional) */}
+          {/* Schedule Picker (conditional) */}
           {triggerType === 'cron' && (
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5">
-                Cron Expression
+                Schedule
               </label>
-              <input
-                type="text"
-                value={cronExpression}
-                onChange={(e) => setCronExpression(e.target.value)}
-                placeholder="0 9 * * 1-5 (weekdays at 9am)"
-                className="w-full bg-bg-surface border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary font-mono placeholder:text-text-tertiary focus:outline-none focus:border-accent/40 transition-colors"
+              <SchedulePicker
+                days={scheduleDays}
+                time={scheduleTime}
+                onDaysChange={setScheduleDays}
+                onTimeChange={setScheduleTime}
               />
             </div>
           )}

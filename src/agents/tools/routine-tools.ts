@@ -140,12 +140,19 @@ export function createProposeRoutine(ctx: ToolContext): AgentTool {
       }),
       trigger_type: Type.Optional(
         Type.Union([Type.Literal('manual'), Type.Literal('cron'), Type.Literal('webhook')], {
-          description: 'How the routine should be triggered. Default: manual',
+          description: 'How the routine should be triggered. Default: manual. Use "cron" when the user wants something to run on a schedule (e.g. "every morning", "daily at 9am", "weekdays at 5pm").',
         }),
       ),
       cron_expression: Type.Optional(
         Type.String({
-          description: 'Cron expression if trigger_type is "cron" (e.g. "0 9 * * 1-5" for weekdays at 9am). Format: minute hour day-of-month month day-of-week (5 fields, no seconds)',
+          description:
+            'Standard 5-field cron expression (minute hour day-of-month month day-of-week) when trigger_type is "cron". ' +
+            'Generate from the user\'s natural language schedule. Examples: ' +
+            '"every day at 9am" → "0 9 * * *", ' +
+            '"weekdays at 9am" → "0 9 * * 1-5", ' +
+            '"every Monday at 8:30am" → "30 8 * * 1", ' +
+            '"Mon/Wed/Fri at 2pm" → "0 14 * * 1,3,5". ' +
+            'Day-of-week: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat.',
         }),
       ),
       default_runner_id: Type.Optional(

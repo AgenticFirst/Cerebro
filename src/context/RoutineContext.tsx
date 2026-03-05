@@ -34,6 +34,9 @@ interface RoutineContextValue {
 
 const RoutineContext = createContext<RoutineContextValue | null>(null);
 
+/** Fields that affect cron scheduling — only sync scheduler when these change. */
+const SCHEDULE_FIELDS = new Set(['trigger_type', 'cron_expression', 'is_enabled']);
+
 export function RoutineProvider({ children }: { children: ReactNode }) {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [total, setTotal] = useState(0);
@@ -86,6 +89,9 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
           const routine = toRoutine(res.data);
           setRoutines((prev) => [routine, ...prev]);
           setTotal((prev) => prev + 1);
+          if (input.triggerType === 'cron') {
+            window.cerebro.scheduler.sync().catch(console.error);
+          }
           return routine;
         }
       } catch (e) {
@@ -107,6 +113,9 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
         if (res.ok) {
           const updated = toRoutine(res.data);
           setRoutines((prev) => prev.map((r) => (r.id === id ? updated : r)));
+          if (Object.keys(fields).some((k) => SCHEDULE_FIELDS.has(k))) {
+            window.cerebro.scheduler.sync().catch(console.error);
+          }
         }
       } catch (e) {
         console.error('Failed to update routine:', e);
@@ -124,6 +133,7 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
       if (res.ok || res.status === 204) {
         setRoutines((prev) => prev.filter((r) => r.id !== id));
         setTotal((prev) => Math.max(0, prev - 1));
+        window.cerebro.scheduler.sync().catch(console.error);
       }
     } catch (e) {
       console.error('Failed to delete routine:', e);

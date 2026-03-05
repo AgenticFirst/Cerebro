@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
   Save,
@@ -13,6 +13,9 @@ import clsx from 'clsx';
 import type { Routine, TriggerType } from '../../../types/routines';
 import { useRoutines } from '../../../context/RoutineContext';
 import Toggle from '../../ui/Toggle';
+import SchedulePicker from '../../ui/SchedulePicker';
+import type { DayOfWeek } from '../../../utils/cron-helpers';
+import { cronToSchedule, scheduleToCron, describeSchedule, WEEKDAYS } from '../../../utils/cron-helpers';
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -45,22 +48,50 @@ export default function EditorToolbar({
   const [name, setName] = useState(routine.name);
   const [isSaving, setIsSaving] = useState(false);
   const [showTriggerMenu, setShowTriggerMenu] = useState(false);
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
+  const scheduleRef = useRef<HTMLDivElement>(null);
+
+  // Parse existing cron expression into schedule config
+  const existingSchedule = useMemo(
+    () => routine.cronExpression ? cronToSchedule(routine.cronExpression) : null,
+    [routine.cronExpression],
+  );
+  const [scheduleDays, setScheduleDays] = useState<DayOfWeek[]>(
+    existingSchedule?.days ?? [...WEEKDAYS],
+  );
+  const [scheduleTime, setScheduleTime] = useState(
+    existingSchedule?.time ?? '09:00',
+  );
 
   useEffect(() => {
     setName(routine.name);
   }, [routine.name]);
 
-  // Close trigger menu on outside click
+  // Sync schedule state when routine changes
+  useEffect(() => {
+    if (routine.cronExpression) {
+      const parsed = cronToSchedule(routine.cronExpression);
+      if (parsed) {
+        setScheduleDays(parsed.days);
+        setScheduleTime(parsed.time);
+      }
+    }
+  }, [routine.cronExpression]);
+
+  // Close trigger menu and schedule picker on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (triggerRef.current && !triggerRef.current.contains(e.target as Node)) {
         setShowTriggerMenu(false);
       }
+      if (scheduleRef.current && !scheduleRef.current.contains(e.target as Node)) {
+        setShowSchedulePicker(false);
+      }
     };
-    if (showTriggerMenu) document.addEventListener('mousedown', handleClick);
+    if (showTriggerMenu || showSchedulePicker) document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [showTriggerMenu]);
+  }, [showTriggerMenu, showSchedulePicker]);
 
   const handleNameBlur = () => {
     const trimmed = name.trim();
@@ -81,8 +112,25 @@ export default function EditorToolbar({
   };
 
   const handleTriggerChange = (value: TriggerType) => {
-    updateRoutine(routine.id, { trigger_type: value });
-    setShowTriggerMenu(false);
+    if (value === 'cron') {
+      const cronExpr = scheduleToCron({ days: scheduleDays, time: scheduleTime });
+      updateRoutine(routine.id, { trigger_type: value, cron_expression: cronExpr });
+      setShowTriggerMenu(false);
+      setShowSchedulePicker(true);
+    } else {
+      updateRoutine(routine.id, { trigger_type: value, cron_expression: null });
+      setShowTriggerMenu(false);
+      setShowSchedulePicker(false);
+    }
+  };
+
+  const handleScheduleChange = (days: DayOfWeek[], time: string) => {
+    setScheduleDays(days);
+    setScheduleTime(time);
+    if (days.length > 0) {
+      const cronExpr = scheduleToCron({ days, time });
+      updateRoutine(routine.id, { cron_expression: cronExpr });
+    }
   };
 
   const currentTrigger =
@@ -140,6 +188,31 @@ export default function EditorToolbar({
           </div>
         )}
       </div>
+
+      {/* Schedule picker popover */}
+      {routine.triggerType === 'cron' && (
+        <div className="relative" ref={scheduleRef}>
+          <button
+            onClick={() => setShowSchedulePicker((prev) => !prev)}
+            className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-bg-elevated text-text-tertiary border border-border-subtle hover:border-border-default hover:text-text-secondary transition-colors"
+          >
+            {existingSchedule
+              ? describeSchedule({ days: scheduleDays, time: scheduleTime })
+              : 'Set schedule'}
+          </button>
+
+          {showSchedulePicker && (
+            <div className="absolute top-full left-0 mt-1 bg-bg-elevated border border-border-subtle rounded-lg shadow-lg p-3 min-w-[280px] z-50">
+              <SchedulePicker
+                days={scheduleDays}
+                time={scheduleTime}
+                onDaysChange={(days) => handleScheduleChange(days, scheduleTime)}
+                onTimeChange={(time) => handleScheduleChange(scheduleDays, time)}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex-1" />
 

@@ -9,6 +9,7 @@ interface CompileOptions {
   steps: string[];
   defaultRunnerId?: string;
   approvalGates?: string[];
+  onError?: 'fail' | 'skip' | 'retry';
 }
 
 /**
@@ -17,7 +18,7 @@ interface CompileOptions {
  * or `expert_step` (with runner).
  */
 export function compileLinearDAG(options: CompileOptions): DAGDefinition {
-  const { steps, defaultRunnerId, approvalGates = [] } = options;
+  const { steps, defaultRunnerId, approvalGates = [], onError = 'fail' } = options;
   const gateSet = new Set(approvalGates.map((g) => g.toLowerCase()));
 
   const dagSteps: StepDefinition[] = steps.map((stepText, i) => {
@@ -52,7 +53,7 @@ export function compileLinearDAG(options: CompileOptions): DAGDefinition {
       dependsOn,
       inputMappings,
       requiresApproval: gateSet.has(stepText.toLowerCase()),
-      onError: 'fail' as const,
+      onError,
     };
   });
 

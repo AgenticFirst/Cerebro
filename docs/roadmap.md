@@ -54,7 +54,7 @@
 | Cerebro routine proposal logic (detect repeatable intent) | Done |
 | Persist routine proposal and engine run metadata on messages | Done |
 | Preview execution with streaming logs | Done |
-| Cron scheduler for scheduled routines | Not Started |
+| Cron scheduler for scheduled routines | Done |
 | **7. Cerebro Core Intelligence** | |
 | Cerebro system prompt architecture (role definition, tool registry, context/memory injection) | Not Started |
 | Cerebro routing logic (delegate to appropriate expert) | Not Started |

@@ -2,6 +2,7 @@ import { Play, Hand, Clock, Webhook } from 'lucide-react';
 import clsx from 'clsx';
 import type { Routine } from '../../../types/routines';
 import Toggle from '../../ui/Toggle';
+import { describeCron } from '../../../utils/cron-helpers';
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -65,6 +66,11 @@ export default function RoutineCard({
               <TriggerIcon size={10} />
               {trigger.label}
             </span>
+            {routine.triggerType === 'cron' && routine.cronExpression && (
+              <span className="text-[10px] text-text-tertiary flex-shrink-0">
+                {describeCron(routine.cronExpression) ?? routine.cronExpression}
+              </span>
+            )}
           </div>
           {routine.description && (
             <p className="text-xs text-text-secondary line-clamp-2">

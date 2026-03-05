@@ -29,6 +29,7 @@ import { AgentRuntime } from './agents';
 import type { AgentRunRequest } from './agents';
 import { ExecutionEngine } from './engine/engine';
 import type { EngineRunRequest } from './engine/dag/types';
+import { RoutineScheduler } from './scheduler/scheduler';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -60,6 +61,9 @@ let agentRuntime: AgentRuntime | null = null;
 
 // Execution engine (initialized after backend is healthy)
 let executionEngine: ExecutionEngine | null = null;
+
+// Routine scheduler (initialized after execution engine)
+let routineScheduler: RoutineScheduler | null = null;
 
 // --- Utility functions ---
 
@@ -191,6 +195,23 @@ async function startPythonBackend(): Promise<void> {
   agentRuntime = new AgentRuntime(port);
   executionEngine = new ExecutionEngine(port, agentRuntime);
   agentRuntime.setExecutionEngine(executionEngine);
+  routineScheduler = new RoutineScheduler(executionEngine, port);
+
+  // Set webContents if window already exists
+  const windows = BrowserWindow.getAllWindows();
+  if (windows.length > 0) {
+    routineScheduler.setWebContents(windows[0].webContents);
+  }
+
+  // Initial scheduler sync + start periodic re-sync
+  routineScheduler.sync().then(() => {
+    routineScheduler!.startPeriodicSync();
+  }).catch((err) => {
+    console.error('[Cerebro] Initial scheduler sync failed:', err);
+    // Start periodic sync anyway so it can self-heal
+    routineScheduler!.startPeriodicSync();
+  });
+
   console.log(`[Cerebro] Python backend is ready on port ${port}`);
 }
 
@@ -537,6 +558,15 @@ function registerIpcHandlers(): void {
     if (!executionEngine) return [];
     return executionEngine.getActiveRuns();
   });
+
+  // --- Scheduler ---
+
+  ipcMain.handle(IPC_CHANNELS.SCHEDULER_SYNC, async () => {
+    if (!routineScheduler) {
+      throw new Error('Scheduler not initialized');
+    }
+    await routineScheduler.sync();
+  });
 }
 
 // --- Window creation ---
@@ -561,6 +591,11 @@ const createWindow = () => {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
     mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+  }
+
+  // Set webContents on scheduler if available
+  if (routineScheduler) {
+    routineScheduler.setWebContents(mainWindow.webContents);
   }
 
   // Open the DevTools.
@@ -607,6 +642,9 @@ app.on('activate', () => {
 
 app.on('before-quit', async () => {
   isIntentionalShutdown = true;
+  if (routineScheduler) {
+    routineScheduler.stopAll();
+  }
   await stopPythonBackend();
 });
 

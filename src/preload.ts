@@ -119,6 +119,12 @@ const api: CerebroAPI = {
       };
     },
   },
+
+  scheduler: {
+    sync(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SCHEDULER_SYNC);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('cerebro', api);

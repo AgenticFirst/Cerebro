@@ -32,6 +32,9 @@ export const IPC_CHANNELS = {
   ENGINE_CANCEL: 'engine:cancel',
   ENGINE_ACTIVE_RUNS: 'engine:active-runs',
   engineEvent: (runId: string) => `engine:event:${runId}`,
+
+  // Scheduler
+  SCHEDULER_SYNC: 'scheduler:sync',
 } as const;
 
 // --- Backend Request/Response ---
@@ -195,6 +198,12 @@ export interface EngineAPI {
   onEvent(runId: string, callback: (event: ExecutionEvent) => void): () => void;
 }
 
+// --- Scheduler ---
+
+export interface SchedulerAPI {
+  sync(): Promise<void>;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -207,4 +216,5 @@ export interface CerebroAPI {
   models: ModelsAPI;
   agent: AgentAPI;
   engine: EngineAPI;
+  scheduler: SchedulerAPI;
 }
