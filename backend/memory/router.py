@@ -235,6 +235,8 @@ async def get_memory_context(body: MemoryContextRequest, db=Depends(get_db)):
         scope=body.scope,
         scope_id=body.scope_id,
         db=db,
+        include_expert_catalog=body.include_expert_catalog,
+        include_routine_catalog=body.include_routine_catalog,
     )
 
 

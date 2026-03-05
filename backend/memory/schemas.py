@@ -84,6 +84,8 @@ class MemoryContextRequest(BaseModel):
     messages: list[dict] | None = None
     scope: str = "personal"
     scope_id: str | None = None
+    include_expert_catalog: bool = False
+    include_routine_catalog: bool = False
 
 
 class MemoryContextResponse(BaseModel):

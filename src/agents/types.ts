@@ -41,6 +41,12 @@ export interface ProposalSnapshot {
   status: 'proposed' | 'previewing' | 'saved' | 'dismissed';
 }
 
+/** Summary of an expert proposal from a previous turn. */
+export interface ExpertProposalSnapshot {
+  name: string;
+  status: 'proposed' | 'previewing' | 'saved' | 'dismissed';
+}
+
 /** Lightweight message summary for conversation context. */
 export interface MessageSnapshot {
   role: 'user' | 'assistant';
@@ -56,6 +62,9 @@ export interface AgentRunRequest {
   /** Routine proposals from earlier messages in this conversation, so the LLM
    *  can avoid re-proposing dismissed routines or know which were saved. */
   routineProposals?: ProposalSnapshot[];
+  /** Expert proposals from earlier messages in this conversation, so the LLM
+   *  can avoid re-proposing dismissed experts or know which were saved. */
+  expertProposals?: ExpertProposalSnapshot[];
 }
 
 // ── Events sent to renderer ─────────────────────────────────────

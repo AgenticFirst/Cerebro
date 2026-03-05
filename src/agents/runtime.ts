@@ -85,12 +85,15 @@ export class AgentRuntime {
     try {
       const scope = expertId ? 'expert' : 'personal';
       const scopeId = expertId || null;
+      const isPersonalScope = scope === 'personal';
       const memoryRes = await this.backendPost<{ system_prompt: string }>(
         '/memory/context',
         {
           messages: [{ role: 'user', content }],
           scope,
           scope_id: scopeId,
+          include_expert_catalog: isPersonalScope,
+          include_routine_catalog: isPersonalScope,
         },
       );
       if (memoryRes?.system_prompt) {
@@ -124,6 +127,16 @@ export class AgentRuntime {
         (p) => `- "${p.name}" → ${p.status}`,
       );
       systemPrompt += `\n\n## Prior Routine Proposals (this conversation)\n${lines.join('\n')}\n` +
+        `If a proposal was dismissed, do NOT re-propose it. If saved, the user already has it.`;
+    }
+
+    // Inject expert proposal context so the LLM knows what it already proposed.
+    if (request.expertProposals && request.expertProposals.length > 0) {
+      const proposals = request.expertProposals.slice(-20);
+      const lines = proposals.map(
+        (p) => `- "${p.name}" → ${p.status}`,
+      );
+      systemPrompt += `\n\n## Prior Expert Proposals (this conversation)\n${lines.join('\n')}\n` +
         `If a proposal was dismissed, do NOT re-propose it. If saved, the user already has it.`;
     }
 
