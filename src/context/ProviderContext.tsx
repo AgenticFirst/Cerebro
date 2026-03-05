@@ -13,6 +13,7 @@ import type {
   ConnectionStatus,
   ProviderConnectionState,
 } from '../types/providers';
+import { loadSetting, saveSetting } from '../lib/settings';
 
 // No models enabled by default — user must add an API key first
 const DEFAULT_ENABLED_MODELS: string[] = [];
@@ -43,33 +44,6 @@ interface ProviderActions {
 type ProviderContextValue = ProviderState & ProviderActions;
 
 const ProviderContext = createContext<ProviderContextValue | null>(null);
-
-// ── Settings API helpers ────────────────────────────────────────
-
-async function loadSetting<T>(key: string): Promise<T | null> {
-  try {
-    const res = await window.cerebro.invoke<{ value: string }>({
-      method: 'GET',
-      path: `/settings/${key}`,
-    });
-    if (res.ok) {
-      return JSON.parse(res.data.value) as T;
-    }
-  } catch {
-    // Setting doesn't exist or parse error
-  }
-  return null;
-}
-
-function saveSetting(key: string, value: unknown): void {
-  window.cerebro
-    .invoke({
-      method: 'PUT',
-      path: `/settings/${key}`,
-      body: { value: JSON.stringify(value) },
-    })
-    .catch(console.error);
-}
 
 export function ProviderProvider({ children }: { children: ReactNode }) {
   const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(null);

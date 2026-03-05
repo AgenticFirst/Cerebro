@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateId, titleFromContent, fromApiConversation, fromApiMessage } from '../context/chat-helpers';
+import { generateId, titleFromContent, fromApiConversation, fromApiMessage, toApiProposal } from '../context/chat-helpers';
 import type { ApiConversation, ApiMessage } from '../context/chat-helpers';
 
 describe('generateId', () => {
@@ -131,5 +131,70 @@ describe('fromApiMessage', () => {
     const msg = fromApiMessage(base);
     expect(msg.expertId).toBeUndefined();
     expect(msg.agentRunId).toBeUndefined();
+  });
+
+  it('hydrates isPreviewRun from metadata', () => {
+    const msg = fromApiMessage({
+      ...base,
+      metadata: { engine_run_id: 'run1', is_preview_run: true },
+    });
+    expect(msg.isPreviewRun).toBe(true);
+  });
+
+  it('does not set isPreviewRun when metadata flag is absent', () => {
+    const msg = fromApiMessage({
+      ...base,
+      metadata: { engine_run_id: 'run1' },
+    });
+    expect(msg.isPreviewRun).toBeUndefined();
+  });
+
+  it('hydrates previewRunId on routineProposal from metadata', () => {
+    const msg = fromApiMessage({
+      ...base,
+      metadata: {
+        routine_proposal: {
+          name: 'Test',
+          steps: ['step1'],
+          trigger_type: 'manual',
+          status: 'previewing',
+          preview_run_id: 'prev_run_42',
+          required_connections: [],
+          approval_gates: [],
+        },
+      },
+    });
+    expect(msg.routineProposal).toBeDefined();
+    expect(msg.routineProposal!.previewRunId).toBe('prev_run_42');
+    expect(msg.routineProposal!.status).toBe('previewing');
+  });
+});
+
+describe('toApiProposal', () => {
+  it('includes preview_run_id in serialized output', () => {
+    const result = toApiProposal({
+      name: 'Test',
+      description: '',
+      steps: ['step1'],
+      triggerType: 'manual',
+      requiredConnections: [],
+      approvalGates: [],
+      status: 'previewing',
+      previewRunId: 'prev_run_42',
+    });
+    expect(result.preview_run_id).toBe('prev_run_42');
+  });
+
+  it('omits preview_run_id when undefined', () => {
+    const result = toApiProposal({
+      name: 'Test',
+      description: '',
+      steps: ['step1'],
+      triggerType: 'manual',
+      requiredConnections: [],
+      approvalGates: [],
+      status: 'proposed',
+    });
+    expect(result.preview_run_id).toBeUndefined();
   });
 });

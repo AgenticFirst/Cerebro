@@ -42,7 +42,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       {/* Run log card */}
       {!isUser && message.engineRunId && (
         <div className="mb-2">
-          <RunLogCard engineRunId={message.engineRunId} />
+          <RunLogCard engineRunId={message.engineRunId} isPreview={message.isPreviewRun} />
         </div>
       )}
 

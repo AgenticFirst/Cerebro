@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Brain, Palette, Info, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import MemorySection from './settings/MemorySection';
+import AppearanceSection from './settings/AppearanceSection';
 
 type Section = 'memory' | 'appearance' | 'about';
 
@@ -65,12 +66,7 @@ export default function SettingsScreen() {
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <div className="max-w-2xl px-8 py-8">
           {activeSection === 'memory' && <MemorySection />}
-          {activeSection === 'appearance' && (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <Palette size={32} className="text-text-tertiary mb-3" />
-              <p className="text-sm text-text-tertiary">Appearance settings coming soon</p>
-            </div>
-          )}
+          {activeSection === 'appearance' && <AppearanceSection />}
           {activeSection === 'about' && (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <Info size={32} className="text-text-tertiary mb-3" />

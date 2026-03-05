@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Zap,
   Play,
@@ -58,8 +58,49 @@ export default function RoutineProposalCard({
   const { updateMessage, addMessage } = useChat();
   const { createRoutine } = useRoutines();
   const [isSaving, setIsSaving] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isCollapsed = proposal.status === 'dismissed' || proposal.status === 'saved';
+
+  // Listen for preview completion and transition back to 'proposed'
+  useEffect(() => {
+    if (proposal.status !== 'previewing' || !proposal.previewRunId) return;
+
+    const previewRunId = proposal.previewRunId;
+    let stale = false;
+    let unsubEvent: (() => void) | null = null;
+
+    const transitionBack = () => {
+      if (stale) return;
+      const proposed = { ...proposal, status: 'proposed' as const, previewRunId: undefined };
+      updateMessage(conversationId, messageId, { routineProposal: proposed });
+      apiPatchMessageMetadata(conversationId, messageId, {
+        routine_proposal: toApiProposal(proposed),
+      }).catch(console.error);
+    };
+
+    // Check if run already finished (e.g. after app restart)
+    window.cerebro.engine.activeRuns().then((active) => {
+      if (stale) return;
+      const isActive = active.some((r) => r.runId === previewRunId);
+      if (!isActive) {
+        transitionBack();
+        return;
+      }
+      // Still active — subscribe to terminal events
+      unsubEvent = window.cerebro.engine.onEvent(previewRunId, (event) => {
+        if (
+          event.type === 'run_completed' ||
+          event.type === 'run_failed' ||
+          event.type === 'run_cancelled'
+        ) {
+          transitionBack();
+        }
+      });
+    });
+
+    return () => { stale = true; unsubEvent?.(); };
+  }, [proposal.status, proposal.previewRunId, conversationId, messageId, updateMessage]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -102,6 +143,8 @@ export default function RoutineProposalCard({
   };
 
   const handlePreview = async () => {
+    if (isPreviewing) return;
+    setIsPreviewing(true);
     setError(null);
     try {
       const dag = compileLinearDAG({
@@ -115,7 +158,7 @@ export default function RoutineProposalCard({
       });
 
       // Update proposal status on the original message
-      const previewing = { ...proposal, status: 'previewing' as const };
+      const previewing = { ...proposal, status: 'previewing' as const, previewRunId: runId };
       updateMessage(conversationId, messageId, { routineProposal: previewing });
       apiPatchMessageMetadata(conversationId, messageId, {
         routine_proposal: toApiProposal(previewing),
@@ -127,9 +170,9 @@ export default function RoutineProposalCard({
         conversationId,
         'assistant',
         `Preview run for **${proposal.name}**...`,
-        { engine_run_id: runId },
+        { engine_run_id: runId, is_preview_run: true },
       );
-      updateMessage(conversationId, previewMsgId, { engineRunId: runId });
+      updateMessage(conversationId, previewMsgId, { engineRunId: runId, isPreviewRun: true });
     } catch (err) {
       // Restore to 'proposed' so the user can retry
       updateMessage(conversationId, messageId, {
@@ -138,6 +181,8 @@ export default function RoutineProposalCard({
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(`Failed to start preview: ${msg}`);
       console.error('Failed to start preview:', err);
+    } finally {
+      setIsPreviewing(false);
     }
   };
 
@@ -231,7 +276,8 @@ export default function RoutineProposalCard({
         <div className="border-t border-border-subtle px-3 py-2 flex items-center gap-2">
           <button
             onClick={handlePreview}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-bg-hover/50 text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer"
+            disabled={isPreviewing}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-bg-hover/50 text-text-secondary hover:bg-bg-hover transition-colors cursor-pointer disabled:opacity-50"
           >
             <Play size={11} />
             Preview

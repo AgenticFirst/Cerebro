@@ -53,6 +53,7 @@ function proposalFromApi(raw: Record<string, unknown>): RoutineProposal {
     approvalGates: (raw.approval_gates as string[]) ?? [],
     status: (raw.status as RoutineProposal['status']) ?? 'proposed',
     savedRoutineId: raw.saved_routine_id as string | undefined,
+    previewRunId: raw.preview_run_id as string | undefined,
   };
 }
 
@@ -77,6 +78,9 @@ export function fromApiMessage(m: ApiMessage): Message {
       msg.routineProposal = proposalFromApi(
         m.metadata.routine_proposal as Record<string, unknown>,
       );
+    }
+    if (m.metadata.is_preview_run) {
+      msg.isPreviewRun = true;
     }
   }
 
@@ -107,6 +111,7 @@ export function toApiProposal(p: RoutineProposal): Record<string, unknown> {
     approval_gates: p.approvalGates,
     status: p.status,
     saved_routine_id: p.savedRoutineId,
+    preview_run_id: p.previewRunId,
   };
 }
 

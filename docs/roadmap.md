@@ -53,7 +53,7 @@
 | Routine Proposal Cards in Chat (propose → preview → save) | Done |
 | Cerebro routine proposal logic (detect repeatable intent) | Done |
 | Persist routine proposal and engine run metadata on messages | Done |
-| Preview execution with streaming logs | Not Started |
+| Preview execution with streaming logs | Done |
 | Cron scheduler for scheduled routines | Not Started |
 | **7. Cerebro Core Intelligence** | |
 | Cerebro system prompt architecture (role definition, tool registry, context/memory injection) | Not Started |

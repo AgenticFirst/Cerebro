@@ -36,6 +36,7 @@ export interface RoutineProposal {
   approvalGates: string[];
   status: 'proposed' | 'previewing' | 'saved' | 'dismissed';
   savedRoutineId?: string;
+  previewRunId?: string;
 }
 
 export interface Message {
@@ -52,6 +53,7 @@ export interface Message {
   isThinking?: boolean;
   toolCalls?: ToolCall[];
   engineRunId?: string;
+  isPreviewRun?: boolean;
   routineProposal?: RoutineProposal;
 }
 
