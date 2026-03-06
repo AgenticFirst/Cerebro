@@ -15,6 +15,8 @@ class TeamMember(BaseModel):
     expert_id: str
     role: str
     order: int = 0
+    delegation_prompt: str | None = None
+    on_error: str = "skip"
 
 
 class ExpertModelConfig(BaseModel):
@@ -44,6 +46,8 @@ class ExpertCreate(BaseModel):
     required_connections: list[str] | None = None
     recommended_routines: list[str] | None = None
     team_members: list[TeamMember] | None = None
+    strategy: str | None = None
+    coordinator_prompt: str | None = None
     avatar_url: str | None = None
     model_config_data: ExpertModelConfig | None = None
     max_turns: int = 10
@@ -66,6 +70,8 @@ class ExpertUpdate(BaseModel):
     required_connections: list[str] | None = None
     recommended_routines: list[str] | None = None
     team_members: list[TeamMember] | None = None
+    strategy: str | None = None
+    coordinator_prompt: str | None = None
     avatar_url: str | None = None
     model_config_data: ExpertModelConfig | None = None
     max_turns: int | None = None
@@ -92,6 +98,8 @@ class ExpertResponse(BaseModel):
     required_connections: list[str] | None
     recommended_routines: list[str] | None
     team_members: list[TeamMember] | None
+    strategy: str | None
+    coordinator_prompt: str | None
     avatar_url: str | None
     model_config_data: ExpertModelConfig | None = None
     max_turns: int

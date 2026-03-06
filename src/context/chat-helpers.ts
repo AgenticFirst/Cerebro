@@ -1,4 +1,4 @@
-import type { Conversation, Message, RoutineProposal, ExpertProposal } from '../types/chat';
+import type { Conversation, Message, RoutineProposal, ExpertProposal, TeamProposal } from '../types/chat';
 
 // ── Pure helpers ─────────────────────────────────────────────────
 
@@ -40,6 +40,25 @@ export interface ApiConversationList {
 }
 
 // ── Mapping helpers ──────────────────────────────────────────────
+
+function teamProposalFromApi(raw: Record<string, unknown>): TeamProposal {
+  const members = (raw.members as Array<Record<string, unknown>>) ?? [];
+  return {
+    name: raw.name as string,
+    description: (raw.description as string) ?? '',
+    strategy: (raw.strategy as string) ?? 'auto',
+    members: members.map((m) => ({
+      expertId: (m.expert_id as string | null) ?? null,
+      name: (m.name as string | null) ?? null,
+      role: m.role as string,
+      description: (m.description as string | null) ?? null,
+      order: (m.order as number) ?? 0,
+    })),
+    coordinatorPrompt: (raw.coordinator_prompt as string | null) ?? null,
+    status: (raw.status as TeamProposal['status']) ?? 'proposed',
+    savedTeamId: raw.saved_team_id as string | undefined,
+  };
+}
 
 function expertProposalFromApi(raw: Record<string, unknown>): ExpertProposal {
   return {
@@ -97,6 +116,30 @@ export function fromApiMessage(m: ApiMessage): Message {
         m.metadata.expert_proposal as Record<string, unknown>,
       );
     }
+    if (m.metadata.team_proposal) {
+      msg.teamProposal = teamProposalFromApi(
+        m.metadata.team_proposal as Record<string, unknown>,
+      );
+    }
+    if (m.metadata.team_run) {
+      const raw = m.metadata.team_run as Record<string, unknown>;
+      const members = (raw.members as Array<Record<string, unknown>>) ?? [];
+      msg.teamRun = {
+        teamId: raw.team_id as string,
+        teamName: raw.team_name as string,
+        strategy: raw.strategy as string,
+        status: (raw.status as 'running' | 'completed' | 'error') ?? 'completed',
+        successCount: raw.success_count as number | undefined,
+        totalCount: raw.total_count as number | undefined,
+        members: members.map((mem) => ({
+          memberId: mem.member_id as string,
+          memberName: mem.member_name as string,
+          role: mem.role as string,
+          status: (mem.status as 'queued' | 'running' | 'completed' | 'error') ?? 'completed',
+          response: (mem.response as string | undefined),
+        })),
+      };
+    }
     if (m.metadata.is_preview_run) {
       msg.isPreviewRun = true;
     }
@@ -143,6 +186,24 @@ export function toApiProposal(p: RoutineProposal): Record<string, unknown> {
     status: p.status,
     saved_routine_id: p.savedRoutineId,
     preview_run_id: p.previewRunId,
+  };
+}
+
+export function toApiTeamProposal(p: TeamProposal): Record<string, unknown> {
+  return {
+    name: p.name,
+    description: p.description,
+    strategy: p.strategy,
+    members: p.members.map((m) => ({
+      expert_id: m.expertId,
+      name: m.name,
+      role: m.role,
+      description: m.description,
+      order: m.order,
+    })),
+    coordinator_prompt: p.coordinatorPrompt,
+    status: p.status,
+    saved_team_id: p.savedTeamId,
   };
 }
 

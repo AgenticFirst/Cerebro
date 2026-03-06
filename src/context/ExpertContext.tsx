@@ -55,6 +55,8 @@ export interface CreateExpertInput {
   toolAccess?: string[];
   source?: ExpertSource;
   teamMembers?: Array<{ expertId: string; role: string; order: number }>;
+  strategy?: string;
+  coordinatorPrompt?: string;
 }
 
 // ── API response types (snake_case) ────────────────────────────
@@ -134,6 +136,8 @@ function toApiBody(input: CreateExpertInput): Record<string, unknown> {
       order: m.order,
     }));
   }
+  if (input.strategy) body.strategy = input.strategy;
+  if (input.coordinatorPrompt) body.coordinator_prompt = input.coordinatorPrompt;
   return body;
 }
 

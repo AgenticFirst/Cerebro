@@ -119,6 +119,8 @@ class Expert(Base):
     required_connections: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
     recommended_routines: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
     team_members: Mapped[str | None] = mapped_column(Text, nullable=True)          # JSON [{expert_id, role, order}]
+    strategy: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    coordinator_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     model_config_json: Mapped[str | None] = mapped_column("model_config", Text, nullable=True)   # JSON
     max_turns: Mapped[int] = mapped_column(Integer, default=10)

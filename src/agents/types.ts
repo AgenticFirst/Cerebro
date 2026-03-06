@@ -99,6 +99,12 @@ export type RendererAgentEvent =
   | { type: 'tool_end'; toolCallId: string; toolName: string; result: string; isError: boolean }
   | { type: 'delegation_start'; parentRunId: string; childRunId: string; expertId: string; expertName: string }
   | { type: 'delegation_end'; parentRunId: string; childRunId: string; status: string }
+  | { type: 'team_started'; teamId: string; teamName: string; strategy: string; memberCount: number }
+  | { type: 'member_queued'; teamId: string; memberId: string; memberName: string; role: string }
+  | { type: 'member_started'; teamId: string; memberId: string; memberName: string }
+  | { type: 'member_completed'; teamId: string; memberId: string; memberName: string; status: 'completed' | 'error'; response?: string }
+  | { type: 'team_synthesis'; teamId: string }
+  | { type: 'team_completed'; teamId: string; status: 'completed' | 'error'; successCount: number; totalCount: number }
   | { type: 'done'; runId: string; messageContent: string }
   | { type: 'error'; runId: string; error: string };
 

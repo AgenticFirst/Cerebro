@@ -6,6 +6,8 @@ import ToolCallCard from './ToolCallCard';
 import RunLogCard from './RunLogCard';
 import RoutineProposalCard from './RoutineProposalCard';
 import ExpertProposalCard from './ExpertProposalCard';
+import TeamProposalCard from './TeamProposalCard';
+import TeamRunCard from './TeamRunCard';
 
 interface ChatMessageProps {
   message: Message;
@@ -55,6 +57,24 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             messageId={message.id}
             conversationId={message.conversationId}
           />
+        </div>
+      )}
+
+      {/* Team proposal card */}
+      {!isUser && message.teamProposal && (
+        <div className="mb-2">
+          <TeamProposalCard
+            proposal={message.teamProposal}
+            messageId={message.id}
+            conversationId={message.conversationId}
+          />
+        </div>
+      )}
+
+      {/* Team run card */}
+      {!isUser && message.teamRun && (
+        <div className="mb-2">
+          <TeamRunCard teamRun={message.teamRun} />
         </div>
       )}
 

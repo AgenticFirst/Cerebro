@@ -7,7 +7,7 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import type { Conversation, Message, Screen, ToolCall } from '../types/chat';
+import type { Conversation, Message, Screen, ToolCall, TeamRun, TeamRunMember } from '../types/chat';
 import type { BackendResponse, StreamEvent, RendererAgentEvent } from '../types/ipc';
 import type { SelectedModel, ProviderConnectionState } from '../types/providers';
 import { useProviders } from './ProviderContext';
@@ -21,6 +21,7 @@ import {
   fromApiConversation,
   toApiProposal,
   toApiExpertProposal,
+  toApiTeamProposal,
   type ApiConversationList,
 } from './chat-helpers';
 
@@ -380,6 +381,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           let accEngineRunId: string | undefined;
           let accRoutineProposal: import('../types/chat').RoutineProposal | undefined;
           let accExpertProposal: import('../types/chat').ExpertProposal | undefined;
+          let accTeamProposal: import('../types/chat').TeamProposal | undefined;
 
           const clearThinking = () => {
             if (!thinkingCleared) {
@@ -468,6 +470,35 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     }
                   } catch { /* not valid JSON, treat as normal result */ }
                 }
+                // Detect propose_team tool result and attach proposal to message
+                if (event.toolName === 'propose_team' && !event.isError) {
+                  try {
+                    const parsed = JSON.parse(event.result);
+                    if (parsed.type === 'team_proposal') {
+                      accTeamProposal = {
+                        name: parsed.name,
+                        description: parsed.description ?? '',
+                        strategy: parsed.strategy ?? 'auto',
+                        members: (parsed.members ?? []).map((m: Record<string, unknown>, i: number) => ({
+                          expertId: (m.expert_id as string | null) ?? null,
+                          name: (m.name as string | null) ?? null,
+                          role: m.role as string,
+                          description: (m.description as string | null) ?? null,
+                          order: (m.order as number) ?? i,
+                        })),
+                        coordinatorPrompt: parsed.coordinatorPrompt ?? null,
+                        status: 'proposed',
+                      };
+                      updateMessage(convId!, assistantId, {
+                        teamProposal: accTeamProposal,
+                      });
+                    } else {
+                      console.warn('propose_team result missing type=team_proposal:', event.result.slice(0, 200));
+                    }
+                  } catch (e) {
+                    console.warn('propose_team result is not valid JSON:', event.result.slice(0, 200), e);
+                  }
+                }
                 break;
               }
 
@@ -487,6 +518,121 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 // No-op: tool_end already handles status finalization
                 break;
 
+              case 'team_started': {
+                const teamRun: TeamRun = {
+                  teamId: event.teamId,
+                  teamName: event.teamName,
+                  strategy: event.strategy,
+                  members: [],
+                  status: 'running',
+                };
+                updateMessage(convId!, assistantId, { teamRun });
+                break;
+              }
+
+              case 'member_queued': {
+                setConversations((prev) =>
+                  prev.map((c) => {
+                    if (c.id !== convId) return c;
+                    return {
+                      ...c,
+                      messages: c.messages.map((m) => {
+                        if (m.id !== assistantId || !m.teamRun) return m;
+                        const newMember: TeamRunMember = {
+                          memberId: event.memberId,
+                          memberName: event.memberName,
+                          role: event.role,
+                          status: 'queued',
+                        };
+                        return {
+                          ...m,
+                          teamRun: { ...m.teamRun, members: [...m.teamRun.members, newMember] },
+                        };
+                      }),
+                    };
+                  }),
+                );
+                break;
+              }
+
+              case 'member_started': {
+                setConversations((prev) =>
+                  prev.map((c) => {
+                    if (c.id !== convId) return c;
+                    return {
+                      ...c,
+                      messages: c.messages.map((m) => {
+                        if (m.id !== assistantId || !m.teamRun) return m;
+                        return {
+                          ...m,
+                          teamRun: {
+                            ...m.teamRun,
+                            members: m.teamRun.members.map((mem) =>
+                              mem.memberId === event.memberId ? { ...mem, status: 'running' as const } : mem,
+                            ),
+                          },
+                        };
+                      }),
+                    };
+                  }),
+                );
+                break;
+              }
+
+              case 'member_completed': {
+                setConversations((prev) =>
+                  prev.map((c) => {
+                    if (c.id !== convId) return c;
+                    return {
+                      ...c,
+                      messages: c.messages.map((m) => {
+                        if (m.id !== assistantId || !m.teamRun) return m;
+                        return {
+                          ...m,
+                          teamRun: {
+                            ...m.teamRun,
+                            members: m.teamRun.members.map((mem) =>
+                              mem.memberId === event.memberId
+                                ? { ...mem, status: event.status, response: event.response }
+                                : mem,
+                            ),
+                          },
+                        };
+                      }),
+                    };
+                  }),
+                );
+                break;
+              }
+
+              case 'team_synthesis':
+                // Visual indicator handled by running status
+                break;
+
+              case 'team_completed': {
+                setConversations((prev) =>
+                  prev.map((c) => {
+                    if (c.id !== convId) return c;
+                    return {
+                      ...c,
+                      messages: c.messages.map((m) => {
+                        if (m.id !== assistantId || !m.teamRun) return m;
+                        return {
+                          ...m,
+                          teamRun: {
+                            ...m.teamRun,
+                            status: event.status,
+                            successCount: event.successCount,
+                            totalCount: event.totalCount,
+                          },
+                        };
+                      }),
+                    };
+                  }),
+                );
+                break;
+              }
+
               case 'done': {
                 unsub();
                 clearThinking();
@@ -502,6 +648,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 if (accEngineRunId) doneMetadata.engine_run_id = accEngineRunId;
                 if (accRoutineProposal) doneMetadata.routine_proposal = toApiProposal(accRoutineProposal);
                 if (accExpertProposal) doneMetadata.expert_proposal = toApiExpertProposal(accExpertProposal);
+                if (accTeamProposal) doneMetadata.team_proposal = toApiTeamProposal(accTeamProposal);
+                // Persist team run if present — read latest state from conversations ref
+                const doneConv = conversationsRef.current.find((c) => c.id === convId);
+                const doneMsg = doneConv?.messages.find((m) => m.id === assistantId);
+                if (doneMsg?.teamRun) {
+                  doneMetadata.team_run = {
+                    team_id: doneMsg.teamRun.teamId,
+                    team_name: doneMsg.teamRun.teamName,
+                    strategy: doneMsg.teamRun.strategy,
+                    status: doneMsg.teamRun.status,
+                    success_count: doneMsg.teamRun.successCount,
+                    total_count: doneMsg.teamRun.totalCount,
+                    members: doneMsg.teamRun.members.map((mem) => ({
+                      member_id: mem.memberId,
+                      member_name: mem.memberName,
+                      role: mem.role,
+                      status: mem.status,
+                      response: mem.response,
+                    })),
+                  };
+                }
                 // Persist final message
                 apiCreateMessage(convId!, {
                   id: assistantId,

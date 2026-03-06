@@ -14,7 +14,8 @@ import { createGetCurrentTime, createGetUserProfile } from './system-tools';
 import { createWebSearch } from './search-tools';
 import { createRunRoutine, createProposeRoutine } from './routine-tools';
 import { createProposeExpert } from './expert-proposal-tools';
-import { createDelegateToExpert, createListExperts } from './delegation-tools';
+import { createProposeTeam } from './team-proposal-tools';
+import { createDelegateToExpert, createDelegateToTeam, createListExperts } from './delegation-tools';
 
 /** All available tool factories, keyed by name. */
 const TOOL_FACTORIES: Record<string, (ctx: ToolContext) => AgentTool> = {
@@ -28,7 +29,9 @@ const TOOL_FACTORIES: Record<string, (ctx: ToolContext) => AgentTool> = {
   run_routine: createRunRoutine,
   propose_routine: createProposeRoutine,
   propose_expert: createProposeExpert,
+  propose_team: createProposeTeam,
   delegate_to_expert: createDelegateToExpert,
+  delegate_to_team: createDelegateToTeam,
   list_experts: createListExperts,
 };
 
@@ -48,9 +51,11 @@ const DEFAULT_TOOLS = [
 /** Tools only available to Cerebro (personal scope), not individual experts. */
 const CEREBRO_TOOLS = [
   'delegate_to_expert',
+  'delegate_to_team',
   'list_experts',
   'propose_routine',
   'propose_expert',
+  'propose_team',
   'run_routine',
 ];
 

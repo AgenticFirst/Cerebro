@@ -68,7 +68,7 @@ def get_context_file(key: str, db=Depends(get_db)):
 @router.put("/context-files/{key}", response_model=ContextFileResponse)
 def upsert_context_file(key: str, body: ContextFileUpdate, db=Depends(get_db)):
     # Allow well-known keys + expert/routine scoped keys
-    if key not in ALLOWED_CONTEXT_KEYS and not key.startswith(("expert:", "routine:")):
+    if key not in ALLOWED_CONTEXT_KEYS and not key.startswith(("expert:", "routine:", "team:")):
         raise HTTPException(status_code=400, detail=f"Invalid context file key: {key}")
     full_key = CONTEXT_PREFIX + key
     setting = db.get(Setting, full_key)

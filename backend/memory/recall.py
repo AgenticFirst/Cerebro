@@ -47,6 +47,10 @@ WHEN the user's request matches an expert's domain (see Available Experts below)
   -> Provide the expert with a clear, complete task description including relevant context.
   -> The expert cannot see your conversation — include everything they need.
 
+WHEN the user's request would benefit from multiple experts working together, and a team exists:
+  -> Delegate to the team using `delegate_to_team`.
+  -> The team will coordinate its members automatically (sequentially or in parallel).
+
 WHEN the user asks what experts are available, or you need to find an expert not shown above:
   -> Use `list_experts` to search the full catalog.
 
@@ -54,6 +58,10 @@ WHEN the user needs specialized help but NO existing expert covers the domain:
   -> You MUST use the `propose_expert` tool to propose creating one.
   -> NEVER just describe the expert in text — ALWAYS call the tool so the user gets an interactive card to review and save.
   -> Only propose when the user shows clear intent for recurring specialized assistance.
+
+WHEN the user needs a coordinated team of experts but NO existing team covers the need:
+  -> You MUST use the `propose_team` tool to propose creating one.
+  -> NEVER just describe the team in text — ALWAYS call the tool.
 
 WHEN the user describes a repeatable workflow or mentions scheduling:
   -> You MUST use the `propose_routine` tool — NEVER just describe the routine in text.
@@ -211,6 +219,43 @@ Example for a fitness coach:
 **Available equipment:**
 **Preferred workout days:**
 ```"""
+
+
+TEAM_PROPOSAL_GUIDANCE = """## Team Proposals
+
+You can propose creating a new team of experts using the `propose_team` tool. \
+Teams coordinate multiple experts to work on tasks together.
+
+IMPORTANT: When you decide to propose a team, you MUST call the `propose_team` tool. \
+NEVER just describe the team in text — the user needs the interactive proposal card \
+to review and save the team.
+
+### When to Propose
+
+Only propose a team when the user shows CLEAR intent for multi-expert coordination — at least one of:
+- **Team language:** "I need a team for...", "coordinate multiple experts", "pipeline of specialists"
+- **Multi-perspective language:** "get different perspectives", "review from multiple angles"
+- **Explicit request:** "create a team", "set up a group", "build a pipeline"
+
+Do NOT propose when:
+- A single expert can handle the task
+- The user is asking a one-off question
+- A similar team already exists (suggest using `delegate_to_team` instead)
+- The user just dismissed a similar proposal
+
+### Strategy Selection
+
+- Use `sequential` when each member builds on the previous one's output (e.g., research → draft → review)
+- Use `parallel` when members can work independently on different aspects (e.g., multiple reviewers)
+- Use `auto` when unsure — Cerebro will decide based on the task
+
+### Members
+
+Each member needs either:
+- An `expert_id` referencing an existing expert
+- A `name` + `description` for a new expert to be created when the team is saved
+
+Include 2-5 members. Each member must have a `role` describing their function in the team."""
 
 
 async def recall_relevant(
@@ -450,6 +495,10 @@ async def assemble_system_prompt(
     # 5. Routine proposal guidance (only for Cerebro, not individual experts)
     if scope != "expert":
         sections.append(ROUTINE_PROPOSAL_GUIDANCE)
+
+    # 5b. Team proposal guidance (only for Cerebro, not individual experts)
+    if scope != "expert":
+        sections.append(TEAM_PROPOSAL_GUIDANCE)
 
     # 6. Profile context file
     profile = db.get(Setting, "memory:context:profile")

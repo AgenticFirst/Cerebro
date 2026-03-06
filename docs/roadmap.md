@@ -60,7 +60,7 @@
 | Cerebro routing logic (delegate to appropriate expert) | Done |
 | Agent conversation loop (message → LLM → tool calls → response agentic cycle) | Done |
 | Expert/team proposal and vibe engineering (propose → preview → add expert) | Done |
-| Team orchestration tech design and implementation (coordinator agent, delegation, fan-out) | Not Started |
+| Team orchestration tech design and implementation (coordinator agent, delegation, fan-out) | Done |
 | Run initiation and orchestration (start runs, stream events to UI, produce Run Records) | Not Started |
 | **8. Activity + Approvals** | |
 | Activity screen (run timeline with filters) | Not Started |

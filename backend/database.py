@@ -23,6 +23,8 @@ def _migrate(eng) -> None:
         ("messages", "agent_run_id", "VARCHAR(32) REFERENCES agent_runs(id) ON DELETE SET NULL"),
         ("messages", "metadata", "TEXT"),
         ("agent_runs", "parent_run_id", "VARCHAR(32)"),
+        ("experts", "strategy", "VARCHAR(20)"),
+        ("experts", "coordinator_prompt", "TEXT"),
     ]
     with eng.connect() as conn:
         for table, column, col_def in migrations:
