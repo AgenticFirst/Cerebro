@@ -125,8 +125,10 @@ describe('RunEventEmitter', () => {
     const event = makeEvent('test');
     emitter.emit(event);
 
-    expect(send).toHaveBeenCalledTimes(1);
+    // Sends to run-specific channel + wildcard channel for cross-run listeners
+    expect(send).toHaveBeenCalledTimes(2);
     expect(send).toHaveBeenCalledWith('engine:event:my-run', event);
+    expect(send).toHaveBeenCalledWith('engine:any-event', event);
   });
 
   it('emit() skips send when webContents.isDestroyed() returns true', () => {

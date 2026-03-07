@@ -529,18 +529,21 @@ describe('engine integration: IPC events forwarded to webContents', () => {
       reqs.some(r => r.method === 'POST' && r.path.includes('/events')),
     );
 
-    // webContents.send should have been called with the correct channel
+    // webContents.send should have been called on both the run-specific
+    // channel and the wildcard channel (for cross-run listeners like ApprovalContext)
     const sendCalls = webContents.send.mock.calls;
     expect(sendCalls.length).toBeGreaterThan(0);
 
     const expectedChannel = `engine:event:${runId}`;
+    const wildcardChannel = 'engine:any-event';
     for (const call of sendCalls) {
-      expect(call[0]).toBe(expectedChannel);
+      expect([expectedChannel, wildcardChannel]).toContain(call[0]);
       expect(call[1]).toHaveProperty('type');
     }
 
-    // Should have at minimum: run_started, step_queued, step_started, step_completed, run_completed
-    const eventTypes = sendCalls.map((c: any) => c[1].type);
+    // Filter to run-specific channel for event type assertions
+    const runCalls = sendCalls.filter((c: any) => c[0] === expectedChannel);
+    const eventTypes = runCalls.map((c: any) => c[1].type);
     expect(eventTypes).toContain('run_started');
     expect(eventTypes).toContain('step_queued');
     expect(eventTypes).toContain('step_started');
