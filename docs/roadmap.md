@@ -69,6 +69,7 @@
 | Approval gates in execution engine (pause/resume) | Done |
 | Approve/deny flow with run continuation or stop | Done |
 | Approval badge in nav (visible only when pending) | Done |
+| Automated tests for Activity + Approvals system | Not Started |
 | **9. Connectors + Channels** | |
 | Connector interface and OAuth flow support | Not Started |
 | Launch connectors (Google Calendar, Gmail, Notion) | Not Started |
