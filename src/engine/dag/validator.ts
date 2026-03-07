@@ -48,10 +48,16 @@ export function validateDAG(dag: DAGDefinition, registry: ActionRegistry): Valid
     errors.push(cycleError);
   }
 
-  // Check 2: Action type existence
+  // Check 2: Action type existence + approval_gate consistency
   for (const step of dag.steps) {
     if (!registry.has(step.actionType)) {
       errors.push(`Step "${step.id}" references unknown action type "${step.actionType}"`);
+    }
+    if (step.actionType === 'approval_gate' && !step.requiresApproval) {
+      errors.push(
+        `Step "${step.id}" uses action type "approval_gate" but requiresApproval is not set — ` +
+        `approval gates must have requiresApproval: true`
+      );
     }
   }
 

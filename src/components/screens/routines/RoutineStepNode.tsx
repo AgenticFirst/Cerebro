@@ -10,6 +10,7 @@ function RoutineStepNode({ data, selected }: NodeProps) {
   const meta = ACTION_META[d.actionType];
   const Icon = meta?.icon;
   const colorHex = meta?.colorHex ?? '#06b6d4';
+  const isApprovalGate = d.actionType === 'approval_gate';
 
   // Truncated preview of params
   const preview = (() => {
@@ -27,6 +28,10 @@ function RoutineStepNode({ data, selected }: NodeProps) {
     if (d.actionType === 'channel') {
       return (p.channel as string) || 'Not configured';
     }
+    if (isApprovalGate) {
+      const summary = (p.summary as string) || '';
+      return summary.length > 40 ? summary.slice(0, 40) + '...' : summary || 'Approval checkpoint';
+    }
     return '';
   })();
 
@@ -35,7 +40,9 @@ function RoutineStepNode({ data, selected }: NodeProps) {
       className={clsx(
         'w-[200px] rounded-lg border bg-bg-surface transition-all duration-150',
         selected
-          ? 'border-accent shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+          ? isApprovalGate
+            ? 'border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
+            : 'border-accent shadow-[0_0_12px_rgba(6,182,212,0.25)]'
           : 'border-border-subtle hover:border-border-default',
       )}
     >

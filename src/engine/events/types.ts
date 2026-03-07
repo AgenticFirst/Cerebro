@@ -16,9 +16,9 @@ export type ExecutionEvent =
   | { type: 'step_queued'; runId: string; stepId: string; stepName: string; timestamp: string }
   | { type: 'step_started'; runId: string; stepId: string; stepName: string; actionType: string; timestamp: string }
   | { type: 'step_log'; runId: string; stepId: string; message: string; timestamp: string }
-  | { type: 'step_completed'; runId: string; stepId: string; summary: string; durationMs: number; timestamp: string }
-  | { type: 'step_failed'; runId: string; stepId: string; error: string; timestamp: string }
-  | { type: 'step_skipped'; runId: string; stepId: string; reason: string; timestamp: string }
+  | { type: 'step_completed'; runId: string; stepId: string; stepName: string; summary: string; durationMs: number; timestamp: string }
+  | { type: 'step_failed'; runId: string; stepId: string; stepName: string; error: string; timestamp: string }
+  | { type: 'step_skipped'; runId: string; stepId: string; stepName: string; reason: string; timestamp: string }
 
   // ── Action detail (expert_step surfaces agent reasoning) ───────
   | { type: 'action_text_delta'; runId: string; stepId: string; delta: string }

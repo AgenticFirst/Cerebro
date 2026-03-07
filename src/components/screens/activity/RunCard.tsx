@@ -44,7 +44,7 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
         'bg-bg-surface border rounded-lg p-4 cursor-pointer hover:border-border-default transition-colors animate-card-in',
         isSelected ? 'border-accent/30 bg-accent/[0.03]' : 'border-border-subtle',
       )}
-      style={{ animationDelay: `${index * 40}ms` }}
+      style={{ animationDelay: `${Math.min(index * 40, 600)}ms` }}
     >
       <div className="flex items-start gap-3">
         {/* Status dot */}

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useChat } from '../../context/ChatContext';
+import { useApprovals } from '../../context/ApprovalContext';
 import type { Conversation, Screen } from '../../types/chat';
 
 /* ── Nav structure: grouped by function ───────────────────────── */
@@ -34,8 +35,8 @@ const NAV_PRIMARY: NavItem[] = [
   { id: 'routines', label: 'Routines', icon: Zap },
 ];
 
-// Oversight — monitoring & control
-const NAV_OVERSIGHT: NavItem[] = [
+// Oversight — monitoring & control (badge injected dynamically in Sidebar)
+const NAV_OVERSIGHT_BASE: NavItem[] = [
   { id: 'activity', label: 'Activity', icon: Activity },
   { id: 'approvals', label: 'Approvals', icon: ShieldCheck },
 ];
@@ -89,11 +90,14 @@ function NavButton({
 
       {!collapsed && <span className="text-[13px] leading-none">{item.label}</span>}
 
-      {/* Badge */}
+      {/* Badge — count when expanded, dot when collapsed */}
       {!collapsed && item.badge != null && item.badge > 0 && (
         <span className="ml-auto text-[10px] font-semibold bg-accent/15 text-accent px-1.5 py-0.5 rounded-full tabular-nums">
           {item.badge}
         </span>
+      )}
+      {collapsed && item.badge != null && item.badge > 0 && (
+        <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-accent" />
       )}
     </button>
   );
@@ -183,10 +187,20 @@ export default function Sidebar() {
     setActiveScreen,
     deleteConversation,
   } = useChat();
+  const { pendingCount } = useApprovals();
 
   const [collapsed, setCollapsed] = useState(false);
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null);
   const grouped = useMemo(() => groupByTime(conversations), [conversations]);
+
+  const navOversight = useMemo<NavItem[]>(() =>
+    NAV_OVERSIGHT_BASE.map((item) =>
+      item.id === 'approvals' && pendingCount > 0
+        ? { ...item, badge: pendingCount }
+        : item,
+    ),
+    [pendingCount],
+  );
 
   const handleNewChat = () => {
     setActiveScreen('chat');
@@ -274,7 +288,7 @@ export default function Sidebar() {
 
         {/* Oversight: Activity, Approvals */}
         <NavGroup
-          items={NAV_OVERSIGHT}
+          items={navOversight}
           activeScreen={activeScreen}
           collapsed={collapsed}
           onNavClick={handleNavClick}

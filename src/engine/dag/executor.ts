@@ -33,6 +33,7 @@ export interface ExecutorContext {
   signal: AbortSignal;
   resolveModel: () => Promise<ResolvedModel | null>;
   onStepUpdate?: (stepId: string, update: StepPersistenceUpdate) => void;
+  onApprovalRequired?: (step: StepDefinition) => Promise<boolean>;
 }
 
 type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
@@ -118,6 +119,7 @@ export class DAGExecutor {
               type: 'step_skipped',
               runId: this.ctx.runId,
               stepId: step.id,
+              stepName: step.name,
               reason: 'Upstream step failed',
               timestamp: new Date().toISOString(),
             });
@@ -164,6 +166,20 @@ export class DAGExecutor {
 
   /** Execute a single step with error handling and retries. */
   private async executeStep(step: StepDefinition): Promise<void> {
+    // ── Approval gate ──────────────────────────────────────────
+    if (step.requiresApproval && this.ctx.onApprovalRequired) {
+      const approved = await this.ctx.onApprovalRequired(step);
+      if (!approved) {
+        this.stepStates.set(step.id, { status: 'failed', error: 'Approval denied' });
+        this.ctx.onStepUpdate?.(step.id, {
+          status: 'failed',
+          error: 'Approval denied',
+          completed_at: new Date().toISOString(),
+        });
+        throw new StepDeniedError(step.id, 'Approval denied');
+      }
+    }
+
     const maxAttempts = step.onError === 'retry' ? (step.maxRetries ?? 1) + 1 : 1;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -191,6 +207,7 @@ export class DAGExecutor {
           type: 'step_failed',
           runId: this.ctx.runId,
           stepId: step.id,
+          stepName: step.name,
           error: errorMsg,
           timestamp: new Date().toISOString(),
         });
@@ -202,6 +219,7 @@ export class DAGExecutor {
             type: 'step_skipped',
             runId: this.ctx.runId,
             stepId: step.id,
+            stepName: step.name,
             reason: errorMsg,
             timestamp: new Date().toISOString(),
           });
@@ -294,6 +312,7 @@ export class DAGExecutor {
       type: 'step_completed',
       runId: this.ctx.runId,
       stepId: step.id,
+      stepName: step.name,
       summary: output.summary,
       durationMs,
       timestamp: new Date().toISOString(),
@@ -365,6 +384,13 @@ export class StepFailedError extends Error {
     super(message);
     this.name = 'StepFailedError';
     this.stepId = stepId;
+  }
+}
+
+export class StepDeniedError extends StepFailedError {
+  constructor(stepId: string, message: string) {
+    super(stepId, message);
+    this.name = 'StepDeniedError';
   }
 }
 

@@ -2,7 +2,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -206,6 +206,9 @@ class RunRecord(Base):
 
 class StepRecord(Base):
     __tablename__ = "step_records"
+    __table_args__ = (
+        Index("ix_step_records_run_id_order_index", "run_id", "order_index"),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
     run_id: Mapped[str] = mapped_column(String(32), ForeignKey("run_records.id", ondelete="CASCADE"), index=True)
@@ -221,10 +224,34 @@ class StepRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
+    approval_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("approval_requests.id", ondelete="SET NULL"), nullable=True
+    )
+    approval_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class ApprovalRequest(Base):
+    __tablename__ = "approval_requests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    run_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("run_records.id", ondelete="CASCADE"), index=True
+    )
+    step_id: Mapped[str] = mapped_column(String(32))
+    step_name: Mapped[str] = mapped_column(String(255))
+    summary: Mapped[str] = mapped_column(Text)
+    payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ExecutionEventRecord(Base):
     __tablename__ = "execution_events"
+    __table_args__ = (
+        Index("ix_execution_events_run_id_seq", "run_id", "seq"),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
     run_id: Mapped[str] = mapped_column(String(32), ForeignKey("run_records.id", ondelete="CASCADE"), index=True)

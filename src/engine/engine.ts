@@ -18,17 +18,28 @@ import { transformerAction } from './actions/transformer';
 import { createExpertStepAction } from './actions/expert-step';
 import { connectorAction } from './actions/connector';
 import { channelAction } from './actions/channel';
+import { approvalGateAction } from './actions/approval-gate';
 import { RunScratchpad } from './scratchpad';
 import { RunEventEmitter } from './events/emitter';
 import { validateDAG } from './dag/validator';
-import { DAGExecutor, StepFailedError } from './dag/executor';
+import { DAGExecutor, StepFailedError, StepDeniedError } from './dag/executor';
 import { resolveModel } from '../agents/model-resolver';
+import type { ExecutionEvent } from './events/types';
+import type { StepDefinition } from './dag/types';
 
 interface ActiveEngineRun {
   runId: string;
   abortController: AbortController;
+  emitter: RunEventEmitter;
   startedAt: number;
   routineId?: string;
+}
+
+interface PendingApproval {
+  runId: string;
+  stepId: string;
+  stepRecordId?: string;
+  resolve: (approved: boolean) => void;
 }
 
 /** How long to keep event buffers after a run finishes (ms). */
@@ -38,6 +49,8 @@ export class ExecutionEngine {
   private backendPort: number;
   private agentRuntime: AgentRuntime;
   private activeRuns = new Map<string, ActiveEngineRun>();
+  /** Pending approval promises keyed by approvalId. */
+  private pendingApprovals = new Map<string, PendingApproval>();
   /** Buffers of emitted events, kept briefly after run completion for late subscribers. */
   private eventBuffers = new Map<string, ExecutionEvent[]>();
 
@@ -72,6 +85,7 @@ export class ExecutionEngine {
     const activeRun: ActiveEngineRun = {
       runId,
       abortController,
+      emitter,
       startedAt: Date.now(),
       routineId: request.routineId,
     };
@@ -121,6 +135,56 @@ export class ExecutionEngine {
         .catch(console.error);
     };
 
+    // Approval callback: pauses run and waits for user decision
+    const onApprovalRequired = (step: StepDefinition): Promise<boolean> => {
+      return new Promise<boolean>((resolvePromise) => {
+        const approvalId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
+
+        // Persist approval request to backend
+        this.backendRequest('POST', '/engine/approvals', {
+          id: approvalId,
+          run_id: runId,
+          step_id: step.id,
+          step_name: step.name,
+          summary: `Step "${step.name}" requires your approval before execution.`,
+          payload_json: JSON.stringify(step.params),
+        }).catch(console.error);
+
+        // Update step record with approval info
+        const stepRecordId = stepRecordIdMap.get(step.id);
+        if (stepRecordId) {
+          this.backendRequest('PATCH', `/engine/runs/${runId}/steps/${stepRecordId}`, {
+            approval_id: approvalId,
+            approval_status: 'pending',
+          }).catch(console.error);
+        }
+
+        // Set run status to paused
+        this.backendRequest('PATCH', `/engine/runs/${runId}`, {
+          status: 'paused',
+        }).catch(console.error);
+
+        // Emit approval_requested event
+        emitter.emit({
+          type: 'approval_requested',
+          runId,
+          stepId: step.id,
+          approvalId,
+          summary: `Step "${step.name}" requires your approval before execution.`,
+          payload: step.params,
+          timestamp: new Date().toISOString(),
+        });
+
+        // Store pending approval for later resolution
+        this.pendingApprovals.set(approvalId, {
+          runId,
+          stepId: step.id,
+          stepRecordId,
+          resolve: resolvePromise,
+        });
+      });
+    };
+
     // Create executor
     const executor = new DAGExecutor(
       request.dag,
@@ -133,6 +197,7 @@ export class ExecutionEngine {
         signal: abortController.signal,
         resolveModel: () => resolveModel(null, this.backendPort),
         onStepUpdate,
+        onApprovalRequired,
       },
     );
 
@@ -159,16 +224,18 @@ export class ExecutionEngine {
       })
       .catch((err: Error) => {
         const isCancelled = abortController.signal.aborted;
+        const isDenied = err instanceof StepDeniedError;
 
-        if (isCancelled) {
+        if (isCancelled || isDenied) {
           emitter.emit({
             type: 'run_cancelled',
             runId,
-            reason: 'Run was cancelled',
+            reason: isDenied ? 'Approval denied' : 'Run was cancelled',
             timestamp: new Date().toISOString(),
           });
           this.backendRequest('PATCH', `/engine/runs/${runId}`, {
             status: 'cancelled',
+            error: isDenied ? 'Approval denied' : undefined,
             completed_at: new Date().toISOString(),
             duration_ms: Date.now() - startTime,
           }).catch(console.error);
@@ -219,8 +286,85 @@ export class ExecutionEngine {
   cancelRun(runId: string): boolean {
     const run = this.activeRuns.get(runId);
     if (!run) return false;
+
+    // Deny all pending approvals for this run
+    for (const [approvalId, pending] of this.pendingApprovals) {
+      if (pending.runId === runId) {
+        pending.resolve(false);
+        this.pendingApprovals.delete(approvalId);
+
+        // Persist denial to backend
+        this.backendRequest('PATCH', `/engine/approvals/${approvalId}/resolve`, {
+          decision: 'denied',
+          reason: 'Run was cancelled',
+        }).catch(console.error);
+
+        // Emit denial event
+        run.emitter.emit({
+          type: 'approval_denied',
+          runId,
+          stepId: pending.stepId,
+          approvalId,
+          reason: 'Run was cancelled',
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
     run.abortController.abort();
     this.activeRuns.delete(runId);
+    return true;
+  }
+
+  /** Resolve a pending approval request. */
+  async resolveApproval(approvalId: string, approved: boolean, reason?: string): Promise<boolean> {
+    const pending = this.pendingApprovals.get(approvalId);
+    if (!pending) return false;
+
+    this.pendingApprovals.delete(approvalId);
+
+    // Persist decision to backend
+    await this.backendRequest('PATCH', `/engine/approvals/${approvalId}/resolve`, {
+      decision: approved ? 'approved' : 'denied',
+      reason: reason ?? null,
+    });
+
+    // Update step record's approval_status
+    if (pending.stepRecordId) {
+      this.backendRequest('PATCH', `/engine/runs/${pending.runId}/steps/${pending.stepRecordId}`, {
+        approval_status: approved ? 'approved' : 'denied',
+      }).catch(console.error);
+    }
+
+    // Get the emitter for this run
+    const run = this.activeRuns.get(pending.runId);
+    if (run) {
+      if (approved) {
+        // Resume run
+        this.backendRequest('PATCH', `/engine/runs/${pending.runId}`, {
+          status: 'running',
+        }).catch(console.error);
+        run.emitter.emit({
+          type: 'approval_granted',
+          runId: pending.runId,
+          stepId: pending.stepId,
+          approvalId,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        run.emitter.emit({
+          type: 'approval_denied',
+          runId: pending.runId,
+          stepId: pending.stepId,
+          approvalId,
+          reason,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    // Resolve the promise to unblock the executor
+    pending.resolve(approved);
     return true;
   }
 
@@ -250,6 +394,7 @@ export class ExecutionEngine {
     }));
     registry.register(connectorAction);
     registry.register(channelAction);
+    registry.register(approvalGateAction);
 
     return registry;
   }

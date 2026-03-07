@@ -29,10 +29,14 @@ export interface StepRecord {
   status: string;
   summary: string | null;
   error: string | null;
+  input_json: string | null;
+  output_json: string | null;
   started_at: string | null;
   completed_at: string | null;
   duration_ms: number | null;
   order_index: number;
+  approval_id: string | null;
+  approval_status: string | null;
 }
 
 export interface EventRecord {

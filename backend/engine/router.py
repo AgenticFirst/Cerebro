@@ -5,9 +5,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from database import get_db
-from models import ExecutionEventRecord, RunRecord, StepRecord, _uuid_hex
+from models import ApprovalRequest, ExecutionEventRecord, RunRecord, StepRecord, _uuid_hex, _utcnow
 
 from .schemas import (
+    ApprovalCreate,
+    ApprovalListResponse,
+    ApprovalResolve,
+    ApprovalResponse,
     EventBatchCreate,
     EventRecordResponse,
     RunRecordCreate,
@@ -253,3 +257,110 @@ def list_events(
         .all()
     )
     return [EventRecordResponse.model_validate(e) for e in events]
+
+
+# ── Approval CRUD ────────────────────────────────────────────────
+
+
+@router.post("/approvals", response_model=ApprovalResponse, status_code=201)
+def create_approval(body: ApprovalCreate, db=Depends(get_db)):
+    run = db.get(RunRecord, body.run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run record not found")
+    approval = ApprovalRequest(
+        id=body.id,
+        run_id=body.run_id,
+        step_id=body.step_id,
+        step_name=body.step_name,
+        summary=body.summary,
+        payload_json=body.payload_json,
+        status="pending",
+    )
+    db.add(approval)
+    db.commit()
+    db.refresh(approval)
+    return ApprovalResponse.model_validate(approval)
+
+
+@router.get("/approvals", response_model=ApprovalListResponse)
+def list_approvals(
+    status: str | None = None,
+    run_id: str | None = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    db=Depends(get_db),
+):
+    q = db.query(ApprovalRequest)
+    if status:
+        q = q.filter(ApprovalRequest.status == status)
+    if run_id:
+        q = q.filter(ApprovalRequest.run_id == run_id)
+
+    total = q.count()
+    approvals = q.order_by(ApprovalRequest.requested_at.desc()).offset(offset).limit(limit).all()
+    return ApprovalListResponse(
+        approvals=[ApprovalResponse.model_validate(a) for a in approvals],
+        total=total,
+    )
+
+
+@router.get("/approvals/pending/count")
+def pending_approval_count(db=Depends(get_db)):
+    count = db.query(ApprovalRequest).filter(ApprovalRequest.status == "pending").count()
+    return {"count": count}
+
+
+@router.get("/approvals/{approval_id}", response_model=ApprovalResponse)
+def get_approval(approval_id: str, db=Depends(get_db)):
+    approval = db.get(ApprovalRequest, approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+    return ApprovalResponse.model_validate(approval)
+
+
+@router.patch("/approvals/{approval_id}/resolve", response_model=ApprovalResponse)
+def resolve_approval(approval_id: str, body: ApprovalResolve, db=Depends(get_db)):
+    approval = db.get(ApprovalRequest, approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+    if approval.status != "pending":
+        raise HTTPException(status_code=409, detail="Approval already resolved")
+
+    approval.status = body.decision
+    approval.decision_reason = body.reason
+    approval.resolved_at = _utcnow()
+    db.commit()
+    db.refresh(approval)
+    return ApprovalResponse.model_validate(approval)
+
+
+@router.post("/runs/recover-stale")
+def recover_stale_runs(db=Depends(get_db)):
+    """Mark stale running/paused runs as failed and expire their pending approvals."""
+    now = _utcnow()
+
+    stale_runs = (
+        db.query(RunRecord)
+        .filter(RunRecord.status.in_(["running", "paused"]))
+        .all()
+    )
+    recovered_runs = 0
+    expired_approvals = 0
+    for run in stale_runs:
+        run.status = "failed"
+        run.error = "Recovered after unexpected shutdown"
+        run.completed_at = now
+        recovered_runs += 1
+
+        pending = (
+            db.query(ApprovalRequest)
+            .filter(ApprovalRequest.run_id == run.id, ApprovalRequest.status == "pending")
+            .all()
+        )
+        for approval in pending:
+            approval.status = "expired"
+            approval.resolved_at = now
+            expired_approvals += 1
+
+    db.commit()
+    return {"recovered_runs": recovered_runs, "expired_approvals": expired_approvals}

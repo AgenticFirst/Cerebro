@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, Loader2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { X, Loader2, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import type { RunRecord, EventRecord, RunListResponse } from './types';
 import { formatDuration, formatTimestamp, STATUS_CONFIG, RUN_TYPE_LABELS, TRIGGER_LABELS } from './helpers';
@@ -38,27 +38,57 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [children, setChildren] = useState<RunRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('steps');
 
-  useEffect(() => {
-    let cancelled = false;
+  const fetchDetail = useCallback(async (id: string, signal: { cancelled: boolean }) => {
     setLoading(true);
+    setLoadError(false);
+    try {
+      const [runRes, eventsRes, childrenRes] = await Promise.allSettled([
+        window.cerebro.invoke<RunRecord>({ method: 'GET', path: `/engine/runs/${id}` }),
+        window.cerebro.invoke<EventRecord[]>({ method: 'GET', path: `/engine/runs/${id}/events?limit=500` }),
+        window.cerebro.invoke<RunListResponse>({ method: 'GET', path: `/engine/runs/${id}/children` }),
+      ]);
+      if (signal.cancelled) return;
+
+      const runOk = runRes.status === 'fulfilled' && runRes.value.ok;
+      const eventsOk = eventsRes.status === 'fulfilled' && eventsRes.value.ok;
+      const childrenOk = childrenRes.status === 'fulfilled' && childrenRes.value.ok;
+
+      if (runOk) setRun(runRes.value.data);
+      if (eventsOk) setEvents(eventsRes.value.data);
+      if (childrenOk) setChildren(childrenRes.value.data.runs);
+
+      // Only show error if all three failed
+      if (!runOk && !eventsOk && !childrenOk) setLoadError(true);
+    } catch {
+      if (!signal.cancelled) setLoadError(true);
+    } finally {
+      if (!signal.cancelled) setLoading(false);
+    }
+  }, []);
+
+  // Fetch on mount / runId change
+  useEffect(() => {
+    const signal = { cancelled: false };
     setActiveTab('steps');
+    fetchDetail(runId, signal);
+    return () => { signal.cancelled = true; };
+  }, [runId, fetchDetail]);
 
-    Promise.all([
-      window.cerebro.invoke<RunRecord>({ method: 'GET', path: `/engine/runs/${runId}` }),
-      window.cerebro.invoke<EventRecord[]>({ method: 'GET', path: `/engine/runs/${runId}/events?limit=500` }),
-      window.cerebro.invoke<RunListResponse>({ method: 'GET', path: `/engine/runs/${runId}/children` }),
-    ]).then(([runRes, eventsRes, childrenRes]) => {
-      if (cancelled) return;
-      if (runRes.ok) setRun(runRes.data);
-      if (eventsRes.ok) setEvents(eventsRes.data);
-      if (childrenRes.ok) setChildren(childrenRes.data.runs);
-      setLoading(false);
-    });
+  // Live refresh for running/paused runs (5s)
+  const isLive = run?.status === 'running' || run?.status === 'paused';
+  const runIdRef = useRef(runId);
+  runIdRef.current = runId;
 
-    return () => { cancelled = true; };
-  }, [runId]);
+  useEffect(() => {
+    if (!isLive) return;
+    const id = setInterval(() => {
+      fetchDetail(runIdRef.current, { cancelled: false });
+    }, 5000);
+    return () => clearInterval(id);
+  }, [isLive, fetchDetail]);
 
   const cfg = run ? (STATUS_CONFIG[run.status] ?? STATUS_CONFIG.created) : STATUS_CONFIG.created;
   const displayName = routineName ?? (run ? (RUN_TYPE_LABELS[run.run_type] ?? run.run_type) : 'Run');
@@ -77,12 +107,23 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
         <h3 className="text-sm font-semibold text-text-primary tracking-wide">
           Run Details
         </h3>
-        <button
-          onClick={onClose}
-          className="p-1 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
-        >
-          <X size={16} />
-        </button>
+        <div className="flex items-center gap-1">
+          {!loading && run && (
+            <button
+              onClick={() => fetchDetail(runId, { cancelled: false })}
+              className="p-1 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw size={14} />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="p-1 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -90,6 +131,17 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 size={20} className="text-accent animate-spin" />
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <p className="text-xs text-text-tertiary">Failed to load run details.</p>
+            <button
+              onClick={() => fetchDetail(runId, { cancelled: false })}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-accent bg-accent/10 hover:bg-accent/20 border border-accent/20 rounded-lg transition-colors"
+            >
+              <RefreshCw size={14} />
+              Retry
+            </button>
           </div>
         ) : run ? (
           <>
@@ -141,7 +193,7 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
 
             {/* Tab content */}
             {activeTab === 'steps' && (
-              <StepTimeline steps={run.steps ?? []} />
+              <StepTimeline steps={run.steps ?? []} events={events} />
             )}
             {activeTab === 'events' && (
               <EventLog events={events} />

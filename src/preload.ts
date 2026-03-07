@@ -121,6 +121,17 @@ const api: CerebroAPI = {
         ipcRenderer.removeListener(channel, listener);
       };
     },
+    approve(approvalId: string): Promise<boolean> {
+      return ipcRenderer.invoke(IPC_CHANNELS.ENGINE_APPROVE, approvalId);
+    },
+    deny(approvalId: string, reason?: string): Promise<boolean> {
+      return ipcRenderer.invoke(IPC_CHANNELS.ENGINE_DENY, approvalId, reason);
+    },
+    onAnyEvent(callback: (event: ExecutionEvent) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, data: ExecutionEvent) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.ENGINE_ANY_EVENT, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.ENGINE_ANY_EVENT, listener);
+    },
   },
 
   scheduler: {

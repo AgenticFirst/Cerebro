@@ -8,6 +8,7 @@ import {
   Shuffle,
   Plug,
   Send,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
 import type { RoutineStepData } from './dag-flow-mapping';
@@ -58,6 +59,13 @@ export const ACTION_META: Record<string, ActionMeta> = {
     colorHex: '#22c55e',
     description: 'Send message',
   },
+  approval_gate: {
+    name: 'Approval Gate',
+    icon: ShieldCheck,
+    color: 'amber',
+    colorHex: '#f59e0b',
+    description: 'Approval checkpoint',
+  },
 };
 
 export const ACTION_TYPES = Object.keys(ACTION_META);
@@ -83,6 +91,8 @@ export function getDefaultStepData(
       return { ...base, params: { service: '', operation: '' } };
     case 'channel':
       return { ...base, params: { channel: '', operation: 'send', message: '' } };
+    case 'approval_gate':
+      return { requiresApproval: true, onError: 'fail' as const, params: { summary: '' } };
     default:
       return { ...base, params: {} };
   }

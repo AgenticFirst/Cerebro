@@ -86,6 +86,8 @@ class StepRecordUpdate(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     duration_ms: int | None = None
+    approval_id: str | None = None
+    approval_status: str | None = None
 
 
 class StepRecordResponse(BaseModel):
@@ -97,12 +99,53 @@ class StepRecordResponse(BaseModel):
     status: str
     summary: str | None
     error: str | None
+    input_json: str | None
+    output_json: str | None
     started_at: datetime | None
     completed_at: datetime | None
     duration_ms: int | None
     order_index: int
+    approval_id: str | None = None
+    approval_status: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+# ── Approval Requests ────────────────────────────────────────────
+
+
+class ApprovalCreate(BaseModel):
+    id: str
+    run_id: str
+    step_id: str
+    step_name: str
+    summary: str
+    payload_json: str | None = None
+
+
+class ApprovalResolve(BaseModel):
+    decision: Literal["approved", "denied"]
+    reason: str | None = None
+
+
+class ApprovalResponse(BaseModel):
+    id: str
+    run_id: str
+    step_id: str
+    step_name: str
+    summary: str
+    payload_json: str | None
+    status: str
+    decision_reason: str | None
+    requested_at: datetime
+    resolved_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class ApprovalListResponse(BaseModel):
+    approvals: list[ApprovalResponse]
+    total: int
 
 
 # ── Execution Events ─────────────────────────────────────────────

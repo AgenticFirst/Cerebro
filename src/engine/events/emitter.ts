@@ -29,6 +29,8 @@ export class RunEventEmitter {
     if (!this.webContents.isDestroyed()) {
       const channel = IPC_CHANNELS.engineEvent(this.runId);
       this.webContents.send(channel, event);
+      // Broadcast to wildcard channel for cross-run listeners (e.g. ApprovalContext)
+      this.webContents.send(IPC_CHANNELS.ENGINE_ANY_EVENT, event);
     }
   }
 

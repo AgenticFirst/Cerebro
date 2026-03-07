@@ -238,6 +238,35 @@ function TransformerParams({
   );
 }
 
+function ApprovalGateParams({
+  params,
+  onChange,
+}: {
+  params: Record<string, unknown>;
+  onChange: (p: Record<string, unknown>) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <FieldLabel text="Summary" />
+        <textarea
+          value={(params.summary as string) ?? ''}
+          onChange={(e) => onChange({ ...params, summary: e.target.value })}
+          rows={3}
+          placeholder="Describe what the reviewer should check before approving..."
+          className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-secondary placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors resize-none"
+        />
+      </div>
+      <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
+        <p className="text-[11px] text-amber-300 leading-relaxed">
+          Execution will pause at this node and wait for manual approval.
+          The run appears in the Approvals screen until a decision is made.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function StubParams({ type }: { type: string }) {
   return (
     <div className="rounded-lg bg-bg-base border border-border-subtle p-3">
@@ -349,89 +378,96 @@ export default function StepConfigPanel({
           {d.actionType === 'transformer' && (
             <TransformerParams params={d.params} onChange={handleParamsChange} />
           )}
+          {d.actionType === 'approval_gate' && (
+            <ApprovalGateParams params={d.params} onChange={handleParamsChange} />
+          )}
           {(d.actionType === 'connector' || d.actionType === 'channel') && (
             <StubParams type={d.actionType} />
           )}
         </Section>
 
-        {/* Error Handling */}
-        <Section label="ERROR HANDLING">
-          <div className="space-y-3">
-            <div>
-              <FieldLabel text="On Error" />
-              <select
-                value={d.onError}
-                onChange={(e) =>
-                  onUpdate(node.id, {
-                    onError: e.target.value as 'fail' | 'skip' | 'retry',
-                  })
-                }
-                className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-accent/30 transition-colors"
-              >
-                <option value="fail">Fail (stop routine)</option>
-                <option value="skip">Skip (continue)</option>
-                <option value="retry">Retry</option>
-              </select>
-            </div>
-
-            {d.onError === 'retry' && (
+        {/* Error Handling (hidden for approval gates) */}
+        {d.actionType !== 'approval_gate' && (
+          <Section label="ERROR HANDLING">
+            <div className="space-y-3">
               <div>
-                <FieldLabel text="Max Retries" />
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={d.maxRetries ?? 1}
+                <FieldLabel text="On Error" />
+                <select
+                  value={d.onError}
                   onChange={(e) =>
                     onUpdate(node.id, {
-                      maxRetries: parseInt(e.target.value) || 1,
+                      onError: e.target.value as 'fail' | 'skip' | 'retry',
                     })
                   }
                   className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-accent/30 transition-colors"
+                >
+                  <option value="fail">Fail (stop routine)</option>
+                  <option value="skip">Skip (continue)</option>
+                  <option value="retry">Retry</option>
+                </select>
+              </div>
+
+              {d.onError === 'retry' && (
+                <div>
+                  <FieldLabel text="Max Retries" />
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={d.maxRetries ?? 1}
+                    onChange={(e) =>
+                      onUpdate(node.id, {
+                        maxRetries: parseInt(e.target.value) || 1,
+                      })
+                    }
+                    className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-accent/30 transition-colors"
+                  />
+                </div>
+              )}
+
+              <div>
+                <FieldLabel text="Timeout (ms)" />
+                <input
+                  type="number"
+                  min={1000}
+                  step={1000}
+                  value={d.timeoutMs ?? ''}
+                  onChange={(e) =>
+                    onUpdate(node.id, {
+                      timeoutMs: e.target.value
+                        ? parseInt(e.target.value)
+                        : undefined,
+                    })
+                  }
+                  placeholder="300000"
+                  className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors"
                 />
               </div>
-            )}
+            </div>
+          </Section>
+        )}
 
-            <div>
-              <FieldLabel text="Timeout (ms)" />
-              <input
-                type="number"
-                min={1000}
-                step={1000}
-                value={d.timeoutMs ?? ''}
-                onChange={(e) =>
+        {/* Approval (hidden for approval gates — always on) */}
+        {d.actionType !== 'approval_gate' && (
+          <Section label="APPROVAL">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield size={13} className="text-amber-400" />
+                <span className="text-xs text-text-secondary">
+                  Require approval before execution
+                </span>
+              </div>
+              <Toggle
+                checked={d.requiresApproval}
+                onChange={() =>
                   onUpdate(node.id, {
-                    timeoutMs: e.target.value
-                      ? parseInt(e.target.value)
-                      : undefined,
+                    requiresApproval: !d.requiresApproval,
                   })
                 }
-                placeholder="300000"
-                className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors"
               />
             </div>
-          </div>
-        </Section>
-
-        {/* Approval */}
-        <Section label="APPROVAL">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Shield size={13} className="text-amber-400" />
-              <span className="text-xs text-text-secondary">
-                Require approval before execution
-              </span>
-            </div>
-            <Toggle
-              checked={d.requiresApproval}
-              onChange={() =>
-                onUpdate(node.id, {
-                  requiresApproval: !d.requiresApproval,
-                })
-              }
-            />
-          </div>
-        </Section>
+          </Section>
+        )}
 
         {/* Input Mappings (read-only) */}
         {d.inputMappings && d.inputMappings.length > 0 && (

@@ -32,6 +32,9 @@ export const IPC_CHANNELS = {
   ENGINE_CANCEL: 'engine:cancel',
   ENGINE_ACTIVE_RUNS: 'engine:active-runs',
   ENGINE_GET_EVENTS: 'engine:get-events',
+  ENGINE_APPROVE: 'engine:approve',
+  ENGINE_DENY: 'engine:deny',
+  ENGINE_ANY_EVENT: 'engine:any-event',
   engineEvent: (runId: string) => `engine:event:${runId}`,
 
   // Scheduler
@@ -207,6 +210,9 @@ export interface EngineAPI {
   activeRuns(): Promise<EngineActiveRunInfo[]>;
   getEvents(runId: string): Promise<ExecutionEvent[]>;
   onEvent(runId: string, callback: (event: ExecutionEvent) => void): () => void;
+  approve(approvalId: string): Promise<boolean>;
+  deny(approvalId: string, reason?: string): Promise<boolean>;
+  onAnyEvent(callback: (event: ExecutionEvent) => void): () => void;
 }
 
 // --- Scheduler ---

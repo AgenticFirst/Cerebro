@@ -197,6 +197,9 @@ async function startPythonBackend(): Promise<void> {
   agentRuntime.setExecutionEngine(executionEngine);
   routineScheduler = new RoutineScheduler(executionEngine, port);
 
+  // Recover stale runs from previous session
+  makeBackendRequest({ method: 'POST', path: '/engine/runs/recover-stale' }).catch(console.error);
+
   // Set webContents if window already exists
   const windows = BrowserWindow.getAllWindows();
   if (windows.length > 0) {
@@ -562,6 +565,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.ENGINE_GET_EVENTS, async (_event, runId: string) => {
     if (!executionEngine) return [];
     return executionEngine.getBufferedEvents(runId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ENGINE_APPROVE, async (_event, approvalId: string) => {
+    if (!executionEngine) return false;
+    return executionEngine.resolveApproval(approvalId, true);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ENGINE_DENY, async (_event, approvalId: string, reason?: string) => {
+    if (!executionEngine) return false;
+    return executionEngine.resolveApproval(approvalId, false, reason);
   });
 
   // --- Scheduler ---

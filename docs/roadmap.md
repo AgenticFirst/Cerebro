@@ -63,12 +63,12 @@
 | Team orchestration tech design and implementation (coordinator agent, delegation, fan-out) | Done |
 | Run initiation and orchestration (start runs, stream events to UI, produce Run Records) | Done |
 | **8. Activity + Approvals** | |
-| Activity screen (run timeline with filters) | Not Started |
-| Run drill-down view (logs, timestamps, outputs, errors) | Not Started |
-| Approvals screen (pending items, approve/deny) | Not Started |
-| Approval gates in execution engine (pause/resume) | Not Started |
-| Approve/deny flow with run continuation or stop | Not Started |
-| Approval badge in nav (visible only when pending) | Not Started |
+| Activity screen (run timeline with filters) | Done |
+| Run drill-down view (logs, timestamps, outputs, errors) | Done |
+| Approvals screen (pending items, approve/deny) | Done |
+| Approval gates in execution engine (pause/resume) | Done |
+| Approve/deny flow with run continuation or stop | Done |
+| Approval badge in nav (visible only when pending) | Done |
 | **9. Connectors + Channels** | |
 | Connector interface and OAuth flow support | Not Started |
 | Launch connectors (Google Calendar, Gmail, Notion) | Not Started |

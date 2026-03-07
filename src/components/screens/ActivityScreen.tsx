@@ -106,12 +106,10 @@ export default function ActivityScreen() {
   );
 
   // Initial + filter-change fetch
-  const initialFetchDone = useRef(false);
   useEffect(() => {
     setIsLoading(true);
     setSelectedRunId(null);
     fetchRuns(0, false).finally(() => setIsLoading(false));
-    initialFetchDone.current = true;
   }, [fetchRuns]);
 
   // Load more
@@ -174,6 +172,7 @@ export default function ActivityScreen() {
   );
 
   const hasMore = runs.length < total;
+  const selectedRun = selectedRunId ? runs.find((r) => r.id === selectedRunId) : null;
 
   // ── Loading state (first load) ──────────────────────────────────
 
@@ -301,8 +300,8 @@ export default function ActivityScreen() {
         <RunDetailPanel
           runId={selectedRunId}
           routineName={
-            runs.find((r) => r.id === selectedRunId)?.routine_id
-              ? routineNameMap.get(runs.find((r) => r.id === selectedRunId)!.routine_id!)
+            selectedRun?.routine_id
+              ? routineNameMap.get(selectedRun.routine_id)
               : undefined
           }
           onClose={() => setSelectedRunId(null)}

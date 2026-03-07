@@ -7,6 +7,7 @@ import ExpertsScreen from '../screens/ExpertsScreen';
 import RoutinesScreen from '../screens/RoutinesScreen';
 import IntegrationsScreen from '../screens/IntegrationsScreen';
 import ActivityScreen from '../screens/ActivityScreen';
+import ApprovalsScreen from '../screens/ApprovalsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
@@ -47,6 +48,9 @@ export default function AppLayout() {
     }
     if (activeScreen === 'activity') {
       return <ActivityScreen />;
+    }
+    if (activeScreen === 'approvals') {
+      return <ApprovalsScreen />;
     }
     if (activeScreen === 'settings') {
       return <SettingsScreen />;
