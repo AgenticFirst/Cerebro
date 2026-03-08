@@ -34,6 +34,9 @@ import {
   Send,
   Bell,
   Reply,
+  Terminal,
+  Webhook,
+  FileCode,
   type LucideIcon,
 } from 'lucide-react';
 import type { RoutineStepData } from './dag-flow-mapping';
@@ -300,6 +303,26 @@ export const ACTION_META: Record<string, ActionMeta> = {
     isAvailable: false,
     keywords: ['notion', 'pages', 'database', 'wiki'],
   },
+  run_command: {
+    name: 'Run Command',
+    icon: Terminal,
+    color: 'blue',
+    colorHex: '#3b82f6',
+    description: 'Execute a shell command',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['shell', 'command', 'terminal', 'exec', 'bash', 'cli'],
+  },
+  run_claude_code: {
+    name: 'Claude Code',
+    icon: Bot,
+    color: 'blue',
+    colorHex: '#3b82f6',
+    description: 'Run Claude Code CLI',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['claude', 'code', 'ai', 'implement', 'review', 'plan'],
+  },
 
   // ── Logic ─────────────────────────────────────────────────
   condition: {
@@ -341,6 +364,26 @@ export const ACTION_META: Record<string, ActionMeta> = {
     category: 'logic',
     isAvailable: true,
     keywords: ['approval', 'review', 'gate', 'human', 'confirm'],
+  },
+  wait_for_webhook: {
+    name: 'Wait for Webhook',
+    icon: Webhook,
+    color: 'slate',
+    colorHex: '#64748b',
+    description: 'Pause until HTTP callback arrives',
+    category: 'logic',
+    isAvailable: true,
+    keywords: ['webhook', 'wait', 'callback', 'external', 'http'],
+  },
+  run_script: {
+    name: 'Run Script',
+    icon: FileCode,
+    color: 'slate',
+    colorHex: '#64748b',
+    description: 'Execute Python or JavaScript code',
+    category: 'logic',
+    isAvailable: true,
+    keywords: ['script', 'python', 'javascript', 'code', 'eval'],
   },
   merge: {
     name: 'Merge',
@@ -471,6 +514,12 @@ export function getDefaultStepData(
     case 'connector': // legacy
       return { ...base, params: { method: 'GET', url: '', headers: [], body: '', auth_type: 'none', timeout: 30 } };
 
+    // Integrations (process)
+    case 'run_command':
+      return { ...base, params: { command: '', args: '', working_directory: '', timeout: 300 } };
+    case 'run_claude_code':
+      return { ...base, params: { mode: 'ask', prompt: '', working_directory: '', max_turns: 50, timeout: 600 } };
+
     // Logic
     case 'condition':
       return { ...base, params: { field: '', operator: 'equals', value: '' } };
@@ -480,6 +529,10 @@ export function getDefaultStepData(
       return { ...base, params: { duration: 1, unit: 'seconds' } };
     case 'approval_gate':
       return { requiresApproval: true, onError: 'fail' as const, params: { summary: '' } };
+    case 'wait_for_webhook':
+      return { ...base, params: { match_path: '', timeout: 3600, description: '' } };
+    case 'run_script':
+      return { ...base, params: { language: 'python', code: '', timeout: 30 } };
     case 'merge':
       return { ...base, params: { strategy: 'combine_all', match_field: '' } };
 

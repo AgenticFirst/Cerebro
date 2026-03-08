@@ -96,6 +96,26 @@ class MemoryContextResponse(BaseModel):
     knowledge_entry_count: int
 
 
+# ── Search ───────────────────────────────────────────────────────
+
+class MemorySearchRequest(BaseModel):
+    query: str
+    scope: str = "personal"
+    scope_id: str | None = None
+    max_results: int = 5
+
+
+class MemorySearchResult(BaseModel):
+    content: str
+    score: float
+    source: str | None = None
+
+
+class MemorySearchResponse(BaseModel):
+    results: list[MemorySearchResult]
+    total: int
+
+
 # ── Extraction ───────────────────────────────────────────────────
 
 class ExtractionRequest(BaseModel):

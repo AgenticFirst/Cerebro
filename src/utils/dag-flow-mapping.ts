@@ -216,15 +216,39 @@ export function flowToDag(
   // Only serialize step nodes (filter out trigger/annotation/other types)
   const stepNodes = nodes.filter((n) => n.type === 'routineStep');
 
+  // Build a map of edge sourceHandle per source→target pair for branch conditions
+  const edgeHandleMap = new Map<string, string | undefined>();
+  const nodeTypeMap = new Map<string, string>();
+  for (const node of stepNodes) {
+    const d = node.data as RoutineStepData;
+    nodeTypeMap.set(node.id, d.actionType);
+  }
+  for (const edge of edges) {
+    edgeHandleMap.set(`${edge.source}->${edge.target}`, edge.sourceHandle ?? undefined);
+  }
+
   const steps: StepDefinition[] = stepNodes.map((node) => {
     const d = node.data as RoutineStepData;
+
+    // Build input mappings, adding branchCondition for edges from condition nodes
+    const inputMappings = (d.inputMappings ?? []).map((m) => {
+      const sourceType = nodeTypeMap.get(m.sourceStepId);
+      if (sourceType === 'condition') {
+        const handleId = edgeHandleMap.get(`${m.sourceStepId}->${node.id}`);
+        if (handleId === 'true' || handleId === 'false') {
+          return { ...m, branchCondition: handleId as 'true' | 'false' };
+        }
+      }
+      return m;
+    });
+
     return {
       id: d.stepId,
       name: d.name,
       actionType: d.actionType,
       params: d.params,
       dependsOn: incomingMap.get(node.id) ?? [],
-      inputMappings: d.inputMappings ?? [],
+      inputMappings,
       requiresApproval: d.requiresApproval ?? false,
       onError: d.onError ?? 'fail',
       maxRetries: d.maxRetries,

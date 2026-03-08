@@ -18,6 +18,7 @@ export function getHandleType(actionType: string): HandleType {
     case 'ask_ai':
     case 'run_expert':
     case 'summarize':
+    case 'run_claude_code':
     case 'model_call':   // legacy
     case 'expert_step':  // legacy
       return 'message';
@@ -28,6 +29,8 @@ export function getHandleType(actionType: string): HandleType {
     case 'search_web':
     case 'search_documents':
     case 'save_to_memory':
+    case 'run_command':
+    case 'run_script':
     case 'connector':    // legacy
       return 'data';
 

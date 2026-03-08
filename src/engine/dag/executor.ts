@@ -166,6 +166,25 @@ export class DAGExecutor {
 
   /** Execute a single step with error handling and retries. */
   private async executeStep(step: StepDefinition): Promise<void> {
+    // ── Branch condition check ──────────────────────────────────
+    if (this.shouldSkipForBranch(step)) {
+      this.stepStates.set(step.id, { status: 'skipped', error: 'Branch condition not met' });
+      this.emitter.emit({
+        type: 'step_skipped',
+        runId: this.ctx.runId,
+        stepId: step.id,
+        stepName: step.name,
+        reason: 'Branch condition not met',
+        timestamp: new Date().toISOString(),
+      });
+      this.ctx.onStepUpdate?.(step.id, {
+        status: 'skipped',
+        error: 'Branch condition not met',
+        completed_at: new Date().toISOString(),
+      });
+      return;
+    }
+
     // ── Approval gate ──────────────────────────────────────────
     if (step.requiresApproval && this.ctx.onApprovalRequired) {
       const approved = await this.ctx.onApprovalRequired(step);
@@ -327,6 +346,26 @@ export class DAGExecutor {
       completed_at: new Date().toISOString(),
       duration_ms: durationMs,
     });
+  }
+
+  /**
+   * Check if a step should be skipped because a branch condition doesn't match.
+   * If any inputMapping has a branchCondition, the source step's output.data.branch
+   * must match it. If it doesn't match, this step is on the "other" branch.
+   */
+  private shouldSkipForBranch(step: StepDefinition): boolean {
+    for (const mapping of step.inputMappings) {
+      if (!mapping.branchCondition) continue;
+
+      const sourceState = this.stepStates.get(mapping.sourceStepId);
+      if (!sourceState?.output) continue; // source skipped — skip us too
+
+      const branch = sourceState.output.data.branch;
+      if (String(branch) !== mapping.branchCondition) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Resolve input mappings by reading outputs from completed dependency steps. */

@@ -16,9 +16,23 @@ import { ActionRegistry } from './actions/registry';
 import { modelCallAction } from './actions/model-call';
 import { transformerAction } from './actions/transformer';
 import { createExpertStepAction } from './actions/expert-step';
-import { connectorAction } from './actions/connector';
-import { channelAction } from './actions/channel';
 import { approvalGateAction } from './actions/approval-gate';
+import { conditionAction } from './actions/condition';
+import { delayAction } from './actions/delay';
+import { loopAction } from './actions/loop';
+import { classifyAction } from './actions/classify';
+import { extractAction } from './actions/extract';
+import { summarizeAction } from './actions/summarize';
+import { searchMemoryAction } from './actions/search-memory';
+import { searchWebAction } from './actions/search-web';
+import { saveToMemoryAction } from './actions/save-to-memory';
+import { httpRequestAction } from './actions/http-request';
+import { sendMessageAction } from './actions/send-message';
+import { sendNotificationAction } from './actions/send-notification';
+import { runCommandAction } from './actions/run-command';
+import { runClaudeCodeAction } from './actions/run-claude-code';
+import { waitForWebhookAction } from './actions/wait-for-webhook';
+import { runScriptAction } from './actions/run-script';
 import { RunScratchpad } from './scratchpad';
 import { RunEventEmitter } from './events/emitter';
 import { validateDAG } from './dag/validator';
@@ -386,15 +400,42 @@ export class ExecutionEngine {
   private createRegistry(webContents: WebContents): ActionRegistry {
     const registry = new ActionRegistry();
 
+    // Core / legacy
     registry.register(modelCallAction);
     registry.register(transformerAction);
     registry.register(createExpertStepAction({
       agentRuntime: this.agentRuntime,
       webContents,
     }));
-    registry.register(connectorAction);
-    registry.register(channelAction);
     registry.register(approvalGateAction);
+
+    // Logic
+    registry.register(conditionAction);
+    registry.register(delayAction);
+    registry.register(loopAction);
+
+    // AI
+    registry.register(classifyAction);
+    registry.register(extractAction);
+    registry.register(summarizeAction);
+
+    // Knowledge
+    registry.register(searchMemoryAction);
+    registry.register(searchWebAction);
+    registry.register(saveToMemoryAction);
+
+    // Integrations
+    registry.register(httpRequestAction);
+    registry.register(runCommandAction);
+    registry.register(runClaudeCodeAction);
+
+    // Output
+    registry.register(sendMessageAction);
+    registry.register(sendNotificationAction);
+
+    // Complex (depend on backend infrastructure)
+    registry.register(waitForWebhookAction);
+    registry.register(runScriptAction);
 
     return registry;
   }

@@ -50,6 +50,9 @@ export interface InputMapping {
 
   /** Key in this step's wiredInputs where the value is placed. */
   targetField: string;
+
+  /** Only wire when source condition step's branch output matches. Used for if/else branching. */
+  branchCondition?: 'true' | 'false';
 }
 
 // ── DAG Definition ───────────────────────────────────────────────

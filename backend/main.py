@@ -27,6 +27,8 @@ from agent_runs.router import router as agent_runs_router
 from search.router import router as search_router
 from engine.router import router as engine_router
 from routines.router import router as routines_router
+from webhooks.router import router as webhooks_router
+from scripts.router import router as scripts_router
 
 
 @asynccontextmanager
@@ -58,6 +60,8 @@ app.include_router(agent_runs_router, prefix="/agent-runs")
 app.include_router(search_router, prefix="/search")
 app.include_router(engine_router, prefix="/engine")
 app.include_router(routines_router, prefix="/routines")
+app.include_router(webhooks_router, prefix="/webhooks")
+app.include_router(scripts_router, prefix="/scripts")
 
 
 @app.get("/health")

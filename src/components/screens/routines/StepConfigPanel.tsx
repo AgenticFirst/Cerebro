@@ -544,6 +544,185 @@ function HttpRequestParams({ params, onChange }: P) {
   );
 }
 
+function RunCommandParams({ params, onChange }: P) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <FieldLabel text="Command" />
+        <input
+          value={(params.command as string) ?? ''}
+          onChange={(e) => onChange({ ...params, command: e.target.value })}
+          placeholder="git, npm, python, etc."
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <FieldLabel text="Arguments" />
+        <textarea
+          value={(params.args as string) ?? ''}
+          onChange={(e) => onChange({ ...params, args: e.target.value })}
+          rows={2}
+          placeholder="Command arguments... Use {{step_name.field}}"
+          className={`${textareaCls} font-mono`}
+        />
+      </div>
+      <div>
+        <FieldLabel text="Working Directory" />
+        <input
+          value={(params.working_directory as string) ?? ''}
+          onChange={(e) => onChange({ ...params, working_directory: e.target.value })}
+          placeholder="/path/to/project"
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <FieldLabel text="Timeout (seconds)" />
+        <input
+          type="number" min={1}
+          value={(params.timeout as number) ?? 300}
+          onChange={(e) => onChange({ ...params, timeout: parseInt(e.target.value) || 300 })}
+          className={inputCls}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ClaudeCodeParams({ params, onChange }: P) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <FieldLabel text="Mode" />
+        <select
+          value={(params.mode as string) ?? 'ask'}
+          onChange={(e) => onChange({ ...params, mode: e.target.value })}
+          className={selectCls}
+        >
+          <option value="ask">Ask (read-only)</option>
+          <option value="plan">Plan (analyze, no edits)</option>
+          <option value="implement">Implement (full access)</option>
+          <option value="review">Review (git-aware)</option>
+        </select>
+      </div>
+      <div>
+        <FieldLabel text="Prompt" />
+        <textarea
+          value={(params.prompt as string) ?? ''}
+          onChange={(e) => onChange({ ...params, prompt: e.target.value })}
+          rows={5}
+          placeholder="What should Claude Code do?"
+          className={textareaCls}
+        />
+      </div>
+      <div>
+        <FieldLabel text="Working Directory" />
+        <input
+          value={(params.working_directory as string) ?? ''}
+          onChange={(e) => onChange({ ...params, working_directory: e.target.value })}
+          placeholder="/path/to/project"
+          className={inputCls}
+        />
+      </div>
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <FieldLabel text="Max Turns" />
+          <input
+            type="number" min={1}
+            value={(params.max_turns as number) ?? 50}
+            onChange={(e) => onChange({ ...params, max_turns: parseInt(e.target.value) || 50 })}
+            className={inputCls}
+          />
+        </div>
+        <div className="flex-1">
+          <FieldLabel text="Timeout (s)" />
+          <input
+            type="number" min={1}
+            value={(params.timeout as number) ?? 600}
+            onChange={(e) => onChange({ ...params, timeout: parseInt(e.target.value) || 600 })}
+            className={inputCls}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WaitForWebhookParams({ params, onChange }: P) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <FieldLabel text="Match Path" />
+        <input
+          value={(params.match_path as string) ?? ''}
+          onChange={(e) => onChange({ ...params, match_path: e.target.value })}
+          placeholder="/my-webhook-path"
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <FieldLabel text="Timeout (seconds)" />
+        <input
+          type="number" min={1}
+          value={(params.timeout as number) ?? 3600}
+          onChange={(e) => onChange({ ...params, timeout: parseInt(e.target.value) || 3600 })}
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <FieldLabel text="Description" />
+        <textarea
+          value={(params.description as string) ?? ''}
+          onChange={(e) => onChange({ ...params, description: e.target.value })}
+          rows={2}
+          placeholder="What webhook are we waiting for?"
+          className={textareaCls}
+        />
+      </div>
+    </div>
+  );
+}
+
+function RunScriptParams({ params, onChange }: P) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <FieldLabel text="Language" />
+        <select
+          value={(params.language as string) ?? 'python'}
+          onChange={(e) => onChange({ ...params, language: e.target.value })}
+          className={selectCls}
+        >
+          <option value="python">Python</option>
+          <option value="javascript">JavaScript</option>
+        </select>
+      </div>
+      <div>
+        <FieldLabel text="Code" />
+        <textarea
+          value={(params.code as string) ?? ''}
+          onChange={(e) => onChange({ ...params, code: e.target.value })}
+          rows={15}
+          placeholder={
+            (params.language as string) === 'javascript'
+              ? '// Access inputs via `input` object\n// Set results on `output` object\noutput.result = input.data;'
+              : '# Access inputs via `input` dict\n# Print JSON to stdout for result\nimport json\nprint(json.dumps({"result": input}))'
+          }
+          className={`${textareaCls} font-mono text-[11px] leading-relaxed`}
+        />
+      </div>
+      <div>
+        <FieldLabel text="Timeout (seconds)" />
+        <input
+          type="number" min={1}
+          value={(params.timeout as number) ?? 30}
+          onChange={(e) => onChange({ ...params, timeout: parseInt(e.target.value) || 30 })}
+          className={inputCls}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Logic Param Forms ─────────────────────────────────────────
 
 function ConditionParams({ params, onChange }: P) {
@@ -763,8 +942,12 @@ function ParamForm({ actionType, params, onChange }: { actionType: string } & P)
 
     // Integrations
     case 'http_request': return <HttpRequestParams params={params} onChange={onChange} />;
+    case 'run_command': return <RunCommandParams params={params} onChange={onChange} />;
+    case 'run_claude_code': return <ClaudeCodeParams params={params} onChange={onChange} />;
 
     // Logic
+    case 'wait_for_webhook': return <WaitForWebhookParams params={params} onChange={onChange} />;
+    case 'run_script': return <RunScriptParams params={params} onChange={onChange} />;
     case 'condition': return <ConditionParams params={params} onChange={onChange} />;
     case 'loop': return <LoopParams params={params} onChange={onChange} />;
     case 'delay': return <DelayParams params={params} onChange={onChange} />;

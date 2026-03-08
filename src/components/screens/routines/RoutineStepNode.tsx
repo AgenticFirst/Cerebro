@@ -71,8 +71,27 @@ function RoutineStepNode({ data, selected }: NodeProps) {
       const url = (p.url as string) || '';
       return url ? `${method} ${url.slice(0, 30)}` : 'Not configured';
     }
+    if (resolved === 'run_command') {
+      const cmd = (p.command as string) || '';
+      const args = (p.args as string) || '';
+      const full = args ? `${cmd} ${args}` : cmd;
+      return full.length > 40 ? full.slice(0, 37) + '...' : full || 'No command set';
+    }
+    if (resolved === 'run_claude_code') {
+      const mode = (p.mode as string) || 'ask';
+      return mode.charAt(0).toUpperCase() + mode.slice(1);
+    }
 
     // Logic
+    if (resolved === 'wait_for_webhook') {
+      return (p.match_path as string) || 'Waiting for webhook';
+    }
+    if (resolved === 'run_script') {
+      const lang = (p.language as string) || 'python';
+      const code = (p.code as string) || '';
+      const firstLine = code.split('\n')[0] || '';
+      return `${lang}: ${firstLine}`.slice(0, 40) || lang;
+    }
     if (resolved === 'condition') {
       const field = (p.field as string) || '';
       const op = (p.operator as string) || '';

@@ -48,7 +48,7 @@ export function validateDAG(dag: DAGDefinition, registry: ActionRegistry): Valid
     errors.push(cycleError);
   }
 
-  // Check 2: Action type existence + approval_gate consistency
+  // Check 2: Action type existence + type-specific consistency
   for (const step of dag.steps) {
     if (!registry.has(step.actionType)) {
       errors.push(`Step "${step.id}" references unknown action type "${step.actionType}"`);
@@ -58,6 +58,24 @@ export function validateDAG(dag: DAGDefinition, registry: ActionRegistry): Valid
         `Step "${step.id}" uses action type "approval_gate" but requiresApproval is not set — ` +
         `approval gates must have requiresApproval: true`
       );
+    }
+    // Condition must have field and operator
+    if (step.actionType === 'condition') {
+      const p = step.params;
+      if (!p.field) errors.push(`Step "${step.id}" (condition) requires a "field" parameter`);
+      if (!p.operator) errors.push(`Step "${step.id}" (condition) requires an "operator" parameter`);
+    }
+    // Run command must have command
+    if (step.actionType === 'run_command') {
+      if (!step.params.command) errors.push(`Step "${step.id}" (run_command) requires a "command" parameter`);
+    }
+    // Run script must have code
+    if (step.actionType === 'run_script') {
+      if (!step.params.code) errors.push(`Step "${step.id}" (run_script) requires a "code" parameter`);
+    }
+    // HTTP request must have url
+    if (step.actionType === 'http_request') {
+      if (!step.params.url) errors.push(`Step "${step.id}" (http_request) requires a "url" parameter`);
     }
   }
 

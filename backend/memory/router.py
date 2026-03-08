@@ -23,6 +23,9 @@ from .schemas import (
     MemoryItemCreate,
     MemoryItemResponse,
     MemoryItemsListResponse,
+    MemorySearchRequest,
+    MemorySearchResponse,
+    MemorySearchResult,
 )
 
 router = APIRouter(tags=["memory"])
@@ -221,6 +224,57 @@ def delete_knowledge_entry(entry_id: str, db=Depends(get_db)):
     db.delete(entry)
     db.commit()
     return Response(status_code=204)
+
+
+# ── Memory Search ───────────────────────────────────────────────
+
+
+@router.post("/search", response_model=MemorySearchResponse)
+def search_memory(body: MemorySearchRequest, db=Depends(get_db)):
+    """Search memory items using TF-IDF similarity."""
+    import numpy as np
+    from .embeddings import get_embedder
+
+    q = db.query(MemoryItem).filter(MemoryItem.scope == body.scope)
+    if body.scope_id:
+        q = q.filter(MemoryItem.scope_id == body.scope_id)
+    else:
+        q = q.filter(MemoryItem.scope_id.is_(None))
+
+    items = q.all()
+
+    if not items:
+        return MemorySearchResponse(results=[], total=0)
+
+    embedder = get_embedder()
+    query_vec = embedder.embed(body.query)
+
+    # Score items that have embeddings
+    scored = []
+    for item in items:
+        if item.embedding:
+            item_vec = np.frombuffer(item.embedding, dtype=np.float32)
+            score = float(np.dot(query_vec, item_vec))
+            scored.append((item, score))
+        else:
+            # Fallback: simple text match
+            if body.query.lower() in item.content.lower():
+                scored.append((item, 0.5))
+
+    # Sort by score descending and limit
+    scored.sort(key=lambda x: x[1], reverse=True)
+    top = scored[: body.max_results]
+
+    results = [
+        MemorySearchResult(
+            content=item.content,
+            score=round(score, 4),
+            source=item.source_conversation_id,
+        )
+        for item, score in top
+    ]
+
+    return MemorySearchResponse(results=results, total=len(scored))
 
 
 # ── System Prompt Assembly ───────────────────────────────────────
