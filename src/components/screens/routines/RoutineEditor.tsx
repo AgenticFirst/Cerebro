@@ -7,6 +7,7 @@ import {
   BackgroundVariant,
   useReactFlow,
   type NodeTypes,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { Routine } from '../../../types/routines';
@@ -51,6 +52,12 @@ function CanvasInner({ routine }: { routine: Routine }) {
   const { screenToFlowPosition, getViewport } = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // One-time fitView when ReactFlow initializes (fires once, no re-render subscription)
+  const handleInit = useCallback((instance: ReactFlowInstance) => {
+    // Small delay lets nodes finish measuring before fitting
+    setTimeout(() => instance.fitView({ padding: 0.3 }), 50);
+  }, []);
 
   const selectedNode = selectedNodeId
     ? nodes.find((n) => n.id === selectedNodeId) ?? null
@@ -178,8 +185,7 @@ function CanvasInner({ routine }: { routine: Routine }) {
           onPaneClick={handlePaneClick}
           onDragOver={onDragOver}
           onDrop={onDrop}
-          fitView
-          fitViewOptions={{ padding: 0.3 }}
+          onInit={handleInit}
           deleteKeyCode={null}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
