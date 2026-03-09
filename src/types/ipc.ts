@@ -1,4 +1,5 @@
 import type { ExecutionEvent } from '../engine/events/types';
+import type { ClaudeCodeInfo } from './providers';
 
 // --- IPC Channel Constants ---
 
@@ -39,6 +40,10 @@ export const IPC_CHANNELS = {
 
   // Scheduler
   SCHEDULER_SYNC: 'scheduler:sync',
+
+  // Claude Code
+  CLAUDE_CODE_DETECT: 'claude-code:detect',
+  CLAUDE_CODE_STATUS: 'claude-code:status',
 } as const;
 
 // --- Backend Request/Response ---
@@ -221,6 +226,13 @@ export interface SchedulerAPI {
   sync(): Promise<void>;
 }
 
+// --- Claude Code ---
+
+export interface ClaudeCodeAPI {
+  detect(): Promise<ClaudeCodeInfo>;
+  getStatus(): Promise<ClaudeCodeInfo>;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -234,4 +246,5 @@ export interface CerebroAPI {
   agent: AgentAPI;
   engine: EngineAPI;
   scheduler: SchedulerAPI;
+  claudeCode: ClaudeCodeAPI;
 }

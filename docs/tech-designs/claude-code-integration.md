@@ -24,7 +24,7 @@ Claude Code Integration makes Cerebro the first desktop AI assistant that automa
 
 5. **Same events, different engine.** Claude Code's streaming NDJSON output is translated into the same `RendererAgentEvent` format that Cerebro's pi-agent-core loop emits. The renderer, ChatContext, message persistence, and tool call cards work identically regardless of which engine produced the events. Zero UI code changes for the streaming path.
 
-6. **Expert knowledge injection over active delegation.** In traditional mode, Cerebro routes to experts via tool calls. In Claude Code mode, expert knowledge is injected directly into the context — system prompts, context files, domain facts — and Claude Code answers using the appropriate expert's persona. This is faster (no sub-agent overhead), more coherent (single conversation thread), and leverages Claude Code's superior intelligence for synthesis. Active delegation via MCP is a Phase 2 enhancement.
+6. **Expert knowledge injection over active delegation.** In traditional mode, Cerebro routes to experts via tool calls. In Claude Code mode, expert knowledge is injected directly into the context — system prompts, context files, domain facts — and Claude Code answers using the appropriate expert's persona. This is faster (no sub-agent overhead), more coherent (single conversation thread), and leverages Claude Code's superior intelligence for synthesis. MCP tools for memory and web search (`cerebro_save_fact`, `cerebro_recall_facts`, `cerebro_web_search`, etc.) are implemented, giving Claude Code read/write access to Cerebro's memory system. Active delegation tools (`cerebro_delegate_to_expert`, `cerebro_run_routine`) remain future work.
 
 ## Architecture Overview
 
@@ -52,10 +52,14 @@ resolveModel() — 4-tier fallback:
 │  → Expert knowledge injected │  → Expert catalog + routing   │
 │  → Memory tiers included     │  → Memory tiers included      │
 │                              │                               │
-│  Spawn child process:        │  createExpertAgent()          │
-│  claude -p <prompt>          │  pi-agent-core Agent          │
-│    --output-format stream-json│  streamFn → backend SSE      │
+│  createMcpBridge()           │  createExpertAgent()          │
+│  → temp server + config      │  pi-agent-core Agent          │
+│                              │  streamFn → backend SSE      │
+│  Spawn child process:        │                               │
+│  claude -p <prompt>          │                               │
+│    --output-format stream-json│                               │
 │    --append-system-prompt ... │                               │
+│    --mcp-config <bridge.json>│                               │
 │    --allowedTools Read,...    │                               │
 │    --max-turns 15            │                               │
 │                              │                               │
@@ -109,20 +113,35 @@ Standard Mode System Prompt:           Claude Code Mode System Prompt:
 ┌────────────────────────────┐         ┌────────────────────────────┐
 │ Identity & Role            │         │ Identity & Role            │
 │ ─────────────────────────  │         │ ─────────────────────────  │
-│ Expert Catalog             │         │ Expert Catalog             │
-│   (names, domains, IDs)    │         │   (names, domains, IDs)    │
+│ Expert Catalog             │         │ Memory Tools (MCP)         │
+│   (names, domains, IDs)    │         │   cerebro_save_fact,       │
+│ ─────────────────────────  │         │   cerebro_save_entry,      │
+│ Routing Guidance           │         │   cerebro_recall_facts,    │
+│   "delegate using          │         │   cerebro_recall_knowledge,│
+│    delegate_to_expert"     │         │   cerebro_web_search,      │
+│ ─────────────────────────  │         │   cerebro_get_current_time,│
+│ Orchestration Guidance     │         │   cerebro_list_experts,    │
+│   delegation rules,        │         │   cerebro_create_expert    │
+│   depth limits, etc.       │         │   + prohibition rules      │
 │ ─────────────────────────  │         │ ─────────────────────────  │
-│ Routing Guidance           │         │ Expert System Prompts      │  ← NEW
-│   "delegate using          │         │   (full prompts for top    │
-│    delegate_to_expert"     │         │    relevant experts)       │
-│ ─────────────────────────  │         │ ─────────────────────────  │
-│ Orchestration Guidance     │         │ Expert Context Files       │  ← NEW
-│   delegation rules,        │         │   (user-authored domain    │
-│   depth limits, etc.       │         │    knowledge per expert)   │
-│ ─────────────────────────  │         │ ─────────────────────────  │
-│ Memory Tiers               │         │ Persona Guidance           │  ← NEW
-│   profile, style, facts,   │         │   "adopt the appropriate   │
-│   knowledge entries        │         │    expert's persona"       │
+│ Memory Tiers               │         │ Expert Catalog             │
+│   profile, style, facts,   │         │   (names, domains, IDs)    │
+│   knowledge entries        │         │ ─────────────────────────  │
+│                            │         │ Expert System Prompts      │
+│                            │         │   (full prompts for top    │
+│                            │         │    relevant experts)       │
+│                            │         │ ─────────────────────────  │
+│                            │         │ Expert Context Files       │
+│                            │         │   (user-authored domain    │
+│                            │         │    knowledge per expert)   │
+│                            │         │ ─────────────────────────  │
+│                            │         │ Expert Learned Facts       │
+│                            │         │   (top 5 per expert by     │
+│                            │         │    semantic relevance)     │
+│                            │         │ ─────────────────────────  │
+│                            │         │ Persona Guidance           │
+│                            │         │   "adopt the appropriate   │
+│                            │         │    expert's persona"       │
 │                            │         │ ─────────────────────────  │
 │                            │         │ Memory Tiers               │
 │                            │         │   profile, style, facts,   │
@@ -252,11 +271,16 @@ AgentRuntime.startClaudeCodeRun()
   │
   ├─ Build prompt string (user message + recent conversation context)
   │
+  ├─ createMcpBridge({ runId, backendPort, scope, scopeId, conversationId })
+  │    → Writes /tmp/cerebro-mcp-server-{runId}.js   (MCP server script)
+  │    → Writes /tmp/cerebro-mcp-config-{runId}.json  (MCP config JSON)
+  │
   ├─ Spawn: claude -p <prompt>
   │    --output-format stream-json
   │    --verbose
   │    --append-system-prompt <cerebro_context>
-  │    --allowedTools Read,Edit,Write,Bash,Grep,Glob,WebSearch,WebFetch
+  │    --mcp-config /tmp/cerebro-mcp-config-{runId}.json
+  │    --allowedTools Read,Edit,Write,Bash,Grep,Glob,WebSearch,WebFetch,LSP
   │    --max-turns 15
   │    --no-session-persistence
   │    env: { ...process.env, CLAUDECODE: (deleted) }
@@ -268,7 +292,8 @@ AgentRuntime.startClaudeCodeRun()
   │
   ├─ On process exit(0): emit 'done' event
   ├─ On process exit(N): emit 'error' event
-  └─ On abort(): SIGTERM → 3s → SIGKILL
+  ├─ On abort(): SIGTERM → 3s → SIGKILL
+  └─ finalizeRun() → cleanupMcpBridge() deletes both temp files
 ```
 
 **Critical environment detail**: Claude Code detects nested sessions via the `CLAUDECODE` environment variable. Since Cerebro's Electron main process may have this variable set if Claude Code was used to develop Cerebro itself, the child process environment must explicitly delete `CLAUDECODE` and `CLAUDE_CODE_ENTRY_POINT` to prevent the "nested session" error.
@@ -359,6 +384,19 @@ Claude Code's tools appear in the chat as tool call cards using the existing `To
 | WebFetch | Globe | Fetching page content |
 | LSP | Code | Code intelligence |
 
+**Cerebro MCP tools** (bridged via `--mcp-config`):
+
+| Tool | Icon | Description shown |
+|------|------|-------------------|
+| `cerebro_save_fact` | Brain | Saving learned fact |
+| `cerebro_save_entry` | FileText | Saving knowledge entry |
+| `cerebro_recall_facts` | Brain | Recalling facts |
+| `cerebro_recall_knowledge` | Search | Recalling knowledge |
+| `cerebro_web_search` | Globe | Searching the web |
+| `cerebro_get_current_time` | Clock | Getting current time |
+| `cerebro_list_experts` | Users | Listing experts |
+| `cerebro_create_expert` | Users | Creating expert |
+
 ## Data Flow: Complete Example
 
 **Scenario**: User has a "Fitness Coach" expert with a custom system prompt about workout programming. User sends "What should my workout look like this week?" with Claude Code as the active brain.
@@ -379,8 +417,16 @@ Claude Code's tools appear in the chat as tool call cards using the existing `To
        │
 5. Backend assembles enriched system prompt:
    ┌─────────────────────────────────────────────────────┐
-   │ ## Your Identity                                    │
-   │ You are Cerebro, a personal AI assistant...         │
+   │ ## Identity & Role                                  │
+   │ You are Cerebro, a personal AI assistant powered    │
+   │ by Claude Code...                                   │
+   │                                                     │
+   │ ## Memory Tools (MCP)                               │  ← MCP tools
+   │ cerebro_save_fact, cerebro_save_entry,              │
+   │ cerebro_recall_facts, cerebro_recall_knowledge,     │
+   │ cerebro_web_search, cerebro_get_current_time,        │
+   │ cerebro_list_experts, cerebro_create_expert          │
+   │ CRITICAL: NEVER use Write/Edit/Bash for memory      │
    │                                                     │
    │ ## Available Experts                                │
    │ - Fitness Coach [ID: abc] (domain: fitness):        │
@@ -389,29 +435,28 @@ Claude Code's tools appear in the chat as tool call cards using the existing `To
    │ ## Expert Knowledge: Fitness Coach                  │  ← injected
    │ You are a certified fitness coach specializing      │
    │ in progressive overload and periodization...        │
-   │ [user's context file: current split is PPL,         │
-   │  bench 185lbs, squat 275lbs, deadlift 315lbs]     │
+   │ Context: current split is PPL, bench 185lbs...      │
+   │ Learned facts:                                      │  ← expert facts
+   │ - User prefers morning workouts (6am)               │
+   │ - Has a minor rotator cuff issue (left shoulder)    │
    │                                                     │
-   │ ## Guidance                                         │
-   │ When a question matches an expert's domain,         │
-   │ adopt their persona and use their knowledge         │
-   │ to answer directly.                                 │
-   │                                                     │
-   │ ## Your Profile                                     │
+   │ ## About the User                                   │
    │ Name: Alex, 28, intermediate lifter...              │
    │                                                     │
-   │ ## Learned Facts                                    │
-   │ - Prefers morning workouts (6am)                    │
-   │ - Has a minor rotator cuff issue (left shoulder)    │
+   │ ## What You Know About the User                     │
    │ - Currently in a caloric surplus (bulking phase)    │
+   │ - Prefers detailed workout breakdowns               │
    └─────────────────────────────────────────────────────┘
        │
-6. startClaudeCodeRun() spawns:
-   claude -p "Previous conversation:\n...\n\nCurrent message: What should my workout look like this week?"
+6. startClaudeCodeRun():
+   a. createMcpBridge() → writes temp server script + config JSON
+   b. Spawns:
+   claude -p "Previous conversation:\n...\n\nUser: What should my workout look like this week?"
      --append-system-prompt <enriched_prompt_above>
      --output-format stream-json
      --verbose
-     --allowedTools Read,Edit,Write,Bash,Grep,Glob,WebSearch,WebFetch
+     --mcp-config /tmp/cerebro-mcp-config-{runId}.json
+     --allowedTools Read,Edit,Write,Bash,Grep,Glob,WebSearch,WebFetch,LSP
      --max-turns 15
      --no-session-persistence
        │
@@ -505,45 +550,91 @@ export interface CerebroAPI {
 | Claude Code auth expired | Process exits with auth error → error event includes the message. User re-authenticates via `claude` CLI directly. |
 | Network offline (Claude Code needs API) | Process exits with connection error → error shown. User can switch to local model for offline use. |
 
-## Phase 2: MCP Bridge (Future)
+## MCP Bridge: Memory & Search Tools
 
-Knowledge injection handles the majority of expert-domain questions. But some workflows genuinely require active delegation — complex multi-step tasks where different experts need to run independently with their own tool configurations, or team orchestration patterns (sequential pipelines, parallel fan-out) that can't be replicated by persona adoption.
+Knowledge injection gives Claude Code expert knowledge in the system prompt, but Claude Code also needs to *write back* to Cerebro — save facts the user shares, record structured events, and search the web through Cerebro's Tavily integration. The MCP bridge provides this via an MCP (Model Context Protocol) server that Claude Code discovers through `--mcp-config`.
 
-Phase 2 introduces an MCP (Model Context Protocol) bridge that exposes Cerebro's domain tools as MCP tools accessible to Claude Code:
+### Architecture
 
 ```
-claude -p <prompt>
-  --mcp-config /tmp/cerebro-mcp-{session}.json
-  --append-system-prompt <context>
+startClaudeCodeRun()
+  │
+  ├─ createMcpBridge({ runId, backendPort, scope, scopeId, conversationId })
+  │     │
+  │     ├─ Writes /tmp/cerebro-mcp-server-{runId}.js   ← self-contained Node.js MCP server
+  │     └─ Writes /tmp/cerebro-mcp-config-{runId}.json  ← MCP config pointing to the server
+  │
+  ├─ Spawns: claude -p <prompt> --mcp-config /tmp/cerebro-mcp-config-{runId}.json ...
+  │     │
+  │     └─ Claude Code starts the MCP server as a child process (stdio transport)
+  │           │
+  │           ├─ tools/list  → returns 6 Cerebro tools
+  │           └─ tools/call  → bridges to Cerebro backend via HTTP
+  │
+  └─ finalizeRun() → cleanupMcpBridge() deletes both temp files
 ```
 
-The MCP config points to a stdio-based MCP server that wraps Cerebro's backend API:
+### MCP Config Format
+
+The config JSON follows the standard MCP server configuration format. Environment variables pass runtime context to the server script:
 
 ```json
 {
-  "cerebro": {
-    "command": "node",
-    "args": ["/path/to/cerebro-mcp-bridge.js"],
-    "env": {
-      "CEREBRO_BACKEND_PORT": "12345",
-      "CEREBRO_CONVERSATION_ID": "conv_abc123"
+  "mcpServers": {
+    "cerebro": {
+      "command": "node",
+      "args": ["/tmp/cerebro-mcp-server-{runId}.js"],
+      "env": {
+        "CEREBRO_PORT": "12345",
+        "CEREBRO_SCOPE": "personal",
+        "CEREBRO_SCOPE_ID": "",
+        "CEREBRO_CONVERSATION_ID": "conv_abc123"
+      }
     }
   }
 }
 ```
 
-The MCP server exposes:
+### Implemented Tools
+
+| MCP Tool | Backend Endpoint | Description |
+|----------|-----------------|-------------|
+| `cerebro_save_fact` | `POST /memory/items` | Save a learned fact or user preference |
+| `cerebro_save_entry` | `POST /memory/knowledge` | Save a structured knowledge entry (event, activity, decision) |
+| `cerebro_recall_facts` | `GET /memory/items` | Search learned facts by keyword |
+| `cerebro_recall_knowledge` | `GET /memory/knowledge` | Search knowledge entries by keyword |
+| `cerebro_web_search` | `POST /search` | Web search via Tavily API |
+| `cerebro_get_current_time` | *(local)* | Returns current date/time (no backend call) |
+| `cerebro_list_experts` | `GET /experts` | List available specialist experts |
+| `cerebro_create_expert` | `POST /experts` | Create a new expert with structured prompt assembly |
+
+### System Prompt Rules
+
+The `CLAUDE_CODE_BASE_PROMPT` in `recall.py` includes three critical prohibitions to prevent Claude Code from creating file-based "memory" that bypasses Cerebro's database:
+
+1. **ALWAYS use `cerebro_save_fact` or `cerebro_save_entry`** — these are the only memory tools.
+2. **NEVER use Write, Edit, or Bash to create memory files** — files at `.claude/` are not Cerebro's memory.
+3. **NEVER write to `.claude/projects/`, `.claude/memory/`, or any file-based "memory" location.**
+
+Without these rules, Claude Code's default behavior is to save notes to disk files, which wouldn't be visible in Cerebro's Settings > Memory UI or included in future system prompts.
+
+### Key Design Decisions
+
+- **Self-contained script**: The MCP server is a generated Node.js script using only built-in modules (`http`, `readline`, `process`). No npm dependencies, no build step. The full source is a template literal in `mcp-server.ts`.
+- **Temp file lifecycle**: Both files are created by `createMcpBridge()` before spawning Claude Code and deleted by `cleanupMcpBridge()` in `finalizeRun()`. Each run gets unique files (`{runId}` suffix) to prevent collisions between concurrent runs.
+- **Scope-aware**: The MCP server receives `CEREBRO_SCOPE` and `CEREBRO_SCOPE_ID` as env vars, so facts and entries are saved to the correct scope (personal vs. expert-scoped).
+- **Conversation tracking**: `CEREBRO_CONVERSATION_ID` is passed through so saved facts and entries have proper provenance (`source_conversation_id`).
+
+### Future: Delegation & Routine Tools
+
+Two additional MCP tools are planned but not yet implemented. These will enable Claude Code to actively delegate work to Cerebro's expert system:
 
 | MCP Tool | Maps To | Description |
 |----------|---------|-------------|
-| `cerebro_list_experts` | `GET /experts` | Query the expert catalog |
 | `cerebro_delegate_to_expert` | `AgentRuntime.startRun()` | Run a sub-agent with expert's config |
-| `cerebro_recall_memory` | `POST /memory/recall` | Semantic search over learned facts |
-| `cerebro_save_fact` | `POST /memory/items` | Store a new learned fact |
-| `cerebro_recall_knowledge` | `GET /memory/entries` | Query structured knowledge entries |
 | `cerebro_run_routine` | `POST /engine/runs` | Trigger a routine execution |
 
-This gives Claude Code the full power of both worlds: its own tools (file editing, bash, web search) plus Cerebro's domain tools (expert delegation, memory, routines). The knowledge injection from Phase 1 remains as a performance optimization — Claude Code can answer simple domain questions directly from context without the overhead of an MCP tool call.
+Knowledge injection from the system prompt remains the primary mechanism for expert knowledge — these delegation tools will complement it for complex multi-step workflows that genuinely require independent agent runs.
 
 ## Implementation Sequence
 
@@ -555,15 +646,17 @@ This gives Claude Code the full power of both worlds: its own tools (file editin
 | 4 | `src/claude-code/detector.ts` | **New** — Detection service |
 | 5 | `src/preload.ts` | Add claudeCode IPC bridge |
 | 6 | `src/main.ts` | Register IPC handlers, startup detection |
-| 7 | `src/claude-code/stream-adapter.ts` | **New** — ClaudeCodeRunner class |
+| 7 | `src/claude-code/stream-adapter.ts` | **New** — ClaudeCodeRunner class, accepts `mcpConfigPath` option |
 | 8 | `src/agents/model-resolver.ts` | Add claude-code in fallback chain |
 | 9 | `src/agents/loop/model-tiers.ts` | Classify claude-code as `'large'` |
-| 10 | `src/agents/runtime.ts` | Add `startClaudeCodeRun()` code path |
-| 11 | `backend/memory/recall.py` | Knowledge injection in `assemble_system_prompt()` |
-| 12 | `backend/memory/router.py` | Accept `is_claude_code` in `/memory/context` |
+| 10 | `src/agents/runtime.ts` | Add `startClaudeCodeRun()` code path, MCP bridge creation + cleanup |
+| 11 | `backend/memory/recall.py` | Knowledge injection in `assemble_system_prompt()`, `CLAUDE_CODE_BASE_PROMPT` with MCP tool docs |
+| 12 | `backend/memory/router.py` | Accept `is_claude_code` in `/memory/context`, `POST /memory/items` for MCP bridge |
+| 12a | `src/claude-code/mcp-server.ts` | **New** — MCP server script generator (6 tools bridged to backend) |
+| 12b | `src/claude-code/mcp-bridge.ts` | **New** — MCP bridge lifecycle manager (`createMcpBridge` / `cleanupMcpBridge`) |
 | 13 | `src/context/ProviderContext.tsx` | claudeCodeInfo state, auto-select |
 | 14 | `src/context/ChatContext.tsx` | claude-code validation guard |
 | 15 | `src/components/screens/integrations/ClaudeCodeCard.tsx` | **New** — Settings card |
 | 16 | `src/components/screens/integrations/ModelsSection.tsx` | Include ClaudeCodeCard |
 | 17 | `src/components/chat/ModelSelector.tsx` | Add Claude Code option at top |
-| 18 | `src/components/chat/ToolCallCard.tsx` | Icons for Claude Code tools |
+| 18 | `src/components/chat/ToolCallCard.tsx` | Icons for Claude Code tools + Cerebro MCP tools |

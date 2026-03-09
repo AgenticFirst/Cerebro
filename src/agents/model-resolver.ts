@@ -9,6 +9,7 @@
 
 import http from 'node:http';
 import type { ResolvedModel, ExpertModelConfig } from './types';
+import { getCachedClaudeCodeInfo } from '../claude-code/detector';
 
 interface GlobalSettings {
   selected_model?: string; // JSON-encoded SelectedModel
@@ -49,7 +50,17 @@ export async function resolveModel(
     // Settings not found, continue to fallback
   }
 
-  // 3. Currently loaded local model
+  // 3. Claude Code (if detected and available)
+  const claudeInfo = getCachedClaudeCodeInfo();
+  if (claudeInfo.status === 'available') {
+    return {
+      source: 'claude-code',
+      modelId: 'claude-code',
+      displayName: 'Claude Code',
+    };
+  }
+
+  // 4. Currently loaded local model
   try {
     const status = await backendGet<{ state: string; loaded_model_id: string | null }>(
       backendPort,

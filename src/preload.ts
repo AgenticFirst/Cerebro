@@ -18,6 +18,7 @@ import type {
   EngineActiveRunInfo,
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
+import type { ClaudeCodeInfo } from './types/providers';
 
 const api: CerebroAPI = {
   invoke<T = unknown>(request: BackendRequest): Promise<BackendResponse<T>> {
@@ -137,6 +138,15 @@ const api: CerebroAPI = {
   scheduler: {
     sync(): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.SCHEDULER_SYNC);
+    },
+  },
+
+  claudeCode: {
+    detect(): Promise<ClaudeCodeInfo> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_DETECT);
+    },
+    getStatus(): Promise<ClaudeCodeInfo> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_STATUS);
     },
   },
 };

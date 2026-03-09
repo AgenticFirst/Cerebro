@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, Search, Brain, Zap, Globe, CheckCircle2, XCircle, Loader2, Users } from 'lucide-react';
+import { ChevronRight, Search, Brain, Zap, Globe, CheckCircle2, XCircle, Loader2, Users, FileText, Pencil, FilePlus, Terminal, FolderSearch, Code, Clock } from 'lucide-react';
 import clsx from 'clsx';
 import type { ToolCall } from '../../types/chat';
 
@@ -8,6 +8,25 @@ const TOOL_ICONS: Record<string, typeof Search> = {
   analyze_intent: Brain,
   web_search: Globe,
   delegate_to_expert: Users,
+  // Claude Code tools
+  Read: FileText,
+  Edit: Pencil,
+  Write: FilePlus,
+  Bash: Terminal,
+  Grep: Search,
+  Glob: FolderSearch,
+  WebSearch: Globe,
+  WebFetch: Globe,
+  LSP: Code,
+  // Cerebro MCP tools
+  cerebro_save_fact: Brain,
+  cerebro_save_entry: FileText,
+  cerebro_recall_facts: Brain,
+  cerebro_recall_knowledge: Search,
+  cerebro_web_search: Globe,
+  cerebro_get_current_time: Clock,
+  cerebro_list_experts: Users,
+  cerebro_create_expert: Users,
 };
 
 function StatusDot({ status }: { status: ToolCall['status'] }) {

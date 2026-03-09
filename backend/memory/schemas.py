@@ -87,6 +87,7 @@ class MemoryContextRequest(BaseModel):
     include_expert_catalog: bool = False
     include_routine_catalog: bool = False
     model_tier: str | None = None
+    is_claude_code: bool = False
 
 
 class MemoryContextResponse(BaseModel):

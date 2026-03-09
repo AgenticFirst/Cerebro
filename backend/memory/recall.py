@@ -541,6 +541,60 @@ def _build_routine_catalog(db: Session) -> str:
     return section
 
 
+CLAUDE_CODE_BASE_PROMPT = """## Identity & Role
+
+You are Cerebro, a personal AI assistant powered by Claude Code. You have access to powerful tools \
+including file reading/editing, bash execution, web search, and code analysis. You are thoughtful, \
+direct, and helpful. You remember what the user tells you and use that context to give better answers over time.
+
+You have knowledge from multiple domain experts (listed below). When a question matches an expert's \
+domain, adopt their persona and use their knowledge to answer directly. You can draw on multiple \
+experts' knowledge simultaneously for cross-domain questions.
+
+### Rules
+
+1. Be concise. Prefer short, clear responses over verbose ones.
+2. Never fabricate information you don't have.
+3. When saving facts, be concise and specific.
+4. Only use tools when they genuinely help.
+5. When presenting web search results, cite your sources naturally.
+6. When a question clearly falls within an expert's domain, adopt that expert's communication \
+style and use their domain-specific knowledge to answer.
+
+## Memory Tools (MCP)
+
+You have access to Cerebro's memory system through MCP tools. These tools store data in Cerebro's \
+database — persistent, searchable, and visible in Settings > Memory.
+
+### Available Memory Tools
+
+- `cerebro_save_fact` — Save a learned fact or user preference. Use when the user shares personal info, \
+preferences, or asks you to remember something. Be concise: "User prefers dark mode" not \
+"The user mentioned they like dark mode".
+- `cerebro_save_entry` — Save a structured knowledge entry (event, activity, decision, health record, etc.).
+- `cerebro_recall_facts` — Search learned facts by keyword. Use to recall what you know about the user.
+- `cerebro_recall_knowledge` — Search knowledge entries (events, activities, records) by keyword.
+- `cerebro_web_search` — Search the web for current information via Tavily.
+- `cerebro_get_current_time` — Get the current date and time.
+
+### Expert Management Tools
+
+- `cerebro_list_experts` — List all available specialist experts. Use to check what experts exist \
+before creating a new one or when the user asks what specialists are available.
+- `cerebro_create_expert` — Create a new specialist expert. Use when the user needs recurring, \
+domain-specific help that no existing expert covers. Provide structured sections (identity, capabilities, \
+rules) that get assembled into a system prompt. Always check `cerebro_list_experts` first to avoid duplicates.
+
+### CRITICAL: Memory Storage Rules
+
+When the user asks to remember, save, note, or store something:
+- ALWAYS use `cerebro_save_fact` or `cerebro_save_entry`. These are your ONLY memory tools.
+- NEVER use Write, Edit, or Bash to create memory files. Files at `.claude/` are NOT Cerebro's \
+memory and will not persist across conversations.
+- NEVER write to `.claude/projects/`, `.claude/memory/`, or any file-based "memory" location.
+- The cerebro_* MCP tools are the only way to save information that persists in Cerebro."""
+
+
 async def assemble_system_prompt(
     recent_messages: list[dict] | None,
     scope: str,
@@ -549,6 +603,7 @@ async def assemble_system_prompt(
     include_expert_catalog: bool = False,
     include_routine_catalog: bool = False,
     model_tier: str | None = None,
+    is_claude_code: bool = False,
 ) -> MemoryContextResponse:
     """Assemble full system prompt from all three memory tiers."""
     sections: list[str] = []
@@ -560,9 +615,9 @@ async def assemble_system_prompt(
         if expert and expert.system_prompt:
             sections.append(expert.system_prompt)
         else:
-            sections.append(BASE_SYSTEM_PROMPT)
+            sections.append(CLAUDE_CODE_BASE_PROMPT if is_claude_code else BASE_SYSTEM_PROMPT)
     else:
-        sections.append(BASE_SYSTEM_PROMPT)
+        sections.append(CLAUDE_CODE_BASE_PROMPT if is_claude_code else BASE_SYSTEM_PROMPT)
 
     # 1b. Current date/time — always included so the LLM can ground relative time references
     from datetime import datetime, timezone
@@ -570,39 +625,82 @@ async def assemble_system_prompt(
     now = datetime.now(timezone.utc)
     sections.append(f"## Current Date & Time\n{now.strftime('%A, %B %d, %Y at %I:%M %p UTC')}")
 
-    # 2. Expert catalog (dynamic, only for Cerebro scope)
+    # 2. Expert catalog and knowledge injection
     has_experts = False
     if include_expert_catalog and scope != "expert":
         catalog_text, catalog_experts = _build_expert_catalog(db)
-        sections.append(catalog_text)
         has_experts = len(catalog_experts) > 0
 
-        # For small models, add a compact keyword routing table
-        if model_tier == "small" and has_experts:
-            routing_table = _build_routing_table(catalog_experts)
-            if routing_table:
-                sections.append(routing_table)
+        if is_claude_code and has_experts:
+            # Claude Code mode: inject expert system prompts, context files, and learned facts
+            sections.append(catalog_text)
 
-    # 3. Routine catalog (dynamic, only for Cerebro scope)
-    if include_routine_catalog and scope != "expert":
-        sections.append(_build_routine_catalog(db))
+            # Compute query text for expert fact recall
+            expert_query_text = ""
+            if recent_messages:
+                expert_query_text = " ".join(
+                    m.get("content", "") for m in recent_messages[-3:]
+                )
 
-    # 4. Expert proposal guidance (only for Cerebro, not individual experts)
-    if scope != "expert":
-        sections.append(EXPERT_PROPOSAL_GUIDANCE)
+            expert_sections = []
+            for e in catalog_experts[:5]:  # Cap at 5 experts to manage context size
+                parts = [f"### {e.name}"]
+                if e.system_prompt:
+                    parts.append(e.system_prompt)
+                # Include expert context file
+                expert_ctx = db.get(Setting, f"memory:context:expert:{e.id}")
+                if expert_ctx and expert_ctx.value.strip():
+                    parts.append(f"**Context:**\n{expert_ctx.value}")
+                    context_files_used.append(f"expert:{e.id}")
+                # Include expert-scoped learned facts
+                if expert_query_text:
+                    expert_facts = await recall_relevant(
+                        expert_query_text, "expert", e.id, db, top_k=5
+                    )
+                    if expert_facts:
+                        fact_lines = [f"- {item.content}" for item in expert_facts]
+                        parts.append(
+                            f"**Learned facts:**\n" + "\n".join(fact_lines)
+                        )
+                expert_sections.append("\n".join(parts))
+            if expert_sections:
+                sections.append(
+                    "## Expert Knowledge\n"
+                    "Use the following expert personas and knowledge when the user's question "
+                    "matches their domain. Adopt the expert's style and use their specific knowledge.\n\n"
+                    + "\n\n---\n\n".join(expert_sections)
+                )
+        else:
+            # Standard mode: show catalog for delegation
+            sections.append(catalog_text)
+            # For small models, add a compact keyword routing table
+            if model_tier == "small" and has_experts:
+                routing_table = _build_routing_table(catalog_experts)
+                if routing_table:
+                    sections.append(routing_table)
 
-    # 5. Routine proposal guidance (only for Cerebro, not individual experts)
-    if scope != "expert":
-        sections.append(ROUTINE_PROPOSAL_GUIDANCE)
+    # 3-5: Delegation/proposal guidance — skip in Claude Code mode
+    if not is_claude_code:
+        # 3. Routine catalog (dynamic, only for Cerebro scope)
+        if include_routine_catalog and scope != "expert":
+            sections.append(_build_routine_catalog(db))
 
-    # 5b. Team proposal guidance (only for Cerebro, not individual experts)
-    if scope != "expert":
-        sections.append(TEAM_PROPOSAL_GUIDANCE)
+        # 4. Expert proposal guidance (only for Cerebro, not individual experts)
+        if scope != "expert":
+            sections.append(EXPERT_PROPOSAL_GUIDANCE)
 
-    # 5c. Orchestration guidance — skip for small models (they get tier-specific
-    # delegation rules in model-tiers.ts) and when no experts exist (dead weight)
-    if scope != "expert" and has_experts and model_tier != "small":
-        sections.append(ORCHESTRATION_GUIDANCE)
+        # 5. Routine proposal guidance (only for Cerebro, not individual experts)
+        if scope != "expert":
+            sections.append(ROUTINE_PROPOSAL_GUIDANCE)
+
+        # 5b. Team proposal guidance (only for Cerebro, not individual experts)
+        if scope != "expert":
+            sections.append(TEAM_PROPOSAL_GUIDANCE)
+
+        # 5c. Orchestration guidance — skip for small models (they get tier-specific
+        # delegation rules in model-tiers.ts) and when no experts exist (dead weight)
+        if scope != "expert" and has_experts and model_tier != "small":
+            sections.append(ORCHESTRATION_GUIDANCE)
 
     # 6. Profile context file
     profile = db.get(Setting, "memory:context:profile")

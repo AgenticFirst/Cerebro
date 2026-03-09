@@ -5,14 +5,14 @@
 // ── Model resolution ─────────────────────────────────────────────
 
 export interface ResolvedModel {
-  source: 'local' | 'cloud';
+  source: 'local' | 'cloud' | 'claude-code';
   provider?: string; // e.g. "anthropic", "openai", "google"
   modelId: string;
   displayName: string;
 }
 
 export interface ExpertModelConfig {
-  source: 'local' | 'cloud';
+  source: 'local' | 'cloud' | 'claude-code';
   provider?: string | null;
   model_id: string;
   display_name: string;

@@ -56,7 +56,7 @@ const MEDIUM_PARAMS = new Set(['12b', '13b', '14b', '27b', '32b', '35b']);
  * - Local models → parse param count from modelId
  */
 export function classifyModelTier(model: ResolvedModel): ModelTier {
-  if (model.source === 'cloud') return 'large';
+  if (model.source === 'cloud' || model.source === 'claude-code') return 'large';
 
   // Try to extract param size like "4b", "12b" from modelId
   const match = model.modelId.toLowerCase().match(/(\d+)b/);

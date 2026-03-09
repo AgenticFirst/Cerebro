@@ -30,6 +30,7 @@ import type { AgentRunRequest } from './agents';
 import { ExecutionEngine } from './engine/engine';
 import type { EngineRunRequest } from './engine/dag/types';
 import { RoutineScheduler } from './scheduler/scheduler';
+import { detectClaudeCode, getCachedClaudeCodeInfo } from './claude-code/detector';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -585,6 +586,16 @@ function registerIpcHandlers(): void {
     }
     await routineScheduler.sync();
   });
+
+  // --- Claude Code ---
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_DETECT, async () => {
+    return detectClaudeCode();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_STATUS, async () => {
+    return getCachedClaudeCodeInfo();
+  });
 }
 
 // --- Window creation ---
@@ -638,6 +649,13 @@ app.on('ready', () => {
   createWindow();
   startPythonBackend().catch((err) => {
     console.error('[Cerebro] Failed to start Python backend:', err);
+  });
+
+  // Detect Claude Code CLI availability
+  detectClaudeCode().then((info) => {
+    console.log(`[Cerebro] Claude Code detection: ${info.status}${info.version ? ` v${info.version}` : ''}${info.path ? ` (${info.path})` : ''}`);
+  }).catch((err) => {
+    console.error('[Cerebro] Claude Code detection failed:', err);
   });
 });
 

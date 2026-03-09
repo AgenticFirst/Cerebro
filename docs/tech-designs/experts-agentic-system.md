@@ -763,6 +763,8 @@ After this change, a Fitness Coach agent gets:
 
 The memory tools defined in the [Tool System](#tool-system) section (`recall_facts`, `recall_knowledge`, `save_fact`, `save_entry`) give agents explicit, mid-conversation access to memory. This is distinct from the automatic injection (system prompt assembly at the start) and automatic extraction (after the run completes) — tools let the agent decide *during its reasoning loop* when to recall or store information.
 
+> **Note:** In Claude Code mode, equivalent memory and expert management functionality is provided via MCP tools rather than pi-agent-core AgentTools. Memory tools (`cerebro_save_fact`, `cerebro_save_entry`, `cerebro_recall_facts`, `cerebro_recall_knowledge`) bridge to the same backend endpoints. Expert tools (`cerebro_list_experts`, `cerebro_create_expert`) provide listing and creation via `GET /experts` and `POST /experts`. See `docs/tech-designs/claude-code-integration.md` § "MCP Bridge: Memory & Search Tools" for details.
+
 ## Integration with Existing Systems
 
 ### Chat Flow Changes

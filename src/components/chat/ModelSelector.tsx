@@ -60,6 +60,8 @@ export default function ModelSelector() {
 
   const isLoading = engineStatus.state === 'loading';
   const hasDownloaded = downloadedModels.length > 0;
+  const { claudeCodeInfo } = useProviders();
+  const isClaudeCodeAvailable = claudeCodeInfo.status === 'available';
 
   // Merge builtin + custom models, dedup by id
   const allCloudModels = useMemo(() => {
@@ -77,7 +79,7 @@ export default function ModelSelector() {
     return enabledModels.has(m.id) && hasKey;
   });
 
-  const hasAnyModel = hasDownloaded || availableCloudModels.length > 0;
+  const hasAnyModel = hasDownloaded || availableCloudModels.length > 0 || isClaudeCodeAvailable;
 
   // No models available at all — show setup link
   if (!hasAnyModel) {
@@ -99,11 +101,13 @@ export default function ModelSelector() {
       : 'Select model';
 
   const pillDot = selectedModel
-    ? selectedModel.source === 'cloud'
-      ? PROVIDER_DOT[selectedModel.provider ?? ''] ?? 'bg-accent'
-      : TIER_DOT[
-          downloadedModels.find((m) => m.id === selectedModel.modelId)?.tier ?? ''
-        ] ?? 'bg-accent'
+    ? selectedModel.source === 'claude-code'
+      ? 'bg-violet-400'
+      : selectedModel.source === 'cloud'
+        ? PROVIDER_DOT[selectedModel.provider ?? ''] ?? 'bg-accent'
+        : TIER_DOT[
+            downloadedModels.find((m) => m.id === selectedModel.modelId)?.tier ?? ''
+          ] ?? 'bg-accent'
     : 'bg-text-tertiary';
 
   return (
@@ -131,9 +135,48 @@ export default function ModelSelector() {
       {/* Dropdown (opens upward) */}
       {open && (
         <div className="absolute bottom-full left-0 mb-1 w-60 bg-bg-elevated border border-border-subtle rounded-lg shadow-xl py-1 z-50 max-h-80 overflow-y-auto">
+          {/* Claude Code (Agent) */}
+          {isClaudeCodeAvailable && (
+            <>
+              <div className="px-3 py-1.5 text-[10px] font-medium text-text-tertiary uppercase tracking-wider">
+                Agent
+              </div>
+              <button
+                onClick={() => {
+                  selectModel({
+                    source: 'claude-code',
+                    modelId: 'claude-code',
+                    displayName: 'Claude Code',
+                  });
+                  setOpen(false);
+                }}
+                className={clsx(
+                  'w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors cursor-pointer',
+                  selectedModel?.source === 'claude-code'
+                    ? 'text-text-primary bg-accent/5'
+                    : 'text-text-secondary hover:bg-bg-hover',
+                )}
+              >
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-violet-400" />
+                <span className="flex-1 truncate">Claude Code</span>
+                {claudeCodeInfo.version && (
+                  <span className="text-[10px] text-text-tertiary bg-bg-base px-1.5 py-0.5 rounded">
+                    v{claudeCodeInfo.version}
+                  </span>
+                )}
+                {selectedModel?.source === 'claude-code' && (
+                  <Check size={12} className="text-accent flex-shrink-0" />
+                )}
+              </button>
+            </>
+          )}
+
           {/* Cloud Models */}
           {availableCloudModels.length > 0 && (
             <>
+              {isClaudeCodeAvailable && (
+                <div className="border-t border-border-subtle my-1" />
+              )}
               <div className="px-3 py-1.5 text-[10px] font-medium text-text-tertiary uppercase tracking-wider">
                 Cloud Models
               </div>

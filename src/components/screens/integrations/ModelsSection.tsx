@@ -6,6 +6,7 @@ import { useModels } from '../../../context/ModelContext';
 import { useProviders } from '../../../context/ProviderContext';
 import type { CloudProvider, ConnectionStatus } from '../../../types/providers';
 import LocalModelCard from './LocalModelCard';
+import ClaudeCodeCard from './ClaudeCodeCard';
 
 interface Model {
   id: string;
@@ -633,8 +634,13 @@ export default function ModelsSection() {
         Connect cloud providers or download models to run locally.
       </p>
 
+      {/* Claude Code */}
+      <div className="mt-6">
+        <ClaudeCodeCard />
+      </div>
+
       {/* Cloud Providers */}
-      <div className="mt-6 space-y-3">
+      <div className="mt-4 space-y-3">
         {PROVIDERS.map((provider) => (
           <ProviderCard key={provider.id} provider={provider} />
         ))}

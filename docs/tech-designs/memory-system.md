@@ -242,6 +242,7 @@ backend/memory/
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/memory/items` | List learned facts (filterable by scope, searchable) |
+| `POST` | `/memory/items` | Create a learned fact (used by MCP bridge's `cerebro_save_fact`) |
 | `DELETE` | `/memory/items/{id}` | Delete a learned fact |
 
 **Knowledge Entries (Tier 3):**
@@ -269,50 +270,38 @@ async def assemble_system_prompt(
     scope: str,
     scope_id: str | None,
     db: Session,
+    include_expert_catalog: bool = False,
+    include_routine_catalog: bool = False,
+    model_tier: str | None = None,
+    is_claude_code: bool = False,
 ) -> MemoryContextResponse:
     sections: list[str] = []
     context_files_used: list[str] = []
 
-    # 1. Base Cerebro personality
-    sections.append(BASE_SYSTEM_PROMPT)
+    # 1. Base personality — CLAUDE_CODE_BASE_PROMPT or BASE_SYSTEM_PROMPT
+    #    Expert-scoped runs use the expert's own system prompt instead
+    sections.append(CLAUDE_CODE_BASE_PROMPT if is_claude_code else BASE_SYSTEM_PROMPT)
 
-    # 2. Profile context file
-    profile = db.get(Setting, "memory:context:profile")
-    if profile and profile.value.strip():
-        sections.append(f"## About the User\n{profile.value}")
-        context_files_used.append("profile")
+    # 2. Expert catalog + knowledge injection (Claude Code) or delegation guidance (standard)
+    if include_expert_catalog:
+        if is_claude_code:
+            # Inject expert system prompts, context files, and top-5 learned facts per expert
+            # directly into context — Claude Code adopts the expert's persona instead of delegating
+            ...
+        else:
+            # Standard mode: show catalog for delegation routing
+            # Small models also get a compact keyword→expert routing table
+            ...
 
-    # 3. Style context file
-    style = db.get(Setting, "memory:context:style")
-    if style and style.value.strip():
-        sections.append(f"## Communication Style\n{style.value}")
-        context_files_used.append("style")
+    # 3-5. Delegation/proposal/orchestration guidance — skipped in Claude Code mode
+    if not is_claude_code:
+        # Routine catalog, expert/routine/team proposal guidance, orchestration guidance
+        ...
 
-    # 4. Expert context file (when expert-scoped)
-    if scope == "expert" and scope_id:
-        expert_ctx = db.get(Setting, f"memory:context:expert:{scope_id}")
-        if expert_ctx and expert_ctx.value.strip():
-            sections.append(f"## Expert Context\n{expert_ctx.value}")
-            context_files_used.append(f"expert:{scope_id}")
-
-    # 5. Learned facts -- top-K by semantic relevance
-    recall_items = []
-    if recent_messages:
-        query = " ".join(m["content"] for m in recent_messages[-3:])
-        recall_items = await recall_relevant(query, scope, scope_id, db, top_k=10)
-
-    if recall_items:
-        lines = [f"- {item.content}" for item in recall_items]
-        sections.append("## What You Know About the User\n" + "\n".join(lines))
-
-    # 6. Knowledge entries -- recent + relevant
-    knowledge_summary = await recall_knowledge(
-        recent_messages, scope, scope_id, db,
-        recent_count=15,
-        relevant_count=5,
-    )
-    if knowledge_summary:
-        sections.append(f"## Recent Activity & Records\n{knowledge_summary}")
+    # 6-7. Profile + Style context files
+    # 8. Expert context file (when expert-scoped)
+    # 9. Learned facts — top-K by semantic relevance (reduced for small models: 5 vs 10)
+    # 10. Knowledge entries — recent + relevant (reduced for small models: 8/3 vs 15/5)
 
     return MemoryContextResponse(
         system_prompt="\n\n".join(sections),
@@ -321,6 +310,10 @@ async def assemble_system_prompt(
         knowledge_entry_count=knowledge_count,
     )
 ```
+
+**Claude Code mode differences:** When `is_claude_code=True`, the assembly function uses `CLAUDE_CODE_BASE_PROMPT` (which includes MCP tool documentation and prohibitions against file-based memory), injects expert knowledge directly into the context (system prompts, context files, and top-5 learned facts per expert by semantic relevance), and skips delegation/orchestration guidance since Claude Code doesn't use Cerebro's agent tools.
+
+**Model tier adjustments:** When `model_tier="small"`, recall limits are reduced (5 learned facts instead of 10, 8 recent + 3 relevant knowledge entries instead of 15 + 5) to manage limited context windows.
 
 **Knowledge recall strategy (`recall_knowledge`):**
 

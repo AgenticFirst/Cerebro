@@ -6,7 +6,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import type { WebContents } from 'electron';
 import type { Agent, AgentEvent } from '@mariozechner/pi-agent-core';
-import type { AgentRunRequest, ActiveRunInfo, RendererAgentEvent, ExpertModelConfig, SubAgentResult } from './types';
+import type { AgentRunRequest, ActiveRunInfo, RendererAgentEvent, ExpertModelConfig, SubAgentResult, ResolvedModel } from './types';
 import type { ExecutionEngine } from '../engine/engine';
 import { resolveModel } from './model-resolver';
 import { createToolsForExpert } from './tools';
@@ -15,6 +15,8 @@ import { translateEvent } from './events';
 import { createEnhancedAgentConfig, createTurnGovernor, classifyModelTier } from './loop';
 import { createAgentLogger } from './logger';
 import { OrchestrationTracker } from './orchestration-tracker';
+import { ClaudeCodeRunner } from '../claude-code/stream-adapter';
+import { createMcpBridge, cleanupMcpBridge, type McpBridgeFiles } from '../claude-code/mcp-bridge';
 
 /** Cap concurrent agents to prevent resource exhaustion (each run holds an HTTP stream + tools). */
 const MAX_CONCURRENT_RUNS = 5;
@@ -24,12 +26,14 @@ interface ActiveRun {
   conversationId: string;
   expertId: string | null;
   userContent: string;
-  agent: Agent;
+  agent: Agent | null;
   unsubscribe: () => void;
   governorUnsub: (() => void) | null;
   startedAt: number;
   accumulatedText: string;
   tracker: OrchestrationTracker;
+  claudeCodeRunner?: ClaudeCodeRunner;
+  mcpBridge?: McpBridgeFiles;
 }
 
 interface ExpertData {
@@ -142,6 +146,7 @@ export class AgentRuntime {
 
     // Classify model tier early (used for memory recall limits and enhanced loop)
     const tier = classifyModelTier(resolvedModel);
+    const isClaudeCode = resolvedModel.source === 'claude-code';
 
     // Fetch memory-assembled system prompt
     let systemPrompt = expertData?.system_prompt || '';
@@ -158,6 +163,7 @@ export class AgentRuntime {
           include_expert_catalog: isPersonalScope,
           include_routine_catalog: isPersonalScope,
           model_tier: tier,
+          is_claude_code: isClaudeCode,
         },
       );
       if (memoryRes?.system_prompt) {
@@ -209,6 +215,11 @@ export class AgentRuntime {
       );
       systemPrompt += `\n\n## Prior Expert Proposals (this conversation)\n${lines.join('\n')}\n` +
         `If a proposal was dismissed, do NOT re-propose it. If saved, the user already has it.`;
+    }
+
+    // ── Claude Code path ──────────────────────────────────────────
+    if (isClaudeCode) {
+      return this.startClaudeCodeRun(runId, webContents, request, resolvedModel, systemPrompt);
     }
 
     // Create orchestration tracker (lazy — no RunRecord until first orchestration action)
@@ -365,7 +376,11 @@ export class AgentRuntime {
   cancelRun(runId: string): boolean {
     const run = this.activeRuns.get(runId);
     if (!run) return false;
-    run.agent.abort();
+    if (run.claudeCodeRunner) {
+      run.claudeCodeRunner.abort();
+    } else if (run.agent) {
+      run.agent.abort();
+    }
     this.finalizeRun(runId, 'cancelled', null, run.accumulatedText);
 
     // Reject any delegation waiters
@@ -402,6 +417,141 @@ export class AgentRuntime {
   }
 
   /**
+   * Start a Claude Code CLI subprocess run.
+   */
+  private startClaudeCodeRun(
+    runId: string,
+    webContents: WebContents,
+    request: AgentRunRequest,
+    resolvedModel: ResolvedModel,
+    systemPrompt: string,
+  ): string {
+    const { conversationId, content, expertId } = request;
+    const channel = `agent:event:${runId}`;
+    const log = createAgentLogger(runId);
+    log.info('Starting Claude Code run', { conversationId, expertId: expertId || 'cerebro' });
+
+    // Build conversation context from recent messages
+    let fullPrompt = content;
+    if (request.recentMessages && request.recentMessages.length > 0) {
+      const MAX_MSG_CHARS = 500;
+      const MAX_MESSAGES = 10;
+      const recent = request.recentMessages.slice(-MAX_MESSAGES);
+      const lines: string[] = [];
+      for (const m of recent) {
+        const tag = m.role === 'user' ? 'User' : 'Assistant';
+        const text = m.content.length > MAX_MSG_CHARS
+          ? m.content.slice(0, MAX_MSG_CHARS) + '...(truncated)'
+          : m.content;
+        lines.push(`${tag}: ${text}`);
+      }
+      fullPrompt = `Previous conversation:\n${lines.join('\n')}\n\nUser: ${content}`;
+    }
+
+    const tracker = new OrchestrationTracker({
+      runId,
+      conversationId,
+      expertId: expertId || null,
+      parentRunId: request.parentRunId || null,
+      backendPort: this.backendPort,
+    });
+
+    const runner = new ClaudeCodeRunner();
+
+    const activeRun: ActiveRun = {
+      runId,
+      conversationId,
+      expertId: expertId || null,
+      userContent: content,
+      agent: null,
+      unsubscribe: () => {},
+      governorUnsub: null,
+      startedAt: Date.now(),
+      accumulatedText: '',
+      tracker,
+      claudeCodeRunner: runner,
+    };
+
+    this.activeRuns.set(runId, activeRun);
+
+    // Emit run_start
+    if (!webContents.isDestroyed()) {
+      webContents.send(channel, { type: 'run_start', runId } as RendererAgentEvent);
+    }
+
+    // Forward runner events to renderer
+    runner.on('event', (event: RendererAgentEvent) => {
+      if (event.type === 'text_delta') {
+        activeRun.accumulatedText += event.delta;
+      }
+      if (!webContents.isDestroyed()) {
+        webContents.send(channel, event);
+      }
+    });
+
+    runner.on('done', (messageContent: string) => {
+      log.info('Claude Code run completed', { text_length: messageContent.length });
+      this.finalizeRun(runId, 'completed', webContents, messageContent);
+
+      const result: SubAgentResult = {
+        runId,
+        status: 'completed',
+        messageContent,
+      };
+      this.resolveOrCacheResult(runId, result);
+    });
+
+    runner.on('error', (error: string) => {
+      log.error('Claude Code run failed', { error });
+      if (!webContents.isDestroyed()) {
+        webContents.send(channel, {
+          type: 'error',
+          runId,
+          error,
+        } as RendererAgentEvent);
+      }
+      this.finalizeRun(runId, 'error', webContents, activeRun.accumulatedText, error);
+
+      const result: SubAgentResult = {
+        runId,
+        status: 'error',
+        messageContent: activeRun.accumulatedText,
+        error,
+      };
+      this.resolveOrCacheResult(runId, result);
+    });
+
+    // Create MCP bridge for Cerebro memory tools
+    const mcpBridge = createMcpBridge({
+      runId,
+      backendPort: this.backendPort,
+      scope: expertId ? 'expert' : 'personal',
+      scopeId: expertId || null,
+      conversationId,
+    });
+    activeRun.mcpBridge = mcpBridge;
+
+    // Create agent run record in backend
+    this.backendPost('/agent-runs', {
+      id: runId,
+      expert_id: expertId || null,
+      conversation_id: conversationId,
+      parent_run_id: request.parentRunId || null,
+      status: 'running',
+    }).catch(console.error);
+
+    // Start the subprocess
+    runner.start({
+      runId,
+      prompt: fullPrompt,
+      systemPrompt,
+      mcpConfigPath: mcpBridge.configPath,
+    });
+
+    return runId;
+  }
+
+  /**
    * Resolve a delegation waiter, or cache the result if no waiter is registered yet.
    * Auto-evicts cached results after 5 minutes.
    */
@@ -430,6 +580,9 @@ export class AgentRuntime {
 
     run.unsubscribe();
     run.governorUnsub?.();
+    if (run.mcpBridge) {
+      cleanupMcpBridge(run.mcpBridge);
+    }
     this.activeRuns.delete(runId);
 
     // Finalize orchestration tracker if it was activated

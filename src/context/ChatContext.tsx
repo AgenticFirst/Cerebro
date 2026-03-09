@@ -99,10 +99,10 @@ function apiDeleteConversation(id: string): Promise<unknown> {
 }
 
 const NO_MODEL_RESPONSE =
-  'No model is currently loaded. Go to **Integrations** to download and load a local model, or configure a cloud API key.';
+  'No model is currently loaded. Go to **Integrations** to download and load a local model, configure a cloud API key, or install Claude Code.';
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const { selectedModel, connectionStatus } = useProviders();
+  const { selectedModel, connectionStatus, claudeCodeInfo } = useProviders();
   const { engineStatus } = useModels();
   const { getSystemPrompt, triggerExtraction } = useMemory();
   const { registerRunCallback } = useRoutines();
@@ -128,6 +128,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const connectionStatusRef = useRef<Record<string, ProviderConnectionState>>({});
   connectionStatusRef.current = connectionStatus;
+
+  const claudeCodeInfoRef = useRef(claudeCodeInfo);
+  claudeCodeInfoRef.current = claudeCodeInfo;
 
   // Store memory functions in refs for async access
   const triggerExtractionRef = useRef(triggerExtraction);
@@ -259,7 +262,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       let modelUsable = false;
 
       if (sel) {
-        if (sel.source === 'local') {
+        if (sel.source === 'claude-code') {
+          // Claude Code: must be detected as available
+          modelUsable = claudeCodeInfoRef.current.status === 'available';
+        } else if (sel.source === 'local') {
           // Local model: engine must be ready or actively loading (auto-load on startup)
           modelUsable = localReady || localLoading;
         } else if (sel.source === 'cloud' && sel.provider) {
@@ -278,7 +284,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setChatError({
           title: 'No model configured',
           message:
-            'Set up a model provider (Anthropic, OpenAI, or Google) or download a local model before chatting.',
+            'Set up a model provider, download a local model, or install Claude Code before chatting.',
           navigateTo: 'integrations',
         });
         return;
@@ -707,7 +713,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   setChatError({
                     title: 'No model configured',
                     message:
-                      'Set up a model provider (Anthropic, OpenAI, or Google) or download a local model before chatting.',
+                      'Set up a model provider, download a local model, or install Claude Code before chatting.',
                     navigateTo: 'integrations',
                   });
                 } else {
@@ -743,7 +749,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setChatError({
               title: 'No model configured',
               message:
-                'Set up a model provider (Anthropic, OpenAI, or Google) or download a local model before chatting.',
+                'Set up a model provider, download a local model, or install Claude Code before chatting.',
               navigateTo: 'integrations',
             });
           } else {

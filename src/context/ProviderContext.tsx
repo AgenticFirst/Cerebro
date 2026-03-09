@@ -12,6 +12,7 @@ import type {
   SelectedModel,
   ConnectionStatus,
   ProviderConnectionState,
+  ClaudeCodeInfo,
 } from '../types/providers';
 import { loadSetting, saveSetting } from '../lib/settings';
 
@@ -29,6 +30,7 @@ interface ProviderState {
   enabledModels: Set<string>;
   connectionStatus: Record<string, ProviderConnectionState>;
   customModels: CustomModel[];
+  claudeCodeInfo: ClaudeCodeInfo;
 }
 
 interface ProviderActions {
@@ -39,6 +41,7 @@ interface ProviderActions {
   verifyConnection: (provider: CloudProvider) => Promise<void>;
   refreshConnectionStatus: () => Promise<void>;
   setProviderStatus: (provider: string, state: ProviderConnectionState) => void;
+  refreshClaudeCodeStatus: () => Promise<void>;
 }
 
 type ProviderContextValue = ProviderState & ProviderActions;
@@ -58,6 +61,7 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
     google: { status: 'not_configured' },
   });
   const [customModels, setCustomModels] = useState<CustomModel[]>([]);
+  const [claudeCodeInfo, setClaudeCodeInfo] = useState<ClaudeCodeInfo>({ status: 'unknown' });
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -145,6 +149,20 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  // Detect/refresh Claude Code availability
+  const refreshClaudeCodeStatus = useCallback(async () => {
+    try {
+      const info = await window.cerebro.claudeCode.detect();
+      if (mountedRef.current) {
+        setClaudeCodeInfo(info);
+      }
+    } catch {
+      if (mountedRef.current) {
+        setClaudeCodeInfo({ status: 'error', error: 'Detection failed' });
+      }
+    }
+  }, []);
 
   // Directly set a provider's connection status (used when key is removed/saved)
   const setProviderStatus = useCallback(
@@ -286,6 +304,26 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
 
       // Load connection status
       await refreshConnectionStatus();
+
+      // Detect Claude Code
+      try {
+        const ccInfo = await window.cerebro.claudeCode.detect();
+        if (cancelled) return;
+        setClaudeCodeInfo(ccInfo);
+
+        // Auto-select Claude Code if available and no model is explicitly saved
+        if (ccInfo.status === 'available' && !savedModel) {
+          const ccModel: SelectedModel = {
+            source: 'claude-code',
+            modelId: 'claude-code',
+            displayName: 'Claude Code',
+          };
+          setSelectedModel(ccModel);
+          saveSetting('selected_model', ccModel);
+        }
+      } catch {
+        // Claude Code detection is non-critical
+      }
     }
 
     init().catch(console.error);
@@ -301,6 +339,7 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
         enabledModels,
         connectionStatus,
         customModels,
+        claudeCodeInfo,
         selectModel,
         toggleModel,
         addCustomModel,
@@ -308,6 +347,7 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
         verifyConnection,
         refreshConnectionStatus,
         setProviderStatus,
+        refreshClaudeCodeStatus,
       }}
     >
       {children}

@@ -292,6 +292,7 @@ async def get_memory_context(body: MemoryContextRequest, db=Depends(get_db)):
         include_expert_catalog=body.include_expert_catalog,
         include_routine_catalog=body.include_routine_catalog,
         model_tier=body.model_tier,
+        is_claude_code=body.is_claude_code,
     )
 
 
