@@ -1,178 +1,316 @@
 /**
- * Expert-scoped memory viewer.
- * Shows context file, learned facts, and knowledge entries scoped to an expert.
+ * Expert-scoped memory viewer/editor.
+ * Shows the expert's agent-memory directory files in an accordion layout.
+ * SOUL.md (identity file) always appears first.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Trash2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { ChevronDown, FileText, Plus, RefreshCw, Save, Sparkles, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Expert } from '../../context/ExpertContext';
-import type { BackendResponse } from '../../types/ipc';
-
-interface MemoryItem {
-  id: string;
-  content: string;
-  created_at: string;
-}
-
-interface KnowledgeEntry {
-  id: string;
-  entry_type: string;
-  summary: string;
-  occurred_at: string;
-}
+import { useMemory } from '../../context/MemoryContext';
 
 interface ExpertMemoryTabProps {
   expert: Expert;
 }
 
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
 export default function ExpertMemoryTab({ expert }: ExpertMemoryTabProps) {
-  const [contextContent, setContextContent] = useState('');
-  const [facts, setFacts] = useState<MemoryItem[]>([]);
-  const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const slug = expert.slug;
+  const { files, loadFiles, readFile, writeFile, deleteFile } = useMemory();
 
-  const loadMemory = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      // Load context file
-      const ctxRes: BackendResponse<{ content: string }> = await window.cerebro.invoke({
-        method: 'GET',
-        path: `/memory/context-files/expert:${expert.id}`,
-      });
-      if (ctxRes.ok) {
-        setContextContent(ctxRes.data.content);
-      } else {
-        setContextContent('');
-      }
+  const [expandedFile, setExpandedFile] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [originalContent, setOriginalContent] = useState('');
+  const [isLoadingContent, setIsLoadingContent] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newPath, setNewPath] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-      // Load learned facts
-      const factsRes: BackendResponse<{ items: MemoryItem[]; total: number }> =
-        await window.cerebro.invoke({
-          method: 'GET',
-          path: `/memory/items?scope=expert&scope_id=${expert.id}&limit=20`,
-        });
-      if (factsRes.ok) {
-        setFacts(factsRes.data.items);
-      }
+  const requestRef = useRef(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-      // Load knowledge entries
-      const entriesRes: BackendResponse<{ entries: KnowledgeEntry[]; total: number }> =
-        await window.cerebro.invoke({
-          method: 'GET',
-          path: `/memory/knowledge?scope=expert&scope_id=${expert.id}&limit=20`,
-        });
-      if (entriesRes.ok) {
-        setEntries(entriesRes.data.entries);
-      }
-    } catch {
-      // Non-critical
-    } finally {
-      setIsLoading(false);
-    }
+  // Load file listing when slug changes
+  useEffect(() => {
+    if (slug) loadFiles(slug);
+  }, [slug, loadFiles]);
+
+  // Reset expanded file when expert changes
+  useEffect(() => {
+    setExpandedFile(null);
+    setEditContent('');
+    setOriginalContent('');
+    setCreating(false);
+    setConfirmDelete(false);
   }, [expert.id]);
 
-  useEffect(() => {
-    loadMemory();
-  }, [loadMemory]);
+  const sortedFiles = useMemo(() => {
+    const list = slug ? files[slug] ?? [] : [];
+    return [...list].sort((a, b) => {
+      if (a.path === 'SOUL.md') return -1;
+      if (b.path === 'SOUL.md') return 1;
+      return a.path.localeCompare(b.path);
+    });
+  }, [files, slug]);
 
-  const deleteFact = async (id: string) => {
-    await window.cerebro.invoke({ method: 'DELETE', path: `/memory/items/${id}` });
-    setFacts((prev) => prev.filter((f) => f.id !== id));
-  };
+  const isDirty = editContent !== originalContent;
 
-  const deleteEntry = async (id: string) => {
-    await window.cerebro.invoke({ method: 'DELETE', path: `/memory/knowledge/${id}` });
-    setEntries((prev) => prev.filter((e) => e.id !== id));
-  };
+  const handleRefresh = useCallback(async () => {
+    if (!slug) return;
+    setIsRefreshing(true);
+    await loadFiles(slug);
+    setIsRefreshing(false);
+  }, [slug, loadFiles]);
+
+  const handleExpand = useCallback(
+    async (path: string) => {
+      if (!slug) return;
+
+      // Collapse if already expanded
+      if (expandedFile === path) {
+        setExpandedFile(null);
+        setConfirmDelete(false);
+        return;
+      }
+
+      // Expand new file
+      setExpandedFile(path);
+      setIsLoadingContent(true);
+      setConfirmDelete(false);
+      const id = ++requestRef.current;
+
+      const result = await readFile(slug, path);
+      // Ignore stale responses
+      if (id !== requestRef.current) return;
+
+      setEditContent(result?.content ?? '');
+      setOriginalContent(result?.content ?? '');
+      setIsLoadingContent(false);
+
+      // Auto-focus textarea
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    },
+    [slug, expandedFile, readFile],
+  );
+
+  const handleSave = useCallback(async () => {
+    if (!slug || !expandedFile) return;
+    await writeFile(slug, expandedFile, editContent);
+    setOriginalContent(editContent);
+  }, [slug, expandedFile, editContent, writeFile]);
+
+  const handleDelete = useCallback(async () => {
+    if (!slug || !expandedFile) return;
+    await deleteFile(slug, expandedFile);
+    setExpandedFile(null);
+    setConfirmDelete(false);
+  }, [slug, expandedFile, deleteFile]);
+
+  const createFile = useCallback(
+    async (path: string) => {
+      if (!slug) return;
+      await writeFile(slug, path, '');
+      setExpandedFile(path);
+      setEditContent('');
+      setOriginalContent('');
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    },
+    [slug, writeFile],
+  );
+
+  const handleCreate = useCallback(async () => {
+    if (!newPath.trim()) return;
+    const safe = newPath.trim().replace(/^\/+/, '');
+    const path = safe.endsWith('.md') ? safe : `${safe}.md`;
+    await createFile(path);
+    setNewPath('');
+    setCreating(false);
+  }, [newPath, createFile]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (isDirty) handleSave();
+      }
+    },
+    [isDirty, handleSave],
+  );
+
+  // No slug — expert hasn't run yet
+  if (!slug) {
+    return (
+      <p className="text-xs text-text-tertiary leading-relaxed">
+        Memory will be created when this expert first runs.
+      </p>
+    );
+  }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-          Expert Memory
+          {sortedFiles.length} file{sortedFiles.length !== 1 ? 's' : ''}
         </span>
-        <button
-          onClick={loadMemory}
-          disabled={isLoading}
-          className="p-1 text-text-tertiary hover:text-text-secondary transition-colors"
-        >
-          <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              setCreating((v) => !v);
+              setNewPath('');
+            }}
+            className="p-1 text-text-tertiary hover:text-text-secondary transition-colors"
+            title="New file"
+          >
+            <Plus size={12} />
+          </button>
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="p-1 text-text-tertiary hover:text-text-secondary transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} />
+          </button>
+        </div>
       </div>
 
-      {/* Context file */}
-      {contextContent && (
-        <div>
-          <div className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide mb-1.5">
-            Context File
-          </div>
-          <div className="bg-bg-base border border-border-subtle rounded-lg p-3 text-xs text-text-secondary leading-relaxed max-h-24 overflow-y-auto">
-            {contextContent}
-          </div>
-        </div>
+      {/* Create new file input */}
+      {creating && (
+        <input
+          type="text"
+          value={newPath}
+          onChange={(e) => setNewPath(e.target.value)}
+          placeholder="filename.md"
+          autoFocus
+          className="w-full bg-bg-base border border-border-subtle rounded px-2 py-1 text-xs text-text-primary placeholder:text-text-tertiary/50 focus:outline-none focus:border-accent/40"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleCreate();
+            if (e.key === 'Escape') {
+              setCreating(false);
+              setNewPath('');
+            }
+          }}
+        />
       )}
 
-      {/* Learned facts */}
-      <div>
-        <div className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide mb-1.5">
-          Learned Facts ({facts.length})
+      {sortedFiles.length === 0 ? (
+        <div className="text-center py-4">
+          <p className="text-xs text-text-tertiary mb-2">No memory files yet.</p>
+          <button
+            onClick={() => createFile('SOUL.md')}
+            className="text-xs text-accent hover:text-accent-hover transition-colors"
+          >
+            Create SOUL.md
+          </button>
         </div>
-        {facts.length === 0 ? (
-          <p className="text-xs text-text-tertiary">No facts learned yet.</p>
-        ) : (
-          <div className="space-y-1">
-            {facts.map((fact) => (
-              <div
-                key={fact.id}
-                className="flex items-start gap-2 bg-bg-base rounded-lg px-2.5 py-1.5 border border-border-subtle group"
-              >
-                <span className="text-xs text-text-secondary flex-1 leading-relaxed">
-                  {fact.content}
-                </span>
-                <button
-                  onClick={() => deleteFact(fact.id)}
-                  className="p-0.5 text-text-tertiary opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all flex-shrink-0"
-                >
-                  <Trash2 size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      ) : (
+        <div className="space-y-1">
+          {sortedFiles.map((file) => {
+            const isExpanded = expandedFile === file.path;
+            const isSoul = file.path === 'SOUL.md';
+            const Icon = isSoul ? Sparkles : FileText;
 
-      {/* Knowledge entries */}
-      <div>
-        <div className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide mb-1.5">
-          Knowledge ({entries.length})
-        </div>
-        {entries.length === 0 ? (
-          <p className="text-xs text-text-tertiary">No knowledge entries yet.</p>
-        ) : (
-          <div className="space-y-1">
-            {entries.map((entry) => (
+            return (
               <div
-                key={entry.id}
-                className="flex items-start gap-2 bg-bg-base rounded-lg px-2.5 py-1.5 border border-border-subtle group"
+                key={file.path}
+                className="rounded-lg border border-border-subtle overflow-hidden"
               >
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-text-secondary truncate">{entry.summary}</div>
-                  <div className="text-[10px] text-text-tertiary capitalize">
-                    {entry.entry_type}
-                  </div>
-                </div>
                 <button
-                  onClick={() => deleteEntry(entry.id)}
-                  className="p-0.5 text-text-tertiary opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all flex-shrink-0"
+                  onClick={() => handleExpand(file.path)}
+                  className={clsx(
+                    'w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors',
+                    isExpanded
+                      ? 'bg-bg-base'
+                      : 'bg-bg-surface hover:bg-bg-base',
+                  )}
                 >
-                  <Trash2 size={11} />
+                  <Icon
+                    size={12}
+                    className={isSoul ? 'text-accent' : 'text-text-tertiary'}
+                  />
+                  <span className="text-xs text-text-primary flex-1 truncate font-mono">
+                    {file.path}
+                  </span>
+                  {isExpanded && isDirty && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
+                  )}
+                  <span className="text-[10px] text-text-tertiary flex-shrink-0">
+                    {formatSize(file.size)}
+                  </span>
+                  <ChevronDown
+                    size={12}
+                    className={clsx(
+                      'text-text-tertiary transition-transform duration-150 flex-shrink-0',
+                      isExpanded ? 'rotate-0' : '-rotate-90',
+                    )}
+                  />
                 </button>
+
+                {isExpanded && (
+                  <div className="border-t border-border-subtle">
+                    {isLoadingContent ? (
+                      <div className="flex items-center justify-center py-6">
+                        <RefreshCw size={14} className="text-text-tertiary animate-spin" />
+                      </div>
+                    ) : (
+                      <>
+                        <textarea
+                          ref={textareaRef}
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          placeholder="Write markdown the agent reads every turn..."
+                          className="w-full bg-bg-base px-3 py-2 text-xs text-text-secondary font-mono leading-relaxed resize-none focus:outline-none placeholder:text-text-tertiary/50 h-[200px] overflow-y-auto scrollbar-thin"
+                        />
+                        <div className="flex items-center justify-between px-2.5 py-1.5 border-t border-border-subtle bg-bg-surface">
+                          {confirmDelete ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-red-400">Delete this file?</span>
+                              <button
+                                onClick={handleDelete}
+                                className="text-[10px] text-red-400 hover:text-red-300 font-medium transition-colors"
+                              >
+                                Yes
+                              </button>
+                              <button
+                                onClick={() => setConfirmDelete(false)}
+                                className="text-[10px] text-text-tertiary hover:text-text-secondary transition-colors"
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDelete(true)}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-text-tertiary hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 size={10} />
+                              Delete
+                            </button>
+                          )}
+                          <button
+                            onClick={handleSave}
+                            disabled={!isDirty}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-accent/15 text-accent hover:bg-accent/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <Save size={10} />
+                            Save
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
