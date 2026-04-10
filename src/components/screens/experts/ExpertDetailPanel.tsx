@@ -3,6 +3,7 @@ import { X, Copy, Check, Trash2, UserPlus, XCircle, Users } from 'lucide-react';
 import clsx from 'clsx';
 import type { Expert } from '../../../context/ExpertContext';
 import ExpertMemoryTab from '../../experts/ExpertMemoryTab';
+import ExpertSkillsSection from './ExpertSkillsSection';
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -207,7 +208,7 @@ export default function ExpertDetailPanel({
             <Section label="DETAILS">
               <div className="space-y-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-text-tertiary uppercase tracking-wide mb-1">
+                  <label className="block text-[11px] font-medium text-text-secondary uppercase tracking-wide mb-1">
                     Name
                   </label>
                   <input
@@ -219,7 +220,7 @@ export default function ExpertDetailPanel({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-medium text-text-tertiary uppercase tracking-wide mb-1">
+                  <label className="block text-[11px] font-medium text-text-secondary uppercase tracking-wide mb-1">
                     Domain
                   </label>
                   <select
@@ -240,7 +241,7 @@ export default function ExpertDetailPanel({
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-medium text-text-tertiary uppercase tracking-wide mb-1">
+                  <label className="block text-[11px] font-medium text-text-secondary uppercase tracking-wide mb-1">
                     Description
                   </label>
                   <textarea
@@ -325,6 +326,11 @@ export default function ExpertDetailPanel({
                 )}
               </Section>
             )}
+
+            {/* Skills */}
+            <Section label="SKILLS">
+              <ExpertSkillsSection expertId={expert.id} />
+            </Section>
 
             {/* System Prompt */}
             <Section label="SYSTEM CONTEXT">

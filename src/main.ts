@@ -544,7 +544,7 @@ function registerIpcHandlers(): void {
       if (!res.ok || !res.data) {
         return { ok: false, error: 'Expert not found' };
       }
-      installExpert({ dataDir, backendPort }, res.data);
+      await installExpert({ dataDir, backendPort }, res.data);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -576,12 +576,17 @@ const createWindow = () => {
     minHeight: 600,
     title: 'Cerebro',
     icon: path.join(app.getAppPath(), 'assets', 'icon.png'),
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 12 },
+    backgroundColor: '#09090b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  mainWindow.maximize();
 
   // and load the index.html of the app.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {

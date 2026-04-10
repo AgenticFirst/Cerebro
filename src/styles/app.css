@@ -32,7 +32,7 @@
   /* Text */
   --color-text-primary: #fafafa;
   --color-text-secondary: #a1a1aa;
-  --color-text-tertiary: #52525b;
+  --color-text-tertiary: #71717a;
 
   /* Border */
   --color-border-subtle: #1e1e22;
@@ -60,6 +60,18 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Window drag region for frameless titlebar */
+.app-drag-region {
+  -webkit-app-region: drag;
+}
+
+.app-drag-region button,
+.app-drag-region input,
+.app-drag-region a,
+.app-no-drag {
+  -webkit-app-region: no-drag;
 }
 
 /* Custom scrollbar */

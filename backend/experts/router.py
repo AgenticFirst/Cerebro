@@ -102,6 +102,12 @@ def create_expert(body: ExpertCreate, db=Depends(get_db)):
     values = _serialize_json_fields(values)
     expert = Expert(id=_uuid_hex(), **values)
     db.add(expert)
+    db.flush()
+
+    # Auto-assign default skills to new expert
+    from skills.seed import assign_default_skills
+    assign_default_skills(db, expert.id)
+
     db.commit()
     db.refresh(expert)
     return _expert_to_response(expert)

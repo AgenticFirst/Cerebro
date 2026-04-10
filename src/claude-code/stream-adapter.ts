@@ -42,7 +42,6 @@ export class ClaudeCodeRunner extends EventEmitter {
   private stderrTail = '';
   private killed = false;
   private closeHandled = false;
-  private timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
   start(options: ClaudeCodeRunOptions): void {
     const { runId, prompt, agentName, cwd } = options;
@@ -77,18 +76,6 @@ export class ClaudeCodeRunner extends EventEmitter {
       env,
     });
 
-    // Hard timeout — kill subprocess if it hasn't exited in 5 minutes
-    const SUBPROCESS_TIMEOUT_MS = 5 * 60 * 1000;
-    this.timeoutTimer = setTimeout(() => {
-      if (this.process && !this.process.killed && !this.killed) {
-        this.killed = true;
-        this.process.kill('SIGTERM');
-        const error = 'Claude Code subprocess timed out after 5 minutes';
-        this.emit('event', { type: 'error', runId, error } as RendererAgentEvent);
-        this.emit('error', error);
-      }
-    }, SUBPROCESS_TIMEOUT_MS);
-
     let buffer = '';
 
     this.process.stdout?.on('data', (chunk: Buffer) => {
@@ -114,7 +101,6 @@ export class ClaudeCodeRunner extends EventEmitter {
     this.process.on('close', (code) => {
       if (this.closeHandled) return;
       this.closeHandled = true;
-      if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
 
       // Process remaining buffer
       if (buffer.trim()) {
@@ -154,7 +140,6 @@ export class ClaudeCodeRunner extends EventEmitter {
       setTimeout(() => {
         if (!this.closeHandled && !this.killed) {
           this.closeHandled = true;
-          if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
           if (code !== 0 && code !== null) {
             const detail = `Claude Code exited (code ${code}, signal ${signal})`;
             this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
@@ -173,7 +158,6 @@ export class ClaudeCodeRunner extends EventEmitter {
 
     this.process.on('error', (err) => {
       if (this.killed) return;
-      if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
       this.emit('event', {
         type: 'error',
         runId,
@@ -185,7 +169,6 @@ export class ClaudeCodeRunner extends EventEmitter {
 
   abort(): void {
     this.killed = true;
-    if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
     if (!this.process || this.process.killed) return;
 
     this.process.kill('SIGTERM');
@@ -206,17 +189,34 @@ export class ClaudeCodeRunner extends EventEmitter {
     return this.accumulatedText;
   }
 
+  private emitToolEnd(toolCallId: string, toolName: string, content: unknown, isError: boolean): void {
+    let result = '';
+    if (typeof content === 'string') {
+      result = content;
+    } else if (Array.isArray(content)) {
+      result = content
+        .filter((b: any) => b.type === 'text')
+        .map((b: any) => b.text)
+        .join('\n');
+    }
+    this.emit('event', {
+      type: 'tool_end',
+      toolCallId,
+      toolName,
+      result: result.slice(0, 2000),
+      isError,
+    } as RendererAgentEvent);
+  }
+
   private handleJsonLine(line: string, runId: string): void {
     let parsed: any;
     try {
       parsed = JSON.parse(line);
     } catch {
-      // Not JSON — ignore
+      console.debug(`[ClaudeCode:stream] non-JSON line: ${line.slice(0, 100)}`);
       return;
     }
 
-    // Claude Code stream-json format produces various event types
-    // See: https://docs.anthropic.com/en/docs/claude-code/sdk#streaming-json-format
     const type = parsed.type;
 
     if (type === 'assistant' && parsed.message) {
@@ -260,26 +260,19 @@ export class ClaudeCodeRunner extends EventEmitter {
         }
       }
     } else if (type === 'tool_result' || type === 'tool_use_result') {
-      // Tool execution result
+      // Top-level tool result (forward-compatibility path)
       const toolCallId = parsed.tool_use_id || parsed.id || '';
       const toolName = parsed.name || parsed.tool_name || '';
-      const isError = parsed.is_error === true;
-      let result = '';
-      if (typeof parsed.content === 'string') {
-        result = parsed.content;
-      } else if (Array.isArray(parsed.content)) {
-        result = parsed.content
-          .filter((b: any) => b.type === 'text')
-          .map((b: any) => b.text)
-          .join('\n');
+      this.emitToolEnd(toolCallId, toolName, parsed.content, parsed.is_error === true);
+    } else if (type === 'user' && parsed.message?.content && Array.isArray(parsed.message.content)) {
+      // Tool results nested inside user messages
+      for (const block of parsed.message.content) {
+        if (block.type === 'tool_result') {
+          this.emitToolEnd(block.tool_use_id || '', '', block.content, block.is_error === true);
+        }
       }
-      this.emit('event', {
-        type: 'tool_end',
-        toolCallId,
-        toolName,
-        result: result.slice(0, 2000),
-        isError,
-      } as RendererAgentEvent);
+    } else if (type) {
+      console.debug(`[ClaudeCode:stream] unhandled event type: ${type}`);
     }
   }
 }

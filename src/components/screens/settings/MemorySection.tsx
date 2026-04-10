@@ -82,7 +82,7 @@ export default function MemorySection() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6 flex-1 min-h-0">
       <div>
         <h2 className="text-lg font-medium text-text-primary mb-1">Memory</h2>
         <p className="text-sm text-text-secondary">
@@ -91,11 +91,11 @@ export default function MemorySection() {
         </p>
       </div>
 
-      <div className="flex h-[520px] rounded-lg border border-border-subtle bg-bg-surface overflow-hidden">
+      <div className="flex flex-1 min-h-0 rounded-lg border border-border-subtle bg-bg-surface overflow-hidden">
         {/* Left pane: directories + files */}
         <div className="w-64 flex-shrink-0 border-r border-border-subtle overflow-y-auto scrollbar-thin">
           <div className="p-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mb-2 px-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary mb-2 px-2">
               Agents
             </div>
             <div className="space-y-px">
@@ -133,7 +133,7 @@ export default function MemorySection() {
           {selectedSlug && (
             <div className="border-t border-border-subtle p-3">
               <div className="flex items-center justify-between mb-2 px-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
                   Files
                 </span>
                 <button

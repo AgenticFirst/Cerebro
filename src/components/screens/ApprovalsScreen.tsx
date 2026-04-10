@@ -68,7 +68,7 @@ export default function ApprovalsScreen() {
           </div>
           <div>
             <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Approvals</h1>
-            <p className="text-[12px] text-text-tertiary mt-0.5">Review and approve pending actions</p>
+            <p className="text-[12px] text-text-secondary mt-0.5">Review and approve pending actions</p>
           </div>
         </div>
 
@@ -100,7 +100,7 @@ export default function ApprovalsScreen() {
                 <ShieldCheck size={24} className="text-text-tertiary" />
               </div>
               <h2 className="text-[15px] font-medium text-text-secondary mb-1">No pending approvals</h2>
-              <p className="text-[12px] text-text-tertiary max-w-xs">
+              <p className="text-[12px] text-text-secondary max-w-xs">
                 When a routine step requires your sign-off, it will appear here.
               </p>
             </div>

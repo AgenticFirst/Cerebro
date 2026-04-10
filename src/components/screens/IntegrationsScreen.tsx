@@ -28,7 +28,7 @@ export default function IntegrationsScreen() {
     <div className="flex h-full">
       {/* Inner sidebar */}
       <div className="w-48 flex-shrink-0 border-r border-white/[0.06] py-4 px-2.5">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary px-2.5 mb-3 select-none">
+        <div className="text-xs font-semibold uppercase tracking-[0.08em] text-text-tertiary px-2.5 mb-3 select-none">
           Integrations
         </div>
         <div className="space-y-px">

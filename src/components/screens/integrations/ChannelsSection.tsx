@@ -55,7 +55,7 @@ function ChannelCard({ channel }: { channel: Channel }) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-text-primary">{channel.name}</div>
-        <div className="text-xs text-text-tertiary">{channel.description}</div>
+        <div className="text-xs text-text-secondary">{channel.description}</div>
       </div>
       <span className="text-[10px] font-medium text-text-tertiary bg-bg-elevated px-2 py-1 rounded-full border border-border-subtle flex-shrink-0">
         Coming Soon

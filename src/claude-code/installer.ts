@@ -208,7 +208,7 @@ At the start of every conversation turn:
 ${memoryInstructions(memoryDir)}`;
 }
 
-function buildCerebroBody(memoryDir: string): string {
+function buildCerebroBody(memoryDir: string, skillsDir: string): string {
   return `You are **Cerebro**, the user's personal AI assistant.
 
 ${turnProtocol(memoryDir)}
@@ -225,20 +225,30 @@ When delegating, give the subagent the relevant context — don't just forward t
 
 ## Skills
 
-You have access to Cerebro-specific skills (look under \`.claude/skills/\`):
+You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 
 - \`create-expert\` — create a new expert when the user describes a recurring need that no current expert covers. First confirm the proposed name, description, and system prompt with the user, then invoke this skill to run the actual API call.
+- \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
 - \`summarize-conversation\` — used by routines.
 `;
 }
 
-function buildExpertBody(expert: ExpertData, memoryDir: string): string {
+function buildExpertBody(expert: ExpertData, memoryDir: string, skills: SkillData[] = []): string {
   const domainLine = expert.domain ? ` Domain: ${expert.domain}.` : '';
-  return `You are **${expert.name}**, a Cerebro specialist expert.${domainLine}
+  let body = `You are **${expert.name}**, a Cerebro specialist expert.${domainLine}
 
 ${turnProtocol(memoryDir)}
 `;
+
+  if (skills.length > 0) {
+    body += '\n## Skills\n\nYou have the following skills. Follow their instructions when relevant:\n\n';
+    for (const skill of skills) {
+      body += `### ${skill.name}\n\n${skill.instructions.trimEnd()}\n\n`;
+    }
+  }
+
+  return body;
 }
 
 /** Write a file only if it doesn't already exist (atomic — no TOCTOU race). */
@@ -395,6 +405,56 @@ fi
 curl -s "http://127.0.0.1:$PORT/experts?is_enabled=true&limit=200" | jq '.experts[] | {id, name, slug, description}'
 `,
     },
+    {
+      name: 'create-skill.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Creates a Cerebro skill via the backend API.
+# Usage: bash create-skill.sh <json-file>
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
+  echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  echo "Usage: bash create-skill.sh <json-file>" >&2
+  exit 1
+fi
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" -X POST "http://127.0.0.1:$PORT/skills" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT (is the app running?)" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  SKILL_NAME=$(echo "$BODY_RESPONSE" | jq -r '.name // "unknown"')
+  SKILL_ID=$(echo "$BODY_RESPONSE" | jq -r '.id // "unknown"')
+  echo "SUCCESS: Created skill '$SKILL_NAME' (id: $SKILL_ID)"
+  echo "$BODY_RESPONSE" | jq .
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2
+  echo "$BODY_RESPONSE" >&2
+  exit 1
+fi
+`,
+    },
   ];
 }
 
@@ -425,6 +485,36 @@ function renderSkillFile(skill: SkillSpec): string {
 
 function builtinSkills(): SkillSpec[] {
   return [
+    {
+      name: 'create-skill',
+      description: 'Create a new custom Cerebro skill via the backend API.',
+      body: `# Create skill
+
+This skill creates a new skill in Cerebro. You MUST run the command below using the **Bash** tool — the skill does not exist until the script prints SUCCESS.
+
+From the conversation context, determine:
+- **name** — a friendly display name (e.g. "Financial Analysis", "API Testing")
+- **description** — one sentence explaining what the skill teaches an expert to do
+- **category** — one of: general, engineering, content, operations, support, finance, productivity
+- **instructions** — 200-400 words of markdown instructions that will be injected into the expert's system prompt
+
+Then run this single Bash command, replacing the placeholder strings:
+
+\`\`\`bash
+jq -n \\
+  --arg name "REPLACE_NAME" \\
+  --arg description "REPLACE_DESCRIPTION" \\
+  --arg category "REPLACE_CATEGORY" \\
+  --arg instructions "REPLACE_INSTRUCTIONS" \\
+  '{name: $name, description: $description, category: $category, instructions: $instructions, source: "user"}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/new-skill.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/create-skill.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/new-skill.json"
+\`\`\`
+
+If the output says **SUCCESS**, tell the user the skill is ready — it appears in the Skills library.
+If the output says **ERROR**, report the error to the user.
+`,
+    },
     {
       name: 'summarize-conversation',
       description: 'Summarize a conversation transcript into 1-2 paragraphs of key takeaways.',
@@ -497,12 +587,31 @@ interface ExpertData {
   is_enabled: boolean;
 }
 
+interface SkillData {
+  id: string;
+  name: string;
+  instructions: string;
+  tool_requirements: string[] | null;
+}
+
 async function fetchExperts(backendPort: number): Promise<ExpertData[]> {
   const result = await fetchJson<{ experts: ExpertData[] }>(
     backendPort,
     '/experts?is_enabled=true&limit=200',
   );
   return result?.experts ?? [];
+}
+
+async function fetchExpertSkills(
+  backendPort: number,
+  expertId: string,
+): Promise<SkillData[]> {
+  const result = await fetchJson<{
+    skills: Array<{ skill: SkillData; is_active: boolean }>;
+  }>(backendPort, `/experts/${expertId}/skills`);
+  return (result?.skills ?? [])
+    .filter((s) => s.is_active)
+    .map((s) => s.skill);
 }
 
 // ── Public API ───────────────────────────────────────────────────
@@ -556,10 +665,16 @@ export async function installAll(options: InstallerOptions): Promise<void> {
   const index = readIndex(paths.indexPath);
   const seen = new Set<string>();
 
-  for (const expert of experts) {
+  // Fetch all expert skills in parallel
+  const expertSkillSets = await Promise.all(
+    experts.map((expert) => fetchExpertSkills(options.backendPort, expert.id)),
+  );
+
+  for (let i = 0; i < experts.length; i++) {
+    const expert = experts[i];
     const agentName = expertAgentName(expert.id, expert.name);
     seen.add(agentName);
-    writeExpertAgent(paths, expert, agentName);
+    writeExpertAgent(paths, expert, agentName, expertSkillSets[i]);
     index.experts[expert.id] = agentName;
   }
 
@@ -592,7 +707,7 @@ export async function installAll(options: InstallerOptions): Promise<void> {
 }
 
 /** Install or update a single expert (for CRUD sync). */
-export function installExpert(options: InstallerOptions, expert: ExpertData): void {
+export async function installExpert(options: InstallerOptions, expert: ExpertData): Promise<void> {
   const paths = resolvePaths(options.dataDir);
   fs.mkdirSync(paths.agentsDir, { recursive: true });
   fs.mkdirSync(paths.memoryRoot, { recursive: true });
@@ -606,7 +721,8 @@ export function installExpert(options: InstallerOptions, expert: ExpertData): vo
     try { fs.unlinkSync(path.join(paths.agentsDir, `${previousName}.md`)); } catch { /* ignore */ }
   }
 
-  writeExpertAgent(paths, expert, agentName);
+  const skills = await fetchExpertSkills(options.backendPort, expert.id);
+  writeExpertAgent(paths, expert, agentName, skills);
   index.experts[expert.id] = agentName;
   writeIndex(paths.indexPath, index);
 }
@@ -810,7 +926,7 @@ function installCerebroMainAgent(paths: InstallerPaths): void {
     name: 'cerebro',
     description: "Cerebro: the user's personal AI assistant; coordinates with specialist experts.",
     tools: CEREBRO_TOOLS,
-    body: buildCerebroBody(memoryDir),
+    body: buildCerebroBody(memoryDir, paths.skillsDir),
   };
   fs.writeFileSync(path.join(paths.agentsDir, 'cerebro.md'), renderAgentFile(file), 'utf-8');
   seedFileIfMissing(path.join(memoryDir, 'SOUL.md'), buildCerebroSoulFile());
@@ -820,14 +936,20 @@ function writeExpertAgent(
   paths: InstallerPaths,
   expert: ExpertData,
   agentName: string,
+  skills: SkillData[] = [],
 ): void {
   const memoryDir = path.join(paths.memoryRoot, agentName);
   fs.mkdirSync(memoryDir, { recursive: true });
+
+  // Merge skill tool requirements with base expert tools
+  const skillTools = skills.flatMap((s) => s.tool_requirements ?? []);
+  const allTools = [...new Set([...EXPERT_TOOLS, ...skillTools])];
+
   const file: AgentFile = {
     name: agentName,
     description: expert.description || expert.name,
-    tools: EXPERT_TOOLS,
-    body: buildExpertBody(expert, memoryDir),
+    tools: allTools,
+    body: buildExpertBody(expert, memoryDir, skills),
   };
   fs.writeFileSync(
     path.join(paths.agentsDir, `${agentName}.md`),

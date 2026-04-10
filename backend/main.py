@@ -23,6 +23,7 @@ from engine.router import router as engine_router
 from routines.router import router as routines_router
 from webhooks.router import router as webhooks_router
 from scripts.router import router as scripts_router
+from skills.router import skills_router, expert_skills_router
 
 
 @asynccontextmanager
@@ -37,6 +38,17 @@ async def lifespan(application: FastAPI):
         os.makedirs(agent_memory_dir, exist_ok=True)
         print(f"[Cerebro] Agent memory directory: {agent_memory_dir}")
 
+    # Seed builtin skills
+    from database import SessionLocal
+    from skills.seed import seed_builtin_skills
+    if SessionLocal is not None:
+        db = SessionLocal()
+        try:
+            seed_builtin_skills(db)
+            print("[Cerebro] Builtin skills seeded")
+        finally:
+            db.close()
+
     yield
 
 
@@ -49,6 +61,8 @@ app.include_router(engine_router, prefix="/engine")
 app.include_router(routines_router, prefix="/routines")
 app.include_router(webhooks_router, prefix="/webhooks")
 app.include_router(scripts_router, prefix="/scripts")
+app.include_router(skills_router)
+app.include_router(expert_skills_router)
 
 
 @app.get("/health")

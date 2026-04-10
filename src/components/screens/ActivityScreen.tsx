@@ -244,7 +244,7 @@ export default function ActivityScreen() {
             <h3 className="text-sm font-medium text-text-primary mb-1.5">
               No activity yet
             </h3>
-            <p className="text-xs text-text-tertiary mb-4 max-w-[280px] text-center">
+            <p className="text-xs text-text-secondary mb-4 max-w-[280px] text-center">
               Your activity timeline will show routine runs, delegations, and orchestrations as they happen.
             </p>
             <button

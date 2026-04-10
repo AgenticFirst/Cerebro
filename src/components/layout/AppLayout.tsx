@@ -9,6 +9,7 @@ import IntegrationsScreen from '../screens/IntegrationsScreen';
 import ActivityScreen from '../screens/ActivityScreen';
 import ApprovalsScreen from '../screens/ApprovalsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import SkillsLibraryScreen from '../screens/SkillsLibraryScreen';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
 
@@ -55,13 +56,19 @@ export default function AppLayout() {
     if (activeScreen === 'settings') {
       return <SettingsScreen />;
     }
+    if (activeScreen === 'marketplace') {
+      return <SkillsLibraryScreen />;
+    }
     return <PlaceholderScreen screen={activeScreen} />;
   };
 
   return (
     <div className="flex h-full">
       <Sidebar />
-      <main className="flex-1 flex flex-col min-h-0">{renderContent()}</main>
+      <main className="flex-1 flex flex-col min-h-0">
+        <div className="app-drag-region h-11 flex-shrink-0" />
+        {renderContent()}
+      </main>
 
       {chatError && (
         <AlertModal

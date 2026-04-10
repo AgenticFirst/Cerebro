@@ -415,8 +415,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   tc.completedAt = new Date();
                   updateMessage(convId!, assistantId, { toolCalls: [...toolCalls] });
                 }
+                // Resolve tool name: prefer event (may be empty for nested tool_result), fallback to tc
+                const resolvedToolName = event.toolName || tc?.name || '';
                 // Detect run_routine tool result and attach engineRunId
-                if (event.toolName === 'run_routine' && !event.isError) {
+                if (resolvedToolName === 'run_routine' && !event.isError) {
                   const marker = event.result.match(/\[ENGINE_RUN_ID:([^\]]+)\]/);
                   if (marker) {
                     accEngineRunId = marker[1];
@@ -424,7 +426,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   }
                 }
                 // Detect propose_routine tool result and attach proposal to message
-                if (event.toolName === 'propose_routine' && !event.isError) {
+                if (resolvedToolName === 'propose_routine' && !event.isError) {
                   try {
                     const parsed = JSON.parse(event.result);
                     if (parsed.type === 'routine_proposal') {
@@ -446,7 +448,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   } catch { /* not valid JSON, treat as normal result */ }
                 }
                 // Detect propose_expert tool result and attach proposal to message
-                if (event.toolName === 'propose_expert' && !event.isError) {
+                if (resolvedToolName === 'propose_expert' && !event.isError) {
                   try {
                     const parsed = JSON.parse(event.result);
                     if (parsed.type === 'expert_proposal') {
@@ -472,11 +474,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 unsub();
                 clearThinking();
                 setIsStreaming(false);
+                // Safety net: force-complete any tool calls still running
+                for (const tc of toolCalls) {
+                  if (tc.status === 'running') {
+                    tc.status = 'success';
+                    tc.completedAt = new Date();
+                  }
+                }
                 updateMessage(convId!, assistantId, {
                   content: event.messageContent || accumulated,
                   isThinking: false,
                   isStreaming: false,
                   agentRunId: runId,
+                  toolCalls: [...toolCalls],
                 });
                 // Build metadata for persistence
                 const doneMetadata: Record<string, unknown> = {};
@@ -503,10 +513,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 unsub();
                 clearThinking();
                 setIsStreaming(false);
+                // Safety net: mark any still-running tool calls as errored
+                for (const tc of toolCalls) {
+                  if (tc.status === 'running') {
+                    tc.status = 'error';
+                    tc.output = tc.output || 'Interrupted';
+                    tc.completedAt = new Date();
+                  }
+                }
                 updateMessage(convId!, assistantId, {
                   content: `Error: ${event.error}`,
                   isThinking: false,
                   isStreaming: false,
+                  toolCalls: [...toolCalls],
                 });
                 break;
               }

@@ -25,7 +25,7 @@ export default function SettingsScreen() {
     <div className="flex h-full">
       {/* Inner sidebar */}
       <div className="w-48 flex-shrink-0 border-r border-white/[0.06] py-4 px-2.5">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary px-2.5 mb-3 select-none">
+        <div className="text-xs font-semibold uppercase tracking-[0.08em] text-text-tertiary px-2.5 mb-3 select-none">
           Settings
         </div>
         <div className="space-y-px">
@@ -64,7 +64,10 @@ export default function SettingsScreen() {
 
       {/* Content pane */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className="max-w-2xl px-8 py-8">
+        <div className={clsx(
+          'px-8 py-8',
+          activeSection === 'memory' ? 'max-w-5xl h-full flex flex-col' : 'max-w-2xl',
+        )}>
           {activeSection === 'memory' && <MemorySection />}
           {activeSection === 'appearance' && <AppearanceSection />}
           {activeSection === 'about' && (

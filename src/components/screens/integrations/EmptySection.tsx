@@ -25,7 +25,7 @@ export default function EmptySection({
         <span className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-2">
           Coming Soon
         </span>
-        <p className="text-sm text-text-tertiary max-w-sm leading-relaxed">{comingSoonText}</p>
+        <p className="text-sm text-text-secondary max-w-sm leading-relaxed">{comingSoonText}</p>
       </div>
     </div>
   );

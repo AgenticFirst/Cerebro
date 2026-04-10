@@ -136,13 +136,13 @@ export default function ExpertNode({
         <div
           className="w-[7px] h-[7px] rounded-full flex-shrink-0"
           style={{
-            backgroundColor: isEnabled ? '#22c55e' : '#52525b',
+            backgroundColor: isEnabled ? '#22c55e' : '#71717a',
             boxShadow: isEnabled ? '0 0 6px rgba(34, 197, 94, 0.5)' : 'none',
           }}
         />
         <span
           className={clsx(
-            'text-[11px] font-medium leading-tight',
+            'text-xs font-medium leading-tight',
             isSelected ? 'text-text-primary' : 'text-text-secondary',
           )}
         >

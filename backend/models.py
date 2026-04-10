@@ -94,6 +94,43 @@ class Expert(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class Skill(Base):
+    __tablename__ = "skills"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    slug: Mapped[str] = mapped_column(String(100), unique=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(50), default="general")
+    icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    instructions: Mapped[str] = mapped_column(Text)
+    tool_requirements: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    source: Mapped[str] = mapped_column(String(20), default="builtin")
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    version: Mapped[str] = mapped_column(String(20), default="1.0.0")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class ExpertSkill(Base):
+    __tablename__ = "expert_skills"
+    __table_args__ = (
+        Index("uq_expert_skill", "expert_id", "skill_id", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    expert_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("experts.id", ondelete="CASCADE"), index=True
+    )
+    skill_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("skills.id", ondelete="CASCADE"), index=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class AgentRun(Base):
     __tablename__ = "agent_runs"
 

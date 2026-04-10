@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronRight, Search, Brain, Zap, Globe, CheckCircle2, XCircle, Loader2, Users, FileText, Pencil, FilePlus, Terminal, FolderSearch, Code, Clock } from 'lucide-react';
 import clsx from 'clsx';
 import type { ToolCall } from '../../types/chat';
@@ -56,6 +56,16 @@ interface ToolCallCardProps {
 
 export default function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (toolCall.status !== 'running' || !toolCall.startedAt) return;
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - toolCall.startedAt!.getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [toolCall.status, toolCall.startedAt]);
+
   const Icon = TOOL_ICONS[toolCall.name] || Zap;
   const isDelegation = toolCall.name === 'delegate_to_expert';
   const expertName = toolCall.delegationExpertName;
@@ -156,7 +166,9 @@ export default function ToolCallCard({ toolCall }: ToolCallCardProps) {
           {toolCall.status === 'running' && !toolCall.output && (
             <div className="flex items-center gap-2 text-xs text-text-tertiary py-1">
               <Loader2 size={12} className="animate-spin" />
-              {isDelegation && expertName ? `Waiting for ${expertName}...` : 'Running...'}
+              {isDelegation && expertName
+                ? `Waiting for ${expertName}...`
+                : elapsed > 0 ? `Running... ${elapsed}s` : 'Running...'}
             </div>
           )}
         </div>

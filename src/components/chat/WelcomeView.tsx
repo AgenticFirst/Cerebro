@@ -11,7 +11,7 @@ export default function WelcomeView({ onSend }: WelcomeViewProps) {
         <h1 className="text-3xl font-light text-text-primary text-center mb-3">
           What can we help with?
         </h1>
-        <p className="text-sm text-text-tertiary text-center mb-8">
+        <p className="text-sm text-text-secondary text-center mb-8">
           Chat with Cerebro or ask an expert — we'll plan, execute, and follow up.
         </p>
         <ChatInput onSend={onSend} />

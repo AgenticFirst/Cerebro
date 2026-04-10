@@ -6,7 +6,7 @@ import {
   Activity,
   ShieldCheck,
   Plug,
-  Store,
+  Sparkles,
   Settings,
   Plus,
   PanelLeftClose,
@@ -44,7 +44,7 @@ const NAV_OVERSIGHT_BASE: NavItem[] = [
 // Extensions — setup & expand
 const NAV_EXTENSIONS: NavItem[] = [
   { id: 'integrations', label: 'Integrations', icon: Plug },
-  { id: 'marketplace', label: 'Marketplace', icon: Store },
+  { id: 'marketplace', label: 'Skills', icon: Sparkles },
 ];
 
 /* ── NavButton ────────────────────────────────────────────────── */
@@ -228,15 +228,18 @@ export default function Sidebar() {
         collapsed ? 'w-[56px]' : 'w-[260px]',
       )}
     >
-      {/* ── Header: collapse toggle ──────────────────────────── */}
+      {/* ── Traffic light spacer (draggable) ─────────────────── */}
+      <div className="app-drag-region h-11 flex-shrink-0" />
+
+      {/* ── Header: logo + collapse toggle ─────────────────────── */}
       <div
         className={clsx(
-          'flex items-center h-11',
-          collapsed ? 'justify-center px-2' : 'justify-between px-3',
+          'flex items-center',
+          collapsed ? 'justify-center px-2 py-1' : 'justify-between px-3 py-1',
         )}
       >
         {!collapsed && (
-          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary select-none">
+          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-text-tertiary select-none">
             Cerebro
           </span>
         )}
@@ -317,7 +320,7 @@ export default function Sidebar() {
             )}
             {grouped.map((group) => (
               <div key={group.label} className="mb-1.5">
-                <div className="px-2 pt-3 pb-1 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.08em] select-none">
+                <div className="px-2 pt-3 pb-1 text-[11px] font-semibold text-text-tertiary uppercase tracking-[0.08em] select-none">
                   {group.label}
                 </div>
                 <div className="space-y-px">
@@ -339,7 +342,7 @@ export default function Sidebar() {
                             isHovered ? 'pr-8' : '',
                             isActive
                               ? 'bg-white/[0.06] text-text-primary font-medium shadow-[inset_2px_0_0_0_var(--color-accent)]'
-                              : 'text-text-secondary/80 hover:text-text-secondary hover:bg-white/[0.03]',
+                              : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.03]',
                           )}
                         >
                           {conv.title}
