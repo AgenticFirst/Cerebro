@@ -13,13 +13,6 @@ import type { BackendResponse } from '../types/ipc';
 export type ExpertType = 'expert' | 'team';
 export type ExpertSource = 'builtin' | 'user' | 'marketplace';
 
-export interface ExpertModelConfig {
-  source: 'local' | 'cloud';
-  provider?: string | null;
-  model_id: string;
-  display_name: string;
-}
-
 export interface Expert {
   id: string;
   slug: string | null;
@@ -37,7 +30,6 @@ export interface Expert {
   recommendedRoutines: string[] | null;
   teamMembers: Array<{ expertId: string; role: string; order: number }> | null;
   avatarUrl: string | null;
-  modelConfigData: ExpertModelConfig | null;
   maxTurns: number;
   tokenBudget: number;
   version: string;
@@ -78,7 +70,6 @@ interface ApiExpert {
   recommended_routines: string[] | null;
   team_members: Array<{ expert_id: string; role: string; order: number }> | null;
   avatar_url: string | null;
-  model_config_data: ExpertModelConfig | null;
   max_turns: number;
   token_budget: number;
   version: string;
@@ -109,7 +100,6 @@ function toExpert(api: ApiExpert): Expert {
       order: m.order,
     })) ?? null,
     avatarUrl: api.avatar_url,
-    modelConfigData: api.model_config_data ?? null,
     maxTurns: api.max_turns ?? 10,
     tokenBudget: api.token_budget ?? 25000,
     version: api.version,
@@ -205,6 +195,8 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
           const expert = toExpert(res.data);
           setExperts((prev) => [...prev, expert]);
           setTotal((prev) => prev + 1);
+          // Materialize as a Claude Code subagent file (fire-and-forget)
+          window.cerebro.installer.syncExpert(expert.id).catch(console.error);
           return expert;
         }
       } catch (e) {
@@ -226,6 +218,8 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
         if (res.ok) {
           const updated = toExpert(res.data);
           setExperts((prev) => prev.map((e) => (e.id === id ? updated : e)));
+          // Re-materialize the agent file (handles renames + system prompt edits)
+          window.cerebro.installer.syncExpert(updated.id).catch(console.error);
         }
       } catch (e) {
         console.error('Failed to update expert:', e);
@@ -243,6 +237,8 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
       if (res.ok || res.status === 204) {
         setExperts((prev) => prev.filter((e) => e.id !== id));
         setTotal((prev) => Math.max(0, prev - 1));
+        // Remove the materialized agent file
+        window.cerebro.installer.removeExpert(id).catch(console.error);
       }
     } catch (e) {
       console.error('Failed to delete expert:', e);

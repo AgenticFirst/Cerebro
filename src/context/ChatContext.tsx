@@ -7,12 +7,9 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import type { Conversation, Message, Screen, ToolCall, TeamRun, TeamRunMember } from '../types/chat';
-import type { BackendResponse, StreamEvent, RendererAgentEvent } from '../types/ipc';
-import type { SelectedModel, ProviderConnectionState } from '../types/providers';
+import type { Conversation, Message, Screen, ToolCall } from '../types/chat';
+import type { BackendResponse, RendererAgentEvent } from '../types/ipc';
 import { useProviders } from './ProviderContext';
-import { useModels } from './ModelContext';
-import { useMemory } from './MemoryContext';
 import { useRoutines } from './RoutineContext';
 import type { DAGDefinition } from '../engine/dag/types';
 import {
@@ -98,13 +95,8 @@ function apiDeleteConversation(id: string): Promise<unknown> {
   });
 }
 
-const NO_MODEL_RESPONSE =
-  'No model is currently loaded. Go to **Integrations** to download and load a local model, configure a cloud API key, or install Claude Code.';
-
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const { selectedModel, connectionStatus, claudeCodeInfo } = useProviders();
-  const { engineStatus } = useModels();
-  const { getSystemPrompt, triggerExtraction } = useMemory();
+  const { claudeCodeInfo } = useProviders();
   const { registerRunCallback } = useRoutines();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
@@ -119,22 +111,35 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Keep ref in sync so async callbacks always see latest state
   conversationsRef.current = conversations;
 
-  // Store refs so sendMessage always sees latest values
-  const selectedModelRef = useRef<SelectedModel | null>(null);
-  selectedModelRef.current = selectedModel;
-
-  const engineStatusRef = useRef(engineStatus);
-  engineStatusRef.current = engineStatus;
-
-  const connectionStatusRef = useRef<Record<string, ProviderConnectionState>>({});
-  connectionStatusRef.current = connectionStatus;
-
   const claudeCodeInfoRef = useRef(claudeCodeInfo);
   claudeCodeInfoRef.current = claudeCodeInfo;
 
-  // Store memory functions in refs for async access
-  const triggerExtractionRef = useRef(triggerExtraction);
-  triggerExtractionRef.current = triggerExtraction;
+  // Per-conversation write chain. Every backend write for a conversation is
+  // appended to this promise so writes commit in the order the UI fires them.
+  // Without this, the optimistic-first pattern lets the very first user message
+  // race ahead of the conversation row insert and the agent_run insert (which
+  // both reference conversation_id), producing FK violations and 404s.
+  const writeChainRef = useRef<Map<string, Promise<unknown>>>(new Map());
+
+  const chainWrite = useCallback(
+    <T,>(convId: string, fn: () => Promise<T>): Promise<T> => {
+      const prev = writeChainRef.current.get(convId) ?? Promise.resolve();
+      const next = prev.catch(() => undefined).then(() => fn());
+      writeChainRef.current.set(
+        convId,
+        next.catch(() => undefined),
+      );
+      return next;
+    },
+    [],
+  );
+
+  const waitForConversation = useCallback(async (convId: string) => {
+    const pending = writeChainRef.current.get(convId);
+    if (pending) {
+      try { await pending; } catch { /* swallow — caller decides what to do */ }
+    }
+  }, []);
 
   // ── Load conversations from backend on startup ─────────────────
   useEffect(() => {
@@ -191,9 +196,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
     setConversations((prev) => [conversation, ...prev]);
     setActiveConversationIdState(id);
-    apiCreateConversation(id, title).catch(console.error);
+    chainWrite(id, () => apiCreateConversation(id, title)).catch(console.error);
     return id;
-  }, []);
+  }, [chainWrite]);
 
   const setActiveConversation = useCallback((id: string | null) => {
     setActiveConversationIdState(id);
@@ -222,10 +227,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             : c,
         ),
       );
-      apiCreateMessage(conversationId, { id: message.id, role, content, metadata }).catch(console.error);
+      chainWrite(conversationId, () =>
+        apiCreateMessage(conversationId, { id: message.id, role, content, metadata }),
+      ).catch(console.error);
       return message.id;
     },
-    [],
+    [chainWrite],
   );
 
   const updateMessage = useCallback(
@@ -249,42 +256,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const deleteConversation = useCallback((id: string) => {
     setConversations((prev) => prev.filter((c) => c.id !== id));
     setActiveConversationIdState((current) => (current === id ? null : current));
+    writeChainRef.current.delete(id);
     apiDeleteConversation(id).catch(console.error);
   }, []);
 
   const sendMessage = useCallback(
     (content: string) => {
-      // ── Guard: require a usable model before doing anything ──
-      const sel = selectedModelRef.current;
-      const engineState = engineStatusRef.current.state;
-      const localReady = engineState === 'ready';
-      const localLoading = engineState === 'loading';
-      let modelUsable = false;
-
-      if (sel) {
-        if (sel.source === 'claude-code') {
-          // Claude Code: must be detected as available
-          modelUsable = claudeCodeInfoRef.current.status === 'available';
-        } else if (sel.source === 'local') {
-          // Local model: engine must be ready or actively loading (auto-load on startup)
-          modelUsable = localReady || localLoading;
-        } else if (sel.source === 'cloud' && sel.provider) {
-          // Cloud model: provider must have a key configured
-          const cs = connectionStatusRef.current[sel.provider];
-          modelUsable = !!cs && cs.status !== 'not_configured';
-        }
-      }
-
-      // Fallback: even if selected_model is stale, a loaded/loading local model is usable
-      if (!modelUsable && (localReady || localLoading)) {
-        modelUsable = true;
-      }
-
-      if (!modelUsable) {
+      // ── Guard: require Claude Code to be detected ──
+      if (claudeCodeInfoRef.current.status !== 'available') {
         setChatError({
-          title: 'No model configured',
+          title: 'Claude Code not detected',
           message:
-            'Set up a model provider, download a local model, or install Claude Code before chatting.',
+            'Cerebro uses the Claude Code CLI as its engine. Install it and re-detect from Integrations.',
           navigateTo: 'integrations',
         });
         return;
@@ -326,6 +309,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       // Route through agent system
       const runAgent = async () => {
         try {
+          // Wait for the conversation row + user message insert to commit before
+          // spawning the agent run. The runtime persists an `agent_runs` row with
+          // a FK to `conversation_id`, so the conversation must exist first or
+          // the insert fails with a FK violation.
+          await waitForConversation(convId!);
+
           // Collect conversation context so the LLM has multi-turn awareness.
           const conv = conversationsRef.current.find((c) => c.id === convId);
           const allMessages = conv?.messages ?? [];
@@ -388,7 +377,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           let accRoutineProposal: import('../types/chat').RoutineProposal | undefined;
           let accExpertProposal: import('../types/chat').ExpertProposal | undefined;
           let accTeamProposal: import('../types/chat').TeamProposal | undefined;
-          let accOrchestrationRunId: string | undefined;
 
           const clearThinking = () => {
             if (!thinkingCleared) {
@@ -477,166 +465,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     }
                   } catch { /* not valid JSON, treat as normal result */ }
                 }
-                // Detect propose_team tool result and attach proposal to message
-                if (event.toolName === 'propose_team' && !event.isError) {
-                  try {
-                    const parsed = JSON.parse(event.result);
-                    if (parsed.type === 'team_proposal') {
-                      accTeamProposal = {
-                        name: parsed.name,
-                        description: parsed.description ?? '',
-                        strategy: parsed.strategy ?? 'auto',
-                        members: (parsed.members ?? []).map((m: Record<string, unknown>, i: number) => ({
-                          expertId: (m.expert_id as string | null) ?? null,
-                          name: (m.name as string | null) ?? null,
-                          role: m.role as string,
-                          description: (m.description as string | null) ?? null,
-                          order: (m.order as number) ?? i,
-                        })),
-                        coordinatorPrompt: parsed.coordinatorPrompt ?? null,
-                        status: 'proposed',
-                      };
-                      updateMessage(convId!, assistantId, {
-                        teamProposal: accTeamProposal,
-                      });
-                    } else {
-                      console.warn('propose_team result missing type=team_proposal:', event.result.slice(0, 200));
-                    }
-                  } catch (e) {
-                    console.warn('propose_team result is not valid JSON:', event.result.slice(0, 200), e);
-                  }
-                }
-                break;
-              }
-
-              case 'delegation_start': {
-                // Enrich the active delegate_to_expert tool call with the expert name
-                const delegationTc = toolCalls.find(
-                  (t) => t.name === 'delegate_to_expert' && t.status === 'running',
-                );
-                if (delegationTc) {
-                  delegationTc.delegationExpertName = event.expertName;
-                  updateMessage(convId!, assistantId, { toolCalls: [...toolCalls] });
-                }
-                break;
-              }
-
-              case 'delegation_end':
-                // No-op: tool_end already handles status finalization
-                break;
-
-              case 'team_started': {
-                const teamRun: TeamRun = {
-                  teamId: event.teamId,
-                  teamName: event.teamName,
-                  strategy: event.strategy,
-                  members: [],
-                  status: 'running',
-                };
-                updateMessage(convId!, assistantId, { teamRun });
-                break;
-              }
-
-              case 'member_queued': {
-                setConversations((prev) =>
-                  prev.map((c) => {
-                    if (c.id !== convId) return c;
-                    return {
-                      ...c,
-                      messages: c.messages.map((m) => {
-                        if (m.id !== assistantId || !m.teamRun) return m;
-                        const newMember: TeamRunMember = {
-                          memberId: event.memberId,
-                          memberName: event.memberName,
-                          role: event.role,
-                          status: 'queued',
-                        };
-                        return {
-                          ...m,
-                          teamRun: { ...m.teamRun, members: [...m.teamRun.members, newMember] },
-                        };
-                      }),
-                    };
-                  }),
-                );
-                break;
-              }
-
-              case 'member_started': {
-                setConversations((prev) =>
-                  prev.map((c) => {
-                    if (c.id !== convId) return c;
-                    return {
-                      ...c,
-                      messages: c.messages.map((m) => {
-                        if (m.id !== assistantId || !m.teamRun) return m;
-                        return {
-                          ...m,
-                          teamRun: {
-                            ...m.teamRun,
-                            members: m.teamRun.members.map((mem) =>
-                              mem.memberId === event.memberId ? { ...mem, status: 'running' as const } : mem,
-                            ),
-                          },
-                        };
-                      }),
-                    };
-                  }),
-                );
-                break;
-              }
-
-              case 'member_completed': {
-                setConversations((prev) =>
-                  prev.map((c) => {
-                    if (c.id !== convId) return c;
-                    return {
-                      ...c,
-                      messages: c.messages.map((m) => {
-                        if (m.id !== assistantId || !m.teamRun) return m;
-                        return {
-                          ...m,
-                          teamRun: {
-                            ...m.teamRun,
-                            members: m.teamRun.members.map((mem) =>
-                              mem.memberId === event.memberId
-                                ? { ...mem, status: event.status, response: event.response }
-                                : mem,
-                            ),
-                          },
-                        };
-                      }),
-                    };
-                  }),
-                );
-                break;
-              }
-
-              case 'team_synthesis':
-                // Visual indicator handled by running status
-                break;
-
-              case 'team_completed': {
-                setConversations((prev) =>
-                  prev.map((c) => {
-                    if (c.id !== convId) return c;
-                    return {
-                      ...c,
-                      messages: c.messages.map((m) => {
-                        if (m.id !== assistantId || !m.teamRun) return m;
-                        return {
-                          ...m,
-                          teamRun: {
-                            ...m.teamRun,
-                            status: event.status,
-                            successCount: event.successCount,
-                            totalCount: event.totalCount,
-                          },
-                        };
-                      }),
-                    };
-                  }),
-                );
                 break;
               }
 
@@ -644,53 +472,30 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 unsub();
                 clearThinking();
                 setIsStreaming(false);
-                // Capture orchestrationRunId
-                if (event.orchestrationRunId) {
-                  accOrchestrationRunId = event.orchestrationRunId;
-                }
                 updateMessage(convId!, assistantId, {
                   content: event.messageContent || accumulated,
                   isThinking: false,
                   isStreaming: false,
                   agentRunId: runId,
-                  orchestrationRunId: accOrchestrationRunId,
                 });
                 // Build metadata for persistence
                 const doneMetadata: Record<string, unknown> = {};
                 if (accEngineRunId) doneMetadata.engine_run_id = accEngineRunId;
-                if (accOrchestrationRunId) doneMetadata.orchestration_run_id = accOrchestrationRunId;
                 if (accRoutineProposal) doneMetadata.routine_proposal = toApiProposal(accRoutineProposal);
                 if (accExpertProposal) doneMetadata.expert_proposal = toApiExpertProposal(accExpertProposal);
                 if (accTeamProposal) doneMetadata.team_proposal = toApiTeamProposal(accTeamProposal);
-                // Persist team run if present — read latest state from conversations ref
-                const doneConv = conversationsRef.current.find((c) => c.id === convId);
-                const doneMsg = doneConv?.messages.find((m) => m.id === assistantId);
-                if (doneMsg?.teamRun) {
-                  doneMetadata.team_run = {
-                    team_id: doneMsg.teamRun.teamId,
-                    team_name: doneMsg.teamRun.teamName,
-                    strategy: doneMsg.teamRun.strategy,
-                    status: doneMsg.teamRun.status,
-                    success_count: doneMsg.teamRun.successCount,
-                    total_count: doneMsg.teamRun.totalCount,
-                    members: doneMsg.teamRun.members.map((mem) => ({
-                      member_id: mem.memberId,
-                      member_name: mem.memberName,
-                      role: mem.role,
-                      status: mem.status,
-                      response: mem.response,
-                    })),
-                  };
-                }
-                // Persist final message
-                apiCreateMessage(convId!, {
-                  id: assistantId,
-                  role: 'assistant',
-                  content: event.messageContent || accumulated,
-                  expert_id: expertId ?? undefined,
-                  agent_run_id: runId,
-                  metadata: Object.keys(doneMetadata).length > 0 ? doneMetadata : undefined,
-                }).catch(console.error);
+                // Persist final message — chained so it runs after the
+                // conversation/user-message inserts have committed.
+                chainWrite(convId!, () =>
+                  apiCreateMessage(convId!, {
+                    id: assistantId,
+                    role: 'assistant',
+                    content: event.messageContent || accumulated,
+                    expert_id: expertId ?? undefined,
+                    agent_run_id: runId,
+                    metadata: Object.keys(doneMetadata).length > 0 ? doneMetadata : undefined,
+                  }),
+                ).catch(console.error);
                 break;
               }
 
@@ -698,31 +503,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 unsub();
                 clearThinking();
                 setIsStreaming(false);
-
-                const isNoModel =
-                  /no model/i.test(event.error) || /not.*available/i.test(event.error);
-
-                if (isNoModel) {
-                  setConversations((prev) =>
-                    prev.map((c) =>
-                      c.id === convId
-                        ? { ...c, messages: c.messages.filter((m) => m.id !== assistantId) }
-                        : c,
-                    ),
-                  );
-                  setChatError({
-                    title: 'No model configured',
-                    message:
-                      'Set up a model provider, download a local model, or install Claude Code before chatting.',
-                    navigateTo: 'integrations',
-                  });
-                } else {
-                  updateMessage(convId!, assistantId, {
-                    content: `Error: ${event.error}`,
-                    isThinking: false,
-                    isStreaming: false,
-                  });
-                }
+                updateMessage(convId!, assistantId, {
+                  content: `Error: ${event.error}`,
+                  isThinking: false,
+                  isStreaming: false,
+                });
                 break;
               }
             }
@@ -732,39 +517,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             e instanceof Error ? e.message : 'An error occurred while starting the agent.';
           setIsStreaming(false);
           setIsThinking(false);
-
-          // Detect "no model" errors and show modal instead of inline error
-          const isNoModel =
-            /no model/i.test(errorMsg) || /not.*available/i.test(errorMsg);
-
-          if (isNoModel) {
-            // Remove the thinking placeholder — no point showing an error bubble
-            setConversations((prev) =>
-              prev.map((c) =>
-                c.id === convId
-                  ? { ...c, messages: c.messages.filter((m) => m.id !== assistantId) }
-                  : c,
-              ),
-            );
-            setChatError({
-              title: 'No model configured',
-              message:
-                'Set up a model provider, download a local model, or install Claude Code before chatting.',
-              navigateTo: 'integrations',
-            });
-          } else {
-            updateMessage(convId!, assistantId, {
-              content: `Error: ${errorMsg}`,
-              isThinking: false,
-              isStreaming: false,
-            });
-          }
+          updateMessage(convId!, assistantId, {
+            content: `Error: ${errorMsg}`,
+            isThinking: false,
+            isStreaming: false,
+          });
         }
       };
 
       runAgent();
     },
-    [activeConversationId, activeExpertId, createConversation, addMessage, updateMessage],
+    [activeConversationId, activeExpertId, createConversation, addMessage, updateMessage, chainWrite, waitForConversation],
   );
 
   // ── Run routine in chat (triggered via UI "Run Now" button) ────
@@ -803,34 +566,42 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      window.cerebro.engine
-        .run({ dag, routineId: info.id, triggerSource: 'manual' })
-        .then((runId) => {
-          const content = `Running routine **${info.name}**...`;
-          updateMessage(convId!, msgId, { engineRunId: runId });
-          // Persist the run log message so it survives reload
-          apiCreateMessage(convId!, {
-            id: msgId,
-            role: 'assistant',
-            content,
-            metadata: { engine_run_id: runId },
-          }).catch(console.error);
-          // Bump backend metadata (fire-and-forget)
-          window.cerebro
-            .invoke({ method: 'POST', path: `/routines/${info.id}/run` })
-            .catch(console.error);
-        })
-        .catch((err) => {
-          const errorContent = `Failed to run routine **${info.name}**: ${err instanceof Error ? err.message : String(err)}`;
-          updateMessage(convId!, msgId, { content: errorContent });
-          apiCreateMessage(convId!, {
-            id: msgId,
-            role: 'assistant',
-            content: errorContent,
-          }).catch(console.error);
-        });
+      // Wait for the conversation row insert to commit before persisting the
+      // routine log message and triggering the engine run.
+      waitForConversation(convId!).then(() => {
+        window.cerebro.engine
+          .run({ dag, routineId: info.id, triggerSource: 'manual' })
+          .then((runId) => {
+            const content = `Running routine **${info.name}**...`;
+            updateMessage(convId!, msgId, { engineRunId: runId });
+            // Persist the run log message so it survives reload
+            chainWrite(convId!, () =>
+              apiCreateMessage(convId!, {
+                id: msgId,
+                role: 'assistant',
+                content,
+                metadata: { engine_run_id: runId },
+              }),
+            ).catch(console.error);
+            // Bump backend metadata (fire-and-forget)
+            window.cerebro
+              .invoke({ method: 'POST', path: `/routines/${info.id}/run` })
+              .catch(console.error);
+          })
+          .catch((err) => {
+            const errorContent = `Failed to run routine **${info.name}**: ${err instanceof Error ? err.message : String(err)}`;
+            updateMessage(convId!, msgId, { content: errorContent });
+            chainWrite(convId!, () =>
+              apiCreateMessage(convId!, {
+                id: msgId,
+                role: 'assistant',
+                content: errorContent,
+              }),
+            ).catch(console.error);
+          });
+      });
     },
-    [activeConversationId, createConversation, updateMessage],
+    [activeConversationId, createConversation, updateMessage, chainWrite, waitForConversation],
   );
 
   // Register with RoutineContext so "Run Now" buttons trigger chat flow

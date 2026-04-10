@@ -8,13 +8,6 @@ export interface TeamMember {
   order: number;
 }
 
-export interface ExpertModelConfig {
-  source: 'local' | 'cloud';
-  provider?: string | null;
-  modelId: string;
-  displayName: string;
-}
-
 export interface Expert {
   id: string;
   slug: string | null;
@@ -32,7 +25,6 @@ export interface Expert {
   recommendedRoutines: string[] | null;
   teamMembers: TeamMember[] | null;
   avatarUrl: string | null;
-  modelConfigData?: ExpertModelConfig | null;
   maxTurns?: number;
   tokenBudget?: number;
   version: string | null;

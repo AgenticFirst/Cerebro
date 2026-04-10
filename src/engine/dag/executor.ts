@@ -11,7 +11,6 @@ import type { ActionContext, ActionOutput } from '../actions/types';
 import type { RunScratchpad } from '../scratchpad';
 import type { RunEventEmitter } from '../events/emitter';
 import type { ExecutionEvent } from '../events/types';
-import type { ResolvedModel } from '../../agents/types';
 import type { DAGDefinition, StepDefinition } from './types';
 import { extractByPath } from '../utils';
 
@@ -31,7 +30,6 @@ export interface ExecutorContext {
   runId: string;
   backendPort: number;
   signal: AbortSignal;
-  resolveModel: () => Promise<ResolvedModel | null>;
   onStepUpdate?: (stepId: string, update: StepPersistenceUpdate) => void;
   onApprovalRequired?: (step: StepDefinition) => Promise<boolean>;
 }
@@ -308,7 +306,6 @@ export class DAGExecutor {
         const enriched = { ...event, runId: this.ctx.runId } as ExecutionEvent;
         this.emitter.emit(enriched);
       },
-      resolveModel: this.ctx.resolveModel,
     };
 
     // Execute with timeout

@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
@@ -10,21 +9,16 @@ from fastapi import Depends, FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import selectinload
 
-from credentials import get_credential, set_credential
 from database import get_db, init_db
 
 # Import models so they register with Base.metadata before create_all()
 import models  # noqa: F401
 from models import Conversation, Message, Setting
 
-from local_models.catalog import recover_interrupted
-from local_models.router import auto_load_last_model, init_singletons
-from local_models.router import router as models_router
-from cloud_providers.router import router as cloud_router
 from memory.router import router as memory_router
+from agent_memory.router import router as agent_memory_router
 from experts.router import router as experts_router
 from agent_runs.router import router as agent_runs_router
-from search.router import router as search_router
 from engine.router import router as engine_router
 from routines.router import router as routines_router
 from webhooks.router import router as webhooks_router
@@ -38,26 +32,19 @@ async def lifespan(application: FastAPI):
     init_db(db_path)
     print(f"[Cerebro] Database initialized at {db_path}")
 
-    models_dir = application.state.models_dir
-    os.makedirs(models_dir, exist_ok=True)
-    recover_interrupted(models_dir)
-    init_singletons()
-    print(f"[Cerebro] Models directory: {models_dir}")
-
-    # Auto-load last model in background so the server starts immediately
-    # Store reference to prevent garbage collection of the task
-    application.state._auto_load_task = asyncio.create_task(auto_load_last_model(models_dir))
+    agent_memory_dir = getattr(application.state, "agent_memory_dir", None)
+    if agent_memory_dir:
+        os.makedirs(agent_memory_dir, exist_ok=True)
+        print(f"[Cerebro] Agent memory directory: {agent_memory_dir}")
 
     yield
 
 
 app = FastAPI(title="Cerebro Backend", lifespan=lifespan)
-app.include_router(models_router, prefix="/models")
-app.include_router(cloud_router, prefix="/cloud")
 app.include_router(memory_router, prefix="/memory")
+app.include_router(agent_memory_router, prefix="/agent-memory")
 app.include_router(experts_router, prefix="/experts")
 app.include_router(agent_runs_router, prefix="/agent-runs")
-app.include_router(search_router, prefix="/search")
 app.include_router(engine_router, prefix="/engine")
 app.include_router(routines_router, prefix="/routines")
 app.include_router(webhooks_router, prefix="/webhooks")
@@ -66,20 +53,6 @@ app.include_router(scripts_router, prefix="/scripts")
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
-
-
-# ── Credential push (from Electron main process) ─────────────────
-
-
-class CredentialPush(BaseModel):
-    key: str
-    value: str | None = None
-
-
-@app.post("/credentials")
-def push_credential(body: CredentialPush):
-    set_credential(body.key, body.value)
     return {"status": "ok"}
 
 
@@ -107,8 +80,6 @@ class MessageCreate(BaseModel):
     id: str
     role: str
     content: str
-    model: str | None = None
-    token_count: int | None = None
     expert_id: str | None = None
     agent_run_id: str | None = None
     metadata: dict | None = None
@@ -123,8 +94,6 @@ class MessageResponse(BaseModel):
     conversation_id: str
     role: str
     content: str
-    model: str | None
-    token_count: int | None
     expert_id: str | None = None
     agent_run_id: str | None = None
     metadata: dict | None = Field(None, validation_alias="metadata_parsed")
@@ -222,8 +191,6 @@ def create_message(conv_id: str, body: MessageCreate, db=Depends(get_db)):
         conversation_id=conv_id,
         role=body.role,
         content=body.content,
-        model=body.model,
-        token_count=body.token_count,
         expert_id=body.expert_id,
         agent_run_id=body.agent_run_id,
         metadata_json=json.dumps(body.metadata) if body.metadata else None,
@@ -263,10 +230,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--db-path", type=str, default=os.path.join(".", "cerebro.db"))
-    parser.add_argument("--models-dir", type=str, default=os.path.join(".", "models"))
+    parser.add_argument(
+        "--agent-memory-dir",
+        type=str,
+        default=os.path.join(".", "agent-memory"),
+    )
     args = parser.parse_args()
 
     app.state.db_path = os.path.abspath(args.db_path)
-    app.state.models_dir = os.path.abspath(args.models_dir)
+    app.state.agent_memory_dir = os.path.abspath(args.agent_memory_dir)
 
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")

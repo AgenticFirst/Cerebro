@@ -110,23 +110,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         </div>
       )}
 
-      {/* Orchestration badge */}
-      {!isUser && message.orchestrationRunId && !message.isStreaming && !message.isThinking && (
-        <span className="inline-flex items-center gap-1 text-[10px] text-cyan-400/50 mt-1 px-1">
-          <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <circle cx="4" cy="8" r="1.5" />
-            <circle cx="12" cy="4" r="1.5" />
-            <circle cx="12" cy="12" r="1.5" />
-            <path d="M5.5 7.5L10.5 4.5M5.5 8.5L10.5 11.5" />
-          </svg>
-          orchestrated
-        </span>
-      )}
-
-      {/* Model attribution */}
-      {!isUser && message.model && !message.isStreaming && !message.isThinking && (
-        <p className="text-[10px] text-text-tertiary mt-1 px-1">{message.model}</p>
-      )}
     </div>
   );
 }

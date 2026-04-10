@@ -11,17 +11,6 @@ export const IPC_CHANNELS = {
   // Stream events are sent on dynamic channels: `backend:stream-event:${streamId}`
   streamEvent: (streamId: string) => `backend:stream-event:${streamId}`,
 
-  // Credential storage
-  CREDENTIAL_SET: 'credential:set',
-  CREDENTIAL_HAS: 'credential:has',
-  CREDENTIAL_DELETE: 'credential:delete',
-  CREDENTIAL_CLEAR: 'credential:clear',
-  CREDENTIAL_LIST: 'credential:list',
-
-  // Models
-  MODELS_GET_DIR: 'models:get-dir',
-  MODELS_DISK_SPACE: 'models:disk-space',
-
   // Agent system
   AGENT_RUN: 'agent:run',
   AGENT_CANCEL: 'agent:cancel',
@@ -44,6 +33,11 @@ export const IPC_CHANNELS = {
   // Claude Code
   CLAUDE_CODE_DETECT: 'claude-code:detect',
   CLAUDE_CODE_STATUS: 'claude-code:status',
+
+  // Installer (Cerebro project-scoped subagents/skills under <userData>/.claude/)
+  INSTALLER_SYNC_EXPERT: 'installer:sync-expert',
+  INSTALLER_REMOVE_EXPERT: 'installer:remove-expert',
+  INSTALLER_SYNC_ALL: 'installer:sync-all',
 } as const;
 
 // --- Backend Request/Response ---
@@ -79,53 +73,6 @@ export interface StreamEvent {
   data: string;
 }
 
-// --- Credential Storage ---
-
-export interface CredentialSetRequest {
-  service: string;
-  key: string;
-  value: string;
-  label?: string;
-}
-
-export interface CredentialIdentifier {
-  service: string;
-  key: string;
-}
-
-export interface CredentialInfo {
-  service: string;
-  key: string;
-  label?: string;
-  updatedAt: string;
-}
-
-export interface CredentialResult<T = void> {
-  ok: boolean;
-  error?: string;
-  data?: T;
-}
-
-export interface CredentialAPI {
-  set(request: CredentialSetRequest): Promise<CredentialResult>;
-  has(service: string, key: string): Promise<boolean>;
-  delete(service: string, key: string): Promise<CredentialResult>;
-  clear(service?: string): Promise<CredentialResult>;
-  list(service?: string): Promise<CredentialInfo[]>;
-}
-
-// --- Models ---
-
-export interface DiskSpace {
-  free: number;
-  total: number;
-}
-
-export interface ModelsAPI {
-  getDir(): Promise<string>;
-  getDiskSpace(): Promise<DiskSpace>;
-}
-
 // --- Agent System ---
 
 export interface ProposalSnapshot {
@@ -153,15 +100,7 @@ export type RendererAgentEvent =
   | { type: 'text_delta'; delta: string }
   | { type: 'tool_start'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool_end'; toolCallId: string; toolName: string; result: string; isError: boolean }
-  | { type: 'delegation_start'; parentRunId: string; childRunId: string; expertId: string; expertName: string }
-  | { type: 'delegation_end'; parentRunId: string; childRunId: string; status: string }
-  | { type: 'team_started'; teamId: string; teamName: string; strategy: string; memberCount: number }
-  | { type: 'member_queued'; teamId: string; memberId: string; memberName: string; role: string }
-  | { type: 'member_started'; teamId: string; memberId: string; memberName: string }
-  | { type: 'member_completed'; teamId: string; memberId: string; memberName: string; status: 'completed' | 'error'; response?: string }
-  | { type: 'team_synthesis'; teamId: string }
-  | { type: 'team_completed'; teamId: string; status: 'completed' | 'error'; successCount: number; totalCount: number }
-  | { type: 'done'; runId: string; messageContent: string; orchestrationRunId?: string }
+  | { type: 'done'; runId: string; messageContent: string }
   | { type: 'error'; runId: string; error: string };
 
 export interface ActiveRunInfo {
@@ -233,6 +172,14 @@ export interface ClaudeCodeAPI {
   getStatus(): Promise<ClaudeCodeInfo>;
 }
 
+// --- Installer ---
+
+export interface InstallerAPI {
+  syncExpert(expertId: string): Promise<{ ok: boolean; error?: string }>;
+  removeExpert(expertId: string): Promise<{ ok: boolean; error?: string }>;
+  syncAll(): Promise<{ ok: boolean; error?: string }>;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -241,10 +188,9 @@ export interface CerebroAPI {
   startStream(request: StreamRequest): Promise<string>;
   cancelStream(streamId: string): Promise<void>;
   onStream(streamId: string, callback: (event: StreamEvent) => void): () => void;
-  credentials: CredentialAPI;
-  models: ModelsAPI;
   agent: AgentAPI;
   engine: EngineAPI;
   scheduler: SchedulerAPI;
   claudeCode: ClaudeCodeAPI;
+  installer: InstallerAPI;
 }

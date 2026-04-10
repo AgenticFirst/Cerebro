@@ -21,7 +21,7 @@ router = APIRouter(tags=["experts"])
 
 # JSON text columns that store structured data
 _JSON_FIELDS = frozenset(
-    {"tool_access", "policies", "required_connections", "recommended_routines", "team_members", "model_config"}
+    {"tool_access", "policies", "required_connections", "recommended_routines", "team_members"}
 )
 
 
@@ -29,11 +29,6 @@ def _expert_to_response(expert: Expert) -> ExpertResponse:
     """Convert an ORM Expert to an ExpertResponse, parsing JSON text columns."""
     data = {}
     for col in ExpertResponse.model_fields:
-        if col == "model_config_data":
-            # The ORM column is model_config_json (mapped to "model_config" DB column)
-            raw = expert.model_config_json
-            data[col] = json.loads(raw) if isinstance(raw, str) else raw
-            continue
         val = getattr(expert, col, None)
         if col in _JSON_FIELDS and isinstance(val, str):
             val = json.loads(val)
@@ -43,13 +38,6 @@ def _expert_to_response(expert: Expert) -> ExpertResponse:
 
 def _serialize_json_fields(values: dict) -> dict:
     """Serialize any JSON-typed fields from native Python to JSON strings."""
-    # Handle model_config_data → model_config_json mapping
-    if "model_config_data" in values:
-        mc = values.pop("model_config_data")
-        if mc is not None:
-            values["model_config_json"] = json.dumps(mc if isinstance(mc, dict) else mc.model_dump() if hasattr(mc, "model_dump") else mc)
-        else:
-            values["model_config_json"] = None
     for key in _JSON_FIELDS:
         if key in values and values[key] is not None:
             values[key] = json.dumps(values[key])

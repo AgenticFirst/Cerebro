@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -17,15 +16,6 @@ class TeamMember(BaseModel):
     order: int = 0
     delegation_prompt: str | None = None
     on_error: str = "skip"
-
-
-class ExpertModelConfig(BaseModel):
-    """Per-expert model override configuration."""
-
-    source: Literal["local", "cloud"]
-    provider: str | None = None  # e.g. "anthropic", "openai", "google"
-    model_id: str
-    display_name: str
 
 
 # ── Request Schemas ──────────────────────────────────────────────
@@ -49,7 +39,6 @@ class ExpertCreate(BaseModel):
     strategy: str | None = None
     coordinator_prompt: str | None = None
     avatar_url: str | None = None
-    model_config_data: ExpertModelConfig | None = None
     max_turns: int = 10
     token_budget: int = 25000
     version: str | None = "1.0.0"
@@ -73,7 +62,6 @@ class ExpertUpdate(BaseModel):
     strategy: str | None = None
     coordinator_prompt: str | None = None
     avatar_url: str | None = None
-    model_config_data: ExpertModelConfig | None = None
     max_turns: int | None = None
     token_budget: int | None = None
     version: str | None = None
@@ -101,7 +89,6 @@ class ExpertResponse(BaseModel):
     strategy: str | None
     coordinator_prompt: str | None
     avatar_url: str | None
-    model_config_data: ExpertModelConfig | None = None
     max_turns: int
     token_budget: int
     version: str | None

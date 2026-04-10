@@ -1,17 +1,17 @@
 /**
- * classify action — AI-powered categorization.
+ * classify action — AI-powered categorization via Claude Code.
  *
- * Uses an LLM to classify input text into one of the defined categories.
- * Returns the selected category, confidence level, and reasoning.
+ * Builds a classification prompt and sends it to the Cerebro main subagent
+ * as a single one-shot call.
  */
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
-import { streamModelCall, resolveModelForAction, buildLLMRequestBody } from './utils/llm-call';
+import { singleShotClaudeCode } from '../../claude-code/single-shot';
 
 interface ClassifyParams {
   prompt: string;
   categories: Array<{ label: string; description: string }>;
-  model?: { source: 'local' | 'cloud'; provider?: string; modelId: string };
+  agent?: string;
 }
 
 export const classifyAction: ActionDefinition = {
@@ -24,7 +24,7 @@ export const classifyAction: ActionDefinition = {
     properties: {
       prompt: { type: 'string' },
       categories: { type: 'array' },
-      model: { type: 'object' },
+      agent: { type: 'string' },
     },
     required: ['prompt', 'categories'],
   },
@@ -47,44 +47,37 @@ export const classifyAction: ActionDefinition = {
       throw new Error('Classify requires at least one category');
     }
 
-    const model = await resolveModelForAction(params.model, context);
-
     const categoryList = params.categories
       .map((c, i) => `${i + 1}. "${c.label}"${c.description ? ` — ${c.description}` : ''}`)
       .join('\n');
 
-    const systemPrompt = `You are a classifier. Given the input, classify it into exactly one of these categories:
+    const fullPrompt = `You are a classifier. Given the input, classify it into exactly one of these categories:
 
 ${categoryList}
 
 Respond with ONLY a valid JSON object (no markdown, no code fences):
-{"category": "<exact category label>", "confidence": "high|medium|low", "reasoning": "<brief explanation>"}`;
+{"category": "<exact category label>", "confidence": "high|medium|low", "reasoning": "<brief explanation>"}
 
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: params.prompt },
-    ];
+---
 
-    const { path, body } = buildLLMRequestBody(messages, model, { temperature: 0.3, maxTokens: 512 });
+Input:
 
-    const response = await streamModelCall(
-      context.backendPort,
-      path,
-      body,
-      context.signal,
-      () => {},
-    );
+${params.prompt}`;
 
-    // Parse JSON response
+    const response = await singleShotClaudeCode({
+      agent: params.agent ?? 'cerebro',
+      prompt: fullPrompt,
+      signal: context.signal,
+      maxTurns: 3,
+    });
+
     let result: { category: string; confidence?: string; reasoning?: string };
     try {
-      // Try to extract JSON from the response (may have markdown wrapping)
-      const jsonMatch = response.match(/\{[\s\S]*?\}/);
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
       result = JSON.parse(jsonMatch?.[0] ?? response);
     } catch {
-      // Fallback: find the best matching category from the raw text
-      const matched = params.categories.find(c =>
-        response.toLowerCase().includes(c.label.toLowerCase())
+      const matched = params.categories.find((c) =>
+        response.toLowerCase().includes(c.label.toLowerCase()),
       );
       if (!matched) {
         context.log(`Warning: Could not parse classification result; defaulting to "${params.categories[0].label}"`);

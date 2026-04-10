@@ -7,7 +7,6 @@
  */
 
 import type { RunScratchpad } from '../scratchpad';
-import type { ResolvedModel } from '../../agents/types';
 
 // ── Execution Events (full union from Phase 2) ──────────────────
 
@@ -50,10 +49,5 @@ export interface ActionContext {
   backendPort: number;
   signal: AbortSignal;
   log: (message: string) => void;
-  emitEvent: (event: ExecutionEvent) => void;
-  resolveModel: () => Promise<ResolvedModel | null>;
+  emitEvent: (event: import('../events/types').ExecutionEvent) => void;
 }
-
-// ── Re-exports for convenience ──────────────────────────────────
-
-export type { ResolvedModel };

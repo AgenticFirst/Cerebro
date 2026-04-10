@@ -2,7 +2,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -40,8 +40,6 @@ class Message(Base):
     )
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
-    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expert_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("experts.id", ondelete="SET NULL"), nullable=True)
     agent_run_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True)
     metadata_json: Mapped[str | None] = mapped_column("metadata", Text, nullable=True)
@@ -67,40 +65,6 @@ class Setting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
-class MemoryItem(Base):
-    __tablename__ = "memory_items"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
-    scope: Mapped[str] = mapped_column(String(20), index=True)
-    scope_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
-    content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    source_conversation_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
-    )
-    source_message_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
-
-
-class KnowledgeEntry(Base):
-    __tablename__ = "knowledge_entries"
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
-    scope: Mapped[str] = mapped_column(String(20), index=True)
-    scope_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
-    entry_type: Mapped[str] = mapped_column(String(50), index=True)
-    occurred_at: Mapped[datetime] = mapped_column(DateTime, index=True)
-    summary: Mapped[str] = mapped_column(Text)
-    content: Mapped[str] = mapped_column(Text)
-    source: Mapped[str] = mapped_column(String(50))
-    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    source_conversation_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
-
-
 class Expert(Base):
     __tablename__ = "experts"
 
@@ -122,7 +86,6 @@ class Expert(Base):
     strategy: Mapped[str | None] = mapped_column(String(20), nullable=True)
     coordinator_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    model_config_json: Mapped[str | None] = mapped_column("model_config", Text, nullable=True)   # JSON
     max_turns: Mapped[int] = mapped_column(Integer, default=10)
     token_budget: Mapped[int] = mapped_column(Integer, default=25000)
     version: Mapped[str | None] = mapped_column(String(20), nullable=True, default="1.0.0")

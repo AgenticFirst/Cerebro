@@ -92,8 +92,6 @@ export interface Message {
   conversationId: string;
   role: Role;
   content: string;
-  model?: string;
-  tokenCount?: number;
   expertId?: string;
   agentRunId?: string;
   createdAt: Date;
@@ -106,7 +104,6 @@ export interface Message {
   expertProposal?: ExpertProposal;
   teamProposal?: TeamProposal;
   teamRun?: TeamRun;
-  orchestrationRunId?: string;
 }
 
 export interface Conversation {

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Cpu, Puzzle, MessageSquare, Wifi, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
-import ModelsSection from './integrations/ModelsSection';
+import EngineSection from './integrations/EngineSection';
 import ConnectedAppsSection from './integrations/ConnectedAppsSection';
 import ChannelsSection from './integrations/ChannelsSection';
 import EmptySection from './integrations/EmptySection';
 
-type Section = 'models' | 'connected-apps' | 'channels' | 'remote-access';
+type Section = 'engine' | 'connected-apps' | 'channels' | 'remote-access';
 
 interface SectionNavItem {
   id: Section;
@@ -15,14 +15,14 @@ interface SectionNavItem {
 }
 
 const SECTIONS: SectionNavItem[] = [
-  { id: 'models', label: 'Models', icon: Cpu },
+  { id: 'engine', label: 'Engine', icon: Cpu },
   { id: 'connected-apps', label: 'Connected Apps', icon: Puzzle },
   { id: 'channels', label: 'Channels', icon: MessageSquare },
   { id: 'remote-access', label: 'Remote Access', icon: Wifi },
 ];
 
 export default function IntegrationsScreen() {
-  const [activeSection, setActiveSection] = useState<Section>('models');
+  const [activeSection, setActiveSection] = useState<Section>('engine');
 
   return (
     <div className="flex h-full">
@@ -68,7 +68,7 @@ export default function IntegrationsScreen() {
       {/* Content pane */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <div className="max-w-2xl px-8 py-8">
-          {activeSection === 'models' && <ModelsSection />}
+          {activeSection === 'engine' && <EngineSection />}
           {activeSection === 'connected-apps' && <ConnectedAppsSection />}
           {activeSection === 'channels' && <ChannelsSection />}
           {activeSection === 'remote-access' && (

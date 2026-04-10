@@ -1,22 +1,30 @@
 /**
  * ClaudeCodeRunner — spawns `claude -p` as a subprocess and translates
  * its stream-json NDJSON output into RendererAgentEvents.
+ *
+ * Always launches with `cwd: <cerebro-data-dir>` so Claude Code
+ * auto-discovers Cerebro's project-scoped subagents and skills under
+ * `<cerebro-data-dir>/.claude/`. The subagent identified by `agentName`
+ * defines its own system prompt and tools — no `--append-system-prompt`,
+ * no `--allowedTools`, no MCP bridge.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import os from 'node:os';
 import type { RendererAgentEvent } from '../agents/types';
 import { getCachedClaudeCodeInfo } from './detector';
 
 export interface ClaudeCodeRunOptions {
   runId: string;
   prompt: string;
-  systemPrompt?: string;
-  /** Working directory for Claude Code file operations. */
-  cwd?: string;
-  /** Path to MCP config JSON for Cerebro memory bridge. */
-  mcpConfigPath?: string;
+  /** Name of the project-scoped subagent to invoke (e.g. "cerebro" or "fitness-coach-ab12cd"). */
+  agentName: string;
+  /**
+   * Working directory for the subprocess. MUST be Cerebro's data dir
+   * (`app.getPath('userData')`) so Claude Code discovers .claude/agents/,
+   * .claude/skills/, and .claude/settings.json.
+   */
+  cwd: string;
 }
 
 /**
@@ -30,10 +38,11 @@ export interface ClaudeCodeRunOptions {
 export class ClaudeCodeRunner extends EventEmitter {
   private process: ChildProcess | null = null;
   private accumulatedText = '';
+  private stderrTail = '';
   private killed = false;
 
   start(options: ClaudeCodeRunOptions): void {
-    const { runId, prompt, systemPrompt, cwd, mcpConfigPath } = options;
+    const { runId, prompt, agentName, cwd } = options;
     const info = getCachedClaudeCodeInfo();
 
     if (info.status !== 'available' || !info.path) {
@@ -47,21 +56,11 @@ export class ClaudeCodeRunner extends EventEmitter {
 
     const args: string[] = [
       '-p', prompt,
+      '--agent', agentName,
       '--output-format', 'stream-json',
       '--verbose',
       '--max-turns', '15',
-      '--no-session-persistence',
-      '--allowedTools',
-      'Read,Edit,Write,Bash,Grep,Glob,WebSearch,WebFetch,LSP',
     ];
-
-    if (systemPrompt) {
-      args.push('--append-system-prompt', systemPrompt);
-    }
-
-    if (mcpConfigPath) {
-      args.push('--mcp-config', mcpConfigPath);
-    }
 
     // Build env: inherit process.env but strip CLAUDECODE to avoid nested session error
     const env = { ...process.env } as Record<string, string>;
@@ -69,7 +68,7 @@ export class ClaudeCodeRunner extends EventEmitter {
 
     this.process = spawn(info.path, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      cwd: cwd || os.homedir(),
+      cwd,
       env,
     });
 
@@ -89,8 +88,10 @@ export class ClaudeCodeRunner extends EventEmitter {
     });
 
     this.process.stderr?.on('data', (data: Buffer) => {
-      // Log stderr but don't treat as fatal
-      console.log(`[ClaudeCode:${runId.slice(0, 8)}] ${data.toString().trim()}`);
+      const text = data.toString().trim();
+      console.log(`[ClaudeCode:${runId.slice(0, 8)}] ${text}`);
+      // Keep last ~500 chars of stderr so we can surface the actual error
+      this.stderrTail = (this.stderrTail + '\n' + text).slice(-500).trim();
     });
 
     this.process.on('close', (code) => {
@@ -102,12 +103,15 @@ export class ClaudeCodeRunner extends EventEmitter {
       if (this.killed) return;
 
       if (code !== 0 && code !== null) {
+        const detail = this.stderrTail
+          ? `Claude Code exited with code ${code}: ${this.stderrTail}`
+          : `Claude Code exited with code ${code}`;
         this.emit('event', {
           type: 'error',
           runId,
-          error: `Claude Code exited with code ${code}`,
+          error: detail,
         } as RendererAgentEvent);
-        this.emit('error', `Claude Code exited with code ${code}`);
+        this.emit('error', detail);
       } else {
         this.emit('event', {
           type: 'done',

@@ -1,40 +1,33 @@
-"""FastAPI router for the memory system — /memory/* endpoints."""
+"""FastAPI router for legacy memory — read-only.
+
+Only kept so the one-shot migration can copy legacy memory data into the new
+per-agent memory directories. Two legacy sources are exposed:
+
+1. ``memory:context:*`` rows in the ``settings`` table (user-authored context).
+2. Rows in the ``memory_items`` table (auto-extracted facts from the old
+   extraction pipeline). The SQLAlchemy model for ``memory_items`` has been
+   removed from the codebase, so this endpoint uses raw SQL against the
+   legacy table if it still exists.
+
+New writes should go through the ``agent_memory`` router.
+"""
 
 from __future__ import annotations
 
-import asyncio
-import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from database import get_db
-from models import KnowledgeEntry, MemoryItem, Setting, _utcnow, _uuid_hex
+from models import Setting
 
-from .schemas import (
-    ContextFileResponse,
-    ContextFileUpdate,
-    ExtractionRequest,
-    KnowledgeEntriesListResponse,
-    KnowledgeEntryCreate,
-    KnowledgeEntryResponse,
-    MemoryContextRequest,
-    MemoryContextResponse,
-    MemoryItemCreate,
-    MemoryItemResponse,
-    MemoryItemsListResponse,
-    MemorySearchRequest,
-    MemorySearchResponse,
-    MemorySearchResult,
-)
+from .schemas import ContextFileResponse, LegacyMemoryItem
 
 router = APIRouter(tags=["memory"])
 
 CONTEXT_PREFIX = "memory:context:"
-ALLOWED_CONTEXT_KEYS = {"profile", "style"}
-
-
-# ── Context Files (Tier 1) ───────────────────────────────────────
 
 
 @router.get("/context-files", response_model=list[ContextFileResponse])
@@ -55,7 +48,7 @@ def list_context_files(db=Depends(get_db)):
     ]
 
 
-@router.get("/context-files/{key}", response_model=ContextFileResponse)
+@router.get("/context-files/{key:path}", response_model=ContextFileResponse)
 def get_context_file(key: str, db=Depends(get_db)):
     full_key = CONTEXT_PREFIX + key
     setting = db.get(Setting, full_key)
@@ -68,248 +61,45 @@ def get_context_file(key: str, db=Depends(get_db)):
     )
 
 
-@router.put("/context-files/{key}", response_model=ContextFileResponse)
-def upsert_context_file(key: str, body: ContextFileUpdate, db=Depends(get_db)):
-    # Allow well-known keys + expert/routine scoped keys
-    if key not in ALLOWED_CONTEXT_KEYS and not key.startswith(("expert:", "routine:", "team:")):
-        raise HTTPException(status_code=400, detail=f"Invalid context file key: {key}")
-    full_key = CONTEXT_PREFIX + key
-    setting = db.get(Setting, full_key)
-    if setting:
-        setting.value = body.content
-        setting.updated_at = _utcnow()
-    else:
-        setting = Setting(key=full_key, value=body.content)
-        db.add(setting)
-    db.commit()
-    db.refresh(setting)
-    return ContextFileResponse(
-        key=key,
-        content=setting.value,
-        updated_at=setting.updated_at,
-    )
+@router.get("/legacy-items", response_model=list[LegacyMemoryItem])
+def list_legacy_items(db=Depends(get_db)):
+    """Return all rows from the legacy ``memory_items`` table.
 
-
-@router.delete("/context-files/{key}", status_code=204)
-def delete_context_file(key: str, db=Depends(get_db)):
-    full_key = CONTEXT_PREFIX + key
-    setting = db.get(Setting, full_key)
-    if setting:
-        db.delete(setting)
-        db.commit()
-    return Response(status_code=204)
-
-
-# ── Learned Facts (Tier 2) ───────────────────────────────────────
-
-
-@router.get("/items", response_model=MemoryItemsListResponse)
-def list_memory_items(
-    scope: str = "personal",
-    scope_id: str | None = None,
-    search: str | None = None,
-    offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
-    db=Depends(get_db),
-):
-    q = db.query(MemoryItem).filter(MemoryItem.scope == scope)
-    if scope_id:
-        q = q.filter(MemoryItem.scope_id == scope_id)
-    else:
-        q = q.filter(MemoryItem.scope_id.is_(None))
-
-    if search:
-        q = q.filter(MemoryItem.content.ilike(f"%{search}%"))
-
-    total = q.count()
-    items = q.order_by(MemoryItem.created_at.desc()).offset(offset).limit(limit).all()
-    return MemoryItemsListResponse(
-        items=[MemoryItemResponse.model_validate(item) for item in items],
-        total=total,
-    )
-
-
-@router.post("/items", response_model=MemoryItemResponse, status_code=201)
-def create_memory_item(body: MemoryItemCreate, db=Depends(get_db)):
-    item = MemoryItem(
-        id=_uuid_hex(),
-        scope=body.scope,
-        scope_id=body.scope_id,
-        content=body.content,
-        source_conversation_id=body.source_conversation_id,
-    )
-    # Compute embedding
+    The table may not exist on fresh installs — return an empty list in
+    that case.
+    """
     try:
-        from .embeddings import get_embedder
-        import numpy as np
-        embedder = get_embedder()
-        vec = embedder.embed(body.content)
-        item.embedding = vec.astype(np.float32).tobytes()
-    except Exception:
-        pass  # Embedding is optional
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    return MemoryItemResponse.model_validate(item)
+        rows = db.execute(
+            text(
+                "SELECT scope, scope_id, content, created_at "
+                "FROM memory_items "
+                "ORDER BY created_at ASC"
+            )
+        ).fetchall()
+    except OperationalError:
+        # Table may not exist on fresh installs
+        return []
 
-
-@router.delete("/items/{item_id}", status_code=204)
-def delete_memory_item(item_id: str, db=Depends(get_db)):
-    item = db.get(MemoryItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Memory item not found")
-    db.delete(item)
-    db.commit()
-    return Response(status_code=204)
-
-
-# ── Knowledge Entries (Tier 3) ───────────────────────────────────
-
-
-@router.get("/knowledge", response_model=KnowledgeEntriesListResponse)
-def list_knowledge_entries(
-    scope: str = "personal",
-    scope_id: str | None = None,
-    entry_type: str | None = None,
-    search: str | None = None,
-    offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
-    db=Depends(get_db),
-):
-    q = db.query(KnowledgeEntry).filter(KnowledgeEntry.scope == scope)
-    if scope_id:
-        q = q.filter(KnowledgeEntry.scope_id == scope_id)
-    else:
-        q = q.filter(KnowledgeEntry.scope_id.is_(None))
-
-    if entry_type:
-        q = q.filter(KnowledgeEntry.entry_type == entry_type)
-    if search:
-        q = q.filter(KnowledgeEntry.summary.ilike(f"%{search}%"))
-
-    total = q.count()
-    entries = (
-        q.order_by(KnowledgeEntry.occurred_at.desc()).offset(offset).limit(limit).all()
-    )
-    return KnowledgeEntriesListResponse(
-        entries=[KnowledgeEntryResponse.model_validate(e) for e in entries],
-        total=total,
-    )
-
-
-@router.post("/knowledge", response_model=KnowledgeEntryResponse, status_code=201)
-def create_knowledge_entry(body: KnowledgeEntryCreate, db=Depends(get_db)):
-    entry = KnowledgeEntry(
-        id=_uuid_hex(),
-        scope=body.scope,
-        scope_id=body.scope_id,
-        entry_type=body.entry_type,
-        occurred_at=body.occurred_at,
-        summary=body.summary,
-        content=body.content,
-        source=body.source,
-        source_conversation_id=body.source_conversation_id,
-    )
-    db.add(entry)
-    db.commit()
-    db.refresh(entry)
-    return KnowledgeEntryResponse.model_validate(entry)
-
-
-@router.delete("/knowledge/{entry_id}", status_code=204)
-def delete_knowledge_entry(entry_id: str, db=Depends(get_db)):
-    entry = db.get(KnowledgeEntry, entry_id)
-    if not entry:
-        raise HTTPException(status_code=404, detail="Knowledge entry not found")
-    db.delete(entry)
-    db.commit()
-    return Response(status_code=204)
-
-
-# ── Memory Search ───────────────────────────────────────────────
-
-
-@router.post("/search", response_model=MemorySearchResponse)
-def search_memory(body: MemorySearchRequest, db=Depends(get_db)):
-    """Search memory items using TF-IDF similarity."""
-    import numpy as np
-    from .embeddings import get_embedder
-
-    q = db.query(MemoryItem).filter(MemoryItem.scope == body.scope)
-    if body.scope_id:
-        q = q.filter(MemoryItem.scope_id == body.scope_id)
-    else:
-        q = q.filter(MemoryItem.scope_id.is_(None))
-
-    items = q.all()
-
-    if not items:
-        return MemorySearchResponse(results=[], total=0)
-
-    embedder = get_embedder()
-    query_vec = embedder.embed(body.query)
-
-    # Score items that have embeddings
-    scored = []
-    for item in items:
-        if item.embedding:
-            item_vec = np.frombuffer(item.embedding, dtype=np.float32)
-            score = float(np.dot(query_vec, item_vec))
-            scored.append((item, score))
+    items: list[LegacyMemoryItem] = []
+    for row in rows:
+        scope, scope_id, content, created_at = row
+        if not content or not content.strip():
+            continue
+        # SQLite returns created_at as an ISO string or a datetime depending on
+        # the driver settings; normalize to datetime.
+        if isinstance(created_at, str):
+            try:
+                parsed = datetime.fromisoformat(created_at)
+            except ValueError:
+                parsed = datetime.now(timezone.utc)
         else:
-            # Fallback: simple text match
-            if body.query.lower() in item.content.lower():
-                scored.append((item, 0.5))
-
-    # Sort by score descending and limit
-    scored.sort(key=lambda x: x[1], reverse=True)
-    top = scored[: body.max_results]
-
-    results = [
-        MemorySearchResult(
-            content=item.content,
-            score=round(score, 4),
-            source=item.source_conversation_id,
+            parsed = created_at or datetime.now(timezone.utc)
+        items.append(
+            LegacyMemoryItem(
+                scope=scope,
+                scope_id=scope_id,
+                content=content,
+                created_at=parsed,
+            )
         )
-        for item, score in top
-    ]
-
-    return MemorySearchResponse(results=results, total=len(scored))
-
-
-# ── System Prompt Assembly ───────────────────────────────────────
-
-
-@router.post("/context", response_model=MemoryContextResponse)
-async def get_memory_context(body: MemoryContextRequest, db=Depends(get_db)):
-    from .recall import assemble_system_prompt
-
-    return await assemble_system_prompt(
-        recent_messages=body.messages,
-        scope=body.scope,
-        scope_id=body.scope_id,
-        db=db,
-        include_expert_catalog=body.include_expert_catalog,
-        include_routine_catalog=body.include_routine_catalog,
-        model_tier=body.model_tier,
-        is_claude_code=body.is_claude_code,
-    )
-
-
-# ── Extraction ───────────────────────────────────────────────────
-
-
-@router.post("/extract", status_code=202)
-async def trigger_extraction(body: ExtractionRequest, db=Depends(get_db)):
-    from .extraction import run_extraction
-
-    # Fire-and-forget: run extraction as a background task
-    asyncio.create_task(
-        run_extraction(
-            messages=body.messages,
-            conversation_id=body.conversation_id,
-            scope=body.scope,
-            scope_id=body.scope_id,
-        )
-    )
-    return {"status": "accepted"}
+    return items

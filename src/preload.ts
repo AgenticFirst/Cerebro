@@ -7,10 +7,6 @@ import type {
   StreamRequest,
   StreamEvent,
   CerebroAPI,
-  CredentialSetRequest,
-  CredentialResult,
-  CredentialInfo,
-  DiskSpace,
   AgentRunRequest,
   RendererAgentEvent,
   ActiveRunInfo,
@@ -48,33 +44,6 @@ const api: CerebroAPI = {
     return () => {
       ipcRenderer.removeListener(channel, listener);
     };
-  },
-
-  credentials: {
-    set(request: CredentialSetRequest): Promise<CredentialResult> {
-      return ipcRenderer.invoke(IPC_CHANNELS.CREDENTIAL_SET, request);
-    },
-    has(service: string, key: string): Promise<boolean> {
-      return ipcRenderer.invoke(IPC_CHANNELS.CREDENTIAL_HAS, { service, key });
-    },
-    delete(service: string, key: string): Promise<CredentialResult> {
-      return ipcRenderer.invoke(IPC_CHANNELS.CREDENTIAL_DELETE, { service, key });
-    },
-    clear(service?: string): Promise<CredentialResult> {
-      return ipcRenderer.invoke(IPC_CHANNELS.CREDENTIAL_CLEAR, service);
-    },
-    list(service?: string): Promise<CredentialInfo[]> {
-      return ipcRenderer.invoke(IPC_CHANNELS.CREDENTIAL_LIST, service);
-    },
-  },
-
-  models: {
-    getDir(): Promise<string> {
-      return ipcRenderer.invoke(IPC_CHANNELS.MODELS_GET_DIR);
-    },
-    getDiskSpace(): Promise<DiskSpace> {
-      return ipcRenderer.invoke(IPC_CHANNELS.MODELS_DISK_SPACE);
-    },
   },
 
   agent: {
@@ -147,6 +116,18 @@ const api: CerebroAPI = {
     },
     getStatus(): Promise<ClaudeCodeInfo> {
       return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_STATUS);
+    },
+  },
+
+  installer: {
+    syncExpert(expertId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.INSTALLER_SYNC_EXPERT, expertId);
+    },
+    removeExpert(expertId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.INSTALLER_REMOVE_EXPERT, expertId);
+    },
+    syncAll() {
+      return ipcRenderer.invoke(IPC_CHANNELS.INSTALLER_SYNC_ALL);
     },
   },
 };

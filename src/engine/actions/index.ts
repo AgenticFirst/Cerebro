@@ -10,7 +10,6 @@ export type {
   ActionContext,
   ExecutionEvent,
   JSONSchema,
-  ResolvedModel,
 } from './types';
 
 // Registry
@@ -56,5 +55,4 @@ export { waitForWebhookAction } from './wait-for-webhook';
 export { runScriptAction } from './run-script';
 
 // Utilities
-export { streamModelCall, resolveModelForAction, buildLLMRequestBody } from './utils/llm-call';
 export { backendFetch } from './utils/backend-fetch';

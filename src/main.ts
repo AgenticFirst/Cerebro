@@ -1,9 +1,9 @@
 import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
 import path from 'node:path';
+import fs from 'node:fs';
 import { spawn, ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import http from 'node:http';
-import fs from 'node:fs';
 import crypto from 'node:crypto';
 import started from 'electron-squirrel-startup';
 import { IPC_CHANNELS } from './types/ipc';
@@ -13,38 +13,26 @@ import type {
   BackendStatus,
   StreamRequest,
   StreamEvent,
-  CredentialSetRequest,
-  CredentialIdentifier,
 } from './types/ipc';
-import {
-  initCredentialStore,
-  setCredential,
-  getCredential,
-  hasCredential,
-  deleteCredential,
-  clearCredentials,
-  listCredentials,
-} from './credentials';
 import { AgentRuntime } from './agents';
 import type { AgentRunRequest } from './agents';
 import { ExecutionEngine } from './engine/engine';
 import type { EngineRunRequest } from './engine/dag/types';
 import { RoutineScheduler } from './scheduler/scheduler';
 import { detectClaudeCode, getCachedClaudeCodeInfo } from './claude-code/detector';
+import {
+  installAll,
+  installExpert,
+  removeExpert,
+  writeRuntimeInfo,
+  migrateLegacyContextFiles,
+} from './claude-code/installer';
+import { setClaudeCodeCwd } from './claude-code/single-shot';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
 }
-
-// Mapping of provider service names → backend env credential keys
-const CREDENTIAL_ENV_KEYS: Record<string, string> = {
-  huggingface: 'HF_TOKEN',
-  anthropic: 'ANTHROPIC_API_KEY',
-  openai: 'OPENAI_API_KEY',
-  google: 'GOOGLE_API_KEY',
-  tavily: 'TAVILY_API_KEY',
-};
 
 // --- Python backend state ---
 let pythonProcess: ChildProcess | null = null;
@@ -134,45 +122,31 @@ function waitForHealthCheck(port: number): Promise<void> {
   });
 }
 
-async function pushCredentialToBackend(envKey: string, service: string, credKey: string): Promise<void> {
-  const value = getCredential(service, credKey);
-  await makeBackendRequest({
-    method: 'POST',
-    path: '/credentials',
-    body: { key: envKey, value },
-  });
-}
-
 async function startPythonBackend(): Promise<void> {
   const port = await getFreePort();
   const pythonPath = resolvePythonPath();
   const scriptPath = path.join(app.getAppPath(), 'backend', 'main.py');
-  const dbPath = path.join(app.getPath('userData'), 'cerebro.db');
+  const dataDir = app.getPath('userData');
+  const dbPath = path.join(dataDir, 'cerebro.db');
+  const agentMemoryDir = path.join(dataDir, 'agent-memory');
 
   backendStatus = 'starting';
   console.log(`[Cerebro] Starting Python backend on port ${port}...`);
   console.log(`[Cerebro] Python path: ${pythonPath}`);
   console.log(`[Cerebro] Database path: ${dbPath}`);
 
-  const modelsDir = path.join(app.getPath('userData'), 'models');
-  fs.mkdirSync(modelsDir, { recursive: true });
-
-  // Pass all stored provider keys as env vars at startup
-  const spawnEnv: Record<string, string> = { ...process.env } as Record<string, string>;
-  for (const [service, envKey] of Object.entries(CREDENTIAL_ENV_KEYS)) {
-    const value = getCredential(service, 'api_key');
-    if (value) {
-      spawnEnv[envKey] = value;
-    }
-  }
-
   const proc = spawn(
     pythonPath,
-    [scriptPath, '--port', String(port), '--db-path', dbPath, '--models-dir', modelsDir],
+    [
+      scriptPath,
+      '--port', String(port),
+      '--db-path', dbPath,
+      '--agent-memory-dir', agentMemoryDir,
+    ],
     {
       stdio: ['ignore', 'pipe', 'pipe'],
       cwd: path.join(app.getAppPath(), 'backend'),
-      env: spawnEnv,
+      env: process.env,
     },
   );
 
@@ -193,10 +167,25 @@ async function startPythonBackend(): Promise<void> {
 
   await waitForHealthCheck(port);
   backendStatus = 'healthy';
-  agentRuntime = new AgentRuntime(port);
+
+  agentRuntime = new AgentRuntime(port, dataDir);
   executionEngine = new ExecutionEngine(port, agentRuntime);
-  agentRuntime.setExecutionEngine(executionEngine);
   routineScheduler = new RoutineScheduler(executionEngine, port);
+
+  // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
+  // Cerebro's project-scoped subagents and skills.
+  setClaudeCodeCwd(dataDir);
+
+  // Refresh the runtime info file (skill scripts read this for the port).
+  writeRuntimeInfo(dataDir, port);
+
+  // Sync project-scoped subagents and skills under <dataDir>/.claude/.
+  // Requires Claude Code detection to have run first (handled in `app.on('ready')`).
+  installAll({ dataDir, backendPort: port })
+    .then(() => migrateLegacyContextFiles({ dataDir, backendPort: port }))
+    .catch((err) => {
+      console.error('[Cerebro] Failed to install Claude Code agents/skills:', err);
+    });
 
   // Recover stale runs from previous session
   makeBackendRequest({ method: 'POST', path: '/engine/runs/recover-stale' }).catch(console.error);
@@ -470,61 +459,6 @@ function registerIpcHandlers(): void {
     }
   });
 
-  // --- Credential storage ---
-
-  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_SET, async (_event, request: CredentialSetRequest) => {
-    const result = setCredential(request.service, request.key, request.value, request.label);
-    if (result.ok && request.key === 'api_key') {
-      const envKey = CREDENTIAL_ENV_KEYS[request.service];
-      if (envKey) {
-        pushCredentialToBackend(envKey, request.service, 'api_key').catch((err) => {
-          console.error(`[Cerebro] Failed to push ${request.service} key to backend:`, err);
-        });
-      }
-    }
-    return result;
-  });
-
-  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_HAS, async (_event, request: CredentialIdentifier) => {
-    return hasCredential(request.service, request.key);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_DELETE, async (_event, request: CredentialIdentifier) => {
-    const result = deleteCredential(request.service, request.key);
-    if (result.ok && request.key === 'api_key') {
-      const envKey = CREDENTIAL_ENV_KEYS[request.service];
-      if (envKey) {
-        pushCredentialToBackend(envKey, request.service, 'api_key').catch((err) => {
-          console.error(`[Cerebro] Failed to clear ${request.service} key on backend:`, err);
-        });
-      }
-    }
-    return result;
-  });
-
-  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_CLEAR, async (_event, service?: string) => {
-    return clearCredentials(service);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_LIST, async (_event, service?: string) => {
-    return listCredentials(service);
-  });
-
-  // --- Models ---
-
-  ipcMain.handle(IPC_CHANNELS.MODELS_GET_DIR, async () => {
-    return path.join(app.getPath('userData'), 'models');
-  });
-
-  ipcMain.handle(IPC_CHANNELS.MODELS_DISK_SPACE, async () => {
-    const modelsDir = path.join(app.getPath('userData'), 'models');
-    const stats = fs.statfsSync(modelsDir);
-    return {
-      free: stats.bfree * stats.bsize,
-      total: stats.blocks * stats.bsize,
-    };
-  });
-
   // --- Agent System ---
 
   ipcMain.handle(IPC_CHANNELS.AGENT_RUN, async (event, request: AgentRunRequest) => {
@@ -596,6 +530,40 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_STATUS, async () => {
     return getCachedClaudeCodeInfo();
   });
+
+  // --- Installer sync (called by renderer after expert CRUD) ---
+
+  ipcMain.handle(IPC_CHANNELS.INSTALLER_SYNC_EXPERT, async (_event, expertId: string) => {
+    if (backendPort === null) return { ok: false, error: 'Backend not ready' };
+    const dataDir = app.getPath('userData');
+    try {
+      const res = await makeBackendRequest<{
+        id: string; name: string; slug: string | null; description: string;
+        system_prompt: string | null; is_enabled: boolean;
+      }>({ method: 'GET', path: `/experts/${expertId}` });
+      if (!res.ok || !res.data) {
+        return { ok: false, error: 'Expert not found' };
+      }
+      installExpert({ dataDir, backendPort }, res.data);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.INSTALLER_REMOVE_EXPERT, async (_event, expertId: string) => {
+    if (backendPort === null) return { ok: false, error: 'Backend not ready' };
+    const dataDir = app.getPath('userData');
+    removeExpert({ dataDir, backendPort }, expertId);
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.INSTALLER_SYNC_ALL, async () => {
+    if (backendPort === null) return { ok: false, error: 'Backend not ready' };
+    const dataDir = app.getPath('userData');
+    await installAll({ dataDir, backendPort });
+    return { ok: true };
+  });
 }
 
 // --- Window creation ---
@@ -634,7 +602,7 @@ const createWindow = () => {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.on('ready', () => {
+app.on('ready', async () => {
   // Set Dock icon on macOS (needed during dev — packaged builds use packagerConfig.icon)
   if (process.platform === 'darwin') {
     const iconPath = path.join(app.getAppPath(), 'assets', 'icon.png');
@@ -644,18 +612,20 @@ app.on('ready', () => {
     }
   }
 
-  initCredentialStore();
   registerIpcHandlers();
   createWindow();
+
+  // Detect Claude Code BEFORE starting the backend so the binary path is
+  // cached and the installer/runtime can spawn `claude` immediately on startup.
+  try {
+    const info = await detectClaudeCode();
+    console.log(`[Cerebro] Claude Code detection: ${info.status}${info.version ? ` v${info.version}` : ''}${info.path ? ` (${info.path})` : ''}`);
+  } catch (err) {
+    console.error('[Cerebro] Claude Code detection failed:', err);
+  }
+
   startPythonBackend().catch((err) => {
     console.error('[Cerebro] Failed to start Python backend:', err);
-  });
-
-  // Detect Claude Code CLI availability
-  detectClaudeCode().then((info) => {
-    console.log(`[Cerebro] Claude Code detection: ${info.status}${info.version ? ` v${info.version}` : ''}${info.path ? ` (${info.path})` : ''}`);
-  }).catch((err) => {
-    console.error('[Cerebro] Claude Code detection failed:', err);
   });
 });
 

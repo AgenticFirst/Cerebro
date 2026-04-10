@@ -1,17 +1,17 @@
 /**
- * extract action — AI-powered structured data extraction.
+ * extract action — AI-powered structured data extraction via Claude Code.
  *
- * Uses an LLM to extract structured fields from unstructured text,
- * returning them as a typed JSON object.
+ * Builds a JSON-extraction prompt and sends it to the Cerebro main subagent
+ * as a single one-shot call.
  */
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
-import { streamModelCall, resolveModelForAction, buildLLMRequestBody } from './utils/llm-call';
+import { singleShotClaudeCode } from '../../claude-code/single-shot';
 
 interface ExtractParams {
   prompt: string;
   schema: Array<{ name: string; type: string; description: string }>;
-  model?: { source: 'local' | 'cloud'; provider?: string; modelId: string };
+  agent?: string;
 }
 
 export const extractAction: ActionDefinition = {
@@ -24,7 +24,7 @@ export const extractAction: ActionDefinition = {
     properties: {
       prompt: { type: 'string' },
       schema: { type: 'array' },
-      model: { type: 'object' },
+      agent: { type: 'string' },
     },
     required: ['prompt', 'schema'],
   },
@@ -42,44 +42,38 @@ export const extractAction: ActionDefinition = {
       throw new Error('Extract requires at least one field in the schema');
     }
 
-    const model = await resolveModelForAction(params.model, context);
-
     const fieldList = params.schema
       .map((f) => `- "${f.name}" (${f.type}): ${f.description}`)
       .join('\n');
 
-    const systemPrompt = `Extract the following fields from the input text. Return ONLY a valid JSON object (no markdown, no code fences) with these fields:
+    const fullPrompt = `Extract the following fields from the input text. Return ONLY a valid JSON object (no markdown, no code fences) with these fields:
 
 ${fieldList}
 
-If a field cannot be extracted, use null for its value.`;
+If a field cannot be extracted, use null for its value.
 
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: params.prompt },
-    ];
+---
 
-    const { path, body } = buildLLMRequestBody(messages, model, { temperature: 0.2, maxTokens: 1024 });
+Input text:
 
-    const response = await streamModelCall(
-      context.backendPort,
-      path,
-      body,
-      context.signal,
-      () => {},
-    );
+${params.prompt}`;
 
-    // Parse JSON response
+    const response = await singleShotClaudeCode({
+      agent: params.agent ?? 'cerebro',
+      prompt: fullPrompt,
+      signal: context.signal,
+      maxTurns: 3,
+    });
+
     let extracted: Record<string, unknown>;
     try {
-      const jsonMatch = response.match(/\{[\s\S]*?\}/);
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
       extracted = JSON.parse(jsonMatch?.[0] ?? response);
     } catch {
       throw new Error('Failed to parse extraction result as JSON');
     }
 
-    // Build summary from extracted fields
-    const fieldCount = Object.keys(extracted).filter(k => extracted[k] != null).length;
+    const fieldCount = Object.keys(extracted).filter((k) => extracted[k] != null).length;
 
     return {
       data: extracted,

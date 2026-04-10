@@ -37,7 +37,6 @@ import { RunScratchpad } from './scratchpad';
 import { RunEventEmitter } from './events/emitter';
 import { validateDAG } from './dag/validator';
 import { DAGExecutor, StepFailedError, StepDeniedError } from './dag/executor';
-import { resolveModel } from '../agents/model-resolver';
 import type { ExecutionEvent } from './events/types';
 import type { StepDefinition } from './dag/types';
 
@@ -209,7 +208,6 @@ export class ExecutionEngine {
         runId,
         backendPort: this.backendPort,
         signal: abortController.signal,
-        resolveModel: () => resolveModel(null, this.backendPort),
         onStepUpdate,
         onApprovalRequired,
       },

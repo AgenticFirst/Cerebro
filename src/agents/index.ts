@@ -1,20 +1,17 @@
 /**
  * Public exports for the Cerebro agent system.
+ *
+ * Post-collapse: just the runtime (which spawns Claude Code subprocesses)
+ * and a few request/event types. No model resolver, no JS tools, no
+ * stream-fn, no logger.
  */
 
 export { AgentRuntime } from './runtime';
-export { resolveModel } from './model-resolver';
-export { createExpertAgent } from './create-agent';
-export { createBackendStreamFn } from './stream-fn';
-export { createToolsForExpert } from './tools';
-export { translateEvent } from './events';
-export { createAgentLogger } from './logger';
-export type { AgentLogger } from './logger';
 export type {
-  ResolvedModel,
-  ExpertModelConfig,
-  ToolContext,
   AgentRunRequest,
   RendererAgentEvent,
   ActiveRunInfo,
+  MessageSnapshot,
+  ProposalSnapshot,
+  ExpertProposalSnapshot,
 } from './types';

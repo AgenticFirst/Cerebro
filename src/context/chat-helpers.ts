@@ -19,8 +19,6 @@ export interface ApiMessage {
   conversation_id: string;
   role: string;
   content: string;
-  model: string | null;
-  token_count: number | null;
   expert_id: string | null;
   agent_run_id: string | null;
   metadata: Record<string, unknown> | null;
@@ -95,8 +93,6 @@ export function fromApiMessage(m: ApiMessage): Message {
     conversationId: m.conversation_id,
     role: m.role as Message['role'],
     content: m.content,
-    model: m.model ?? undefined,
-    tokenCount: m.token_count ?? undefined,
     expertId: m.expert_id ?? undefined,
     agentRunId: m.agent_run_id ?? undefined,
     createdAt: new Date(m.created_at),
@@ -105,9 +101,6 @@ export function fromApiMessage(m: ApiMessage): Message {
   if (m.metadata) {
     if (m.metadata.engine_run_id) {
       msg.engineRunId = m.metadata.engine_run_id as string;
-    }
-    if (m.metadata.orchestration_run_id) {
-      msg.orchestrationRunId = m.metadata.orchestration_run_id as string;
     }
     if (m.metadata.routine_proposal) {
       msg.routineProposal = proposalFromApi(

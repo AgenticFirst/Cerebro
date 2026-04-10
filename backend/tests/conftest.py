@@ -22,12 +22,12 @@ def client(tmp_path):
     database, so tests never interfere with each other.
     """
     db_path = str(tmp_path / "test.db")
-    models_dir = str(tmp_path / "models")
+    agent_memory_dir = str(tmp_path / "agent-memory")
     import os
-    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(agent_memory_dir, exist_ok=True)
 
     app.state.db_path = db_path
-    app.state.models_dir = models_dir
+    app.state.agent_memory_dir = agent_memory_dir
     init_db(db_path)
     with TestClient(app) as c:
         yield c

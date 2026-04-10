@@ -1,38 +1,35 @@
 /**
- * model_call action — makes a single LLM call via backend SSE endpoints.
+ * model_call action — runs a single Claude Code one-shot inference.
  *
- * One-shot, stateless. No multi-turn agent loop, no tool access.
- * Useful for summarization, formatting, analysis, and other
- * deterministic LLM tasks within a routine.
+ * Stateless. The system prompt (if any) is prepended to the user prompt
+ * and the whole thing is sent to the Cerebro main subagent. Useful for
+ * routine LLM steps that don't need streaming or multi-turn behavior.
  */
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
-import { streamModelCall, resolveModelForAction, buildLLMRequestBody } from './utils/llm-call';
-
-// ── Params interface ────────────────────────────────────────────
+import { singleShotClaudeCode } from '../../claude-code/single-shot';
 
 interface ModelCallParams {
   prompt: string;
   systemPrompt?: string;
-  model?: { source: 'local' | 'cloud'; provider?: string; modelId: string };
-  temperature?: number;
-  maxTokens?: number;
+  /** Optional override of which subagent to invoke. Defaults to "cerebro". */
+  agent?: string;
+  /** Max conversation turns. Defaults to 5. */
+  maxTurns?: number;
 }
-
-// ── Action definition ───────────────────────────────────────────
 
 export const modelCallAction: ActionDefinition = {
   type: 'model_call',
   name: 'Model Call',
-  description: 'Makes a single LLM call via the backend streaming endpoints.',
+  description: 'Runs a single one-shot LLM call via Claude Code.',
 
   inputSchema: {
     type: 'object',
     properties: {
       prompt: { type: 'string', description: 'The user message / instruction' },
-      systemPrompt: { type: 'string', description: 'Optional system prompt' },
-      temperature: { type: 'number', description: 'Sampling temperature (default 0.7)' },
-      maxTokens: { type: 'number', description: 'Max tokens (default 4096)' },
+      systemPrompt: { type: 'string', description: 'Optional system prompt prepended to the user message' },
+      agent: { type: 'string', description: 'Optional subagent name (defaults to "cerebro")' },
+      maxTurns: { type: 'number', description: 'Max turns (default 5)' },
     },
     required: ['prompt'],
   },
@@ -41,7 +38,6 @@ export const modelCallAction: ActionDefinition = {
     type: 'object',
     properties: {
       response: { type: 'string' },
-      tokenCount: { type: 'number' },
     },
     required: ['response'],
   },
@@ -50,30 +46,18 @@ export const modelCallAction: ActionDefinition = {
     const params = input.params as unknown as ModelCallParams;
     const { context } = input;
 
-    // Resolve model — override from params or global
-    const model = await resolveModelForAction(params.model, context);
+    const fullPrompt = params.systemPrompt
+      ? `${params.systemPrompt}\n\n---\n\n${params.prompt}`
+      : params.prompt;
 
-    // Build messages
-    const messages: Array<Record<string, unknown>> = [];
-    if (params.systemPrompt) {
-      messages.push({ role: 'system', content: params.systemPrompt });
-    }
-    messages.push({ role: 'user', content: params.prompt });
-
-    // Build request
-    const { path, body } = buildLLMRequestBody(messages, model, {
-      temperature: params.temperature,
-      maxTokens: params.maxTokens,
+    const response = await singleShotClaudeCode({
+      agent: params.agent ?? 'cerebro',
+      prompt: fullPrompt,
+      signal: context.signal,
+      maxTurns: params.maxTurns,
     });
 
-    // Stream from backend, collect response
-    const response = await streamModelCall(
-      context.backendPort,
-      path,
-      body,
-      context.signal,
-      (chunk: string) => context.log(chunk),
-    );
+    context.log(response);
 
     const summary = response.length > 80
       ? response.slice(0, 77) + '...'

@@ -7,40 +7,13 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import type {
-  CloudProvider,
-  SelectedModel,
-  ConnectionStatus,
-  ProviderConnectionState,
-  ClaudeCodeInfo,
-} from '../types/providers';
-import { loadSetting, saveSetting } from '../lib/settings';
-
-// No models enabled by default — user must add an API key first
-const DEFAULT_ENABLED_MODELS: string[] = [];
-
-export interface CustomModel {
-  provider: CloudProvider;
-  id: string;
-  name: string;
-}
+import type { ClaudeCodeInfo } from '../types/providers';
 
 interface ProviderState {
-  selectedModel: SelectedModel | null;
-  enabledModels: Set<string>;
-  connectionStatus: Record<string, ProviderConnectionState>;
-  customModels: CustomModel[];
   claudeCodeInfo: ClaudeCodeInfo;
 }
 
 interface ProviderActions {
-  selectModel: (model: SelectedModel | null) => void;
-  toggleModel: (modelId: string, enabled: boolean) => void;
-  addCustomModel: (provider: CloudProvider, modelId: string) => void;
-  removeCustomModel: (modelId: string) => void;
-  verifyConnection: (provider: CloudProvider) => Promise<void>;
-  refreshConnectionStatus: () => Promise<void>;
-  setProviderStatus: (provider: string, state: ProviderConnectionState) => void;
   refreshClaudeCodeStatus: () => Promise<void>;
 }
 
@@ -49,18 +22,6 @@ type ProviderContextValue = ProviderState & ProviderActions;
 const ProviderContext = createContext<ProviderContextValue | null>(null);
 
 export function ProviderProvider({ children }: { children: ReactNode }) {
-  const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(null);
-  const [enabledModels, setEnabledModels] = useState<Set<string>>(
-    new Set(DEFAULT_ENABLED_MODELS),
-  );
-  const [connectionStatus, setConnectionStatus] = useState<
-    Record<string, ProviderConnectionState>
-  >({
-    anthropic: { status: 'not_configured' },
-    openai: { status: 'not_configured' },
-    google: { status: 'not_configured' },
-  });
-  const [customModels, setCustomModels] = useState<CustomModel[]>([]);
   const [claudeCodeInfo, setClaudeCodeInfo] = useState<ClaudeCodeInfo>({ status: 'unknown' });
   const mountedRef = useRef(true);
 
@@ -71,86 +32,6 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Fetch provider key status from backend
-  const refreshConnectionStatus = useCallback(async () => {
-    try {
-      const res = await window.cerebro.invoke<Record<string, { has_key: boolean }>>({
-        method: 'GET',
-        path: '/cloud/status',
-      });
-      if (res.ok && mountedRef.current) {
-        setConnectionStatus((prev) => {
-          const next = { ...prev };
-          for (const [provider, info] of Object.entries(res.data)) {
-            const current = prev[provider];
-            // Only update to key_saved/not_configured if we're not in a richer state
-            if (!current || current.status === 'not_configured' || current.status === 'key_saved') {
-              next[provider] = {
-                status: info.has_key ? 'key_saved' : 'not_configured',
-              };
-            } else if (!info.has_key) {
-              // Key was removed — reset
-              next[provider] = { status: 'not_configured' };
-            }
-          }
-          return next;
-        });
-      }
-    } catch {
-      // Backend not ready
-    }
-  }, []);
-
-  // Verify a provider's connection
-  const verifyConnection = useCallback(
-    async (provider: CloudProvider) => {
-      setConnectionStatus((prev) => ({
-        ...prev,
-        [provider]: { status: 'verifying' as ConnectionStatus },
-      }));
-
-      try {
-        const res = await window.cerebro.invoke<{
-          ok: boolean;
-          provider: string;
-          error: string | null;
-        }>({
-          method: 'POST',
-          path: '/cloud/verify',
-          body: { provider },
-        });
-
-        if (!mountedRef.current) return;
-
-        if (res.ok && res.data.ok) {
-          setConnectionStatus((prev) => ({
-            ...prev,
-            [provider]: { status: 'connected' as ConnectionStatus },
-          }));
-        } else {
-          setConnectionStatus((prev) => ({
-            ...prev,
-            [provider]: {
-              status: 'error' as ConnectionStatus,
-              error: res.data.error || 'Verification failed',
-            },
-          }));
-        }
-      } catch (e) {
-        if (!mountedRef.current) return;
-        setConnectionStatus((prev) => ({
-          ...prev,
-          [provider]: {
-            status: 'error' as ConnectionStatus,
-            error: e instanceof Error ? e.message : 'Verification failed',
-          },
-        }));
-      }
-    },
-    [],
-  );
-
-  // Detect/refresh Claude Code availability
   const refreshClaudeCodeStatus = useCallback(async () => {
     try {
       const info = await window.cerebro.claudeCode.detect();
@@ -164,111 +45,11 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Directly set a provider's connection status (used when key is removed/saved)
-  const setProviderStatus = useCallback(
-    (provider: string, state: ProviderConnectionState) => {
-      setConnectionStatus((prev) => ({ ...prev, [provider]: state }));
-      // If status is being reset to not_configured, clear selection for that provider
-      if (state.status === 'not_configured') {
-        setSelectedModel((prev) => {
-          if (prev && prev.source === 'cloud' && prev.provider === provider) {
-            window.cerebro
-              .invoke({ method: 'DELETE', path: '/settings/selected_model' })
-              .catch(console.error);
-            return null;
-          }
-          return prev;
-        });
-      }
-    },
-    [],
-  );
-
-  // Select model and persist
-  const selectModel = useCallback((model: SelectedModel | null) => {
-    setSelectedModel(model);
-    if (model) {
-      saveSetting('selected_model', model);
-    } else {
-      window.cerebro
-        .invoke({ method: 'DELETE', path: '/settings/selected_model' })
-        .catch(console.error);
-    }
-  }, []);
-
-  // Toggle cloud model enabled/disabled and persist
-  const toggleModel = useCallback(
-    (modelId: string, enabled: boolean) => {
-      setEnabledModels((prev) => {
-        const next = new Set(prev);
-        if (enabled) {
-          next.add(modelId);
-        } else {
-          next.delete(modelId);
-        }
-        saveSetting('enabled_models', Array.from(next));
-        return next;
-      });
-    },
-    [],
-  );
-
-  // Add a custom model ID for a provider
-  const addCustomModel = useCallback(
-    (provider: CloudProvider, modelId: string) => {
-      const trimmed = modelId.trim();
-      if (!trimmed) return;
-      setCustomModels((prev) => {
-        if (prev.some((m) => m.id === trimmed)) return prev;
-        const next = [...prev, { provider, id: trimmed, name: trimmed }];
-        saveSetting('custom_models', next);
-        return next;
-      });
-      // Auto-enable the custom model
-      setEnabledModels((prev) => {
-        const next = new Set(prev);
-        next.add(trimmed);
-        saveSetting('enabled_models', Array.from(next));
-        return next;
-      });
-    },
-    [],
-  );
-
-  // Remove a custom model
-  const removeCustomModel = useCallback(
-    (modelId: string) => {
-      setCustomModels((prev) => {
-        const next = prev.filter((m) => m.id !== modelId);
-        saveSetting('custom_models', next);
-        return next;
-      });
-      setEnabledModels((prev) => {
-        const next = new Set(prev);
-        next.delete(modelId);
-        saveSetting('enabled_models', Array.from(next));
-        return next;
-      });
-      // Clear selection if the removed model was selected
-      setSelectedModel((prev) => {
-        if (prev && prev.modelId === modelId) {
-          window.cerebro
-            .invoke({ method: 'DELETE', path: '/settings/selected_model' })
-            .catch(console.error);
-          return null;
-        }
-        return prev;
-      });
-    },
-    [],
-  );
-
-  // Load persisted settings on startup
+  // Detect Claude Code on startup (after backend is healthy so we don't race the spawn)
   useEffect(() => {
     let cancelled = false;
 
     async function init() {
-      // Wait for backend
       const maxRetries = 15;
       for (let i = 0; i < maxRetries; i++) {
         try {
@@ -283,46 +64,11 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
 
       if (cancelled) return;
 
-      // Load settings in parallel
-      const [savedModel, savedEnabled, savedCustom] = await Promise.all([
-        loadSetting<SelectedModel>('selected_model'),
-        loadSetting<string[]>('enabled_models'),
-        loadSetting<CustomModel[]>('custom_models'),
-      ]);
-
-      if (cancelled) return;
-
-      if (savedModel) {
-        setSelectedModel(savedModel);
-      }
-      if (savedEnabled) {
-        setEnabledModels(new Set(savedEnabled));
-      }
-      if (savedCustom) {
-        setCustomModels(savedCustom);
-      }
-
-      // Load connection status
-      await refreshConnectionStatus();
-
-      // Detect Claude Code
       try {
-        const ccInfo = await window.cerebro.claudeCode.detect();
-        if (cancelled) return;
-        setClaudeCodeInfo(ccInfo);
-
-        // Auto-select Claude Code if available and no model is explicitly saved
-        if (ccInfo.status === 'available' && !savedModel) {
-          const ccModel: SelectedModel = {
-            source: 'claude-code',
-            modelId: 'claude-code',
-            displayName: 'Claude Code',
-          };
-          setSelectedModel(ccModel);
-          saveSetting('selected_model', ccModel);
-        }
+        const info = await window.cerebro.claudeCode.getStatus();
+        if (!cancelled) setClaudeCodeInfo(info);
       } catch {
-        // Claude Code detection is non-critical
+        if (!cancelled) setClaudeCodeInfo({ status: 'error', error: 'Detection failed' });
       }
     }
 
@@ -330,23 +76,12 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [refreshConnectionStatus]);
+  }, []);
 
   return (
     <ProviderContext.Provider
       value={{
-        selectedModel,
-        enabledModels,
-        connectionStatus,
-        customModels,
         claudeCodeInfo,
-        selectModel,
-        toggleModel,
-        addCustomModel,
-        removeCustomModel,
-        verifyConnection,
-        refreshConnectionStatus,
-        setProviderStatus,
         refreshClaudeCodeStatus,
       }}
     >
