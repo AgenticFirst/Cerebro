@@ -40,17 +40,6 @@ _AUDIO_TOKEN_BASE   = 128266   # first audio-code token
 _SNAC_CODES_PER_FRAME = 7
 _POSITION_OFFSETS = [0, 4096, 8192, 12288, 16384, 20480, 24576]
 
-# Progressive re-decode streaming parameters. Each SNAC frame ≈ 85ms (2048
-# samples at 24kHz). We re-decode audio_codes[0:n] from frame 0 every time
-# (no chunked boundary artifacts) and emit only the new samples since the
-# last emission. The first decode happens at 6 frames so the user hears
-# something within ~600ms. Subsequent decodes fire every 6 new frames.
-# SAFETY_FRAMES holds back the last 2 frames to let them benefit from more
-# right context on the next decode — reduces interior drift at the joins.
-_FIRST_DECODE_FRAMES = 6
-_DECODE_INTERVAL_FRAMES = 6
-_SAFETY_FRAMES = 2
-
 
 class TTSEngine:
     def __init__(self) -> None:
@@ -202,34 +191,10 @@ class TTSEngine:
         audio_codes: list[int] = []
         eos_token = self._model.token_eos()
 
-        # Streaming state: we re-decode from frame 0 on each pass and emit
-        # only the new samples since the last emission. Re-decoding (rather
-        # than decoding disjoint chunks) keeps the emitted samples stable
-        # against boundary artifacts — SNAC's convolutional decoder has a
-        # receptive field that extends across chunk boundaries, so disjoint
-        # chunk decodes produced severe noise (the old bug we just fixed).
-        last_emit_sample: int = 0
-        decoded_at_frames: int = 0
-        chunks_emitted: int = 0
-
         logger.info(
             "TTS generating: %d prompt tokens, speaker=%s, text=%s",
             len(prompt_tokens), speaker, repr(text[:100]),
         )
-
-        def emit_from_decode(n_frames: int, safe_end_sample: int) -> None:
-            nonlocal last_emit_sample, chunks_emitted
-            if safe_end_sample <= last_emit_sample:
-                return
-            pcm = self._decode_all(audio_codes[: n_frames * _SNAC_CODES_PER_FRAME])
-            if not pcm:
-                return
-            chunk = pcm[last_emit_sample * 2 : safe_end_sample * 2]
-            if not chunk:
-                return
-            loop.call_soon_threadsafe(queue.put_nowait, chunk)
-            last_emit_sample = safe_end_sample
-            chunks_emitted += 1
 
         for token_id in self._model.generate(
             prompt_tokens,
@@ -262,41 +227,27 @@ class TTSEngine:
                     continue
 
                 audio_codes.append(snac_code)
-                n_frames = len(audio_codes) // _SNAC_CODES_PER_FRAME
-
-                new_since_last = n_frames - decoded_at_frames
-                first_decode = decoded_at_frames == 0 and n_frames >= _FIRST_DECODE_FRAMES
-                interval_hit = decoded_at_frames > 0 and new_since_last >= _DECODE_INTERVAL_FRAMES
-
-                if first_decode or interval_hit:
-                    # First decode: emit all frames (decode(6) is stable
-                    # within ~1 amplitude diff vs a full-sentence decode —
-                    # verified empirically, see receptive-field tests).
-                    # Subsequent decodes: hold back SAFETY_FRAMES to reduce
-                    # interior-drift audibility at the join.
-                    if decoded_at_frames == 0:
-                        safe_end = n_frames * 2048
-                    else:
-                        safe_end = max(0, n_frames - _SAFETY_FRAMES) * 2048
-                    emit_from_decode(n_frames, safe_end)
-                    decoded_at_frames = n_frames
 
             elif len(audio_codes) > 0:
                 break
 
         t_gen = time.monotonic() - t0
 
-        # Final emit: re-decode everything and emit any trailing samples
-        # that weren't covered by intermediate emits (including the last
-        # SAFETY_FRAMES that were held back).
+        # Single full decode per sentence: no boundary artifacts, guaranteed
+        # clean audio. No inline SNAC decodes during llama.cpp generation —
+        # mixing torch-MPS decodes into the generation loop was corrupting
+        # Orpheus generation (wrong content, cutoffs). Decode runs only
+        # AFTER generation is complete.
         n_frames = len(audio_codes) // _SNAC_CODES_PER_FRAME
         if n_frames > 0:
             t_dec0 = time.monotonic()
-            emit_from_decode(n_frames, n_frames * 2048)
+            pcm = self._decode_all(audio_codes[: n_frames * _SNAC_CODES_PER_FRAME])
             t_dec = time.monotonic() - t_dec0
+            if pcm:
+                loop.call_soon_threadsafe(queue.put_nowait, pcm)
             logger.info(
-                "TTS complete: gen=%.2fs final_dec=%.2fs  %d tokens  %d frames  %d chunks  text=%s",
-                t_gen, t_dec, total_tokens, n_frames, chunks_emitted, repr(text[:100]),
+                "TTS complete: gen=%.2fs dec=%.2fs  %d tokens  %d frames  text=%s",
+                t_gen, t_dec, total_tokens, n_frames, repr(text[:100]),
             )
         else:
             logger.error("TTS produced 0 audio codes (prompt head: %s)", prompt_tokens[:10])
@@ -340,13 +291,7 @@ class TTSEngine:
                 audio = self._snac_model.decode([t0, t1, t2])
                 pcm = (audio.squeeze() * 32767).clamp(-32768, 32767).to(torch.int16)
 
-            result = pcm.cpu().numpy().tobytes()
-
-            # Release MPS buffers so they don't accumulate across calls
-            if device == "mps" and hasattr(torch.mps, "empty_cache"):
-                torch.mps.empty_cache()
-
-            return result
+            return pcm.cpu().numpy().tobytes()
         except Exception:
             logger.exception("SNAC decode failed for %d frames", n_frames)
             return None
