@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Copy, Check, Trash2, UserPlus, XCircle, Users } from 'lucide-react';
+import { X, Copy, Check, Trash2, UserPlus, XCircle, Users, Phone } from 'lucide-react';
 import clsx from 'clsx';
+import { useVoice } from '../../../context/VoiceContext';
 import type { Expert } from '../../../context/ExpertContext';
 import ExpertMemoryTab from '../../experts/ExpertMemoryTab';
 import ExpertSkillsSection from './ExpertSkillsSection';
@@ -78,6 +79,7 @@ export default function ExpertDetailPanel({
   activeCount,
   pinnedCount,
 }: ExpertDetailPanelProps) {
+  const { startCall } = useVoice();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [domain, setDomain] = useState('');
@@ -137,9 +139,20 @@ export default function ExpertDetailPanel({
     <div className="absolute top-0 right-0 bottom-0 w-[380px] bg-bg-surface border-l border-border-subtle animate-slide-in-right z-10 flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle flex-shrink-0">
-        <h3 className="text-sm font-semibold text-text-primary tracking-wide">
-          Configuration
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-text-primary tracking-wide">
+            Configuration
+          </h3>
+          {!isCerebro && expert?.type === 'expert' && expert.isEnabled && (
+            <button
+              onClick={() => expert && startCall(expert.id)}
+              className="p-1.5 rounded-lg text-accent hover:bg-accent/10 transition-colors"
+              title="Call expert"
+            >
+              <Phone size={14} />
+            </button>
+          )}
+        </div>
         <button
           onClick={onClose}
           className="p-1 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"

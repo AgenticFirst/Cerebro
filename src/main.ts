@@ -28,6 +28,10 @@ import {
   migrateLegacyContextFiles,
 } from './claude-code/installer';
 import { setClaudeCodeCwd } from './claude-code/single-shot';
+import { VoiceSessionManager } from './voice/session';
+
+// Voice session manager (initialized after backend is healthy)
+let voiceSession: VoiceSessionManager | null = null;
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -129,6 +133,10 @@ async function startPythonBackend(): Promise<void> {
   const dataDir = app.getPath('userData');
   const dbPath = path.join(dataDir, 'cerebro.db');
   const agentMemoryDir = path.join(dataDir, 'agent-memory');
+  // Voice models are bundled with the app (extraResource in forge config)
+  const voiceModelsDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'voice-models')
+    : path.join(app.getAppPath(), 'voice-models');
 
   backendStatus = 'starting';
   console.log(`[Cerebro] Starting Python backend on port ${port}...`);
@@ -142,6 +150,7 @@ async function startPythonBackend(): Promise<void> {
       '--port', String(port),
       '--db-path', dbPath,
       '--agent-memory-dir', agentMemoryDir,
+      '--voice-models-dir', voiceModelsDir,
     ],
     {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -171,6 +180,7 @@ async function startPythonBackend(): Promise<void> {
   agentRuntime = new AgentRuntime(port, dataDir);
   executionEngine = new ExecutionEngine(port, agentRuntime);
   routineScheduler = new RoutineScheduler(executionEngine, port);
+  voiceSession = new VoiceSessionManager(port, dataDir);
 
   // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
   // Cerebro's project-scoped subagents and skills.
@@ -194,6 +204,7 @@ async function startPythonBackend(): Promise<void> {
   const windows = BrowserWindow.getAllWindows();
   if (windows.length > 0) {
     routineScheduler.setWebContents(windows[0].webContents);
+    voiceSession.setWebContents(windows[0].webContents);
   }
 
   // Initial scheduler sync + start periodic re-sync
@@ -564,6 +575,42 @@ function registerIpcHandlers(): void {
     await installAll({ dataDir, backendPort });
     return { ok: true };
   });
+
+  // --- Voice ---
+
+  ipcMain.handle(
+    IPC_CHANNELS.VOICE_START,
+    async (_event, expertId: string, conversationId: string) => {
+      if (!voiceSession) throw new Error('Voice session not initialized');
+      return voiceSession.start(expertId, conversationId);
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.VOICE_STOP, async (_event, sessionId: string) => {
+    if (!voiceSession) return;
+    await voiceSession.stop();
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.VOICE_AUDIO_CHUNK,
+    async (_event, sessionId: string, chunk: ArrayBuffer) => {
+      if (!voiceSession) return;
+      await voiceSession.processAudioChunk(sessionId, Buffer.from(chunk));
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.VOICE_DONE_SPEAKING,
+    async (_event, sessionId: string) => {
+      if (!voiceSession) return;
+      await voiceSession.doneSpeaking(sessionId);
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.VOICE_MODEL_STATUS, async () => {
+    if (!voiceSession) return null;
+    return voiceSession.getModelStatus();
+  });
 }
 
 // --- Window creation ---
@@ -595,9 +642,12 @@ const createWindow = () => {
     mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
   }
 
-  // Set webContents on scheduler if available
+  // Set webContents on scheduler and voice session if available
   if (routineScheduler) {
     routineScheduler.setWebContents(mainWindow.webContents);
+  }
+  if (voiceSession) {
+    voiceSession.setWebContents(mainWindow.webContents);
   }
 
   // Open the DevTools.

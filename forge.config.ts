@@ -13,6 +13,9 @@ const config: ForgeConfig = {
     asar: true,
     name: 'Cerebro',
     icon: './assets/icon',
+    extraResource: [
+      './voice-models',
+    ],
   },
   rebuildConfig: {},
   makers: [

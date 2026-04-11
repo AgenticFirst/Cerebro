@@ -15,6 +15,7 @@ import type {
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
+import type { VoiceSessionEvent } from './voice/types';
 
 const api: CerebroAPI = {
   invoke<T = unknown>(request: BackendRequest): Promise<BackendResponse<T>> {
@@ -133,6 +134,34 @@ const api: CerebroAPI = {
       const listener = () => callback();
       ipcRenderer.on(IPC_CHANNELS.EXPERTS_CHANGED, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.EXPERTS_CHANGED, listener);
+    },
+  },
+
+  voice: {
+    start(expertId: string, conversationId: string): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.VOICE_START, expertId, conversationId);
+    },
+    stop(sessionId: string): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.VOICE_STOP, sessionId);
+    },
+    sendAudioChunk(sessionId: string, chunk: ArrayBuffer): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.VOICE_AUDIO_CHUNK, sessionId, chunk);
+    },
+    doneSpeaking(sessionId: string): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.VOICE_DONE_SPEAKING, sessionId);
+    },
+    getModelStatus(): Promise<unknown> {
+      return ipcRenderer.invoke(IPC_CHANNELS.VOICE_MODEL_STATUS);
+    },
+    onEvent(sessionId: string, callback: (event: VoiceSessionEvent) => void): () => void {
+      const channel = IPC_CHANNELS.voiceEvent(sessionId);
+      const listener = (_event: Electron.IpcRendererEvent, data: VoiceSessionEvent) => {
+        callback(data);
+      };
+      ipcRenderer.on(channel, listener);
+      return () => {
+        ipcRenderer.removeListener(channel, listener);
+      };
     },
   },
 };

@@ -7,6 +7,7 @@ import { SkillProvider } from './context/SkillContext';
 import { RoutineProvider } from './context/RoutineContext';
 import { ApprovalProvider } from './context/ApprovalContext';
 import { ToastProvider } from './context/ToastContext';
+import { VoiceProvider } from './context/VoiceContext';
 import AppLayout from './components/layout/AppLayout';
 import ToastContainer from './components/ui/Toast';
 
@@ -20,7 +21,9 @@ function App() {
             <RoutineProvider>
               <ApprovalProvider>
                 <ChatProvider>
-                  <AppLayout />
+                  <VoiceProvider>
+                    <AppLayout />
+                  </VoiceProvider>
                 </ChatProvider>
               </ApprovalProvider>
             </RoutineProvider>

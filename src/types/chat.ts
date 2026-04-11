@@ -10,7 +10,8 @@ export type Screen =
   | 'approvals'
   | 'integrations'
   | 'marketplace'
-  | 'settings';
+  | 'settings'
+  | 'call';
 
 export type ToolCallStatus = 'pending' | 'running' | 'success' | 'error';
 

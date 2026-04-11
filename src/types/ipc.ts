@@ -1,5 +1,6 @@
 import type { ExecutionEvent } from '../engine/events/types';
 import type { ClaudeCodeInfo } from './providers';
+import type { VoiceSessionEvent } from '../voice/types';
 
 // --- IPC Channel Constants ---
 
@@ -33,6 +34,14 @@ export const IPC_CHANNELS = {
   // Claude Code
   CLAUDE_CODE_DETECT: 'claude-code:detect',
   CLAUDE_CODE_STATUS: 'claude-code:status',
+
+  // Voice
+  VOICE_START: 'voice:start',
+  VOICE_STOP: 'voice:stop',
+  VOICE_AUDIO_CHUNK: 'voice:audio-chunk',
+  VOICE_DONE_SPEAKING: 'voice:done-speaking',
+  VOICE_MODEL_STATUS: 'voice:model-status',
+  voiceEvent: (sessionId: string) => `voice:event:${sessionId}`,
 
   // Installer (Cerebro project-scoped subagents/skills under <userData>/.claude/)
   INSTALLER_SYNC_EXPERT: 'installer:sync-expert',
@@ -182,6 +191,17 @@ export interface InstallerAPI {
   onExpertsChanged(callback: () => void): () => void;
 }
 
+// --- Voice ---
+
+export interface VoiceAPI {
+  start(expertId: string, conversationId: string): Promise<string>;
+  stop(sessionId: string): Promise<void>;
+  sendAudioChunk(sessionId: string, chunk: ArrayBuffer): Promise<void>;
+  doneSpeaking(sessionId: string): Promise<void>;
+  getModelStatus(): Promise<unknown>;
+  onEvent(sessionId: string, callback: (event: VoiceSessionEvent) => void): () => void;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -195,4 +215,5 @@ export interface CerebroAPI {
   scheduler: SchedulerAPI;
   claudeCode: ClaudeCodeAPI;
   installer: InstallerAPI;
+  voice: VoiceAPI;
 }

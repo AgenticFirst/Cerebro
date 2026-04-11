@@ -113,3 +113,6 @@ backend/venv/
 *.db
 *.db-journal
 *.db-wal
+
+# Voice models (downloaded for dev, bundled in production)
+voice-models/

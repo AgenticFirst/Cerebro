@@ -24,6 +24,7 @@ from routines.router import router as routines_router
 from webhooks.router import router as webhooks_router
 from scripts.router import router as scripts_router
 from skills.router import skills_router, expert_skills_router
+from voice.router import router as voice_router, init_voice_singletons
 
 
 @asynccontextmanager
@@ -37,6 +38,12 @@ async def lifespan(application: FastAPI):
     if agent_memory_dir:
         os.makedirs(agent_memory_dir, exist_ok=True)
         print(f"[Cerebro] Agent memory directory: {agent_memory_dir}")
+
+    # Voice models (bundled with the app)
+    voice_models_dir = getattr(application.state, "voice_models_dir", None)
+    if voice_models_dir:
+        init_voice_singletons()
+        print(f"[Cerebro] Voice models directory: {voice_models_dir}")
 
     # Seed builtin skills
     from database import SessionLocal
@@ -63,6 +70,7 @@ app.include_router(webhooks_router, prefix="/webhooks")
 app.include_router(scripts_router, prefix="/scripts")
 app.include_router(skills_router)
 app.include_router(expert_skills_router)
+app.include_router(voice_router, prefix="/voice")
 
 
 @app.get("/health")
@@ -249,9 +257,15 @@ if __name__ == "__main__":
         type=str,
         default=os.path.join(".", "agent-memory"),
     )
+    parser.add_argument(
+        "--voice-models-dir",
+        type=str,
+        default=os.path.join(".", "voice-models"),
+    )
     args = parser.parse_args()
 
     app.state.db_path = os.path.abspath(args.db_path)
     app.state.agent_memory_dir = os.path.abspath(args.agent_memory_dir)
+    app.state.voice_models_dir = os.path.abspath(args.voice_models_dir)
 
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")

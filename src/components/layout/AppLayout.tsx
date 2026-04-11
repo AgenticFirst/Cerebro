@@ -10,6 +10,7 @@ import ActivityScreen from '../screens/ActivityScreen';
 import ApprovalsScreen from '../screens/ApprovalsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SkillsLibraryScreen from '../screens/SkillsLibraryScreen';
+import CallScreen from '../screens/CallScreen';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
 
@@ -58,6 +59,9 @@ export default function AppLayout() {
     }
     if (activeScreen === 'marketplace') {
       return <SkillsLibraryScreen />;
+    }
+    if (activeScreen === 'call') {
+      return <CallScreen />;
     }
     return <PlaceholderScreen screen={activeScreen} />;
   };

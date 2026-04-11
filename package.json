@@ -13,6 +13,7 @@
     "lint": "eslint --ext .ts,.tsx .",
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"*.{json,js,ts}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"*.{json,js,ts}\"",
+    "postinstall": "bash scripts/setup-voice.sh",
     "test": "npm run test:frontend && npm run test:backend",
     "test:frontend": "vitest run",
     "test:backend": "cd backend && venv/bin/python -m pytest -v"
