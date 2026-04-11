@@ -2,9 +2,8 @@ fastapi==0.115.12
 uvicorn==0.34.2
 sqlalchemy==2.0.41
 psutil>=6.0
-llama-cpp-python>=0.3.0
 faster-whisper>=1.1.0
-snac
-torch
+kokoro-onnx>=0.4.7
+soundfile>=0.13
 pytest>=8.0
 httpx>=0.27

@@ -124,7 +124,14 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
               }
               break;
             case 'transcription':
-              setCurrentResponse('');
+              // Only clear the coach's response when the user FINALIZES a new
+              // turn (releases PTT). Partial transcriptions fire repeatedly
+              // during PTT hold — and also when the mic picks up TTS audio
+              // playback after state transitioned to 'listening'. Clearing
+              // on partials was making the subtitles vanish mid-speech.
+              if (event.isFinal) {
+                setCurrentResponse('');
+              }
               setCurrentTranscription(event.text);
               break;
             case 'response_text':

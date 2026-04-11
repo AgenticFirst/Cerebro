@@ -28,14 +28,14 @@ VOICE_CATALOG: list[dict[str, Any]] = [
         "auto_download": True,
     },
     {
-        "id": "orpheus-3b-0.1-ft",
-        "name": "Orpheus TTS 3B",
+        "id": "kokoro-82m",
+        "name": "Kokoro 82M",
         "type": "tts",
-        "description": "Canopy Labs Orpheus — natural speech synthesis with 8 voices and emotion control",
-        "size_bytes": 2_200_000_000,
-        # Single GGUF file inside a directory
-        "dir_name": "orpheus-3b-0.1-ft",
-        "check_file": "orpheus-3b-0.1-ft-q4_k_m.gguf",
+        "description": "Kokoro StyleTTS2 — 54 voices, 24kHz, non-autoregressive (deterministic)",
+        "size_bytes": 340_000_000,
+        # Two files in a directory: the ONNX graph and the voices binary.
+        "dir_name": "kokoro",
+        "check_file": "kokoro-v1.0.onnx",
     },
 ]
 
@@ -67,11 +67,10 @@ def get_model_path(voice_models_dir: str, model_id: str) -> str | None:
     if not os.path.exists(check):
         return None
 
-    # STT returns the directory, TTS returns the GGUF file path
-    if entry["type"] == "stt":
-        return model_dir
-    else:
-        return os.path.join(model_dir, check_file)
+    # Both STT and TTS engines load from a directory containing their model
+    # files (faster-whisper uses a cache dir, Kokoro uses a dir with the
+    # onnx graph + voices binary).
+    return model_dir
 
 
 def get_catalog(voice_models_dir: str) -> list[VoiceModelInfo]:

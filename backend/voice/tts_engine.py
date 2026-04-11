@@ -1,13 +1,13 @@
-"""Text-to-speech engine wrapping Orpheus TTS via llama-cpp-python.
+"""Text-to-speech engine using Kokoro-82M via kokoro-onnx.
 
-Orpheus uses a LLaMA backbone to generate discrete audio tokens that are
-decoded to PCM via the SNAC codec.  This engine handles the full pipeline:
-text → token IDs → llama.cpp inference → SNAC decode → PCM int16 chunks.
+Kokoro is a non-autoregressive StyleTTS2-based TTS model: text in,
+mel-spectrogram out in a single forward pass. Deterministic output,
+no sampling loop, no runaway-generation failure modes.
 
-Reference implementations used to validate this implementation:
-- canopyai/Orpheus-TTS (canonical decoder)
-- Zuellni/Orpheus-GGUF (llama-cpp token-ID approach)
-- freddyaboulton/orpheus-cpp
+- ~310 MB ONNX model + 27 MB voices binary
+- 54 voices, 24 kHz mono output
+- ~1-2 s per sentence on CPU
+- Apache 2.0 license
 """
 
 from __future__ import annotations
@@ -19,37 +19,39 @@ import time
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from .schemas import EngineState, SPEAKERS
 
 if TYPE_CHECKING:
-    from llama_cpp import Llama
+    from kokoro_onnx import Kokoro
 
 logger = logging.getLogger("voice.tts")
 
-# Orpheus special token IDs (verified against orpheus-3b-0.1-ft-q4_k_m.gguf).
-# Prompt format: <|audio|>{voice}: {text}<|eot_id|><custom_token_4>
-_AUDIO_START_MARKER = 156939   # <|audio|>
-_EOT                = 128009   # <|eot_id|>
-_END_OF_HUMAN       = 128260   # <custom_token_4>
-_END_OF_SPEECH      = 128258   # end-of-audio signal
-_AUDIO_TOKEN_BASE   = 128266   # first audio-code token
+# Map Cerebro's external speaker names to Kokoro voice IDs.
+# af_* = American Female, am_* = American Male.
+_VOICE_MAP: dict[str, str] = {
+    "tara": "af_heart",
+    "leah": "af_bella",
+    "jess": "af_sarah",
+    "mia":  "af_nicole",
+    "zoe":  "af_alloy",
+    "leo":  "am_michael",
+    "dan":  "am_adam",
+    "zac":  "am_puck",
+}
+_DEFAULT_VOICE = "af_heart"
 
-# SNAC frame layout: 7 codes per frame, 3 codebook layers.
-# Positions within a frame are stacked 4096 apart in the Orpheus token space.
-#   [L0, L1a, L2a, L2b, L1b, L2c, L2d]
-_SNAC_CODES_PER_FRAME = 7
-_POSITION_OFFSETS = [0, 4096, 8192, 12288, 16384, 20480, 24576]
+_SAMPLE_RATE = 24000
 
 
 class TTSEngine:
     def __init__(self) -> None:
-        self._model: Llama | None = None
+        self._model: Kokoro | None = None
         self._model_id: str | None = None
         self._loading = False
         self._error: str | None = None
         self._lock = asyncio.Lock()
-        self._snac_model = None
-        self._snac_device: str = "cpu"
         self._synth_lock = asyncio.Lock()
 
     @property
@@ -70,6 +72,9 @@ class TTSEngine:
         return "idle"
 
     async def load_model(self, model_id: str, model_path: str) -> None:
+        """Load Kokoro. `model_path` is either the directory containing
+        `kokoro-v1.0.onnx` + `voices-v1.0.bin`, or the onnx file itself
+        (we walk up to the directory)."""
         async with self._lock:
             if self._model is not None and self._model_id == model_id:
                 return
@@ -80,8 +85,8 @@ class TTSEngine:
             self._error = None
             try:
                 loop = asyncio.get_running_loop()
-                self._model, self._snac_model, self._snac_device = (
-                    await loop.run_in_executor(None, self._load_sync, model_path)
+                self._model = await loop.run_in_executor(
+                    None, self._load_sync, model_path
                 )
                 self._model_id = model_id
             except Exception as exc:
@@ -90,45 +95,28 @@ class TTSEngine:
             finally:
                 self._loading = False
 
-    def _load_sync(self, model_path: str) -> tuple:
-        from llama_cpp import Llama
-        import torch
-        from snac import SNAC
+    def _load_sync(self, model_path: str):
+        from kokoro_onnx import Kokoro
 
-        model = Llama(
-            model_path=model_path,
-            n_ctx=8192,
-            n_gpu_layers=-1,
-            verbose=False,
+        model_dir = model_path if os.path.isdir(model_path) else os.path.dirname(model_path)
+        onnx_path = os.path.join(model_dir, "kokoro-v1.0.onnx")
+        voices_path = os.path.join(model_dir, "voices-v1.0.bin")
+
+        if not os.path.exists(onnx_path):
+            raise RuntimeError(f"Kokoro ONNX model not found at {onnx_path}")
+        if not os.path.exists(voices_path):
+            raise RuntimeError(f"Kokoro voices not found at {voices_path}")
+
+        t0 = time.monotonic()
+        model = Kokoro(onnx_path, voices_path)
+        logger.info(
+            "Kokoro loaded from %s (%d voices, %.0fms)",
+            model_dir, len(model.get_voices()), (time.monotonic() - t0) * 1000,
         )
-
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
-
-        snac_dir = os.path.join(os.path.dirname(os.path.dirname(model_path)), "snac-24khz")
-        if os.path.isdir(snac_dir):
-            logger.info("SNAC loaded from bundled directory: %s", snac_dir)
-            snac = SNAC.from_pretrained(snac_dir)
-        else:
-            logger.warning(
-                "Bundled SNAC dir not found at %s — attempting HuggingFace download",
-                snac_dir,
-            )
-            try:
-                snac = SNAC.from_pretrained("hubertsiuzdak/snac_24khz")
-                logger.info("SNAC loaded from HuggingFace")
-            except Exception:
-                logger.exception("SNAC HuggingFace download failed")
-                raise RuntimeError(
-                    f"SNAC codec not found at {snac_dir} and HuggingFace download failed"
-                )
-
-        snac = snac.to(device).eval()
-        logger.info("TTS model loaded: %s  SNAC on %s", model_path, device)
-        return model, snac, device
+        return model
 
     async def unload(self) -> None:
         self._model = None
-        self._snac_model = None
         self._model_id = None
         self._error = None
 
@@ -137,171 +125,39 @@ class TTSEngine:
         text: str,
         speaker: str = "tara",
     ) -> AsyncGenerator[bytes, None]:
-        """Yield PCM int16 audio chunks (24 kHz mono) as they are generated."""
+        """Yield PCM int16 audio (24 kHz mono) for the given text.
+
+        Kokoro is one-shot, so this yields exactly one chunk per call.
+        Kept as an async generator so the router's SSE streaming path
+        can iterate it uniformly.
+        """
         if self._model is None:
             raise RuntimeError("TTS model not loaded")
         if speaker not in SPEAKERS:
             raise ValueError(f"Unknown speaker: {speaker}. Choose from: {SPEAKERS}")
 
+        voice = _VOICE_MAP.get(speaker, _DEFAULT_VOICE)
+
         async with self._synth_lock:
             loop = asyncio.get_running_loop()
-            queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-
-            def _generate() -> None:
-                try:
-                    self._generate_sync(text, speaker, queue, loop)
-                except Exception:
-                    logger.exception("TTS generation failed for text: %s", text[:200])
-                    loop.call_soon_threadsafe(queue.put_nowait, None)
-
-            loop.run_in_executor(None, _generate)
-
-            while True:
-                chunk = await queue.get()
-                if chunk is None:
-                    break
-                yield chunk
-
-    def _build_prompt_tokens(self, text: str, speaker: str) -> list[int]:
-        """Build Orpheus prompt: <|audio|>{voice}: {text}<|eot_id|><custom_token_4>.
-
-        The model auto-generates start_of_ai/start_of_speech after this —
-        pre-providing them causes audio for the wrong content.
-        """
-        assert self._model is not None
-        voice_text = f"{speaker}: {text}"
-        text_ids = list(
-            self._model.tokenize(voice_text.encode("utf-8"), add_bos=False, special=False)
-        )
-        return [_AUDIO_START_MARKER] + text_ids + [_EOT, _END_OF_HUMAN]
-
-    def _generate_sync(
-        self,
-        text: str,
-        speaker: str,
-        queue: asyncio.Queue[bytes | None],
-        loop: asyncio.AbstractEventLoop,
-    ) -> None:
-        assert self._model is not None
-        assert self._snac_model is not None
-
-        prompt_tokens = self._build_prompt_tokens(text, speaker)
-        t0 = time.monotonic()
-        total_tokens = 0
-        audio_codes: list[int] = []
-        eos_token = self._model.token_eos()
-
-        logger.info(
-            "TTS generating: %d prompt tokens, speaker=%s, text=%s",
-            len(prompt_tokens), speaker, repr(text[:100]),
-        )
-
-        # Force a real reset: llama-cpp-python's generate(reset=True) has a
-        # KV-cache prefix-match optimization (llama.py:882-899) that disables
-        # reset whenever the new prompt shares ANY prefix with self._input_ids
-        # from the previous call. Since every Orpheus TTS prompt starts with
-        # the same tokens (<|audio|>, voice name, colon), the optimization
-        # always triggers and reuses residual state — causing extra phantom
-        # words at the start of each utterance. Zeroing n_tokens first makes
-        # the `if reset and self.n_tokens > 0` guard fail, bypassing it.
-        self._model.n_tokens = 0
-
-        for token_id in self._model.generate(
-            prompt_tokens,
-            top_k=40,
-            top_p=0.9,
-            temp=0.6,
-            repeat_penalty=1.1,
-            reset=True,
-        ):
-            total_tokens += 1
-
-            if token_id == _END_OF_SPEECH or token_id == eos_token:
-                break
-            if total_tokens > 4096:
-                logger.warning("TTS: hit token limit (4096)")
-                break
-
-            if 128256 <= token_id < _AUDIO_TOKEN_BASE:
-                continue
-
-            if token_id >= _AUDIO_TOKEN_BASE:
-                position = len(audio_codes) % _SNAC_CODES_PER_FRAME
-                snac_code = token_id - _AUDIO_TOKEN_BASE - _POSITION_OFFSETS[position]
-
-                if not (0 <= snac_code <= 4095):
-                    logger.warning(
-                        "TTS: invalid SNAC code %d at position %d (token=%d)",
-                        snac_code, position, token_id,
-                    )
-                    continue
-
-                audio_codes.append(snac_code)
-
-            elif len(audio_codes) > 0:
-                break
-
-        t_gen = time.monotonic() - t0
-
-        # Single full decode per sentence: no boundary artifacts, guaranteed
-        # clean audio. No inline SNAC decodes during llama.cpp generation —
-        # mixing torch-MPS decodes into the generation loop was corrupting
-        # Orpheus generation (wrong content, cutoffs). Decode runs only
-        # AFTER generation is complete.
-        n_frames = len(audio_codes) // _SNAC_CODES_PER_FRAME
-        if n_frames > 0:
-            t_dec0 = time.monotonic()
-            pcm = self._decode_all(audio_codes[: n_frames * _SNAC_CODES_PER_FRAME])
-            t_dec = time.monotonic() - t_dec0
-            if pcm:
-                loop.call_soon_threadsafe(queue.put_nowait, pcm)
-            logger.info(
-                "TTS complete: gen=%.2fs dec=%.2fs  %d tokens  %d frames  text=%s",
-                t_gen, t_dec, total_tokens, n_frames, repr(text[:100]),
+            pcm_bytes = await loop.run_in_executor(
+                None, self._synthesize_sync, text, voice
             )
-        else:
-            logger.error("TTS produced 0 audio codes (prompt head: %s)", prompt_tokens[:10])
+            if pcm_bytes:
+                yield pcm_bytes
 
-        loop.call_soon_threadsafe(queue.put_nowait, None)
-
-    def _snac_layers(self, codes: list[int], n_frames: int):
-        layer0: list[int] = []
-        layer1: list[int] = []
-        layer2: list[int] = []
-        for i in range(n_frames):
-            b = i * _SNAC_CODES_PER_FRAME
-            layer0.append(codes[b])
-            layer1.extend([codes[b + 1], codes[b + 4]])
-            layer2.extend([codes[b + 2], codes[b + 3], codes[b + 5], codes[b + 6]])
-        return layer0, layer1, layer2
-
-    def _decode_all(self, codes: list[int]) -> bytes | None:
-        """Decode N complete SNAC frames → PCM int16 bytes (2048 samples/frame).
-
-        Single-shot decode — no chunking, no boundary artifacts.
-        """
-        if self._snac_model is None:
-            return None
-
-        n_frames = len(codes) // _SNAC_CODES_PER_FRAME
-        if n_frames == 0:
-            return None
-
-        try:
-            import torch
-
-            layer0, layer1, layer2 = self._snac_layers(codes, n_frames)
-            device = self._snac_device
-
-            t0 = torch.tensor([layer0], dtype=torch.long, device=device)
-            t1 = torch.tensor([layer1], dtype=torch.long, device=device)
-            t2 = torch.tensor([layer2], dtype=torch.long, device=device)
-
-            with torch.no_grad():
-                audio = self._snac_model.decode([t0, t1, t2])
-                pcm = (audio.squeeze() * 32767).clamp(-32768, 32767).to(torch.int16)
-
-            return pcm.cpu().numpy().tobytes()
-        except Exception:
-            logger.exception("SNAC decode failed for %d frames", n_frames)
-            return None
+    def _synthesize_sync(self, text: str, voice: str) -> bytes:
+        assert self._model is not None
+        t0 = time.monotonic()
+        samples, sample_rate = self._model.create(
+            text, voice=voice, speed=1.0, lang="en-us"
+        )
+        # samples: float32 in [-1, 1] → int16 PCM
+        pcm_int16 = (samples * 32767).clip(-32768, 32767).astype(np.int16)
+        elapsed = time.monotonic() - t0
+        duration = len(samples) / sample_rate
+        logger.info(
+            "TTS: gen=%.0fms audio=%.2fs voice=%s text=%s",
+            elapsed * 1000, duration, voice, repr(text[:80]),
+        )
+        return pcm_int16.tobytes()

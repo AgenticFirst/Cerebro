@@ -24,8 +24,9 @@ export default function ModelSetupView({ onBack }: ModelSetupViewProps) {
             python scripts/download-voice-models.py
           </pre>
           <p className="text-xs text-text-tertiary mt-3">
-            This downloads Whisper (~1.5 GB) and Orpheus TTS (~1.8 GB) to the
-            voice-models/ directory. Production builds bundle these automatically.
+            This downloads the Kokoro TTS model (~340 MB) to the voice-models/
+            directory. Whisper STT auto-downloads on first use. Production
+            builds bundle these automatically.
           </p>
         </div>
 

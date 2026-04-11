@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-const TTS_SAMPLE_RATE = 24000; // Orpheus outputs 24kHz audio
+const TTS_SAMPLE_RATE = 24000; // Kokoro outputs 24kHz mono audio
 
 interface AudioPlaybackResult {
   playChunk: (base64Chunk: string) => void;

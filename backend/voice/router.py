@@ -106,7 +106,7 @@ async def load_tts(request: Request):
     assert _tts_engine is not None
 
     voice_dir = _voice_models_dir(request)
-    model_id = "orpheus-3b-0.1-ft"
+    model_id = "kokoro-82m"
     model_path = get_model_path(voice_dir, model_id)
 
     if not model_path:

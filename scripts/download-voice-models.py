@@ -10,105 +10,74 @@ In production builds, Electron Forge bundles this directory via extraResource.
 
 import os
 import sys
+import urllib.request
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VOICE_MODELS_DIR = os.path.join(PROJECT_ROOT, "voice-models")
 
-
-def download_whisper():
-    """Download Whisper Large V3 Turbo via OpenAI's whisper package."""
-    try:
-        import whisper
-    except ImportError:
-        print("Error: openai-whisper not installed.")
-        print("Run: pip install openai-whisper")
-        sys.exit(1)
-
-    dest = os.path.join(VOICE_MODELS_DIR, "whisper-large-v3-turbo")
-    os.makedirs(dest, exist_ok=True)
-
-    print(f"\n{'=' * 60}")
-    print("Downloading: Whisper Large V3 Turbo (STT, ~1.5 GB)")
-    print(f"  To: {dest}")
-    print(f"{'=' * 60}\n")
-
-    # whisper.load_model downloads the .pt file to download_root
-    whisper.load_model("turbo", download_root=dest)
-    print("  Done: whisper-large-v3-turbo")
+KOKORO_RELEASE = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
+KOKORO_FILES = [
+    ("kokoro-v1.0.onnx", 310_000_000),
+    ("voices-v1.0.bin", 27_000_000),
+]
 
 
-def download_orpheus():
-    """Download Orpheus TTS 3B Q4_K_M GGUF from HuggingFace."""
-    try:
-        from huggingface_hub import hf_hub_download
-    except ImportError:
-        print("Error: huggingface_hub not installed.")
-        print("Run: pip install huggingface-hub")
-        sys.exit(1)
-
-    dest = os.path.join(VOICE_MODELS_DIR, "orpheus-3b-0.1-ft")
-    os.makedirs(dest, exist_ok=True)
-
-    print(f"\n{'=' * 60}")
-    print("Downloading: Orpheus TTS 3B Q4 (TTS, ~1.8 GB)")
-    print(f"  From: isaiahbjork/orpheus-3b-0.1-ft-Q4_K_M-GGUF")
-    print(f"  To:   {dest}")
-    print(f"{'=' * 60}\n")
-
-    hf_hub_download(
-        repo_id="isaiahbjork/orpheus-3b-0.1-ft-Q4_K_M-GGUF",
-        filename="orpheus-3b-0.1-ft-q4_k_m.gguf",
-        local_dir=dest,
-        local_dir_use_symlinks=False,
-        token=False,  # Public repo
-    )
-    print("  Done: orpheus-3b-0.1-ft")
-
-
-def download_snac():
-    """Download SNAC audio codec used by Orpheus TTS."""
-    try:
-        from snac import SNAC
-    except ImportError:
-        print("Error: snac not installed.")
-        print("Run: pip install snac")
-        sys.exit(1)
-
-    dest = os.path.join(VOICE_MODELS_DIR, "snac-24khz")
-    if os.path.exists(os.path.join(dest, "pytorch_model.bin")):
-        print("  SNAC codec already present — skipping")
+def _download(url: str, dest: str, expected_size: int) -> None:
+    """Download url to dest with a simple progress bar."""
+    if os.path.exists(dest) and os.path.getsize(dest) >= expected_size * 0.95:
+        print(f"  already present — skipping ({os.path.basename(dest)})")
         return
 
+    print(f"  fetching {os.path.basename(dest)}…")
+    tmp = dest + ".part"
+
+    def hook(block: int, block_size: int, total: int) -> None:
+        downloaded = block * block_size
+        pct = 100.0 * downloaded / max(total, 1)
+        bar = "#" * int(pct / 2.5)
+        print(f"\r  [{bar:<40}] {pct:5.1f}% ({downloaded // 1_000_000} / {total // 1_000_000} MB)", end="", flush=True)
+
+    urllib.request.urlretrieve(url, tmp, hook)
+    os.rename(tmp, dest)
+    print()
+
+
+def download_whisper():
+    """Faster-whisper downloads the model automatically on first use;
+    we just create the cache dir so the backend can point at it."""
+    dest = os.path.join(VOICE_MODELS_DIR, "whisper-cache")
+    os.makedirs(dest, exist_ok=True)
+    print(f"\n{'=' * 60}")
+    print("Whisper: cache dir created at")
+    print(f"  {dest}")
+    print("(faster-whisper will auto-download the 'base' model on first use)")
+    print(f"{'=' * 60}")
+
+
+def download_kokoro():
+    """Download Kokoro ONNX model + voices binary from the kokoro-onnx release."""
+    dest = os.path.join(VOICE_MODELS_DIR, "kokoro")
     os.makedirs(dest, exist_ok=True)
 
     print(f"\n{'=' * 60}")
-    print("Downloading: SNAC 24kHz audio codec (~76 MB)")
-    print(f"  To: {dest}")
-    print(f"{'=' * 60}\n")
+    print("Downloading: Kokoro-82M (TTS, ~340 MB)")
+    print(f"  From: {KOKORO_RELEASE}")
+    print(f"  To:   {dest}")
+    print(f"{'=' * 60}")
 
-    # Load model (downloads from HuggingFace)
-    model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz")
+    for filename, expected_size in KOKORO_FILES:
+        url = f"{KOKORO_RELEASE}/{filename}"
+        target = os.path.join(dest, filename)
+        _download(url, target, expected_size)
 
-    # Save locally — SNAC doesn't have save_pretrained, so copy from HF cache
-    import shutil
-    from huggingface_hub import scan_cache_dir
-    cache = scan_cache_dir()
-    for repo in cache.repos:
-        if "snac_24khz" in repo.repo_id:
-            for rev in repo.revisions:
-                for f in rev.files:
-                    fname = os.path.basename(str(f.file_path))
-                    shutil.copy2(str(f.file_path), os.path.join(dest, fname))
-
-    print("  Done: snac-24khz")
+    print("  Done: kokoro")
 
 
 def main():
     os.makedirs(VOICE_MODELS_DIR, exist_ok=True)
 
     download_whisper()
-    download_orpheus()
-    download_snac()
+    download_kokoro()
 
     print(f"\n{'=' * 60}")
     print("All voice models downloaded successfully!")
