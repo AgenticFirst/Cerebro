@@ -164,6 +164,21 @@ const api: CerebroAPI = {
       };
     },
   },
+
+  sandbox: {
+    pickDirectory(): Promise<string | null> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SANDBOX_PICK_DIRECTORY);
+    },
+    revealWorkspace(workspacePath: string): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SANDBOX_REVEAL_WORKSPACE, workspacePath);
+    },
+    getProfile(): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SANDBOX_GET_PROFILE);
+    },
+    setCache(config: unknown): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SANDBOX_SET_CACHE, config);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('cerebro', api);

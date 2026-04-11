@@ -84,11 +84,11 @@
 | Default safety policy (read-only auto, writes need approval) | Not Started |
 | Test Remote Access button | Not Started |
 | **11. Sandbox Environment** | |
-| Workspace/project directory model (user-designated allowed paths) | Not Started |
-| File-system permission model (read-only, read-write, and denied zones) | Not Started |
-| Sandbox enforcement layer in execution engine | Not Started |
-| Sandbox configuration UI in Settings | Not Started |
-| Default sandbox policy (conservative: app-data only, user opts in to broader access) | Not Started |
+| Workspace/project directory model (user-designated allowed paths) | Done |
+| File-system permission model (read-only, read-write, and denied zones) | Done |
+| Sandbox enforcement layer in execution engine | Done |
+| Sandbox configuration UI in Settings | Done |
+| Default sandbox policy (conservative: app-data only, user opts in to broader access) | Done |
 | **12. Marketplace** | |
 | Pack format definition | Not Started |
 | Marketplace screen (browse, search, detail view) | Not Started |

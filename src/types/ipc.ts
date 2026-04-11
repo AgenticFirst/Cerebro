@@ -48,6 +48,12 @@ export const IPC_CHANNELS = {
   INSTALLER_REMOVE_EXPERT: 'installer:remove-expert',
   INSTALLER_SYNC_ALL: 'installer:sync-all',
   EXPERTS_CHANGED: 'experts:changed',
+
+  // Sandbox
+  SANDBOX_PICK_DIRECTORY: 'sandbox:pick-directory',
+  SANDBOX_REVEAL_WORKSPACE: 'sandbox:reveal-workspace',
+  SANDBOX_GET_PROFILE: 'sandbox:get-profile',
+  SANDBOX_SET_CACHE: 'sandbox:set-cache',
 } as const;
 
 // --- Backend Request/Response ---
@@ -202,6 +208,16 @@ export interface VoiceAPI {
   onEvent(sessionId: string, callback: (event: VoiceSessionEvent) => void): () => void;
 }
 
+// --- Sandbox ---
+
+export interface SandboxAPI {
+  pickDirectory(): Promise<string | null>;
+  revealWorkspace(workspacePath: string): Promise<void>;
+  getProfile(): Promise<string>;
+  /** Push a freshly-fetched config into the main-process cache after a mutation. */
+  setCache(config: import('../sandbox/types').SandboxConfig): Promise<void>;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -216,4 +232,5 @@ export interface CerebroAPI {
   claudeCode: ClaudeCodeAPI;
   installer: InstallerAPI;
   voice: VoiceAPI;
+  sandbox: SandboxAPI;
 }

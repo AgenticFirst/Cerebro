@@ -15,6 +15,7 @@
 
 import { spawn } from 'node:child_process';
 import { getCachedClaudeCodeInfo } from './detector';
+import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
 
 // ── Module-level config ──────────────────────────────────────────
 //
@@ -93,7 +94,9 @@ export function singleShotClaudeCode(options: SingleShotOptions): Promise<string
       return;
     }
 
-    const child = spawn(info.path!, args, {
+    const wrapped = wrapClaudeSpawn({ claudeBinary: info.path!, claudeArgs: args });
+
+    const child = spawn(wrapped.binary, wrapped.args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       cwd,
       env,

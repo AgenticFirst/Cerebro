@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getCachedClaudeCodeInfo } from '../claude-code/detector';
 import { expertAgentName } from '../claude-code/installer';
+import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
 
 export interface VoiceMemoryUpdateParams {
   dataDir: string;
@@ -63,8 +64,10 @@ export function fireVoiceMemoryUpdate(params: VoiceMemoryUpdateParams): void {
   const env = { ...process.env } as Record<string, string>;
   delete env.CLAUDECODE;
 
+  const wrapped = wrapClaudeSpawn({ claudeBinary: info.path, claudeArgs: args });
+
   const t0 = Date.now();
-  const child = spawn(info.path, args, {
+  const child = spawn(wrapped.binary, wrapped.args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     cwd: memoryDir,
     env,

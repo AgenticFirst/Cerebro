@@ -25,6 +25,7 @@ from webhooks.router import router as webhooks_router
 from scripts.router import router as scripts_router
 from skills.router import skills_router, expert_skills_router
 from voice.router import router as voice_router, init_voice_singletons
+from sandbox.router import router as sandbox_router
 
 
 @asynccontextmanager
@@ -71,6 +72,7 @@ app.include_router(scripts_router, prefix="/scripts")
 app.include_router(skills_router)
 app.include_router(expert_skills_router)
 app.include_router(voice_router, prefix="/voice")
+app.include_router(sandbox_router, prefix="/sandbox")
 
 
 @app.get("/health")

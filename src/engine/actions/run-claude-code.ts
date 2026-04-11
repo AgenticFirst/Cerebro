@@ -8,6 +8,7 @@
 import { spawn, execFile } from 'node:child_process';
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { onAbort } from './utils/abort-helpers';
+import { wrapClaudeSpawn } from '../../sandbox/wrap-spawn';
 
 interface ClaudeCodeParams {
   mode: 'plan' | 'implement' | 'review' | 'ask';
@@ -121,7 +122,9 @@ export const runClaudeCodeAction: ActionDefinition = {
       let stdout = '';
       let stderr = '';
 
-      const child = spawn('claude', args, {
+      const wrapped = wrapClaudeSpawn({ claudeBinary: 'claude', claudeArgs: args });
+
+      const child = spawn(wrapped.binary, wrapped.args, {
         cwd: params.working_directory || undefined,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: safeEnv,

@@ -14,6 +14,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import type { RendererAgentEvent } from '../agents/types';
 import { getCachedClaudeCodeInfo } from './detector';
+import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
 
 export interface ClaudeCodeRunOptions {
   runId: string;
@@ -70,7 +71,12 @@ export class ClaudeCodeRunner extends EventEmitter {
     const env = { ...process.env } as Record<string, string>;
     delete env.CLAUDECODE;
 
-    this.process = spawn(info.path, args, {
+    const wrapped = wrapClaudeSpawn({ claudeBinary: info.path, claudeArgs: args });
+    if (wrapped.sandboxed) {
+      console.log(`[ClaudeCode:${runId.slice(0, 8)}] spawning under sandbox-exec`);
+    }
+
+    this.process = spawn(wrapped.binary, wrapped.args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       cwd,
       env,

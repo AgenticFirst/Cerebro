@@ -14,6 +14,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { getCachedClaudeCodeInfo } from '../claude-code/detector';
+import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
 
 export interface VoiceRunOptions {
   runId: string;
@@ -68,7 +69,9 @@ export class VoiceClaudeRunner extends EventEmitter {
     console.log(`[Voice:runner] Spawning claude for run ${runId.slice(0, 8)}`);
     const t0 = Date.now();
 
-    this.process = spawn(info.path, args, {
+    const wrapped = wrapClaudeSpawn({ claudeBinary: info.path, claudeArgs: args });
+
+    this.process = spawn(wrapped.binary, wrapped.args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       cwd,
       env,

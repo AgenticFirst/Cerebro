@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn, ChildProcess } from 'node:child_process';
@@ -29,6 +29,10 @@ import {
 } from './claude-code/installer';
 import { setClaudeCodeCwd } from './claude-code/single-shot';
 import { VoiceSessionManager } from './voice/session';
+import { initializeSandbox } from './sandbox/initialize';
+import { getCachedSandboxConfig, setCachedSandboxConfig } from './sandbox/config-cache';
+import { generateProfile } from './sandbox/profile-generator';
+import type { SandboxConfig } from './sandbox/types';
 
 // Voice session manager (initialized after backend is healthy)
 let voiceSession: VoiceSessionManager | null = null;
@@ -176,6 +180,17 @@ async function startPythonBackend(): Promise<void> {
 
   await waitForHealthCheck(port);
   backendStatus = 'healthy';
+
+  // Seed the sandbox config cache before anything that might spawn `claude`.
+  // wrap-spawn reads from this cache synchronously — if it's empty the sandbox
+  // is off for that run.
+  await initializeSandbox({
+    cerebroDataDir: dataDir,
+    fetchConfig: async () => {
+      const res = await makeBackendRequest<SandboxConfig>({ method: 'GET', path: '/sandbox/config' });
+      return res.ok ? res.data : null;
+    },
+  });
 
   agentRuntime = new AgentRuntime(port, dataDir);
   executionEngine = new ExecutionEngine(port, agentRuntime);
@@ -610,6 +625,51 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.VOICE_MODEL_STATUS, async () => {
     if (!voiceSession) return null;
     return voiceSession.getModelStatus();
+  });
+
+  // --- Sandbox ---
+
+  ipcMain.handle(IPC_CHANNELS.SANDBOX_PICK_DIRECTORY, async () => {
+    const [parent] = BrowserWindow.getAllWindows();
+    const result = await dialog.showOpenDialog(parent, {
+      title: 'Link a project directory',
+      message: 'Cerebro will grant its agents access to this directory.',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.SANDBOX_REVEAL_WORKSPACE,
+    async (_event, workspacePath: string) => {
+      // Create on demand so the Finder reveal never hits a missing dir.
+      try {
+        fs.mkdirSync(workspacePath, { recursive: true });
+      } catch {
+        /* fall through — showItemInFolder will just focus the parent */
+      }
+      shell.showItemInFolder(workspacePath);
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.SANDBOX_GET_PROFILE, async () => {
+    const config = getCachedSandboxConfig();
+    if (!config) return '';
+    try {
+      return generateProfile({
+        workspacePath: config.workspace_path,
+        cerebroDataDir: app.getPath('userData'),
+        linkedProjects: config.linked_projects,
+        forbiddenHomeSubpaths: config.forbidden_home_subpaths,
+      });
+    } catch (err) {
+      return `;; Error generating profile: ${err instanceof Error ? err.message : String(err)}\n`;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SANDBOX_SET_CACHE, async (_event, config: SandboxConfig) => {
+    setCachedSandboxConfig(config);
   });
 }
 

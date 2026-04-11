@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Brain, Palette, Info, type LucideIcon } from 'lucide-react';
+import { Brain, Palette, Info, Shield, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import MemorySection from './settings/MemorySection';
 import AppearanceSection from './settings/AppearanceSection';
+import SandboxSection from './settings/SandboxSection';
+import { consumePendingSettingsSection } from './settings/pending-section';
 
-type Section = 'memory' | 'appearance' | 'about';
+type Section = 'memory' | 'sandbox' | 'appearance' | 'about';
 
 interface SectionNavItem {
   id: Section;
@@ -14,12 +16,15 @@ interface SectionNavItem {
 
 const SECTIONS: SectionNavItem[] = [
   { id: 'memory', label: 'Memory', icon: Brain },
+  { id: 'sandbox', label: 'Sandbox', icon: Shield },
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'about', label: 'About', icon: Info },
 ];
 
 export default function SettingsScreen() {
-  const [activeSection, setActiveSection] = useState<Section>('memory');
+  const [activeSection, setActiveSection] = useState<Section>(
+    () => consumePendingSettingsSection() ?? 'memory',
+  );
 
   return (
     <div className="flex h-full">
@@ -66,9 +71,14 @@ export default function SettingsScreen() {
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <div className={clsx(
           'px-8 py-8',
-          activeSection === 'memory' ? 'max-w-5xl h-full flex flex-col' : 'max-w-2xl',
+          activeSection === 'memory'
+            ? 'max-w-5xl h-full flex flex-col'
+            : activeSection === 'sandbox'
+              ? 'max-w-3xl'
+              : 'max-w-2xl',
         )}>
           {activeSection === 'memory' && <MemorySection />}
+          {activeSection === 'sandbox' && <SandboxSection />}
           {activeSection === 'appearance' && <AppearanceSection />}
           {activeSection === 'about' && (
             <div className="flex flex-col items-center justify-center py-20 text-center">
