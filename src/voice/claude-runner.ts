@@ -1,15 +1,14 @@
 /**
  * VoiceClaudeRunner — minimal Claude Code subprocess spawner scoped to voice.
  *
- * Unlike ClaudeCodeRunner (which uses --agent, memory directives, --max-turns 15),
- * this spawns `claude -p` with the lightest possible args:
+ * Spawns `claude -p` with the lightest possible args:
  *   - No --agent → skip agent def load, memory Glob/Read, skill injection
- *   - --model claude-haiku-4-5 → fast first-token
+ *   - --system-prompt → REPLACE Claude Code's default identity with the
+ *     expert's identity (passing --append-system-prompt here is too weak:
+ *     the default "I'm Claude Code, a software engineering assistant"
+ *     identity overrides the expert for simple greetings).
  *   - --max-turns 1 → no tool loops
  *   - --disallowedTools → hard-block all tools at runtime level
- *   - --append-system-prompt → expert personality + voice instructions
- *
- * Expected time-to-first-text-delta: ~2-4 seconds (down from 10-50s).
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -58,7 +57,7 @@ export class VoiceClaudeRunner extends EventEmitter {
       '--max-turns', '1',
       '--model', model,
       '--dangerously-skip-permissions',
-      '--append-system-prompt', systemPrompt,
+      '--system-prompt', systemPrompt,
       '--disallowedTools', 'Read,Write,Edit,Glob,Grep,Bash,WebFetch,WebSearch,Agent',
     ];
 

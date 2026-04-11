@@ -18,11 +18,19 @@ import type { WebContents } from 'electron';
 import { IPC_CHANNELS } from '../types/ipc';
 import type { VoiceSessionState, VoiceSessionEvent } from './types';
 import { VoiceClaudeRunner } from './claude-runner';
+import { fireVoiceMemoryUpdate } from './memory-updater';
 import { generateId } from '../context/chat-helpers';
+
+interface VoiceSkill {
+  name: string;
+  instructions: string;
+}
 
 interface SessionInfo {
   sessionId: string;
   expertId: string;
+  expertName: string;
+  expertDomain: string | null;
   conversationId: string;
   state: VoiceSessionState;
   audioBuffer: Buffer[];
@@ -31,7 +39,7 @@ interface SessionInfo {
   ttsAbortController: AbortController | null;
   ttsQueue: string[];
   ttsProcessing: boolean;
-  expertSystemPrompt: string;
+  /** Full system prompt (expert identity + skills + voice instructions). */
   fullSystemPrompt: string;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
   partialTimer: ReturnType<typeof setTimeout> | null;
@@ -50,6 +58,33 @@ const MIN_AUDIO_BYTES_PARTIAL = 9600;
 const SENTENCE_RE = /^(.*?[.!?])\s+(.*)$/s;
 
 const VOICE_INSTRUCTIONS = `You are in a live voice conversation. Respond naturally and conversationally, as if speaking. Keep responses concise and direct — aim for 1-3 sentences unless a longer answer is truly needed. Do not use any tools. Do not output markdown formatting, code blocks, or bullet lists — speak in plain prose.`;
+
+interface ExpertSummary {
+  name: string;
+  domain?: string | null;
+  system_prompt?: string | null;
+}
+
+function buildVoiceSystemPrompt(expert: ExpertSummary, skills: VoiceSkill[]): string {
+  const domainLine = expert.domain ? ` Domain: ${expert.domain}.` : '';
+  const identity = (expert.system_prompt ?? '').trim();
+
+  let body = `You are **${expert.name}**, a Cerebro specialist expert.${domainLine}`;
+
+  if (identity) {
+    body += `\n\n${identity}`;
+  }
+
+  if (skills.length > 0) {
+    body += '\n\n## Skills\n\nYou have the following skills. Follow their instructions when relevant:\n';
+    for (const skill of skills) {
+      body += `\n### ${skill.name}\n\n${skill.instructions.trimEnd()}\n`;
+    }
+  }
+
+  body += `\n\n---\n\n${VOICE_INSTRUCTIONS}`;
+  return body;
+}
 
 export class VoiceSessionManager {
   private session: SessionInfo | null = null;
@@ -75,18 +110,35 @@ export class VoiceSessionManager {
 
     const sessionId = generateId().slice(0, 16);
 
-    const expert = await this.backendGet<{
-      id: string;
-      name: string;
-      system_prompt: string | null;
-    }>(`/experts/${expertId}`);
+    const [expert, skillsResp] = await Promise.all([
+      this.backendGet<{
+        id: string;
+        name: string;
+        domain: string | null;
+        system_prompt: string | null;
+      }>(`/experts/${expertId}`),
+      this.backendGet<{
+        skills: Array<{
+          is_active: boolean;
+          skill: { name: string; instructions: string };
+        }>;
+      }>(`/experts/${expertId}/skills`),
+    ]);
 
-    const expertSystemPrompt = expert?.system_prompt || 'You are a helpful expert assistant.';
-    const fullSystemPrompt = `${expertSystemPrompt}\n\n${VOICE_INSTRUCTIONS}`;
+    const activeSkills: VoiceSkill[] = (skillsResp?.skills ?? [])
+      .filter((s) => s.is_active)
+      .map((s) => ({ name: s.skill.name, instructions: s.skill.instructions }));
+
+    const fullSystemPrompt = buildVoiceSystemPrompt(
+      expert ?? { name: 'Assistant', domain: null, system_prompt: null },
+      activeSkills,
+    );
 
     this.session = {
       sessionId,
       expertId,
+      expertName: expert?.name ?? 'Assistant',
+      expertDomain: expert?.domain ?? null,
       conversationId,
       state: 'initializing',
       audioBuffer: [],
@@ -95,7 +147,6 @@ export class VoiceSessionManager {
       ttsAbortController: null,
       ttsQueue: [],
       ttsProcessing: false,
-      expertSystemPrompt,
       fullSystemPrompt,
       history: [],
       partialTimer: null,
@@ -128,21 +179,32 @@ export class VoiceSessionManager {
   async stop(): Promise<void> {
     if (!this.session) return;
 
-    // Cancel partial transcription
     this.cancelPartialTranscription();
 
-    // Abort active runner
     if (this.session.currentRunner) {
       this.session.currentRunner.abort();
       this.session.currentRunner = null;
     }
 
-    // Abort TTS stream
     if (this.session.ttsAbortController) {
       this.session.ttsAbortController.abort();
     }
 
     this.session.ttsQueue = [];
+
+    // Fire end-of-call memory update if we have at least one complete turn
+    // (user spoke AND expert responded). Detached subprocess survives quit.
+    const s = this.session;
+    const lastTurn = s.history[s.history.length - 1];
+    if (s.history.length >= 2 && lastTurn?.role === 'assistant') {
+      fireVoiceMemoryUpdate({
+        dataDir: this.dataDir,
+        expertId: s.expertId,
+        expertName: s.expertName,
+        expertDomain: s.expertDomain,
+        transcript: [...s.history],
+      });
+    }
 
     this.emit({ type: 'ended' });
     this.session = null;
