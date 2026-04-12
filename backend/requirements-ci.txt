@@ -1,0 +1,10 @@
+# CI-only: excludes heavy voice/ML packages (faster-whisper, kokoro-onnx,
+# soundfile) not exercised by the test suite.
+# numpy IS required — imported at module level by voice/stt_engine.py and
+# voice/tts_engine.py, which are transitively imported from main.py.
+fastapi==0.115.12
+uvicorn==0.34.2
+sqlalchemy==2.0.41
+numpy
+pytest>=8.0
+httpx>=0.27
