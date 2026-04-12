@@ -91,7 +91,7 @@ export default function TaskLogsView({ task, liveTask }: TaskLogsViewProps) {
       <div
         ref={scrollRef}
         onWheel={handleWheel}
-        className="flex-1 overflow-y-auto px-4 py-3 font-mono text-xs bg-zinc-950/50"
+        className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 font-mono text-xs bg-zinc-950/50"
       >
         {entries.map((entry, i) => (
           <LogEntry key={i} entry={entry} />
