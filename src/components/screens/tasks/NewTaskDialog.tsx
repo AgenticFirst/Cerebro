@@ -19,8 +19,7 @@ interface NewTaskDialogProps {
 }
 
 const MODELS = [
-  { value: '', label: 'Default' },
-  { value: 'sonnet', label: 'Sonnet (fast)' },
+  { value: '', label: 'Sonnet (default)' },
   { value: 'opus', label: 'Opus (powerful)' },
   { value: 'haiku', label: 'Haiku (light)' },
 ] as const;

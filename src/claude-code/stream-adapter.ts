@@ -71,9 +71,7 @@ export class ClaudeCodeRunner extends EventEmitter {
       '--append-system-prompt', 'CRITICAL: Never generate text on behalf of the user. Never output "User:" or simulate user messages. Your response ends when you have answered the request.',
     ];
 
-    if (options.model) {
-      args.push('--model', options.model);
-    }
+    args.push('--model', options.model || 'sonnet');
 
     // Build env: inherit process.env but strip CLAUDECODE to avoid nested session error
     const env = { ...process.env } as Record<string, string>;

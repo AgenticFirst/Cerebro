@@ -56,9 +56,7 @@ export class TaskPtyRunner extends EventEmitter {
     if (options.appendSystemPrompt) {
       args.push('--append-system-prompt', options.appendSystemPrompt);
     }
-    if (options.model) {
-      args.push('--model', options.model);
-    }
+    args.push('--model', options.model || 'sonnet');
 
     const env: Record<string, string> = { ...process.env } as Record<string, string>;
     delete env.CLAUDECODE;
