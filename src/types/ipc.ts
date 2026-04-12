@@ -49,6 +49,10 @@ export const IPC_CHANNELS = {
   INSTALLER_SYNC_ALL: 'installer:sync-all',
   EXPERTS_CHANGED: 'experts:changed',
 
+  // Task terminal (PTY)
+  TASK_TERMINAL_RESIZE: 'task-terminal:resize',
+  taskTerminalData: (runId: string) => `task-terminal:data:${runId}`,
+
   // Sandbox
   SANDBOX_PICK_DIRECTORY: 'sandbox:pick-directory',
   SANDBOX_REVEAL_WORKSPACE: 'sandbox:reveal-workspace',
@@ -111,7 +115,7 @@ export interface AgentRunRequest {
 
   // Task mode
   runType?: 'chat' | 'task';
-  taskPhase?: 'clarify' | 'execute';
+  taskPhase?: 'clarify' | 'execute' | 'follow_up';
   maxTurns?: number;
   maxPhases?: number;
   maxClarifyQuestions?: number;
@@ -119,6 +123,7 @@ export interface AgentRunRequest {
   workspacePath?: string;
   clarificationAnswers?: string;
   model?: string;
+  followUpContext?: string;
 }
 
 export type RendererAgentEvent =
@@ -244,5 +249,11 @@ export interface CerebroAPI {
   claudeCode: ClaudeCodeAPI;
   installer: InstallerAPI;
   voice: VoiceAPI;
+  taskTerminal: TaskTerminalAPI;
   sandbox: SandboxAPI;
+}
+
+export interface TaskTerminalAPI {
+  onData(runId: string, callback: (data: string) => void): () => void;
+  resize(runId: string, cols: number, rows: number): void;
 }

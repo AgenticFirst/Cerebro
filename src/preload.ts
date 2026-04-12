@@ -165,6 +165,18 @@ const api: CerebroAPI = {
     },
   },
 
+  taskTerminal: {
+    onData(runId: string, callback: (data: string) => void): () => void {
+      const channel = IPC_CHANNELS.taskTerminalData(runId);
+      const handler = (_event: Electron.IpcRendererEvent, data: string) => callback(data);
+      ipcRenderer.on(channel, handler);
+      return () => ipcRenderer.removeListener(channel, handler);
+    },
+    resize(runId: string, cols: number, rows: number): void {
+      ipcRenderer.send(IPC_CHANNELS.TASK_TERMINAL_RESIZE, runId, cols, rows);
+    },
+  },
+
   sandbox: {
     pickDirectory(): Promise<string | null> {
       return ipcRenderer.invoke(IPC_CHANNELS.SANDBOX_PICK_DIRECTORY);

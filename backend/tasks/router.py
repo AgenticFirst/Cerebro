@@ -28,6 +28,8 @@ from .schemas import (
     TaskEventBatch,
     TaskEventResponse,
     TaskFinalize,
+    TaskFollowUp,
+    TaskFollowUpResponse,
     TaskListResponse,
     TaskPhaseUpdate,
     TaskPlan,
@@ -474,6 +476,93 @@ def cancel_task(task_id: str, request: Request, db=Depends(get_db)):
 
     db.refresh(task)
     return _task_to_response(task)
+
+
+# ── Follow-up ────────────────────────────────────────────────────
+
+
+@router.post("/{task_id}/follow-up", response_model=TaskFollowUpResponse)
+def follow_up_task(task_id: str, body: TaskFollowUp, request: Request, db=Depends(get_db)):
+    """Start a follow-up run on a completed/failed task.
+
+    Reuses the same workspace and conversation. Transitions the task back to
+    running, mints a new run_record, and returns pre-formatted context for the
+    follow-up prompt envelope.
+    """
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.status not in ("completed", "failed", "cancelled"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot follow up on a task with status '{task.status}' — task must be terminal",
+        )
+
+    data_dir = _data_dir(request)
+
+    # Ensure workspace exists (should already from the original run)
+    workspace_path = task.workspace_path
+    if not workspace_path:
+        workspace_path = create_workspace(data_dir, task_id)
+        task.workspace_path = workspace_path
+
+    # Ensure conversation exists
+    conv_id = task.conversation_id
+    if not conv_id:
+        conv_id = _uuid_hex()
+        conv = Conversation(id=conv_id, title=task.title[:255] or "Task")
+        db.add(conv)
+        task.conversation_id = conv_id
+
+    # Mint a new run_record for this follow-up
+    run_id = _uuid_hex()
+    run = RunRecord(
+        id=run_id,
+        conversation_id=conv_id,
+        run_type="task",
+        trigger="follow_up",
+        status="running",
+        parent_run_id=None,
+    )
+    db.add(run)
+    task.run_id = run_id
+    task.status = "running"
+    task.error = None
+    task.completed_at = None
+    db.commit()
+
+    # Build follow-up context block for the prompt envelope
+    MAX_DELIVERABLE_CHARS = 50_000
+    raw_deliverable = task.deliverable_markdown or "(no previous deliverable)"
+    if len(raw_deliverable) > MAX_DELIVERABLE_CHARS:
+        previous_deliverable = raw_deliverable[:MAX_DELIVERABLE_CHARS] + "\n\n...(truncated — full deliverable is in the workspace)"
+    else:
+        previous_deliverable = raw_deliverable
+    context_parts = [
+        f"Original goal: {task.goal}",
+        f"Deliverable kind: {task.deliverable_kind or 'markdown'}",
+    ]
+
+    # Include clarification answers if they exist
+    clarifications = _parse_clarifications(task)
+    if clarifications and clarifications.get("answers"):
+        questions = clarifications.get("questions", [])
+        answers = clarifications["answers"]
+        answers_block = _format_answers_block(questions, answers)
+        context_parts.append(f"User's clarification answers:\n{answers_block}")
+
+    context_parts.append(f"\nPrevious deliverable:\n{previous_deliverable}")
+
+    follow_up_context = "\n".join(context_parts)
+
+    return TaskFollowUpResponse(
+        task_id=task_id,
+        run_id=run_id,
+        conversation_id=conv_id,
+        workspace_path=workspace_path,
+        follow_up_context=follow_up_context,
+    )
 
 
 # ── Event persistence ────────────────────────────────────────────

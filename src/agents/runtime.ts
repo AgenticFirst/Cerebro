@@ -12,9 +12,10 @@
 
 import http from 'node:http';
 import crypto from 'node:crypto';
-import type { WebContents } from 'electron';
+import { ipcMain, type WebContents } from 'electron';
 import type { AgentRunRequest, ActiveRunInfo, RendererAgentEvent } from './types';
 import { ClaudeCodeRunner } from '../claude-code/stream-adapter';
+import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { getAgentNameForExpert, installAll } from '../claude-code/installer';
 import { IPC_CHANNELS } from '../types/ipc';
 
@@ -29,6 +30,7 @@ interface ActiveRun {
   startedAt: number;
   accumulatedText: string;
   runner: ClaudeCodeRunner;
+  ptyRunner: TaskPtyRunner | null;
   isTaskRun: boolean;
 }
 
@@ -126,6 +128,44 @@ You are Cerebro preparing to execute an autonomous task. This is a SHORT prepara
 
 ${content}
 </task_clarify>`;
+    } else if (isTaskRun && request.taskPhase === 'follow_up') {
+      const maxPhases = request.maxPhases ?? 4;
+      fullPrompt = `<task_follow_up>
+You are operating in AUTONOMOUS TASK MODE — this is a FOLLOW-UP run on a previously completed task. The user wants you to modify, extend, or redo part of the output.
+
+Your working directory is the same isolated per-task workspace at $PWD. It contains all files from the previous run(s). You have full Read/Edit/Write/Bash access inside it.
+
+## Context from previous run
+
+${request.followUpContext ?? '(no context available)'}
+
+## Follow-up instruction
+
+${content}
+
+## Protocol
+
+1. Read the follow-up instruction carefully. Decide if this requires:
+   - **A small edit** (typo fix, wording change, style tweak) → directly edit files or rewrite the deliverable.
+   - **A moderate extension** (add a section, new feature, refactor a component) → optionally plan 1–${maxPhases} phases, then execute.
+   - **A major redo** (fundamentally different output) → plan and execute as a fresh task, reusing what's salvageable from the workspace.
+
+2. For code_app/mixed deliverables: inspect the workspace first (\`ls\`, \`cat\` key files) to understand current state before making changes.
+
+3. Use the expert roster (\`list-experts\` via Bash) and delegate via the \`Agent\` tool when phases benefit from specialist expertise. For simple edits, do the work directly — no need to delegate.
+
+4. If you plan phases, emit a \`<plan>\` block. If not, skip straight to editing and synthesizing.
+
+5. After all changes, emit a new \`<deliverable>\` block with the COMPLETE updated deliverable (not just the diff — the full final version). For code_app, also emit an updated \`<run_info>\` block if the run command changed.
+
+## Hard rules
+
+- NEVER ask the user for clarification, confirmation, or approval.
+- NEVER write outside the workspace directory.
+- NEVER spawn long-running dev servers or background processes.
+- NEVER create more than ${maxPhases} phases.
+- If the instruction is unclear, interpret it as best you can and explain your interpretation in the deliverable.
+</task_follow_up>`;
     } else if (isTaskRun && request.taskPhase === 'execute') {
       const maxPhases = request.maxPhases ?? 6;
       const answersSection = request.clarificationAnswers
@@ -257,6 +297,7 @@ ${answersSection}
       startedAt: Date.now(),
       accumulatedText: '',
       runner,
+      ptyRunner: null,
       isTaskRun,
     };
 
@@ -307,7 +348,7 @@ ${answersSection}
       this.postRunSync(webContents);
     });
 
-    // Resolve maxTurns: clarify=5, execute=request.maxTurns or 60, chat=15
+    // Resolve maxTurns: clarify=5, execute/follow_up=request.maxTurns or 60, chat=15
     let maxTurns = 15;
     if (isTaskRun) {
       if (request.taskPhase === 'clarify') {
@@ -319,9 +360,9 @@ ${answersSection}
       maxTurns = request.maxTurns;
     }
 
-    // For task execute phase, use the workspace as CWD so Claude Code writes
-    // files there. For everything else, use dataDir.
-    const cwd = (isTaskRun && request.taskPhase === 'execute' && request.workspacePath)
+    // For task execute/follow_up phases, use the workspace as CWD so Claude
+    // Code writes files there. For everything else, use dataDir.
+    const cwd = (isTaskRun && (request.taskPhase === 'execute' || request.taskPhase === 'follow_up') && request.workspacePath)
       ? request.workspacePath
       : this.dataDir;
 
@@ -334,6 +375,45 @@ ${answersSection}
       model: request.model,
     });
 
+    // For task execute/follow_up, also spawn a PTY runner for authentic terminal
+    // output. The PTY data goes directly to the renderer for xterm.js display.
+    // The stream-json runner above still handles structured events for the
+    // Plan/Deliverable tabs.
+    if (isTaskRun && request.taskPhase !== 'clarify') {
+      const ptyRunner = new TaskPtyRunner();
+      activeRun.ptyRunner = ptyRunner;
+
+      const ptyChannel = IPC_CHANNELS.taskTerminalData(runId);
+
+      ptyRunner.on('data', (data: string) => {
+        if (!webContents.isDestroyed()) {
+          webContents.send(ptyChannel, data);
+        }
+      });
+
+      // Listen for resize requests from the renderer
+      const resizeHandler = (_event: Electron.IpcMainEvent, resizeRunId: string, cols: number, rows: number) => {
+        if (resizeRunId === runId) {
+          ptyRunner.resize(cols, rows);
+        }
+      };
+      ipcMain.on(IPC_CHANNELS.TASK_TERMINAL_RESIZE, resizeHandler);
+
+      ptyRunner.on('exit', () => {
+        ipcMain.removeListener(IPC_CHANNELS.TASK_TERMINAL_RESIZE, resizeHandler);
+      });
+
+      ptyRunner.start({
+        runId,
+        prompt: fullPrompt,
+        agentName,
+        cwd,
+        maxTurns,
+        model: request.model,
+        appendSystemPrompt: 'CRITICAL: Never generate text on behalf of the user. Never output "User:" or simulate user messages. Your response ends when you have answered the request.',
+      });
+    }
+
     return runId;
   }
 
@@ -341,6 +421,7 @@ ${answersSection}
     const run = this.activeRuns.get(runId);
     if (!run) return false;
     run.runner.abort();
+    run.ptyRunner?.abort();
     this.finalizeRun(runId, 'cancelled', run.accumulatedText);
     return true;
   }
@@ -377,6 +458,9 @@ ${answersSection}
   ): void {
     const run = this.activeRuns.get(runId);
     if (!run) return;
+
+    // Kill PTY if still alive
+    run.ptyRunner?.abort();
 
     const isTaskRun = run.isTaskRun;
     this.activeRuns.delete(runId);

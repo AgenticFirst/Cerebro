@@ -336,7 +336,8 @@ def resolve_approval(approval_id: str, body: ApprovalResolve, db=Depends(get_db)
 
 @router.post("/runs/recover-stale")
 def recover_stale_runs(db=Depends(get_db)):
-    """Mark stale running/paused runs as failed and expire their pending approvals."""
+    """Mark stale running/paused runs as failed and expire their pending approvals.
+    Also recovers stale tasks stuck in running/clarifying/planning status."""
     now = _utcnow()
 
     stale_runs = (
@@ -362,5 +363,23 @@ def recover_stale_runs(db=Depends(get_db)):
             approval.resolved_at = now
             expired_approvals += 1
 
+    # Recover stale tasks (no subprocess is alive after restart)
+    from models import Task
+    stale_tasks = (
+        db.query(Task)
+        .filter(Task.status.in_(["running", "clarifying", "planning"]))
+        .all()
+    )
+    recovered_tasks = 0
+    for task in stale_tasks:
+        task.status = "failed"
+        task.error = "Interrupted — app was closed while task was running"
+        task.completed_at = now
+        recovered_tasks += 1
+
     db.commit()
-    return {"recovered_runs": recovered_runs, "expired_approvals": expired_approvals}
+    return {
+        "recovered_runs": recovered_runs,
+        "expired_approvals": expired_approvals,
+        "recovered_tasks": recovered_tasks,
+    }

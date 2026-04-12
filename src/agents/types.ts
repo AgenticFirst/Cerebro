@@ -43,9 +43,9 @@ export interface AgentRunRequest {
   // ── Task mode fields ──────────────────────────────────────────
   /** 'chat' (default) or 'task'. */
   runType?: 'chat' | 'task';
-  /** Which task subprocess phase: 'clarify' (short question pass) or 'execute' (full run). */
-  taskPhase?: 'clarify' | 'execute';
-  /** Override --max-turns. Default: 15 (chat), 5 (clarify), 60 (execute). */
+  /** Which task subprocess phase: 'clarify' (short question pass), 'execute' (full run), or 'follow_up'. */
+  taskPhase?: 'clarify' | 'execute' | 'follow_up';
+  /** Override --max-turns. Default: 15 (chat), 5 (clarify), 60 (execute/follow_up). */
   maxTurns?: number;
   /** Maximum plan phases (injected into the execute envelope). Default 6. */
   maxPhases?: number;
@@ -53,12 +53,14 @@ export interface AgentRunRequest {
   maxClarifyQuestions?: number;
   /** Use a pre-minted run_records row instead of creating one. */
   runIdOverride?: string;
-  /** Task workspace CWD for execute phase (overrides dataDir). */
+  /** Task workspace CWD for execute/follow_up phase (overrides dataDir). */
   workspacePath?: string;
   /** Pre-formatted answers block from the clarification pass. */
   clarificationAnswers?: string;
   /** Model override (e.g. "sonnet", "opus", "claude-sonnet-4-6"). */
   model?: string;
+  /** Pre-formatted context block for follow-up runs (original goal + previous deliverable). */
+  followUpContext?: string;
 }
 
 // ── Events sent to renderer ─────────────────────────────────────

@@ -1,21 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, RotateCcw, Trash2, FolderOpen, Terminal, Play, Square } from 'lucide-react';
+import { Trash2, Square } from 'lucide-react';
 import clsx from 'clsx';
 import { useTasks } from '../../../context/TaskContext';
 import { STATUS_CONFIG, formatElapsed, formatPhaseProgress } from './helpers';
 import TaskPlanView from './TaskPlanView';
-import TaskLogsView from './TaskLogsView';
+import TaskConsoleView from './TaskConsoleView';
 import TaskDeliverableView from './TaskDeliverableView';
 import TaskClarificationPanel from './TaskClarificationPanel';
 import TaskWorkspaceView from './TaskWorkspaceView';
-import TaskDevServerPanel from './TaskDevServerPanel';
+import TaskPreviewView from './TaskPreviewView';
+import TaskFollowUpInput from './TaskFollowUpInput';
 import type { Task, TaskDetail } from './types';
 
 interface TaskDetailPanelProps {
   taskId: string;
 }
 
-type TabId = 'plan' | 'logs' | 'deliverable' | 'workspace';
+type TabId = 'plan' | 'console' | 'deliverable' | 'workspace' | 'preview';
 
 export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
   const { tasks, liveTask, cancelTask, deleteTask, watchTask, unwatchTask, refresh } = useTasks();
@@ -24,7 +25,6 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
 
   const task = tasks.find((t) => t.id === taskId) ?? null;
 
-  // Fetch full detail on mount, id change, or status change (e.g. after finalization)
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -32,26 +32,19 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
         method: 'GET',
         path: `/tasks/${taskId}`,
       });
-      if (!cancelled && res.ok) {
-        setDetail(res.data);
-      }
+      if (!cancelled && res.ok) setDetail(res.data);
     };
     load();
     return () => { cancelled = true; };
   }, [taskId, task?.status]);
 
-  // Load persisted logs + attach live watcher for running tasks
   useEffect(() => {
-    if (task) {
-      watchTask(taskId);
-    }
+    if (task) watchTask(taskId);
     return () => unwatchTask();
   }, [taskId, task?.status]);
 
-  // Refresh detail when live task emits
   useEffect(() => {
     if (liveTask && liveTask.taskId === taskId) {
-      // Periodic detail refresh for persisted state
       const timer = setInterval(() => {
         window.cerebro.invoke<TaskDetail>({
           method: 'GET',
@@ -88,9 +81,12 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
   const hasWorkspace = task.deliverable_kind === 'code_app' || task.deliverable_kind === 'mixed';
   const tabs: Array<{ id: TabId; label: string }> = [
     { id: 'plan', label: 'Plan' },
-    { id: 'logs', label: 'Logs' },
+    { id: 'console', label: 'Console' },
     { id: 'deliverable', label: 'Deliverable' },
-    ...(hasWorkspace ? [{ id: 'workspace' as const, label: 'Workspace' }] : []),
+    ...(hasWorkspace ? [
+      { id: 'workspace' as const, label: 'Workspace' },
+      { id: 'preview' as const, label: 'Preview' },
+    ] : []),
   ];
 
   return (
@@ -171,13 +167,16 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
             ))}
           </div>
 
-          {/* Tab content */}
-          <div className="flex-1 overflow-y-auto min-h-0">
+          {/* Tab content — Console and Preview manage their own scroll */}
+          <div className={clsx(
+            'flex-1 min-h-0',
+            activeTab !== 'console' && activeTab !== 'preview' && 'overflow-y-auto',
+          )}>
             {activeTab === 'plan' && (
               <TaskPlanView task={task} liveTask={liveTask} />
             )}
-            {activeTab === 'logs' && (
-              <TaskLogsView task={task} liveTask={liveTask} />
+            {activeTab === 'console' && (
+              <TaskConsoleView task={task} liveTask={liveTask} />
             )}
             {activeTab === 'deliverable' && (
               <TaskDeliverableView task={task} detail={detail} />
@@ -185,7 +184,13 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
             {activeTab === 'workspace' && hasWorkspace && (
               <TaskWorkspaceView task={task} />
             )}
+            {activeTab === 'preview' && hasWorkspace && (
+              <TaskPreviewView task={task} detail={detail} />
+            )}
           </div>
+
+          {/* Follow-up input for completed tasks */}
+          {isTerminal && <TaskFollowUpInput taskId={taskId} />}
         </>
       )}
     </div>

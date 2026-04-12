@@ -127,7 +127,7 @@ export interface PhaseRuntimeState {
   summary: string | null;
 }
 
-// ── Log entry (for TaskLogsView) ──────────────────────────────────
+// ── Log entry (for TaskConsoleView) ───────────────────────────────
 
 export type TaskLogEntry =
   | { kind: 'text_delta'; text: string; phaseId: string | null }

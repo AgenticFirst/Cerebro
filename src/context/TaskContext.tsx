@@ -18,6 +18,7 @@ import {
   type ReactNode,
 } from 'react';
 import { TaskStreamParser, type TaskStreamEvent } from '../components/screens/tasks/stream-parser';
+import { parseTaskEvents } from '../components/screens/tasks/event-parser';
 import type {
   Task,
   TaskDetail,
@@ -29,6 +30,7 @@ import type {
   TaskLogEntry,
 } from '../components/screens/tasks/types';
 import type { RendererAgentEvent } from '../types/ipc';
+import { appendTaskTerminalData, clearTaskTerminalBuffer } from '../components/screens/tasks/taskTerminalBuffer';
 
 // ── Context types ───────────────────────────────────────────────
 
@@ -64,6 +66,7 @@ interface TaskContextValue {
   refresh: () => Promise<void>;
   createAndRunTask: (input: NewTaskInput) => Promise<Task>;
   submitClarification: (taskId: string, answers: Array<{ id: string; answer: string | boolean }>) => Promise<void>;
+  followUpTask: (taskId: string, instruction: string, model?: string) => Promise<void>;
   cancelTask: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   setSelectedTaskId: (id: string | null) => void;
@@ -171,6 +174,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       flushTimerRef.current = null;
     }
     parserRef.current = null;
+    // Clear the PTY terminal buffer for the completed run
+    const live = liveTaskRef.current;
+    if (live) clearTaskTerminalBuffer(live.runId);
   }, []);
 
   // ── Throttled UI update ──────────────────────────────────────
@@ -404,6 +410,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     workspacePath: string | null,
     clarificationAnswers?: string,
     model?: string,
+    followUp?: { content: string; context: string },
   ) => Promise<void>) | null>(null);
 
   const startSubprocess = useCallback(
@@ -415,14 +422,16 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       workspacePath: string | null,
       clarificationAnswers?: string,
       model?: string,
+      followUp?: { content: string; context: string },
     ) => {
-      const parser = new TaskStreamParser(phase);
+      const parserMode = phase === 'clarify' ? 'clarify' : 'execute';
+      const parser = new TaskStreamParser(parserMode);
       parserRef.current = parser;
 
       const live: LiveTaskState = {
         taskId: task.id,
         runId,
-        phase,
+        phase: parserMode,
         plan: task.plan ?? null,
         deliverableKind: task.deliverable_kind ?? null,
         phases: {},
@@ -445,15 +454,30 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       const unsub = window.cerebro.agent.onEvent(runId, handleStreamEvent);
       unsubRef.current = unsub;
 
+      // Buffer PTY terminal data globally so TaskConsoleView can replay
+      // on mount even if it renders after data started flowing.
+      // Subscribe BEFORE agent.run() to capture from the very first byte.
+      if (phase !== 'clarify') {
+        const unsubPty = window.cerebro.taskTerminal.onData(runId, (data: string) => {
+          appendTaskTerminalData(runId, data);
+        });
+        // Store the PTY unsub alongside the event unsub
+        const originalUnsub = unsub;
+        unsubRef.current = () => {
+          originalUnsub();
+          unsubPty();
+        };
+      }
+
       flushTimerRef.current = setInterval(() => {
         void flushEvents(task.id);
       }, FLUSH_INTERVAL_MS);
 
       await window.cerebro.agent.run({
         conversationId,
-        content: task.goal,
+        content: followUp?.content ?? task.goal,
         runType: 'task',
-        taskPhase: phase,
+        taskPhase: followUp ? 'follow_up' : phase,
         maxTurns: phase === 'clarify' ? 5 : task.max_turns,
         maxPhases: task.max_phases,
         maxClarifyQuestions: 5,
@@ -461,6 +485,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         workspacePath: workspacePath ?? undefined,
         clarificationAnswers,
         model,
+        followUpContext: followUp?.context,
       });
     },
     [handleStreamEvent, flushEvents],
@@ -605,6 +630,46 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     await refresh();
   }, [cleanup, startSubprocess, refresh]);
 
+  const followUpTask = useCallback(async (
+    taskId: string,
+    instruction: string,
+    model?: string,
+  ) => {
+    cleanup();
+
+    const res = await window.cerebro.invoke<{
+      task_id: string;
+      run_id: string;
+      conversation_id: string;
+      workspace_path: string | null;
+      follow_up_context: string;
+    }>({
+      method: 'POST',
+      path: `/tasks/${taskId}/follow-up`,
+      body: { instruction, model: model ?? null },
+    });
+    if (!res.ok) throw new Error('Failed to start follow-up');
+
+    const taskRes = await window.cerebro.invoke<Task>({
+      method: 'GET',
+      path: `/tasks/${taskId}`,
+    });
+    if (!taskRes.ok) throw new Error('Failed to fetch task');
+
+    await startSubprocess(
+      taskRes.data,
+      'execute',
+      res.data.run_id,
+      res.data.conversation_id,
+      res.data.workspace_path,
+      undefined,
+      model,
+      { content: instruction, context: res.data.follow_up_context },
+    );
+
+    await refresh();
+  }, [cleanup, startSubprocess, refresh]);
+
   const cancelTask = useCallback(async (id: string) => {
     const live = liveTaskRef.current;
     if (live && live.taskId === id && live.runId) {
@@ -648,21 +713,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       method: 'GET',
       path: `/tasks/${id}/events?limit=5000`,
     });
-    const logEntries: TaskLogEntry[] = [];
+    let logEntries: TaskLogEntry[] = [];
     let maxSeq = 0;
     if (eventsRes.ok && Array.isArray(eventsRes.data)) {
+      logEntries = parseTaskEvents(eventsRes.data);
       for (const evt of eventsRes.data) {
         if (evt.seq > maxSeq) maxSeq = evt.seq;
-        try {
-          const p = JSON.parse(evt.payload_json);
-          if (evt.kind === 'text_delta') logEntries.push({ kind: 'text_delta', text: p.delta ?? '', phaseId: p.phaseId ?? null });
-          else if (evt.kind === 'tool_start') logEntries.push({ kind: 'tool_start', toolCallId: p.toolCallId, toolName: p.toolName, args: p.args });
-          else if (evt.kind === 'tool_end') logEntries.push({ kind: 'tool_end', toolCallId: p.toolCallId, toolName: p.toolName, result: p.result, isError: p.isError });
-          else if (evt.kind === 'phase_start') logEntries.push({ kind: 'phase_start', phaseId: p.phaseId ?? '', name: p.name ?? '' });
-          else if (evt.kind === 'phase_end') logEntries.push({ kind: 'phase_end', phaseId: p.phaseId ?? '' });
-          else if (evt.kind === 'error') logEntries.push({ kind: 'error', message: p.error ?? 'Unknown error' });
-          else if (evt.kind === 'system') logEntries.push({ kind: 'system', message: p.message ?? 'system event' });
-        } catch { /* skip malformed */ }
       }
     }
 
@@ -771,6 +827,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     refresh,
     createAndRunTask,
     submitClarification,
+    followUpTask,
     cancelTask,
     deleteTask,
     setSelectedTaskId,

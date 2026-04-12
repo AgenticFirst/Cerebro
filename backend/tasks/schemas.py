@@ -83,11 +83,24 @@ class TaskRunStart(BaseModel):
     phase: Literal["clarify", "execute"]
 
 
+class TaskFollowUp(BaseModel):
+    instruction: str
+    model: str | None = None
+
+
 class TaskRunStartResponse(BaseModel):
     task_id: str
     run_id: str
     conversation_id: str
     workspace_path: str | None = None
+
+
+class TaskFollowUpResponse(BaseModel):
+    task_id: str
+    run_id: str
+    conversation_id: str
+    workspace_path: str | None = None
+    follow_up_context: str
 
 
 class TaskPlanUpsert(BaseModel):
