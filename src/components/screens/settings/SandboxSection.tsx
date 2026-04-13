@@ -15,6 +15,7 @@ import {
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useSandbox } from '../../../context/SandboxContext';
+import Toggle from '../../ui/Toggle';
 import type { LinkMode, LinkedProject } from '../../../sandbox/types';
 
 const ABSOLUTE_FORBIDDEN_ZONES_PATHS: readonly string[] = [
@@ -223,21 +224,7 @@ export default function SandboxSection() {
               : t('sandbox.inactiveDesc')}
           </div>
         </div>
-        <button
-          onClick={handleToggle}
-          className={clsx(
-            'relative w-10 h-6 rounded-full transition-colors cursor-pointer flex-shrink-0',
-            enabled ? 'bg-accent' : 'bg-white/[0.08]',
-          )}
-          aria-label={enabled ? t('sandbox.disableSandbox') : t('sandbox.enableSandbox')}
-        >
-          <span
-            className={clsx(
-              'absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform',
-              enabled ? 'translate-x-[18px]' : 'translate-x-0.5',
-            )}
-          />
-        </button>
+        <Toggle checked={enabled} onChange={handleToggle} />
       </div>
 
       {confirmDisable && (
