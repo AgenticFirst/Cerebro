@@ -128,7 +128,7 @@ export default function ApprovalCard({ approval, variant, onApprove, onDeny }: A
             </p>
           )}
           <p className="text-[11px] text-text-tertiary mt-0.5">
-            {t('approvals.requested', { time: timeAgo(approval.requested_at) })}
+            {t('approvals.requested', { time: timeAgo(approval.requested_at, t) })}
           </p>
         </div>
         {variant === 'history' && (
@@ -150,7 +150,7 @@ export default function ApprovalCard({ approval, variant, onApprove, onDeny }: A
       {/* Resolved time (history only) */}
       {variant === 'history' && approval.resolved_at && (
         <div className="mt-1 text-[11px] text-text-tertiary">
-          {t('approvals.resolved', { time: timeAgo(approval.resolved_at) })}
+          {t('approvals.resolved', { time: timeAgo(approval.resolved_at, t) })}
         </div>
       )}
 

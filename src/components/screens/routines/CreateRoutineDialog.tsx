@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Hand, Clock, Webhook } from 'lucide-react';
 import clsx from 'clsx';
@@ -65,11 +65,11 @@ export default function CreateRoutineDialog({
     }
   };
 
-  const triggers: Array<{ type: TriggerType; icon: typeof Hand; label: string; desc: string }> = [
+  const triggers = useMemo<Array<{ type: TriggerType; icon: typeof Hand; label: string; desc: string }>>(() => [
     { type: 'manual', icon: Hand, label: t('triggers.manual'), desc: t('createRoutine.triggerManualDesc') },
     { type: 'cron', icon: Clock, label: t('triggers.scheduled'), desc: t('createRoutine.triggerScheduledDesc') },
     { type: 'webhook', icon: Webhook, label: t('triggers.webhook'), desc: t('createRoutine.triggerWebhookDesc') },
-  ];
+  ], [t]);
 
   return (
     <div
@@ -125,22 +125,22 @@ export default function CreateRoutineDialog({
               {t('createRoutine.trigger')}
             </label>
             <div className="flex gap-2">
-              {triggers.map((t) => {
-                const Icon = t.icon;
+              {triggers.map((trigger) => {
+                const Icon = trigger.icon;
                 return (
                   <button
-                    key={t.type}
+                    key={trigger.type}
                     type="button"
-                    onClick={() => setTriggerType(t.type)}
+                    onClick={() => setTriggerType(trigger.type)}
                     className={clsx(
                       'flex-1 flex flex-col items-center gap-1 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors border',
-                      triggerType === t.type
+                      triggerType === trigger.type
                         ? 'bg-accent/10 border-accent/30 text-accent'
                         : 'bg-bg-surface border-border-subtle text-text-tertiary hover:text-text-secondary hover:border-border-default',
                     )}
                   >
                     <Icon size={15} />
-                    {t.label}
+                    {trigger.label}
                   </button>
                 );
               })}

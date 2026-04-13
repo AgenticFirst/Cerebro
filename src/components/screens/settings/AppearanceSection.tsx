@@ -12,14 +12,10 @@ const LANGUAGES = [
 export default function AppearanceSection() {
   const { t, i18n } = useTranslation();
   const [showHistoricalLogs, setShowHistoricalLogs] = useState(false);
-  const [language, setLanguage] = useState(i18n.language);
 
   useEffect(() => {
     loadSetting<boolean>('show_historical_step_logs').then((v) => {
       if (v != null) setShowHistoricalLogs(v);
-    });
-    loadSetting<string>('ui_language').then((v) => {
-      if (v) setLanguage(v);
     });
   }, []);
 
@@ -30,9 +26,9 @@ export default function AppearanceSection() {
   };
 
   const handleLanguageChange = (code: string) => {
-    setLanguage(code);
     i18n.changeLanguage(code);
     saveSetting('ui_language', code);
+    try { localStorage.setItem('cerebro_ui_language', code); } catch { /* private browsing */ }
   };
 
   return (
@@ -49,7 +45,7 @@ export default function AppearanceSection() {
           </p>
         </div>
         <select
-          value={language}
+          value={i18n.language}
           onChange={(e) => handleLanguageChange(e.target.value)}
           className="bg-bg-elevated text-text-primary text-sm rounded-md border border-border-subtle px-3 py-1.5 outline-none focus:border-accent cursor-pointer min-w-[140px]"
         >

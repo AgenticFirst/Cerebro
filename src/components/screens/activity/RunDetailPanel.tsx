@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Loader2, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import type { RunRecord, EventRecord, RunListResponse } from './types';
-import { formatDuration, formatTimestamp, STATUS_CONFIG, RUN_TYPE_LABELS, TRIGGER_LABELS } from './helpers';
+import { formatDuration, formatTimestamp, STATUS_CONFIG } from './helpers';
 import StatusDot from './StatusDot';
 import StepTimeline from './StepTimeline';
 import EventLog from './EventLog';
 
-// ── Section helper ──────────────────────────────────────────────
+// ── Section helper ─────────���────────────────────────────────────
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -20,11 +21,11 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-// ── Tabs ────────────────────────────────────────────────────────
+// ── Tabs ──────────────���─────────────────────────────────────────
 
 type Tab = 'steps' | 'events' | 'children';
 
-// ── Component ──────────────────────────────────────────────────
+// ── Component ───────��──────────────────────────────────────────
 
 interface RunDetailPanelProps {
   runId: string;
@@ -34,6 +35,7 @@ interface RunDetailPanelProps {
 }
 
 export default function RunDetailPanel({ runId, routineName, onClose, onSelectRun }: RunDetailPanelProps) {
+  const { t } = useTranslation();
   const [run, setRun] = useState<RunRecord | null>(null);
   const [events, setEvents] = useState<EventRecord[]>([]);
   const [children, setChildren] = useState<RunRecord[]>([]);
@@ -91,13 +93,13 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
   }, [isLive, fetchDetail]);
 
   const cfg = run ? (STATUS_CONFIG[run.status] ?? STATUS_CONFIG.created) : STATUS_CONFIG.created;
-  const displayName = routineName ?? (run ? (RUN_TYPE_LABELS[run.run_type] ?? run.run_type) : 'Run');
+  const displayName = routineName ?? (run ? t(`activity.filter.${run.run_type}`, { defaultValue: run.run_type }) : t('activity.run'));
   const hasChildren = children.length > 0;
 
   const tabs: { key: Tab; label: string; show: boolean }[] = [
-    { key: 'steps', label: 'Steps', show: true },
-    { key: 'events', label: 'Events', show: true },
-    { key: 'children', label: 'Children', show: hasChildren },
+    { key: 'steps', label: t('activity.tabSteps'), show: true },
+    { key: 'events', label: t('activity.tabEvents'), show: true },
+    { key: 'children', label: t('activity.tabChildren'), show: hasChildren },
   ];
 
   return (
@@ -105,14 +107,14 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle flex-shrink-0">
         <h3 className="text-sm font-semibold text-text-primary tracking-wide">
-          Run Details
+          {t('activity.runDetails')}
         </h3>
         <div className="flex items-center gap-1">
           {!loading && run && (
             <button
               onClick={() => fetchDetail(runId, { cancelled: false })}
               className="p-1 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
-              title="Refresh"
+              title={t('common.retry')}
             >
               <RefreshCw size={14} />
             </button>
@@ -134,36 +136,36 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
           </div>
         ) : loadError ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <p className="text-xs text-text-tertiary">Failed to load run details.</p>
+            <p className="text-xs text-text-tertiary">{t('activity.failedToLoadDetails')}</p>
             <button
               onClick={() => fetchDetail(runId, { cancelled: false })}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-accent bg-accent/10 hover:bg-accent/20 border border-accent/20 rounded-lg transition-colors"
             >
               <RefreshCw size={14} />
-              Retry
+              {t('common.retry')}
             </button>
           </div>
         ) : run ? (
           <>
             {/* Run info */}
-            <Section label="RUN">
+            <Section label={t('activity.run')}>
               <div className="space-y-2.5">
                 <div className="text-sm font-medium text-text-primary">{displayName}</div>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1.5">
                     <StatusDot status={run.status} />
-                    <span className={clsx('text-xs font-medium', cfg.text)}>{cfg.label}</span>
+                    <span className={clsx('text-xs font-medium', cfg.text)}>{t(`status.${run.status}`, { defaultValue: run.status })}</span>
                   </div>
                   <span className="text-xs tabular-nums text-text-secondary">
                     {formatDuration(run.duration_ms)}
                   </span>
                   <span className="text-xs text-text-tertiary">
-                    {TRIGGER_LABELS[run.trigger] ?? run.trigger}
+                    {t(`triggers.${run.trigger}`, { defaultValue: run.trigger })}
                   </span>
                 </div>
                 <div className="space-y-1 text-[11px] text-text-tertiary">
-                  <div>Started: <span className="text-text-secondary">{formatTimestamp(run.started_at)}</span></div>
-                  <div>Finished: <span className="text-text-secondary">{formatTimestamp(run.completed_at)}</span></div>
+                  <div>{t('activity.started')}: <span className="text-text-secondary">{formatTimestamp(run.started_at, t)}</span></div>
+                  <div>{t('activity.finished')}: <span className="text-text-secondary">{formatTimestamp(run.completed_at, t)}</span></div>
                 </div>
                 {run.status === 'failed' && run.error && (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5">
@@ -175,7 +177,7 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
 
             {/* Tab switcher */}
             <div className="border-b border-border-subtle flex gap-4">
-              {tabs.filter(t => t.show).map((tab) => (
+              {tabs.filter(tb => tb.show).map((tab) => (
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
@@ -211,14 +213,14 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
                       <StatusDot status={child.status} />
                       <div className="flex-1 min-w-0">
                         <span className="text-xs text-text-primary truncate block">
-                          {RUN_TYPE_LABELS[child.run_type] ?? child.run_type}
+                          {t(`activity.filter.${child.run_type}`, { defaultValue: child.run_type })}
                         </span>
                       </div>
                       <span className="text-[10px] tabular-nums text-text-tertiary">
                         {formatDuration(child.duration_ms)}
                       </span>
                       <span className={clsx('text-[10px] font-medium', childCfg.text)}>
-                        {childCfg.label}
+                        {t(`status.${child.status}`, { defaultValue: child.status })}
                       </span>
                     </button>
                   );
@@ -227,7 +229,7 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
             )}
           </>
         ) : (
-          <p className="text-xs text-text-tertiary text-center py-8">Run not found.</p>
+          <p className="text-xs text-text-tertiary text-center py-8">{t('activity.runNotFound')}</p>
         )}
       </div>
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Copy, Check, Trash2, UserPlus, XCircle, Users, Phone } from 'lucide-react';
 import clsx from 'clsx';
@@ -13,7 +13,7 @@ import AvatarPicker from './AvatarPicker';
 const DOMAINS = ['', 'productivity', 'health', 'finance', 'creative', 'engineering', 'research'];
 
 function timeAgo(dateStr: string | null, t: (key: string, opts?: Record<string, unknown>) => string): string {
-  if (!dateStr) return 'Never';
+  if (!dateStr) return t('timeAgo.never');
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return t('timeAgo.justNow');
@@ -89,6 +89,14 @@ export default function ExpertDetailPanel({
   const [systemPrompt, setSystemPrompt] = useState('');
   const [copied, setCopied] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
+
+  const capabilities = useMemo(() => [
+    t('experts.capResponds'),
+    t('experts.capRoutes'),
+    t('experts.capRoutines'),
+    t('experts.capDrafts'),
+    t('experts.capMemory'),
+  ], [t]);
 
   useEffect(() => {
     if (expert) {
@@ -177,13 +185,7 @@ export default function ExpertDetailPanel({
 
             <Section label={t('experts.capabilities')}>
               <div className="space-y-2">
-                {[
-                  t('experts.capResponds'),
-                  t('experts.capRoutes'),
-                  t('experts.capRoutines'),
-                  t('experts.capDrafts'),
-                  t('experts.capMemory'),
-                ].map((cap) => (
+                {capabilities.map((cap) => (
                   <div key={cap} className="flex items-center gap-2.5">
                     <div className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
                     <span className="text-xs text-text-secondary">{cap}</span>
@@ -308,7 +310,7 @@ export default function ExpertDetailPanel({
                         <button
                           onClick={() => removeMember(member.id)}
                           className="p-0.5 text-text-tertiary opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all"
-                          title="Remove from team"
+                          title={t('experts.removeFromTeam')}
                         >
                           <XCircle size={14} />
                         </button>
@@ -316,7 +318,7 @@ export default function ExpertDetailPanel({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-text-tertiary">No members yet.</p>
+                  <p className="text-xs text-text-tertiary">{t('experts.noMembersYet')}</p>
                 )}
 
                 {/* Add member */}
@@ -324,7 +326,7 @@ export default function ExpertDetailPanel({
                   <div className="mt-2 bg-bg-base rounded-lg border border-border-subtle max-h-36 overflow-y-auto scrollbar-thin">
                     {addableExperts.length === 0 ? (
                       <p className="text-xs text-text-tertiary px-3 py-2.5">
-                        No available experts to add.
+                        {t('experts.noAvailableExperts')}
                       </p>
                     ) : (
                       addableExperts.map((exp) => (
@@ -347,19 +349,19 @@ export default function ExpertDetailPanel({
                     className="mt-2 flex items-center gap-1.5 text-xs text-accent hover:text-accent-hover transition-colors"
                   >
                     <UserPlus size={13} />
-                    Add Member
+                    {t('experts.addMember')}
                   </button>
                 )}
               </Section>
             )}
 
             {/* Skills */}
-            <Section label="SKILLS">
+            <Section label={t('experts.skills')}>
               <ExpertSkillsSection expertId={expert.id} />
             </Section>
 
             {/* System Prompt */}
-            <Section label="SYSTEM CONTEXT">
+            <Section label={t('experts.systemContext')}>
               <textarea
                 value={systemPrompt}
                 onChange={(e) => setSystemPrompt(e.target.value)}
@@ -367,24 +369,24 @@ export default function ExpertDetailPanel({
                   systemPrompt !== (expert.systemPrompt ?? '') &&
                   saveField('system_prompt', systemPrompt || null)
                 }
-                placeholder="Define this expert's behavior and personality..."
+                placeholder={t('experts.systemPromptPlaceholder')}
                 rows={8}
                 className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-secondary font-mono leading-relaxed placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors resize-none"
               />
             </Section>
 
             {/* Settings */}
-            <Section label="SETTINGS">
+            <Section label={t('experts.settingsSection')}>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-text-secondary">Enabled</span>
+                  <span className="text-xs text-text-secondary">{t('experts.enabled')}</span>
                   <Toggle
                     checked={expert.isEnabled}
                     onChange={() => onToggleEnabled(expert)}
                   />
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-text-secondary">Pinned</span>
+                  <span className="text-xs text-text-secondary">{t('experts.pinnedLabel')}</span>
                   <Toggle
                     checked={expert.isPinned}
                     onChange={() => onTogglePinned(expert)}
@@ -394,26 +396,26 @@ export default function ExpertDetailPanel({
             </Section>
 
             {/* Expert Memory */}
-            <Section label="MEMORY">
+            <Section label={t('experts.memorySection')}>
               <ExpertMemoryTab expert={expert} />
             </Section>
 
             {/* Info */}
-            <Section label="INFO">
+            <Section label={t('experts.infoSection')}>
               <div className="space-y-1.5 text-xs text-text-tertiary">
                 <div>
-                  Source:{' '}
+                  {t('experts.source')}:{' '}
                   <span className="text-text-secondary capitalize">{expert.source}</span>
                 </div>
                 <div>
-                  Type:{' '}
+                  {t('experts.type')}:{' '}
                   <span className="text-text-secondary capitalize">{expert.type}</span>
                 </div>
                 <div>
-                  Version: <span className="text-text-secondary">{expert.version}</span>
+                  {t('experts.versionLabel')}: <span className="text-text-secondary">{expert.version}</span>
                 </div>
                 <div>
-                  Last active:{' '}
+                  {t('experts.lastActive')}:{' '}
                   <span className="text-text-secondary">{timeAgo(expert.lastActiveAt, t)}</span>
                 </div>
               </div>
@@ -426,7 +428,7 @@ export default function ExpertDetailPanel({
                 className="flex items-center gap-2 text-xs text-red-400/70 hover:text-red-400 transition-colors"
               >
                 <Trash2 size={13} />
-                Delete Expert
+                {t('experts.deleteExpert')}
               </button>
             )}
           </>
@@ -448,7 +450,7 @@ export default function ExpertDetailPanel({
           }}
         />
         <span className="text-xs text-text-secondary">
-          {isCerebro ? 'Always Active' : expert?.isEnabled ? 'Connected' : 'Disabled'}
+          {isCerebro ? t('experts.alwaysActive') : expert?.isEnabled ? t('experts.connected') : t('status.disabled')}
         </span>
       </div>
     </div>

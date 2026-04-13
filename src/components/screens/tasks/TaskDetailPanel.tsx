@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Trash2, Square } from 'lucide-react';
 import clsx from 'clsx';
@@ -25,7 +25,7 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('plan');
 
-  const task = tasks.find((t) => t.id === taskId) ?? null;
+  const task = tasks.find((tk) => tk.id === taskId) ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +70,7 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
   if (!task) {
     return (
       <div className="flex-1 flex items-center justify-center text-text-tertiary text-sm">
-        Task not found
+        {t('taskDetail.taskNotFound')}
       </div>
     );
   }
@@ -81,7 +81,7 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
   const showClarification = task.status === 'awaiting_clarification';
 
   const hasWorkspace = task.deliverable_kind === 'code_app' || task.deliverable_kind === 'mixed';
-  const tabs: Array<{ id: TabId; label: string }> = [
+  const tabs = useMemo<Array<{ id: TabId; label: string }>>(() => [
     { id: 'plan', label: t('taskDetail.tabPlan') },
     { id: 'console', label: t('taskDetail.tabConsole') },
     { id: 'deliverable', label: t('taskDetail.tabDeliverable') },
@@ -89,7 +89,7 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
       { id: 'workspace' as const, label: t('taskDetail.tabWorkspace') },
       { id: 'preview' as const, label: t('taskDetail.tabPreview') },
     ] : []),
-  ];
+  ], [t, hasWorkspace]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -104,7 +104,7 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
               <button
                 onClick={handleCancel}
                 className="p-1.5 rounded-md hover:bg-bg-secondary text-text-tertiary hover:text-red-400 transition-colors cursor-pointer"
-                title="Cancel task"
+                title={t('taskDetail.cancelTask')}
               >
                 <Square size={14} />
               </button>
@@ -113,7 +113,7 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
               <button
                 onClick={handleDelete}
                 className="p-1.5 rounded-md hover:bg-bg-secondary text-text-tertiary hover:text-red-400 transition-colors cursor-pointer"
-                title="Delete task"
+                title={t('taskDetail.deleteTask')}
               >
                 <Trash2 size={14} />
               </button>

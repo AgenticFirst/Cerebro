@@ -239,7 +239,7 @@ export default function MemorySection() {
               {directories.length > 0 && selectedSlug && (
                 <div className="text-xs text-text-tertiary mt-2">
                   {t('memory.lastUpdated', { time: timeAgo(
-                    directories.find((d) => d.slug === selectedSlug)?.lastModified ?? null,
+                    directories.find((d) => d.slug === selectedSlug)?.lastModified ?? null, t,
                   ) })}
                 </div>
               )}

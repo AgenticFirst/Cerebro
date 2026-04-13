@@ -18,6 +18,7 @@ import { ClaudeCodeRunner } from '../claude-code/stream-adapter';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { getAgentNameForExpert, installAll } from '../claude-code/installer';
 import { IPC_CHANNELS } from '../types/ipc';
+import { buildSystemPrompt } from '../i18n/language-directive';
 
 /** Cap concurrent runs to prevent spawning a wall of subprocesses. */
 const MAX_CONCURRENT_RUNS = 5;
@@ -404,13 +405,6 @@ ${answersSection}
         ipcMain.removeListener(IPC_CHANNELS.TASK_TERMINAL_RESIZE, resizeHandler);
       });
 
-      let ptySystemPrompt = 'CRITICAL: Never generate text on behalf of the user. Never output "User:" or simulate user messages. Your response ends when you have answered the request.';
-      if (request.language && request.language !== 'en') {
-        const LANGUAGE_NAMES: Record<string, string> = { es: 'Spanish / Espa\u00f1ol' };
-        const langName = LANGUAGE_NAMES[request.language] || request.language;
-        ptySystemPrompt += `\n\nIMPORTANT: You MUST respond in ${langName}. All your text output \u2014 explanations, summaries, instructions, and conversational replies \u2014 must be in ${langName}. Technical terms, code, file paths, and brand names (like "Cerebro") remain in their original language.`;
-      }
-
       ptyRunner.start({
         runId,
         prompt: fullPrompt,
@@ -418,7 +412,7 @@ ${answersSection}
         cwd,
         maxTurns,
         model: request.model,
-        appendSystemPrompt: ptySystemPrompt,
+        appendSystemPrompt: buildSystemPrompt(request.language),
       });
     }
 

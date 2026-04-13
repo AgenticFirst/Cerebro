@@ -13,11 +13,11 @@ function timeAgo(dateStr: string | null, t: (key: string, opts?: Record<string, 
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return t('routineEditor.justNow');
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 60) return t('timeAgo.minutesAgo', { count: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t('timeAgo.hoursAgo', { count: hrs });
   const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return t('timeAgo.daysAgo', { count: days });
 }
 
 const TRIGGER_META: Record<string, { icon: typeof Hand; labelKey: string }> = {
@@ -112,11 +112,11 @@ export default function RoutineCard({
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-border-subtle">
         <div className="flex items-center gap-3 text-[11px] text-text-tertiary">
           <span>
-            Last run: <span className="text-text-secondary">{timeAgo(routine.lastRunAt, t)}</span>
+            {t('routines.lastRun')}: <span className="text-text-secondary">{timeAgo(routine.lastRunAt, t)}</span>
           </span>
           {routine.runCount > 0 && (
             <span>
-              Runs: <span className="text-text-secondary">{routine.runCount}</span>
+              {t('routines.runs')}: <span className="text-text-secondary">{routine.runCount}</span>
             </span>
           )}
         </div>
@@ -130,7 +130,7 @@ export default function RoutineCard({
           className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-accent hover:text-accent-hover disabled:text-text-tertiary disabled:cursor-not-allowed rounded transition-colors"
         >
           <Play size={11} />
-          Run Now
+          {t('routines.runNow')}
         </button>
       </div>
     </div>

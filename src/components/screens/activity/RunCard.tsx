@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { RunRecord } from './types';
-import { timeAgo, formatDuration, STATUS_CONFIG, RUN_TYPE_LABELS, TRIGGER_LABELS } from './helpers';
+import { timeAgo, formatDuration, STATUS_CONFIG } from './helpers';
 import StatusDot from './StatusDot';
 
 interface RunCardProps {
@@ -15,6 +16,7 @@ interface RunCardProps {
 }
 
 export default function RunCard({ run, index, routineName, isSelected, onClick, onNavigateApprovals }: RunCardProps) {
+  const { t } = useTranslation();
   const cfg = STATUS_CONFIG[run.status] ?? STATUS_CONFIG.created;
   const isRunning = run.status === 'running';
   const isPaused = run.status === 'paused';
@@ -34,7 +36,7 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
     return () => clearInterval(id);
   }, [isRunning, run.started_at]);
 
-  const displayName = routineName ?? RUN_TYPE_LABELS[run.run_type] ?? run.run_type;
+  const displayName = routineName ?? t(`activity.filter.${run.run_type}`, { defaultValue: run.run_type });
   const duration = isRunning ? formatDuration(elapsed) : formatDuration(run.duration_ms);
 
   return (
@@ -61,24 +63,24 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
             </span>
             {isOrchestration && (
               <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
-                Orchestration
+                {t('activity.filter.orchestration')}
               </span>
             )}
             {isPreview && (
               <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-bg-elevated text-text-tertiary border border-border-subtle flex-shrink-0">
-                Preview
+                {t('activity.filter.preview')}
               </span>
             )}
           </div>
 
           {/* Metadata row */}
           <div className="flex items-center gap-3 text-[11px] text-text-tertiary">
-            <span>{timeAgo(run.started_at)}</span>
+            <span>{timeAgo(run.started_at, t)}</span>
             <span className="flex items-center gap-1">
               {isRunning && <Loader2 size={10} className="animate-spin text-yellow-500" />}
-              {run.completed_steps}/{run.total_steps} steps
+              {t('activity.stepsProgress', { completed: run.completed_steps, total: run.total_steps })}
             </span>
-            <span>{TRIGGER_LABELS[run.trigger] ?? run.trigger}</span>
+            <span>{t(`triggers.${run.trigger}`, { defaultValue: run.trigger })}</span>
           </div>
 
           {/* Paused indicator — links to Approvals screen */}
@@ -87,7 +89,7 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
               onClick={(e) => { e.stopPropagation(); onNavigateApprovals?.(); }}
               className="mt-1.5 text-[11px] text-amber-400 font-medium hover:text-amber-300 transition-colors text-left"
             >
-              Awaiting approval &rarr;
+              {t('activity.awaitingApproval')} &rarr;
             </button>
           )}
 
@@ -102,7 +104,7 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
         {/* Duration + status label */}
         <div className="flex flex-col items-end gap-1 flex-shrink-0">
           <span className="text-xs tabular-nums text-text-secondary">{duration}</span>
-          <span className={clsx('text-[10px] font-medium', cfg.text)}>{cfg.label}</span>
+          <span className={clsx('text-[10px] font-medium', cfg.text)}>{t(`status.${run.status}`, { defaultValue: run.status })}</span>
         </div>
       </div>
     </div>
