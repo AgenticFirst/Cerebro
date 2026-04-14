@@ -6,9 +6,10 @@
  * stream-fn, no logger.
  */
 
-export { AgentRuntime } from './runtime';
+export { AgentRuntime, type AgentEventSink } from './runtime';
 export type {
   AgentRunRequest,
+  AgentRunSource,
   RendererAgentEvent,
   ActiveRunInfo,
   MessageSnapshot,

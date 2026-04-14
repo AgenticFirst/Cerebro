@@ -73,6 +73,10 @@ Runs entirely on your machine. SQLite database, local file system, OS keychain f
 
 Voice call mode with any expert. Local speech-to-text via faster-whisper and text-to-speech via Kokoro ONNX — no cloud transcription required. Waveform visualization, live transcript, and subtitles built in.
 
+### Remote Chat via Telegram
+
+Chat with Cerebro from your phone over Telegram. No public URL or tunnel needed — Cerebro long-polls the Telegram Bot API from your laptop. Bring your own bot token (nothing hard-coded in the repo), allowlist your Telegram user IDs, and you get streamed replies, voice-note transcription via the local Whisper model, inline approval buttons, and routines that DM you on completion. See [docs/telegram.md](docs/telegram.md) for the full setup guide.
+
 ## Architecture
 
 ```

@@ -2,7 +2,8 @@ import type { ComponentType } from 'react';
 import { Mail } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { TelegramIcon, WhatsAppIcon } from '../../icons/BrandIcons';
+import { WhatsAppIcon } from '../../icons/BrandIcons';
+import TelegramSection from './TelegramSection';
 
 interface Channel {
   id: string;
@@ -13,15 +14,9 @@ interface Channel {
   textColor: string;
 }
 
-const CHANNELS: Channel[] = [
-  {
-    id: 'telegram',
-    nameKey: 'channelsSection.telegram',
-    descKey: 'channelsSection.telegramDesc',
-    icon: TelegramIcon,
-    color: 'bg-sky-500/15',
-    textColor: 'text-sky-400',
-  },
+// Channels that are shipped live are rendered with their own section above.
+// Everything in this list is still "Coming Soon".
+const PENDING_CHANNELS: Channel[] = [
   {
     id: 'whatsapp',
     nameKey: 'channelsSection.whatsapp',
@@ -75,8 +70,14 @@ export default function ChannelsSection() {
         {t('channelsSection.description')}
       </p>
 
-      <div className="mt-6 space-y-2">
-        {CHANNELS.map((channel) => (
+      {/* Telegram — live. */}
+      <div className="mt-6">
+        <TelegramSection />
+      </div>
+
+      {/* Other channels — still "Coming Soon". */}
+      <div className="mt-8 space-y-2">
+        {PENDING_CHANNELS.map((channel) => (
           <ChannelCard key={channel.id} channel={channel} />
         ))}
       </div>

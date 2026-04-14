@@ -1,8 +1,12 @@
 /**
- * channel action — interface for messaging channel integrations.
+ * channel action — sends a message through a configured messaging channel
+ * (currently: telegram). Routines use this as a DAG step.
  *
- * V0 stub: Returns an error indicating the channel is not yet available.
- * Implementation deferred to roadmap Section 10.
+ * The TelegramBridge is provided via a process-wide setter so that the
+ * action's registration-time factory doesn't need to know about bridge
+ * lifecycle. If no bridge is registered, the action returns a "skipped"
+ * result rather than throwing — routines shouldn't fail just because
+ * the user hasn't connected a channel yet.
  */
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
@@ -18,7 +22,30 @@ export interface ChannelParams {
 
 export interface ChannelOutput {
   delivered: boolean;
+  sent: number;
+  skipped: number;
+  errors: string[];
   messageId?: string;
+}
+
+// ── Proactive-send contract (implemented by TelegramBridge) ─────
+
+export interface ProactiveSender {
+  sendProactive(
+    recipients: string[],
+    text: string,
+  ): Promise<{ sent: number; skipped: number; errors: string[] }>;
+}
+
+// Process-wide registry — populated from main.ts after the bridge starts.
+const senders = new Map<string, ProactiveSender>();
+
+export function registerChannelSender(channel: string, sender: ProactiveSender): void {
+  senders.set(channel, sender);
+}
+
+export function unregisterChannelSender(channel: string): void {
+  senders.delete(channel);
 }
 
 // ── Action definition ───────────────────────────────────────────
@@ -26,7 +53,7 @@ export interface ChannelOutput {
 export const channelAction: ActionDefinition = {
   type: 'channel',
   name: 'Channel',
-  description: 'Sends and receives messages via messaging channels (Telegram, WhatsApp, Email, etc.).',
+  description: 'Sends messages via messaging channels (Telegram, and others as they are added).',
 
   inputSchema: {
     type: 'object',
@@ -47,13 +74,65 @@ export const channelAction: ActionDefinition = {
     type: 'object',
     properties: {
       delivered: { type: 'boolean' },
-      messageId: { type: 'string' },
+      sent: { type: 'number' },
+      skipped: { type: 'number' },
+      errors: { type: 'array', items: { type: 'string' } },
     },
-    required: ['delivered'],
+    required: ['delivered', 'sent', 'skipped', 'errors'],
   },
 
   execute: async (input: ActionInput): Promise<ActionOutput> => {
     const params = input.params as unknown as ChannelParams;
-    throw new Error(`Channel '${params.channel}' is not yet available. Channel support is coming in a future update.`);
+    const channel = String(params.channel ?? '').toLowerCase();
+    const operation = String(params.operation ?? 'send').toLowerCase();
+
+    if (operation !== 'send') {
+      return {
+        data: {
+          delivered: false,
+          sent: 0,
+          skipped: 0,
+          errors: [`operation "${operation}" not supported — only "send"`],
+        },
+        summary: `Unsupported channel operation: ${operation}`,
+      };
+    }
+
+    const recipients = Array.isArray(params.recipients)
+      ? params.recipients.filter((r): r is string => typeof r === 'string' && r.length > 0)
+      : [];
+
+    if (recipients.length === 0) {
+      return {
+        data: { delivered: false, sent: 0, skipped: 0, errors: ['no recipients provided'] },
+        summary: 'No recipients provided.',
+      };
+    }
+
+    const sender = senders.get(channel);
+    if (!sender) {
+      return {
+        data: {
+          delivered: false,
+          sent: 0,
+          skipped: recipients.length,
+          errors: [`channel "${channel}" is not connected — configure it in Integrations`],
+        },
+        summary: `Channel "${channel}" not connected.`,
+      };
+    }
+
+    const message = String(params.message ?? '');
+    const result = await sender.sendProactive(recipients, message);
+
+    return {
+      data: {
+        delivered: result.sent > 0,
+        sent: result.sent,
+        skipped: result.skipped,
+        errors: result.errors,
+      },
+      summary: `Sent ${result.sent}/${recipients.length} via ${channel}${result.errors.length ? ` (${result.errors.length} errors)` : ''}.`,
+    };
   },
 };

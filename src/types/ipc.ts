@@ -65,6 +65,12 @@ export const IPC_CHANNELS = {
 
   // Shell
   SHELL_OPEN_PATH: 'shell:open-path',
+
+  // Telegram bridge
+  TELEGRAM_VERIFY: 'telegram:verify',
+  TELEGRAM_ENABLE: 'telegram:enable',
+  TELEGRAM_DISABLE: 'telegram:disable',
+  TELEGRAM_STATUS: 'telegram:status',
 } as const;
 
 // --- Backend Request/Response ---
@@ -242,6 +248,29 @@ export interface SandboxAPI {
   setCache(config: import('../sandbox/types').SandboxConfig): Promise<void>;
 }
 
+// --- Telegram bridge ---
+
+export interface TelegramVerifyResponse {
+  ok: boolean;
+  username?: string;
+  botId?: number;
+  error?: string;
+}
+
+export interface TelegramStatusResponse {
+  running: boolean;
+  lastPollAt: number | null;
+  lastError: string | null;
+  unknownLastAttempt: Record<string, number>;
+}
+
+export interface TelegramAPI {
+  verify(token: string): Promise<TelegramVerifyResponse>;
+  enable(): Promise<{ ok: boolean; error?: string }>;
+  disable(): Promise<void>;
+  status(): Promise<TelegramStatusResponse>;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -260,6 +289,7 @@ export interface CerebroAPI {
   taskTerminal: TaskTerminalAPI;
   shell: ShellAPI;
   sandbox: SandboxAPI;
+  telegram: TelegramAPI;
 }
 
 export interface ShellAPI {

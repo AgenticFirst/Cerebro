@@ -10,6 +10,11 @@ from pydantic import BaseModel
 TriggerType = Literal["manual", "cron", "webhook"]
 
 
+class NotifyChannel(BaseModel):
+    channel: Literal["telegram"]
+    recipient: str
+
+
 # ── Request Schemas ──────────────────────────────────────────────
 
 
@@ -23,6 +28,7 @@ class RoutineCreate(BaseModel):
     default_runner_id: str | None = None
     approval_gates: list[str] | None = None
     required_connections: list[str] | None = None
+    notify_channels: list[NotifyChannel] | None = None
     source: str = "user"
     source_conversation_id: str | None = None
 
@@ -38,6 +44,7 @@ class RoutineUpdate(BaseModel):
     is_enabled: bool | None = None
     approval_gates: list[str] | None = None
     required_connections: list[str] | None = None
+    notify_channels: list[NotifyChannel] | None = None
 
 
 # ── Response Schemas ─────────────────────────────────────────────
@@ -55,6 +62,7 @@ class RoutineResponse(BaseModel):
     is_enabled: bool
     approval_gates: list[str] | None
     required_connections: list[str] | None
+    notify_channels: list[NotifyChannel] | None
     source: str
     source_conversation_id: str | None
     last_run_at: datetime | None

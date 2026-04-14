@@ -260,6 +260,14 @@ const en = {
     noTitleSet: 'No title set',
     never: 'Never',
     justNow: 'Just now',
+    notifyOnCompletion: 'Notify on completion',
+    notifyViaTelegram: 'via Telegram',
+    notifyCount: '{{count}} via Telegram',
+    notifyCount_one: '{{count}} via Telegram',
+    notifyNoAllowlist: 'Connect Telegram in Integrations first, then add user IDs to the allowlist.',
+    notifyHint: 'Pick one or more Telegram recipients. They will be DMed when this routine finishes or fails.',
+    notifyClear: 'Clear notifications',
+    notifyChannelTelegram: 'Telegram',
   },
 
   // ── Experts screen ──────────────────────────────────────────
@@ -517,6 +525,37 @@ const en = {
     whatsappDesc: 'Chat with Cerebro on WhatsApp',
     email: 'Email',
     emailDesc: 'Interact with Cerebro via email',
+  },
+
+  // ── Telegram section (within Channels) ──────────────────────
+  telegramSection: {
+    title: 'Telegram',
+    description:
+      'Chat with Cerebro from your phone. Cerebro listens via long-polling, so no public URL or tunnel is needed — the bridge runs inside Cerebro and stops when you quit the app.',
+    tokenLabel: 'Bot token',
+    tokenPlaceholder: 'Paste the token from @BotFather',
+    verify: 'Verify',
+    verifying: 'Verifying...',
+    verified: 'Verified',
+    allowlistLabel: 'Allowed user IDs',
+    allowlistHelp: 'Only these Telegram user IDs can chat with the bot. Separate multiple IDs with commas.',
+    allowlistPlaceholder: '123456789, 987654321',
+    forwardAllLabel: 'Forward all approvals to Telegram',
+    forwardAllHelp: 'Off by default: only approvals for runs started from Telegram are sent. Turn this on if you also want desktop-initiated approvals on your phone.',
+    enableLabel: 'Enable bridge',
+    enableDisabledHint: 'Verify the token and add at least one user ID to enable.',
+    statusRunning: 'Running',
+    statusStopped: 'Stopped',
+    lastPoll: 'Last contact',
+    lastError: 'Last error',
+    never: 'never',
+    howToTitle: 'How to get your Telegram user ID',
+    howToSteps:
+      '1. Open Telegram and find your bot by its username.\n2. Tap Start and send any message.\n3. The bot replies with a message containing your numeric ID.\n4. Paste that number into the allowlist above.',
+    warningPlaintext:
+      'Tokens are stored locally in your database in plaintext. If your machine is compromised, revoke the token with @BotFather and create a new one.',
+    save: 'Save',
+    saved: 'Saved',
   },
 
   // ── Skills library ──────────────────────────────────────────

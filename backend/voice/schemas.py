@@ -51,6 +51,10 @@ class TranscriptionRequest(BaseModel):
     sample_rate: int = 16000
 
 
+class TranscriptionFileRequest(BaseModel):
+    file_path: str
+
+
 class TranscriptionResult(BaseModel):
     text: str
     segments: list[TranscriptionSegment]

@@ -120,6 +120,61 @@ class STTEngine:
             None, self._transcribe_sync, audio_bytes, sample_rate
         )
 
+    async def transcribe_file(self, file_path: str) -> TranscriptionResult:
+        """Transcribe an audio file at the given path.
+
+        faster-whisper accepts a file path directly and uses PyAV to decode
+        any format it supports (ogg/opus, mp3, wav, m4a, webm, ...). Used
+        by the Telegram bridge since Telegram voice notes ship as OGG/Opus.
+        """
+        if self._model is None:
+            raise RuntimeError("STT model not loaded")
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._transcribe_file_sync, file_path)
+
+    def _transcribe_file_sync(self, file_path: str) -> TranscriptionResult:
+        assert self._model is not None
+
+        t0 = time.monotonic()
+
+        segments_iter, info = self._model.transcribe(
+            file_path,
+            beam_size=1,
+            vad_filter=True,
+            vad_parameters=dict(
+                min_silence_duration_ms=300,
+            ),
+        )
+
+        segments: list[TranscriptionSegment] = []
+        text_parts: list[str] = []
+        for seg in segments_iter:
+            text_parts.append(seg.text.strip())
+            segments.append(
+                TranscriptionSegment(
+                    start=seg.start,
+                    end=seg.end,
+                    text=seg.text.strip(),
+                )
+            )
+
+        text = " ".join(text_parts).strip()
+        language = info.language or "en"
+
+        logger.info(
+            "STT transcribe_file: %.2fs wall, lang=%s, text=%s",
+            time.monotonic() - t0,
+            language,
+            repr(text[:100]),
+        )
+
+        return TranscriptionResult(
+            text=text,
+            segments=segments,
+            language=language,
+        )
+
     def _transcribe_sync(
         self,
         audio_bytes: bytes,

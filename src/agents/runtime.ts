@@ -12,8 +12,18 @@
 
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { ipcMain, type WebContents } from 'electron';
+import { ipcMain } from 'electron';
 import type { AgentRunRequest, ActiveRunInfo, RendererAgentEvent } from './types';
+
+/**
+ * Minimal sink interface for run events. Both WebContents (renderer) and
+ * the Telegram bridge implement it. Keeping it narrow lets the bridge
+ * consume agent runs without spawning a hidden renderer.
+ */
+export interface AgentEventSink {
+  send(channel: string, ...args: unknown[]): void;
+  isDestroyed(): boolean;
+}
 import { ClaudeCodeRunner } from '../claude-code/stream-adapter';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
@@ -61,7 +71,7 @@ export class AgentRuntime {
    * Returns the runId immediately; events stream over `agent:event:<runId>`.
    */
   async startRun(
-    webContents: WebContents,
+    webContents: AgentEventSink,
     request: AgentRunRequest,
   ): Promise<string> {
     if (this.activeRuns.size >= MAX_CONCURRENT_RUNS) {
@@ -497,7 +507,7 @@ ${answersSection}
   // ── Internals ──────────────────────────────────────────────────
 
   /** Re-sync installer after every run so skill-created experts get materialized. */
-  private postRunSync(webContents: WebContents): void {
+  private postRunSync(webContents: AgentEventSink): void {
     // Serialize to prevent concurrent installAll calls racing on the index file
     this.syncChain = this.syncChain
       .then(() => installAll({ dataDir: this.dataDir, backendPort: this.backendPort }))

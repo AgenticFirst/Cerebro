@@ -68,7 +68,13 @@ export interface AgentRunRequest {
   rows?: number;
   /** Resume a prior Claude Code session by its ID (equal to the original run_id). */
   resumeSessionId?: string;
+  /** Origin of this run — used to route approvals/errors back to the right surface. */
+  source?: AgentRunSource;
 }
+
+export type AgentRunSource =
+  | { kind: 'ui' }
+  | { kind: 'telegram'; chatId: number };
 
 // ── Events sent to renderer ─────────────────────────────────────
 

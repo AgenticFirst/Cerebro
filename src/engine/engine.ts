@@ -7,6 +7,7 @@
 
 import crypto from 'node:crypto';
 import http from 'node:http';
+import type EventEmitter from 'node:events';
 import type { WebContents } from 'electron';
 import type { AgentRuntime } from '../agents/runtime';
 import type { EngineRunRequest } from './dag/types';
@@ -29,6 +30,7 @@ import { saveToMemoryAction } from './actions/save-to-memory';
 import { httpRequestAction } from './actions/http-request';
 import { sendMessageAction } from './actions/send-message';
 import { sendNotificationAction } from './actions/send-notification';
+import { channelAction } from './actions/channel';
 import { runCommandAction } from './actions/run-command';
 import { runClaudeCodeAction } from './actions/run-claude-code';
 import { waitForWebhookAction } from './actions/wait-for-webhook';
@@ -61,15 +63,17 @@ const EVENT_BUFFER_TTL_MS = 60_000;
 export class ExecutionEngine {
   private backendPort: number;
   private agentRuntime: AgentRuntime;
+  private sharedBus?: EventEmitter;
   private activeRuns = new Map<string, ActiveEngineRun>();
   /** Pending approval promises keyed by approvalId. */
   private pendingApprovals = new Map<string, PendingApproval>();
   /** Buffers of emitted events, kept briefly after run completion for late subscribers. */
   private eventBuffers = new Map<string, ExecutionEvent[]>();
 
-  constructor(backendPort: number, agentRuntime: AgentRuntime) {
+  constructor(backendPort: number, agentRuntime: AgentRuntime, sharedBus?: EventEmitter) {
     this.backendPort = backendPort;
     this.agentRuntime = agentRuntime;
+    this.sharedBus = sharedBus;
   }
 
   /**
@@ -90,9 +94,13 @@ export class ExecutionEngine {
     const scratchpad = new RunScratchpad();
     const eventBuffer: ExecutionEvent[] = [];
     this.eventBuffers.set(runId, eventBuffer);
-    const emitter = new RunEventEmitter(webContents, runId, (event) => {
-      eventBuffer.push(event);
-    });
+    const emitter = new RunEventEmitter(
+      webContents,
+      runId,
+      (event) => { eventBuffer.push(event); },
+      this.sharedBus,
+      { routineId: request.routineId },
+    );
 
     // Track this run
     const activeRun: ActiveEngineRun = {
@@ -430,6 +438,7 @@ export class ExecutionEngine {
     // Output
     registry.register(sendMessageAction);
     registry.register(sendNotificationAction);
+    registry.register(channelAction);
 
     // Complex (depend on backend infrastructure)
     registry.register(waitForWebhookAction);

@@ -168,6 +168,9 @@ class Routine(Base):
         # JSON list of step IDs/names that require approval
     required_connections: Mapped[str | None] = mapped_column(Text, nullable=True)
         # JSON list of connection service names, e.g. ["google_calendar", "gmail"]
+    notify_channels: Mapped[str | None] = mapped_column(Text, nullable=True)
+        # JSON list of {channel, recipient} objects to notify on run completion/failure,
+        # e.g. [{"channel": "telegram", "recipient": "123456789"}]
     source: Mapped[str] = mapped_column(String(20), default="user")
         # "user" | "chat" | "marketplace"
     source_conversation_id: Mapped[str | None] = mapped_column(

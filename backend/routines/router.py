@@ -20,7 +20,7 @@ from .schemas import (
 router = APIRouter(tags=["routines"])
 
 # JSON text columns that store structured data
-_JSON_FIELDS = frozenset({"plain_english_steps", "approval_gates", "required_connections"})
+_JSON_FIELDS = frozenset({"plain_english_steps", "approval_gates", "required_connections", "notify_channels"})
 
 
 def _routine_to_response(routine: Routine) -> RoutineResponse:

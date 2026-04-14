@@ -263,6 +263,14 @@ const es: TranslationKeys = {
     noTitleSet: 'Sin t\u00edtulo definido',
     never: 'Nunca',
     justNow: 'Justo ahora',
+    notifyOnCompletion: 'Notificar al completar',
+    notifyViaTelegram: 'v\u00eda Telegram',
+    notifyCount: '{{count}} v\u00eda Telegram',
+    notifyCount_one: '{{count}} v\u00eda Telegram',
+    notifyNoAllowlist: 'Primero conecta Telegram en Integraciones y a\u00f1ade IDs a la lista de permitidos.',
+    notifyHint: 'Elige uno o m\u00e1s destinatarios de Telegram. Recibir\u00e1n un mensaje cuando esta rutina termine o falle.',
+    notifyClear: 'Limpiar notificaciones',
+    notifyChannelTelegram: 'Telegram',
   },
 
   // ── Pantalla de expertos ────────────────────────────────────
@@ -523,6 +531,37 @@ const es: TranslationKeys = {
     whatsappDesc: 'Chatea con Cerebro en WhatsApp',
     email: 'Correo electr\u00f3nico',
     emailDesc: 'Interact\u00faa con Cerebro v\u00eda correo electr\u00f3nico',
+  },
+
+  // ── Secci\u00f3n de Telegram ─────────────────────────────────────
+  telegramSection: {
+    title: 'Telegram',
+    description:
+      'Chatea con Cerebro desde tu tel\u00e9fono. Cerebro escucha mediante long-polling, as\u00ed que no necesita URL p\u00fablica ni t\u00fanel — el puente corre dentro de Cerebro y se detiene al cerrar la aplicaci\u00f3n.',
+    tokenLabel: 'Token del bot',
+    tokenPlaceholder: 'Pega el token de @BotFather',
+    verify: 'Verificar',
+    verifying: 'Verificando...',
+    verified: 'Verificado',
+    allowlistLabel: 'IDs de usuario permitidos',
+    allowlistHelp: 'Solo estos IDs de usuario de Telegram pueden chatear con el bot. Separa varios IDs con comas.',
+    allowlistPlaceholder: '123456789, 987654321',
+    forwardAllLabel: 'Reenviar todas las aprobaciones a Telegram',
+    forwardAllHelp: 'Desactivado por defecto: solo se env\u00edan las aprobaciones de ejecuciones iniciadas desde Telegram. Act\u00edvalo si tambi\u00e9n quieres recibir en el tel\u00e9fono las aprobaciones iniciadas desde el escritorio.',
+    enableLabel: 'Activar puente',
+    enableDisabledHint: 'Verifica el token y agrega al menos un ID de usuario para activar.',
+    statusRunning: 'En ejecuci\u00f3n',
+    statusStopped: 'Detenido',
+    lastPoll: '\u00daltimo contacto',
+    lastError: '\u00daltimo error',
+    never: 'nunca',
+    howToTitle: 'C\u00f3mo obtener tu ID de usuario de Telegram',
+    howToSteps:
+      '1. Abre Telegram y busca tu bot por su nombre de usuario.\n2. Pulsa Iniciar y env\u00eda cualquier mensaje.\n3. El bot responde con un mensaje que contiene tu ID num\u00e9rico.\n4. Pega ese n\u00famero en la lista de permitidos de arriba.',
+    warningPlaintext:
+      'Los tokens se almacenan localmente en tu base de datos en texto plano. Si tu m\u00e1quina se ve comprometida, revoca el token con @BotFather y crea uno nuevo.',
+    save: 'Guardar',
+    saved: 'Guardado',
   },
 
   // ── Biblioteca de habilidades ───────────────────────────────

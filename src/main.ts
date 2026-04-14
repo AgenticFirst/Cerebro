@@ -5,6 +5,7 @@ import { spawn, ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import EventEmitter from 'node:events';
 import started from 'electron-squirrel-startup';
 
 // Enable remote debugging for E2E tests (Playwright connects via CDP)
@@ -34,6 +35,8 @@ import {
 } from './claude-code/installer';
 import { setClaudeCodeCwd } from './claude-code/single-shot';
 import { VoiceSessionManager } from './voice/session';
+import { TelegramBridge } from './telegram/bridge';
+import { registerChannelSender, unregisterChannelSender } from './engine/actions/channel';
 import { initializeSandbox } from './sandbox/initialize';
 import { getCachedSandboxConfig, setCachedSandboxConfig } from './sandbox/config-cache';
 import { generateProfile } from './sandbox/profile-generator';
@@ -66,6 +69,13 @@ let executionEngine: ExecutionEngine | null = null;
 
 // Routine scheduler (initialized after execution engine)
 let routineScheduler: RoutineScheduler | null = null;
+
+// Shared event bus for cross-subsystem engine events (Telegram bridge subscribes).
+const engineEventBus = new EventEmitter();
+engineEventBus.setMaxListeners(50);
+
+// Telegram bridge (initialized after backend is healthy)
+let telegramBridge: TelegramBridge | null = null;
 
 // --- Utility functions ---
 
@@ -198,9 +208,21 @@ async function startPythonBackend(): Promise<void> {
   });
 
   agentRuntime = new AgentRuntime(port, dataDir);
-  executionEngine = new ExecutionEngine(port, agentRuntime);
+  executionEngine = new ExecutionEngine(port, agentRuntime, engineEventBus);
   routineScheduler = new RoutineScheduler(executionEngine, port);
   voiceSession = new VoiceSessionManager(port, dataDir);
+
+  // Telegram bridge — starts only if the user has configured + enabled it.
+  telegramBridge = new TelegramBridge({
+    backendPort: port,
+    agentRuntime,
+    dataDir,
+    engineEventBus,
+  });
+  registerChannelSender('telegram', telegramBridge);
+  telegramBridge.start().catch((err) => {
+    console.error('[Cerebro] Telegram bridge start failed:', err);
+  });
 
   // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
   // Cerebro's project-scoped subagents and skills.
@@ -695,6 +717,37 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.SANDBOX_SET_CACHE, async (_event, config: SandboxConfig) => {
     setCachedSandboxConfig(config);
   });
+
+  // --- Telegram bridge ---
+
+  ipcMain.handle(IPC_CHANNELS.TELEGRAM_VERIFY, async (_event, token: string) => {
+    if (!telegramBridge) return { ok: false, error: 'Bridge not initialized' };
+    return telegramBridge.verifyToken(token);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TELEGRAM_ENABLE, async () => {
+    if (!telegramBridge) return { ok: false, error: 'Bridge not initialized' };
+    try {
+      await telegramBridge.stop(); // stop first so a restart picks up fresh settings
+      await telegramBridge.start();
+      const status = telegramBridge.status();
+      return { ok: status.running, error: status.running ? undefined : status.lastError ?? 'Failed to start' };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TELEGRAM_DISABLE, async () => {
+    if (!telegramBridge) return;
+    await telegramBridge.stop();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TELEGRAM_STATUS, async () => {
+    if (!telegramBridge) {
+      return { running: false, lastPollAt: null, lastError: 'Bridge not initialized', unknownLastAttempt: {} };
+    }
+    return telegramBridge.status();
+  });
 }
 
 // --- Window creation ---
@@ -789,6 +842,10 @@ app.on('before-quit', async () => {
   isIntentionalShutdown = true;
   if (routineScheduler) {
     routineScheduler.stopAll();
+  }
+  if (telegramBridge) {
+    try { await telegramBridge.stop(); } catch { /* ignore */ }
+    unregisterChannelSender('telegram');
   }
   await stopPythonBackend();
 });

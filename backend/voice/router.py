@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from .catalog import get_catalog, get_model_path
 from .schemas import (
     SynthesizeRequest,
+    TranscriptionFileRequest,
     TranscriptionRequest,
     VoiceCatalogResponse,
     VoiceStatusResponse,
@@ -95,6 +96,25 @@ async def transcribe(body: TranscriptionRequest):
 
     audio_bytes = base64.b64decode(body.audio_base64)
     result = await _stt_engine.transcribe(audio_bytes, body.sample_rate)
+    return result
+
+
+@router.post("/stt/transcribe-file")
+async def transcribe_file(body: TranscriptionFileRequest):
+    """Transcribe an audio file at a server-readable path.
+
+    Used by the Telegram bridge to pass OGG/Opus voice notes directly
+    (faster-whisper decodes via PyAV).
+    """
+    assert _stt_engine is not None
+
+    if not _stt_engine.is_ready:
+        raise HTTPException(503, "STT engine not ready")
+
+    try:
+        result = await _stt_engine.transcribe_file(body.file_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"File not found: {exc}")
     return result
 
 

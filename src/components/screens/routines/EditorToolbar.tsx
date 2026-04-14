@@ -20,6 +20,7 @@ import { useRoutines } from '../../../context/RoutineContext';
 import Toggle from '../../ui/Toggle';
 import AlertModal from '../../ui/AlertModal';
 import SchedulePicker from '../../ui/SchedulePicker';
+import NotifyChannelsPopover from './NotifyChannelsPopover';
 import type { DayOfWeek } from '../../../utils/cron-helpers';
 import { cronToSchedule, scheduleToCron, describeSchedule, WEEKDAYS } from '../../../utils/cron-helpers';
 
@@ -214,6 +215,9 @@ export default function EditorToolbar({
           )}
         </div>
       )}
+
+      {/* Notify-on-completion popover */}
+      <NotifyChannelsPopover routine={routine} />
 
       <div className="flex-1" />
 

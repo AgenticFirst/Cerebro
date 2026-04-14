@@ -3,6 +3,11 @@
 export type TriggerType = 'manual' | 'cron' | 'webhook';
 export type RoutineSource = 'user' | 'chat' | 'marketplace';
 
+export interface NotifyChannel {
+  channel: 'telegram';
+  recipient: string;
+}
+
 export interface Routine {
   id: string;
   name: string;
@@ -15,6 +20,7 @@ export interface Routine {
   isEnabled: boolean;
   approvalGates: string[] | null;
   requiredConnections: string[] | null;
+  notifyChannels: NotifyChannel[] | null;
   source: RoutineSource;
   sourceConversationId: string | null;
   lastRunAt: string | null;
@@ -36,6 +42,7 @@ export interface ApiRoutine {
   is_enabled: boolean;
   approval_gates: string[] | null;
   required_connections: string[] | null;
+  notify_channels: NotifyChannel[] | null;
   source: string;
   source_conversation_id: string | null;
   last_run_at: string | null;
@@ -55,6 +62,7 @@ export interface CreateRoutineInput {
   defaultRunnerId?: string;
   approvalGates?: string[];
   requiredConnections?: string[];
+  notifyChannels?: NotifyChannel[];
   source?: RoutineSource;
   sourceConversationId?: string;
 }
@@ -72,6 +80,7 @@ export function toRoutine(api: ApiRoutine): Routine {
     isEnabled: api.is_enabled,
     approvalGates: api.approval_gates,
     requiredConnections: api.required_connections,
+    notifyChannels: api.notify_channels,
     source: api.source as RoutineSource,
     sourceConversationId: api.source_conversation_id,
     lastRunAt: api.last_run_at,
@@ -92,6 +101,7 @@ export function toApiBody(input: CreateRoutineInput): Record<string, unknown> {
   if (input.defaultRunnerId !== undefined) body.default_runner_id = input.defaultRunnerId;
   if (input.approvalGates !== undefined) body.approval_gates = input.approvalGates;
   if (input.requiredConnections !== undefined) body.required_connections = input.requiredConnections;
+  if (input.notifyChannels !== undefined) body.notify_channels = input.notifyChannels;
   if (input.source !== undefined) body.source = input.source;
   if (input.sourceConversationId !== undefined) body.source_conversation_id = input.sourceConversationId;
   return body;

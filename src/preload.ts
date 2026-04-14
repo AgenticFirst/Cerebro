@@ -12,6 +12,8 @@ import type {
   ActiveRunInfo,
   EngineRunRequest,
   EngineActiveRunInfo,
+  TelegramVerifyResponse,
+  TelegramStatusResponse,
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
@@ -214,6 +216,21 @@ const api: CerebroAPI = {
     },
     setCache(config: unknown): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.SANDBOX_SET_CACHE, config);
+    },
+  },
+
+  telegram: {
+    verify(token: string): Promise<TelegramVerifyResponse> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_VERIFY, token);
+    },
+    enable(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_ENABLE);
+    },
+    disable(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_DISABLE);
+    },
+    status(): Promise<TelegramStatusResponse> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_STATUS);
     },
   },
 };
