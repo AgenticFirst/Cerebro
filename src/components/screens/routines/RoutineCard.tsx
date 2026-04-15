@@ -118,8 +118,8 @@ export default function RoutineCard({
           </div>
 
           {/* Right: delete + toggle */}
-          <div className="flex items-center gap-1.5">
-            {isHovered && onDelete && (
+          <div className="flex items-center gap-1.5 h-[18px]">
+            {onDelete && (
               <Tooltip label={t('routineTooltips.delete')}>
                 <button
                   onClick={(e) => {
@@ -127,9 +127,13 @@ export default function RoutineCard({
                     onDelete();
                   }}
                   aria-label={t('routineTooltips.delete')}
-                  className="p-1 rounded text-text-tertiary hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                  tabIndex={isHovered ? 0 : -1}
+                  className={clsx(
+                    'inline-flex items-center justify-center w-[18px] h-[18px] rounded text-text-tertiary hover:text-red-400 hover:bg-red-400/10 transition-opacity',
+                    isHovered ? 'opacity-100' : 'opacity-0 pointer-events-none',
+                  )}
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={13} strokeWidth={2} />
                 </button>
               </Tooltip>
             )}
@@ -141,7 +145,7 @@ export default function RoutineCard({
                   : 'routineTooltips.toggleEnabledOff',
               )}
             >
-              <div onClick={(e) => e.stopPropagation()}>
+              <div onClick={(e) => e.stopPropagation()} className="inline-flex items-center">
                 <Toggle checked={routine.isEnabled} onChange={onToggle} />
               </div>
             </Tooltip>
