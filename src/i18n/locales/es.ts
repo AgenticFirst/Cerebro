@@ -244,6 +244,13 @@ const es: TranslationKeys = {
     cancelTask: 'Cancelar tarea',
     deleteTask: 'Eliminar tarea',
     phasesProgress: '{{done}}/{{total}} fases',
+    approveAndExecute: 'Aprobar y ejecutar',
+  },
+
+  taskPlan: {
+    writingPlan: 'Cerebro est\u00e1 escribiendo tu plan...',
+    noPlan: 'Sin plan disponible',
+    checkboxToggleFailed: 'No se pudo actualizar PLAN.md. Int\u00e9ntalo de nuevo.',
   },
 
   // ── Editor de rutinas ───────────────────────────────────────

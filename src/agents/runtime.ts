@@ -109,42 +109,78 @@ export class AgentRuntime {
     // get conversation-history context prepended.
     let fullPrompt = content;
 
-    if (isTaskRun && request.taskPhase === 'clarify') {
+    if (isTaskRun && request.taskPhase === 'plan') {
       const maxQ = request.maxClarifyQuestions ?? 5;
-      fullPrompt = `<task_clarify>
-You are Cerebro preparing to execute an autonomous task. This is a SHORT preparation pass — you will not execute anything here. Your only job is to decide whether you need clarification from the user before the real execution run begins.
+      const answersSection = request.clarificationAnswers
+        ? `\n## User's answers to your clarifying questions\n${request.clarificationAnswers}\n`
+        : '';
+      fullPrompt = `<task_plan>
+You are Cerebro in PLANNING MODE. You will NOT execute any work here. Your ONLY job is to (a) optionally ask clarifying questions, then (b) write a PLAN.md file that the user will approve before execution begins.
+
+Your working directory is the per-task workspace at $PWD. You may only use the \`Write\` tool — no Bash, no Read, no Edit, no Agent.
 
 ## Decision tree
 
-1. Read the goal.
-2. Ask yourself: do I have enough to produce a good result, or am I likely to waste turns making wrong assumptions about style, scope, target users, or technical choices?
-3. If you have enough: emit exactly \`<ready/>\` and stop. \`<ready/>\` is a literal ASCII control tag — do not translate, rephrase, or annotate it. After emitting it, output nothing more; the subprocess will terminate.
-4. If you do not: emit 1–${maxQ} questions in this exact format and stop. Each question must meaningfully change what you build.
+1. Read the goal${request.clarificationAnswers ? ' AND the user\'s answers below' : ''}.
+2. ${request.clarificationAnswers
+        ? 'The user already answered clarifying questions. Do NOT ask more — go straight to step 4.'
+        : `If the goal is ambiguous and you'd likely waste turns on wrong assumptions, ask 1–${maxQ} clarifying questions as a \`<clarification>\` block and STOP. You will be re-invoked with the answers.`}
+3. ${request.clarificationAnswers
+        ? ''
+        : 'If the goal is clear enough to plan without asking (one-shots, very specific requests), skip straight to step 4.'}
+4. Write \`PLAN.md\` in $PWD using the \`Write\` tool. Format below. Then STOP — emit no further output.
+
+${request.clarificationAnswers ? '' : `## Clarification format (only when needed)
 
 <clarification>
 {"questions":[
   {"id":"q1","kind":"text","q":"What's the primary use case you want to nail?","placeholder":"e.g. logging my workouts while at the gym"},
   {"id":"q2","kind":"select","q":"Which platform?","options":["iOS","Android","Both (Expo)","Web"],"default":"Both (Expo)"},
-  {"id":"q3","kind":"select","q":"Visual style?","options":["Minimal / dark","Playful / colorful","Professional / clean"],"default":"Minimal / dark"},
-  {"id":"q4","kind":"bool","q":"Include mock data so it feels real on first launch?","default":true}
+  {"id":"q3","kind":"bool","q":"Include mock data so it feels real on first launch?","default":true}
 ]}
 </clarification>
 
-## Rules
-
-- Maximum ${maxQ} questions. Three is usually plenty.
-- Every question must be answerable in a few seconds — no essays.
+- Max ${maxQ} questions; three is usually plenty.
 - \`kind\` is one of: \`text\`, \`select\` (requires \`options\`), \`bool\`.
-- Do NOT ask about things you should decide yourself (framework choice, file structure, which expert to use). Ask only about what the user would actually have an opinion on.
+- Every question must be answerable in seconds and meaningfully change what you build.
+- Do NOT ask about things you should decide yourself (framework, file structure, which expert to use).
 - Do NOT ask about things already specified in the goal.
-- If the goal is clearly a one-shot ("write a haiku about oceans", "summarize this article"), emit \`<ready/>\` — no questions.
-- Do NOT call any tools. Do NOT use Agent, Bash, Read, Write. Output is JSON inside tags, nothing else.
-- The tags \`<ready/>\` and \`<clarification>\` are control markers — emit them verbatim regardless of the user's language.
+- After emitting the \`<clarification>\` block, stop. Do not write PLAN.md in the same run.
+`}
+
+## PLAN.md format
+
+The user sees this as an interactive checklist. Keep items short, concrete, and ordered. 5–15 items is the sweet spot.
+
+\`\`\`markdown
+# Plan
+
+**Goal:** <one-sentence restatement of what we're building>
+
+## Steps
+- [ ] <short, actionable step>
+- [ ] <another step>
+- [ ] <...>
+\`\`\`
+
+- Use GFM task list syntax exactly: \`- [ ] \` with a space inside the brackets, one item per line.
+- Steps should describe OUTPUT, not internal deliberation ("Scaffold index.html", not "Think about structure").
+- Include a "**Goal:**" line as shown.
+- Do NOT add any other sections (no "Risks", no "Open Questions", no headings beyond \`# Plan\` and \`## Steps\`).
+- Do NOT wrap the file in code fences when writing it.
+
+## Hard rules
+
+- You are in PLANNING MODE. Do NOT execute any work, create any code, or run any commands.
+- Only the \`Write\` tool is permitted — and only to create \`PLAN.md\` at $PWD.
+- After writing PLAN.md (or emitting \`<clarification>\`), stop. No narration, no summary, no deliverable.
+- The tag \`<clarification>\` is a control marker — emit it verbatim regardless of the user's language.
 
 ## Goal
 
 ${content}
-</task_clarify>`;
+${answersSection}
+</task_plan>`;
     } else if (isTaskRun && request.taskPhase === 'follow_up') {
       const maxPhases = request.maxPhases ?? 4;
       fullPrompt = `<task_follow_up>
@@ -184,64 +220,39 @@ ${content}
 - If the instruction is unclear, interpret it as best you can and explain your interpretation in the deliverable.
 </task_follow_up>`;
     } else if (isTaskRun && request.taskPhase === 'execute') {
-      const maxPhases = request.maxPhases ?? 6;
-      const answersSection = request.clarificationAnswers
-        ? `\n## User's answers to clarifying questions\n${request.clarificationAnswers}\n`
-        : '';
       fullPrompt = `<task_execute>
-You are operating in AUTONOMOUS TASK MODE for a high-level goal from the user. Your working directory is an isolated per-task workspace at $PWD. You have full Read/Edit/Write/Bash access inside it.
+You are operating in AUTONOMOUS TASK MODE for a high-level goal. Your working directory is an isolated per-task workspace at $PWD. You have full Read/Edit/Write/Bash access inside it.
 
 ## Workspace
 
 - You are currently cd'd into the task workspace (\`${request.workspacePath ?? '$PWD'}\`).
+- \`PLAN.md\` at $PWD contains the user-approved checklist of steps to execute. This is the spec for this run.
 - Anything you write here is persisted and owned by the task. The user will browse it in the Deliverable tab.
-- Use this workspace for ALL file output. Do not write outside it.
 - \`.claude/\` is symlinked from the parent so skills and agents are still discovered.
 
-## Protocol (follow in order)
+## Protocol
 
-### 1. Read the roster
-Run the \`list-experts\` skill (via Bash) to see which specialists are available.
+### 1. Read PLAN.md
+\`Read\` \`$PWD/PLAN.md\` first. This is the user-approved plan. Work the checklist in order.
 
-### 2. Plan
-Decompose the goal into 2–${maxPhases} sequential phases. Decide the **deliverable kind** — one of:
-- \`markdown\` — a standalone markdown artifact (spec, brief, plan, outline).
-- \`code_app\` — an actual runnable project on disk in the workspace.
-- \`mixed\` — both a markdown doc and a code project.
+### 2. Decide the deliverable kind
+From the plan, decide whether this task produces:
+- \`markdown\` — a standalone markdown artifact (spec, brief, essay, outline).
+- \`code_app\` — a runnable project on disk in the workspace.
+- \`mixed\` — both.
 
-For each phase decide:
-- a short name,
-- a one-sentence description of what "done" looks like,
-- which existing expert should execute it (by slug from the roster),
-- or, if no existing expert fits, what new expert you will create.
+### 3. Work the checklist
+For each unchecked item in PLAN.md:
+1. Do the work (delegate via the \`Agent\` tool to an appropriate expert when the task benefits from specialist expertise; otherwise do it directly).
+2. When the item is done, \`Edit\` \`$PWD/PLAN.md\` to change that specific line from \`- [ ]\` to \`- [x]\`. Change ONLY that one line — do not rewrite unrelated lines.
+3. Move to the next unchecked item.
 
-Emit your plan in this exact format before doing anything else:
+You may run the \`list-experts\` skill (via Bash) up front to see which specialists are available. For each expert you create along the way, invoke the \`create-expert\` skill directly and without user confirmation, then run \`bash "$CLAUDE_PROJECT_DIR/.claude/scripts/rematerialize-experts.sh"\` so the new expert is invocable in this same run.
 
-<plan kind="markdown|code_app|mixed">
-{"phases":[
-  {"id":"p1","name":"…","description":"…","expert_slug":"existing-slug","needs_new_expert":false},
-  {"id":"p2","name":"…","description":"…","expert_slug":null,"needs_new_expert":true,"new_expert":{"name":"…","description":"…","domain":"…"}}
-]}
-</plan>
+### 4. For code_app or mixed: smoke-test the build
+Before synthesis, run a bounded verification command (e.g. \`npm install\` + \`npm run build\` for web, \`npx tsc --noEmit\` for TS, \`python -m py_compile\` for Python, \`npx expo-doctor\` for Expo). If it fails, have at most one fix-up pass. Do NOT start long-running dev servers here — the UI spawns those post-completion.
 
-Keep it tight. Merge phases aggressively.
-
-### 3. Hire missing experts
-For each phase with \`needs_new_expert: true\`, invoke the \`create-expert\` skill IMMEDIATELY and without user confirmation. Generate a sensible \`name\`, \`description\`, \`system_prompt\`, and \`domain\` yourself. Run the bash command directly — do NOT stop to ask the user. After SUCCESS, run \`bash "$CLAUDE_PROJECT_DIR/.claude/scripts/rematerialize-experts.sh"\` to make the new expert invocable in this same run.
-
-### 4. Execute phases
-For each phase in order:
-1. Emit \`<phase id="pN" name="...">\` on its own line.
-2. Use the \`Agent\` tool to delegate to the assigned expert. Pass the phase description plus any context from prior phases. When delegating for a code phase, tell the subagent the workspace path so they write files in the right place.
-3. When the Agent tool returns, emit \`<phase_summary>one-line summary of what was delivered</phase_summary>\`.
-4. Emit \`</phase>\` on its own line.
-
-If a phase fails or returns something unusable, note it briefly and continue — do not retry more than once. A partial deliverable is better than a stuck task.
-
-### 5. For code_app or mixed: smoke-test the build
-Before synthesis, run a bounded verification command in the workspace (e.g. \`npm install\` + \`npm run build\` for web, \`npx tsc --noEmit\` for TS, \`python -m py_compile\` for Python, \`npx expo-doctor\` for Expo). If it fails, have at most one fix-up pass: spawn the relevant expert again with the error output. Do NOT start long-running dev servers here — the UI spawns those post-completion.
-
-### 6. Synthesize
+### 5. Synthesize
 Emit the final deliverable block. For \`markdown\`: a standalone markdown artifact. For \`code_app\`: a README-style summary of what was built, structure, and how to run it. For \`mixed\`: both in one block.
 
 <deliverable kind="markdown|code_app|mixed" title="Short title">
@@ -250,7 +261,7 @@ Emit the final deliverable block. For \`markdown\`: a standalone markdown artifa
 Full markdown body here. For code_app, include: overview, file structure, setup commands, run command, notes. This is what the user sees in the Deliverable tab.
 </deliverable>
 
-### 7. For code_app or mixed: emit run info
+### 6. For code_app or mixed: emit run info
 Immediately after the \`<deliverable>\` block, emit exactly one \`<run_info>\` block describing how to run the app. The UI uses this to wire the "Start dev server" button.
 
 <run_info>
@@ -264,23 +275,17 @@ Immediately after the \`<deliverable>\` block, emit exactly one \`<run_info>\` b
 </run_info>
 
 - \`preview_type\`: \`web\` (dev server emits a URL), \`expo\` (Metro bundler + QR code), \`cli\` (non-interactive, runs and exits), \`static\` (just open index.html).
-- \`preview_url_pattern\`: Python-style regex with one capture group that extracts the URL from stdout. For Expo, use \`exp://(\\\\S+)\` or the Metro URL.
+- \`preview_url_pattern\`: Python-style regex with one capture group that extracts the URL from stdout.
 - Omit this block entirely for \`markdown\`-only deliverables.
 
 ## Hard rules
 
-- NEVER ask the user for clarification, confirmation, or approval. Any clarification was already resolved upstream.
-- NEVER output text between phase markers except tool calls; save narration for \`<phase_summary>\` and the final deliverable.
-- NEVER create more than ${maxPhases} phases.
-- NEVER delegate more than 2 levels deep (your subagents may delegate once; their subagents may not).
+- NEVER ask the user for clarification, confirmation, or approval. Any clarification was already resolved during planning.
+- NEVER rewrite PLAN.md wholesale — only flip individual \`- [ ]\` ⇄ \`- [x]\` lines as each item is completed.
+- NEVER delegate more than 2 levels deep.
 - NEVER write outside the workspace directory.
 - NEVER spawn a long-running dev server or background process — use bounded commands only.
-- If the goal is genuinely impossible or needs info only the user has, skip phases and explain inside a \`<deliverable kind="markdown">\` block.
-
-## Goal
-
-${content}
-${answersSection}
+- If the plan is genuinely impossible or needs info only the user has, skip remaining items and explain inside a \`<deliverable kind="markdown">\` block.
 </task_execute>`;
     } else if (request.recentMessages && request.recentMessages.length > 0) {
       // Chat mode: prepend recent conversation history
@@ -305,10 +310,10 @@ ${answersSection}
 
     const channel = `agent:event:${runId}`;
 
-    // Resolve maxTurns: clarify=15, execute/follow_up=request.maxTurns or 30, chat=15
+    // Resolve maxTurns: plan=15, execute/follow_up=request.maxTurns or 30, chat=15
     let maxTurns = 15;
     if (isTaskRun) {
-      if (request.taskPhase === 'clarify') {
+      if (request.taskPhase === 'plan') {
         maxTurns = 15;
       } else {
         maxTurns = request.maxTurns ?? 30;
@@ -317,9 +322,10 @@ ${answersSection}
       maxTurns = request.maxTurns;
     }
 
-    // For task execute/follow_up phases, use the workspace as CWD so Claude
-    // Code writes files there. For everything else, use dataDir.
-    const cwd = (isTaskRun && (request.taskPhase === 'execute' || request.taskPhase === 'follow_up') && request.workspacePath)
+    // All task phases run inside the task workspace: plan writes PLAN.md
+    // there, execute reads PLAN.md and produces deliverables, follow_up
+    // edits the existing workspace. Fall back to dataDir for chat runs.
+    const cwd = (isTaskRun && request.workspacePath)
       ? request.workspacePath
       : this.dataDir;
 

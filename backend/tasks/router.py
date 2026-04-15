@@ -22,6 +22,8 @@ from .schemas import (
     ClarifySubmit,
     DevServerStartBody,
     DevServerStatus,
+    PlanMdResponse,
+    PlanMdUpdate,
     PreviewFileResponse,
     RunInfo,
     TaskCreate,
@@ -42,7 +44,15 @@ from .schemas import (
     WorkspaceFileResponse,
     WorkspaceTreeResponse,
 )
-from .workspace import create_workspace, delete_workspace, find_preview_file, list_tree, read_file
+from .workspace import (
+    create_workspace,
+    delete_workspace,
+    find_preview_file,
+    list_tree,
+    read_file,
+    read_plan_md,
+    write_plan_md,
+)
 
 router = APIRouter(tags=["tasks"])
 
@@ -118,6 +128,13 @@ def _run_to_response(run: RunRecord) -> RunRecordResponse:
 
 
 def _task_to_response(task: Task) -> TaskResponse:
+    plan_md_payload = None
+    plan_md_mtime: float | None = None
+    if task.workspace_path:
+        plan_md_payload = read_plan_md(task.workspace_path)
+        if plan_md_payload is not None:
+            plan_md_mtime = plan_md_payload.get("mtime")
+
     return TaskResponse(
         id=task.id,
         title=task.title,
@@ -142,6 +159,8 @@ def _task_to_response(task: Task) -> TaskResponse:
         created_at=task.created_at,
         started_at=task.started_at,
         completed_at=task.completed_at,
+        plan_md=plan_md_payload["content"] if plan_md_payload else None,
+        plan_md_mtime=plan_md_mtime,
     )
 
 
@@ -300,7 +319,11 @@ def start_task_run(task_id: str, body: TaskRunStart, request: Request, db=Depend
     db.add(run)
     task.run_id = run_id
 
-    if body.phase == "clarify":
+    if body.phase == "plan":
+        task.status = "planning"
+        if not task.started_at:
+            task.started_at = _utcnow()
+    elif body.phase == "clarify":
         task.status = "clarifying"
     else:
         task.status = "running"
@@ -315,6 +338,100 @@ def start_task_run(task_id: str, body: TaskRunStart, request: Request, db=Depend
         conversation_id=tracking_id,
         workspace_path=workspace_path,
     )
+
+
+@router.post("/{task_id}/approve-plan", response_model=TaskRunStartResponse)
+def approve_plan(task_id: str, request: Request, db=Depends(get_db)):
+    """User has approved PLAN.md — mint an execute run and transition to running."""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != "awaiting_plan_approval":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task is in status {task.status!r}; expected awaiting_plan_approval",
+        )
+    if not task.workspace_path or not read_plan_md(task.workspace_path):
+        raise HTTPException(status_code=400, detail="PLAN.md not found")
+
+    tracking_id = _uuid_hex()
+    run_id = _uuid_hex()
+    run = RunRecord(
+        id=run_id,
+        run_type="task",
+        trigger="manual",
+        status="running",
+        parent_run_id=None,
+    )
+    db.add(run)
+    task.run_id = run_id
+    task.status = "running"
+    if not task.started_at:
+        task.started_at = _utcnow()
+    db.commit()
+
+    return TaskRunStartResponse(
+        task_id=task_id,
+        run_id=run_id,
+        conversation_id=tracking_id,
+        workspace_path=task.workspace_path,
+    )
+
+
+@router.get("/{task_id}/plan-md", response_model=PlanMdResponse)
+def get_plan_md(task_id: str, db=Depends(get_db)):
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not task.workspace_path:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    data = read_plan_md(task.workspace_path)
+    if data is None:
+        raise HTTPException(status_code=404, detail="PLAN.md not found")
+    return PlanMdResponse(content=data["content"], mtime=data["mtime"])
+
+
+@router.put("/{task_id}/plan-md", response_model=PlanMdResponse)
+def put_plan_md(task_id: str, body: PlanMdUpdate, db=Depends(get_db)):
+    """Write PLAN.md content (used when user toggles a checkbox in the UI)."""
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not task.workspace_path:
+        raise HTTPException(status_code=400, detail="Workspace not initialised")
+    try:
+        mtime = write_plan_md(task.workspace_path, body.content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanMdResponse(content=body.content, mtime=mtime)
+
+
+@router.post("/{task_id}/plan-done", response_model=TaskResponse)
+def plan_done(task_id: str, db=Depends(get_db)):
+    """Called when the plan subprocess exits.
+
+    If PLAN.md is present the task transitions to ``awaiting_plan_approval``.
+    If not, the task is marked ``failed`` with an explanatory error. This is
+    idempotent — terminal statuses are left alone.
+    """
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status in ("completed", "failed", "cancelled", "awaiting_plan_approval"):
+        return _task_to_response(task)
+
+    has_plan = bool(
+        task.workspace_path and read_plan_md(task.workspace_path) is not None
+    )
+    if has_plan:
+        task.status = "awaiting_plan_approval"
+    else:
+        task.status = "failed"
+        task.error = "Plan subprocess exited without writing PLAN.md"
+        task.completed_at = _utcnow()
+    db.commit()
+    db.refresh(task)
+    return _task_to_response(task)
 
 
 def _format_answers_block(questions: list[dict], answers: list[dict]) -> str:

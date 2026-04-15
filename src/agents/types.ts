@@ -43,8 +43,8 @@ export interface AgentRunRequest {
   // ── Task mode fields ──────────────────────────────────────────
   /** 'chat' (default) or 'task'. */
   runType?: 'chat' | 'task';
-  /** Which task subprocess phase: 'clarify' (short question pass), 'execute' (full run), or 'follow_up'. */
-  taskPhase?: 'clarify' | 'execute' | 'follow_up';
+  /** Which task subprocess phase: 'plan' (clarify + write PLAN.md), 'execute' (run PLAN.md), or 'follow_up'. */
+  taskPhase?: 'plan' | 'execute' | 'follow_up';
   /** Override --max-turns. Default: 15 (chat), 5 (clarify), 10 (execute/follow_up). */
   maxTurns?: number;
   /** Maximum plan phases (injected into the execute envelope). Default 6. */

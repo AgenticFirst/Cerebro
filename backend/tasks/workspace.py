@@ -250,6 +250,52 @@ def read_file(workspace_path: str, rel_path: str) -> dict:
     }
 
 
+PLAN_MD_FILENAME = "PLAN.md"
+_MAX_PLAN_MD_BYTES = 200_000
+
+
+def read_plan_md(workspace_path: str) -> dict | None:
+    """Return ``{"content": str, "mtime": float}`` for ``<workspace>/PLAN.md``.
+
+    Returns ``None`` if the workspace doesn't exist or the file hasn't been
+    written yet.
+    """
+    if not os.path.isdir(workspace_path):
+        return None
+    abs_path = os.path.join(os.path.realpath(workspace_path), PLAN_MD_FILENAME)
+    if not os.path.isfile(abs_path):
+        return None
+    try:
+        st = os.stat(abs_path)
+    except OSError:
+        return None
+    with open(abs_path, "rb") as fh:
+        raw = fh.read(_MAX_PLAN_MD_BYTES)
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        content = raw.decode("latin-1")
+    return {"content": content, "mtime": st.st_mtime}
+
+
+def write_plan_md(workspace_path: str, content: str) -> float:
+    """Write ``PLAN.md`` atomically, returning the new mtime.
+
+    Creates the workspace directory if it doesn't already exist — the task
+    may be in planning state before anything else has been written.
+    """
+    if len(content.encode("utf-8")) > _MAX_PLAN_MD_BYTES:
+        raise ValueError(f"PLAN.md too large (max {_MAX_PLAN_MD_BYTES} bytes)")
+    os.makedirs(workspace_path, exist_ok=True)
+    real_root = os.path.realpath(workspace_path)
+    abs_path = os.path.join(real_root, PLAN_MD_FILENAME)
+    tmp_path = abs_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        fh.write(content)
+    os.replace(tmp_path, abs_path)
+    return os.stat(abs_path).st_mtime
+
+
 def find_preview_file(
     workspace_path: str,
     known_path: str | None = None,

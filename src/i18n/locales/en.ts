@@ -241,6 +241,13 @@ const en = {
     cancelTask: 'Cancel task',
     deleteTask: 'Delete task',
     phasesProgress: '{{done}}/{{total}} phases',
+    approveAndExecute: 'Approve & Execute',
+  },
+
+  taskPlan: {
+    writingPlan: 'Cerebro is writing your plan...',
+    noPlan: 'No plan available',
+    checkboxToggleFailed: 'Failed to update PLAN.md — please try again.',
   },
 
   // ── Routine editor ──────────────────────────────────────────

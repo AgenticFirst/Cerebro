@@ -1,114 +1,179 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import clsx from 'clsx';
-import { CheckCircle2, Circle, Loader2, XCircle, SkipForward } from 'lucide-react';
-import type { Task, PlanPhase } from './types';
-import type { LiveTaskState } from './types';
-
-// Re-export for TaskDetailPanel's use
-export type { LiveTaskState };
+import { Loader2 } from 'lucide-react';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { Task } from './types';
 
 interface TaskPlanViewProps {
   task: Task;
-  liveTask: {
-    plan: { phases: PlanPhase[] } | null;
-    phases: Record<string, { status: string; name: string; summary: string | null }>;
-    activePhaseId: string | null;
-    deliverableKind: string | null;
-  } | null;
+  liveTask: unknown; // legacy prop retained for TaskDetailPanel call-site compatibility
 }
 
-const STATUS_ICON = {
-  pending:   Circle,
-  running:   Loader2,
-  completed: CheckCircle2,
-  failed:    XCircle,
-  skipped:   SkipForward,
-} as const;
+interface PlanMdPayload {
+  content: string;
+  mtime: number | null;
+}
 
-const STATUS_COLOR = {
-  pending:   'text-text-tertiary',
-  running:   'text-yellow-500',
-  completed: 'text-green-500',
-  failed:    'text-red-500',
-  skipped:   'text-zinc-500',
-} as const;
+const POLL_MS_ACTIVE = 2000;
 
-export default function TaskPlanView({ task, liveTask }: TaskPlanViewProps) {
+export default function TaskPlanView({ task }: TaskPlanViewProps) {
   const { t } = useTranslation();
-  // Prefer live state over persisted
-  const plan = liveTask?.plan ?? task.plan;
-  const livePhases = liveTask?.phases ?? {};
-  const deliverableKind = liveTask?.deliverableKind ?? task.deliverable_kind;
+  const [plan, setPlan] = useState<PlanMdPayload | null>(() =>
+    task.plan_md != null ? { content: task.plan_md, mtime: task.plan_md_mtime ?? null } : null,
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!plan || plan.phases.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center py-16 text-text-tertiary text-sm">
-        {task.status === 'running' || task.status === 'clarifying' ? (
+  // Poll PLAN.md while the task is in motion. Once the task settles we stop.
+  const isActive = task.status === 'planning' || task.status === 'running';
+  const taskIdRef = useRef(task.id);
+  taskIdRef.current = task.id;
+
+  const fetchPlan = useCallback(async (signal?: AbortSignal): Promise<PlanMdPayload | null> => {
+    try {
+      const res = await window.cerebro.invoke<PlanMdPayload>({
+        method: 'GET',
+        path: `/tasks/${taskIdRef.current}/plan-md`,
+      });
+      if (signal?.aborted) return null;
+      if (res.ok) return { content: res.data.content, mtime: res.data.mtime ?? null };
+    } catch {
+      /* ignore — polling will try again */
+    }
+    return null;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchPlan().then((p) => {
+      if (!cancelled && p) setPlan(p);
+    });
+    return () => { cancelled = true; };
+  }, [task.id, fetchPlan]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    const interval = setInterval(async () => {
+      const fresh = await fetchPlan();
+      if (!fresh) return;
+      setPlan((prev) => {
+        // Don't clobber an optimistic update while saving
+        if (saving) return prev;
+        if (prev && prev.mtime != null && fresh.mtime != null && fresh.mtime <= prev.mtime) {
+          return prev;
+        }
+        return fresh;
+      });
+    }, POLL_MS_ACTIVE);
+    return () => clearInterval(interval);
+  }, [isActive, saving, fetchPlan]);
+
+  const writePlan = useCallback(async (nextContent: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await window.cerebro.invoke<PlanMdPayload>({
+        method: 'PUT',
+        path: `/tasks/${taskIdRef.current}/plan-md`,
+        body: { content: nextContent },
+      });
+      if (res.ok) {
+        setPlan({ content: nextContent, mtime: res.data.mtime ?? null });
+      } else {
+        setError(t('taskPlan.checkboxToggleFailed'));
+      }
+    } catch {
+      setError(t('taskPlan.checkboxToggleFailed'));
+    } finally {
+      setSaving(false);
+    }
+  }, [t]);
+
+  const sourceLines = useMemo(() => (plan ? plan.content.split('\n') : []), [plan]);
+
+  const onToggle = useCallback((lineIndex: number) => {
+    // Can't mutate the plan while execute is actively editing it — the file
+    // write would race the subprocess. Checkboxes only mutate from the UI
+    // during planning / awaiting_plan_approval.
+    if (task.status !== 'awaiting_plan_approval' && task.status !== 'planning') return;
+    const line = sourceLines[lineIndex];
+    if (!line) return;
+    let toggled: string;
+    if (line.includes('- [ ]')) {
+      toggled = line.replace('- [ ]', '- [x]');
+    } else if (line.includes('- [x]') || line.includes('- [X]')) {
+      toggled = line.replace(/- \[[xX]\]/, '- [ ]');
+    } else {
+      return;
+    }
+    const nextLines = [...sourceLines];
+    nextLines[lineIndex] = toggled;
+    const next = nextLines.join('\n');
+    // Optimistic update
+    setPlan((prev) => (prev ? { ...prev, content: next } : prev));
+    void writePlan(next);
+  }, [sourceLines, task.status, writePlan]);
+
+  const components = useMemo<Components>(() => ({
+    input({ node, ...props }) {
+      if (props.type !== 'checkbox') return <input {...props} />;
+      const line = node?.position?.start?.line;
+      const interactive = task.status === 'awaiting_plan_approval' || task.status === 'planning';
+      return (
+        <input
+          type="checkbox"
+          checked={Boolean(props.checked)}
+          disabled={!interactive || saving}
+          onChange={() => {
+            if (typeof line === 'number') onToggle(line - 1);
+          }}
+          className="mr-2 cursor-pointer accent-accent disabled:cursor-not-allowed"
+        />
+      );
+    },
+    li({ children, className, ...props }) {
+      const isTask = className?.includes('task-list-item') ?? false;
+      return (
+        <li
+          className={isTask ? 'list-none flex items-start gap-1 my-1' : className}
+          {...props}
+        >
+          {children}
+        </li>
+      );
+    },
+  }), [onToggle, saving, task.status]);
+
+  if (!plan) {
+    if (isActive) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center py-16 text-text-tertiary text-sm">
           <div className="flex items-center gap-2">
             <Loader2 size={16} className="animate-spin" />
-            <span>Cerebro is building a plan...</span>
+            <span>{t('taskPlan.writingPlan')}</span>
           </div>
-        ) : (
-          <span>No plan available</span>
-        )}
+        </div>
+      );
+    }
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center py-16 text-text-tertiary text-sm">
+        <span>{t('taskPlan.noPlan')}</span>
       </div>
     );
   }
 
   return (
-    <div className="px-5 py-4">
-      {/* Kind badge */}
-      {deliverableKind && (
-        <div className="mb-4">
-          <span className="text-[11px] uppercase tracking-wider font-medium px-2 py-0.5 rounded bg-accent/10 text-accent">
-            {deliverableKind === 'code_app' ? t('taskDetail.codeApp') : deliverableKind === 'mixed' ? t('taskDetail.mixed') : t('taskDetail.markdown')}
-          </span>
+    <div className="px-6 py-5">
+      {error && (
+        <div className="mb-3 text-xs text-red-400 bg-red-500/5 border border-red-500/20 rounded-md px-3 py-2">
+          {error}
         </div>
       )}
-
-      {/* Phase list */}
-      <div className="space-y-1">
-        {plan.phases.map((phase, i) => {
-          const liveState = livePhases[phase.id];
-          const status = liveState?.status ?? phase.status;
-          const summary = liveState?.summary ?? phase.summary;
-          const Icon = STATUS_ICON[status as keyof typeof STATUS_ICON] ?? Circle;
-          const color = STATUS_COLOR[status as keyof typeof STATUS_COLOR] ?? 'text-text-tertiary';
-          const isRunning = status === 'running';
-
-          return (
-            <div
-              key={phase.id}
-              className={clsx(
-                'flex items-start gap-3 px-3 py-2.5 rounded-lg transition-colors',
-                isRunning && 'bg-yellow-500/5 ring-1 ring-yellow-500/20',
-              )}
-            >
-              <div className={clsx('mt-0.5 flex-shrink-0', color)}>
-                <Icon size={16} className={isRunning ? 'animate-spin' : ''} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-text-primary">{phase.name}</span>
-                  {phase.expert_slug && (
-                    <span className="text-[11px] px-1.5 py-0.5 rounded bg-bg-secondary text-text-tertiary">
-                      {phase.expert_slug}
-                    </span>
-                  )}
-                  {phase.needs_new_expert && (
-                    <span className="text-[11px] px-1.5 py-0.5 rounded bg-accent/10 text-accent">
-                      NEW
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-text-tertiary mt-0.5">{phase.description}</p>
-                {summary && (
-                  <p className="text-xs text-text-secondary mt-1 italic">{summary}</p>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      <div className="prose prose-sm max-w-none prose-invert">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+          {plan.content}
+        </ReactMarkdown>
       </div>
     </div>
   );

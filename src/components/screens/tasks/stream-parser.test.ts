@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TaskStreamParser, type TaskStreamEvent } from './stream-parser';
 
-// Helper: feed a string in small random-ish chunks to exercise the buffering
 function feedChunked(parser: TaskStreamParser, text: string, chunkSize = 7): TaskStreamEvent[] {
   const events: TaskStreamEvent[] = [];
   for (let i = 0; i < text.length; i += chunkSize) {
@@ -10,30 +9,11 @@ function feedChunked(parser: TaskStreamParser, text: string, chunkSize = 7): Tas
   return events;
 }
 
-// ── Clarify mode ────────────────────────────────────────────────
+// ── Plan mode ────────────────────────────────────────────────
 
-describe('TaskStreamParser (clarify)', () => {
-  it('emits ready for <ready/>', () => {
-    const p = new TaskStreamParser('clarify');
-    const events = p.feed('<ready/>');
-    expect(events).toEqual([{ type: 'ready' }]);
-  });
-
-  it('emits ready for <ready /> with space', () => {
-    const p = new TaskStreamParser('clarify');
-    const events = p.feed('<ready />');
-    expect(events).toEqual([{ type: 'ready' }]);
-  });
-
-  it('emits ready on flush when no tag found', () => {
-    const p = new TaskStreamParser('clarify');
-    p.feed('Some thinking text...');
-    const events = p.flush();
-    expect(events).toEqual([{ type: 'ready' }]);
-  });
-
+describe('TaskStreamParser (plan)', () => {
   it('parses clarification questions', () => {
-    const p = new TaskStreamParser('clarify');
+    const p = new TaskStreamParser('plan');
     const json = JSON.stringify({
       questions: [
         { id: 'q1', kind: 'text', q: 'What style?', placeholder: 'e.g. modern' },
@@ -50,92 +30,40 @@ describe('TaskStreamParser (clarify)', () => {
   });
 
   it('handles chunked clarification', () => {
-    const p = new TaskStreamParser('clarify');
+    const p = new TaskStreamParser('plan');
     const json = JSON.stringify({
       questions: [{ id: 'q1', kind: 'select', q: 'Platform?', options: ['Web', 'Mobile'] }],
     });
-    const full = `<clarification>${json}</clarification>`;
-    const events = feedChunked(p, full, 10);
+    const events = feedChunked(p, `<clarification>${json}</clarification>`, 10);
     expect(events.some((e) => e.type === 'clarification')).toBe(true);
   });
 
-  it('does not double-emit ready', () => {
-    const p = new TaskStreamParser('clarify');
-    p.feed('<ready/>');
-    const events2 = p.feed('<ready/>');
-    const flush = p.flush();
+  it('does not spin on malformed clarification JSON', () => {
+    // Regression: previously the silent catch held the parser in an
+    // infinite re-match loop when JSON was invalid. Now we emit an
+    // empty questions set and consume the match.
+    const p = new TaskStreamParser('plan');
+    const events = p.feed('<clarification>{not-json}</clarification>');
+    expect(events).toHaveLength(1);
+    if (events[0].type === 'clarification') {
+      expect(events[0].questions).toEqual([]);
+    }
+    const events2 = p.feed(''); // Would previously re-match; now nothing.
     expect(events2).toHaveLength(0);
-    expect(flush).toHaveLength(0);
+  });
+
+  it('does not double-emit clarification', () => {
+    const p = new TaskStreamParser('plan');
+    const json = JSON.stringify({ questions: [{ id: 'q1', kind: 'text', q: 'x' }] });
+    p.feed(`<clarification>${json}</clarification>`);
+    const events2 = p.feed(`<clarification>${json}</clarification>`);
+    expect(events2.filter((e) => e.type === 'clarification')).toHaveLength(0);
   });
 });
 
 // ── Execute mode ────────────────────────────────────────────────
 
 describe('TaskStreamParser (execute)', () => {
-  it('parses a plan block', () => {
-    const p = new TaskStreamParser('execute');
-    const planJson = JSON.stringify({
-      phases: [
-        { id: 'p1', name: 'Research', description: 'Do research', expert_slug: 'researcher-abc123', needs_new_expert: false },
-        { id: 'p2', name: 'Write', description: 'Write spec', expert_slug: null, needs_new_expert: true, new_expert: { name: 'Writer', description: 'Writes', domain: 'content' } },
-      ],
-    });
-    const events = p.feed(`<plan kind="markdown">${planJson}</plan>`);
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe('plan');
-    if (events[0].type === 'plan') {
-      expect(events[0].kind).toBe('markdown');
-      expect(events[0].plan.phases).toHaveLength(2);
-      expect(events[0].plan.phases[0].expert_slug).toBe('researcher-abc123');
-      expect(events[0].plan.phases[1].needs_new_expert).toBe(true);
-    }
-  });
-
-  it('parses phase lifecycle', () => {
-    const p = new TaskStreamParser('execute');
-    // Seed a plan so we have context
-    const planJson = JSON.stringify({ phases: [{ id: 'p1', name: 'Research', description: 'Do research' }] });
-    p.feed(`<plan kind="markdown">${planJson}</plan>`);
-
-    const events: TaskStreamEvent[] = [];
-    events.push(...p.feed('<phase id="p1" name="Research">'));
-    events.push(...p.feed('...agent output...'));
-    events.push(...p.feed('<phase_summary>Found 3 competitors</phase_summary>'));
-    events.push(...p.feed('</phase>'));
-
-    expect(events.find((e) => e.type === 'phase_start')).toEqual({
-      type: 'phase_start',
-      phaseId: 'p1',
-      name: 'Research',
-    });
-    expect(events.find((e) => e.type === 'phase_summary')).toEqual({
-      type: 'phase_summary',
-      phaseId: 'p1',
-      summary: 'Found 3 competitors',
-    });
-    expect(events.find((e) => e.type === 'phase_end')).toEqual({
-      type: 'phase_end',
-      phaseId: 'p1',
-    });
-  });
-
-  it('parses multiple phases', () => {
-    const p = new TaskStreamParser('execute');
-    const planJson = JSON.stringify({ phases: [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }] });
-    p.feed(`<plan kind="mixed">${planJson}</plan>`);
-
-    const events: TaskStreamEvent[] = [];
-    events.push(...p.feed('<phase id="p1" name="A">'));
-    events.push(...p.feed('<phase_summary>Done A</phase_summary></phase>'));
-    events.push(...p.feed('<phase id="p2" name="B">'));
-    events.push(...p.feed('<phase_summary>Done B</phase_summary></phase>'));
-
-    const starts = events.filter((e) => e.type === 'phase_start');
-    const ends = events.filter((e) => e.type === 'phase_end');
-    expect(starts).toHaveLength(2);
-    expect(ends).toHaveLength(2);
-  });
-
   it('parses deliverable block', () => {
     const p = new TaskStreamParser('execute');
     const md = '# Report\n\nHere is the report content.';
@@ -186,14 +114,6 @@ describe('TaskStreamParser (execute)', () => {
     }
   });
 
-  it('does not double-emit plan', () => {
-    const p = new TaskStreamParser('execute');
-    const planJson = JSON.stringify({ phases: [{ id: 'p1', name: 'A' }] });
-    p.feed(`<plan kind="markdown">${planJson}</plan>`);
-    const events2 = p.feed(`<plan kind="markdown">${planJson}</plan>`);
-    expect(events2.filter((e) => e.type === 'plan')).toHaveLength(0);
-  });
-
   it('handles deliverable without title attribute', () => {
     const p = new TaskStreamParser('execute');
     const events = p.feed('<deliverable kind="markdown">Some markdown</deliverable>');
@@ -203,57 +123,12 @@ describe('TaskStreamParser (execute)', () => {
     }
   });
 
-  it('getCurrentPhaseId tracks the active phase', () => {
+  it('does not spin on malformed run_info JSON', () => {
     const p = new TaskStreamParser('execute');
-    expect(p.getCurrentPhaseId()).toBeNull();
-    p.feed('<phase id="p1" name="Test">');
-    expect(p.getCurrentPhaseId()).toBe('p1');
-    p.feed('</phase>');
-    expect(p.getCurrentPhaseId()).toBeNull();
-  });
-
-  it('parses a full end-to-end execute stream', () => {
-    const p = new TaskStreamParser('execute');
-    const stream = [
-      `<plan kind="code_app">${JSON.stringify({
-        phases: [
-          { id: 'p1', name: 'Scaffold', description: 'Create project', expert_slug: 'eng-abc123' },
-          { id: 'p2', name: 'Implement', description: 'Build features', expert_slug: 'eng-abc123' },
-        ],
-      })}</plan>`,
-      '<phase id="p1" name="Scaffold">',
-      '...tool calls...',
-      '<phase_summary>Project scaffolded with Vite + React</phase_summary>',
-      '</phase>',
-      '<phase id="p2" name="Implement">',
-      '...more tool calls...',
-      '<phase_summary>All features implemented</phase_summary>',
-      '</phase>',
-      '<deliverable kind="code_app" title="Timer App"># Timer\n\nBuilt with Vite.</deliverable>',
-      `<run_info>${JSON.stringify({
-        preview_type: 'web',
-        setup_commands: ['npm install'],
-        start_command: 'npm run dev',
-        preview_url_pattern: 'Local:\\s+(https?://\\S+)',
-      })}</run_info>`,
-    ];
-
-    const events: TaskStreamEvent[] = [];
-    for (const chunk of stream) {
-      events.push(...p.feed(chunk));
-    }
-
-    const types = events.map((e) => e.type);
-    expect(types).toEqual([
-      'plan',
-      'phase_start',
-      'phase_summary',
-      'phase_end',
-      'phase_start',
-      'phase_summary',
-      'phase_end',
-      'deliverable',
-      'run_info',
-    ]);
+    const events = p.feed('<run_info>{not-json}</run_info>');
+    // No run_info emitted, but the match is consumed so no infinite loop
+    expect(events.some((e) => e.type === 'run_info')).toBe(false);
+    const events2 = p.feed('');
+    expect(events2).toHaveLength(0);
   });
 });

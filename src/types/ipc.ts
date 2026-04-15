@@ -128,7 +128,7 @@ export interface AgentRunRequest {
 
   // Task mode
   runType?: 'chat' | 'task';
-  taskPhase?: 'clarify' | 'execute' | 'follow_up';
+  taskPhase?: 'plan' | 'execute' | 'follow_up';
   maxTurns?: number;
   maxPhases?: number;
   maxClarifyQuestions?: number;

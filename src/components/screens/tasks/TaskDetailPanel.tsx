@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Trash2, Square } from 'lucide-react';
+import { Trash2, Square, Play, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTasks } from '../../../context/TaskContext';
-import { STATUS_CONFIG, formatElapsed, formatPhaseProgress } from './helpers';
+import { STATUS_CONFIG, formatElapsed } from './helpers';
 import TaskPlanView from './TaskPlanView';
 import TaskConsoleView from './TaskConsoleView';
 import TaskDeliverableView from './TaskDeliverableView';
 import TaskClarificationPanel from './TaskClarificationPanel';
 import TaskWorkspaceView from './TaskWorkspaceView';
 import TaskPreviewView from './TaskPreviewView';
-import type { Task, TaskDetail } from './types';
+import type { TaskDetail } from './types';
 
 interface TaskDetailPanelProps {
   taskId: string;
@@ -20,9 +20,10 @@ type TabId = 'plan' | 'console' | 'deliverable' | 'workspace' | 'preview';
 
 export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
   const { t } = useTranslation();
-  const { tasks, liveTask, cancelTask, deleteTask, watchTask, unwatchTask, refresh } = useTasks();
+  const { tasks, liveTask, cancelTask, deleteTask, approvePlan, watchTask, unwatchTask } = useTasks();
   const [detail, setDetail] = useState<TaskDetail | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>('console');
+  const [activeTab, setActiveTab] = useState<TabId>('plan');
+  const [approving, setApproving] = useState(false);
 
   const task = tasks.find((tk) => tk.id === taskId) ?? null;
 
@@ -54,11 +55,18 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
     if (
       liveTask?.taskId === taskId &&
       (liveTask.deliverableKind === 'code_app' || liveTask.deliverableKind === 'mixed') &&
-      activeTabRef.current === 'plan'
+      activeTabRef.current === 'plan' &&
+      task?.status === 'running'
     ) {
       setActiveTab('preview');
     }
-  }, [liveTask?.deliverableKind, liveTask?.taskId, taskId]);
+  }, [liveTask?.deliverableKind, liveTask?.taskId, taskId, task?.status]);
+
+  // When the task is awaiting plan approval, pull the user to the Plan tab
+  // so they can review the checklist before approving.
+  useEffect(() => {
+    if (awaitingApproval) setActiveTab('plan');
+  }, [awaitingApproval]);
 
   useEffect(() => {
     if (liveTask && liveTask.taskId === taskId) {
@@ -82,11 +90,21 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
     await deleteTask(taskId);
   }, [deleteTask, taskId]);
 
+  const handleApprove = useCallback(async () => {
+    setApproving(true);
+    try {
+      await approvePlan(taskId);
+    } finally {
+      setApproving(false);
+    }
+  }, [approvePlan, taskId]);
+
   // Derive values safely before any early returns so hook count is stable
   const style = task ? (STATUS_CONFIG[task.status] ?? STATUS_CONFIG.pending) : STATUS_CONFIG.pending;
   const isActive = task != null && (task.status === 'running' || task.status === 'clarifying' || task.status === 'planning');
   const isTerminal = task != null && (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled');
   const showClarification = task?.status === 'awaiting_clarification';
+  const awaitingApproval = task?.status === 'awaiting_plan_approval';
 
   const hasWorkspace = task != null && (task.deliverable_kind === 'code_app' || task.deliverable_kind === 'mixed');
   // Show preview tab during execution (even before deliverable_kind is known)
@@ -121,6 +139,19 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
             {task.title}
           </h2>
           <div className="flex items-center gap-1.5">
+            {awaitingApproval && (
+              <button
+                onClick={handleApprove}
+                disabled={approving}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title={t('taskDetail.approveAndExecute')}
+              >
+                {approving
+                  ? <Loader2 size={12} className="animate-spin" />
+                  : <Play size={12} />}
+                {t('taskDetail.approveAndExecute')}
+              </button>
+            )}
             {isActive && (
               <button
                 onClick={handleCancel}
@@ -152,9 +183,6 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
             />
             {style.label}
           </span>
-          {task.plan && (
-            <span className="text-text-tertiary">{formatPhaseProgress(task.plan)}</span>
-          )}
           {(task.started_at || task.completed_at) && (
             <span className="text-text-tertiary">
               {formatElapsed(task.started_at, task.completed_at)}

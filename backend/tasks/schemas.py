@@ -80,7 +80,11 @@ class TaskCreate(BaseModel):
 
 
 class TaskRunStart(BaseModel):
-    phase: Literal["clarify", "execute"]
+    phase: Literal["plan", "clarify", "execute"]
+
+
+class PlanMdUpdate(BaseModel):
+    content: str
 
 
 class TaskFollowUp(BaseModel):
@@ -182,6 +186,13 @@ class TaskResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    plan_md: str | None = None
+    plan_md_mtime: float | None = None
+
+
+class PlanMdResponse(BaseModel):
+    content: str
+    mtime: float | None = None
 
 
 class TaskDetailResponse(TaskResponse):

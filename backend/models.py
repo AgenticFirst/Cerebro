@@ -272,8 +272,8 @@ class Task(Base):
     title: Mapped[str] = mapped_column(String(255))
     goal: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
-    # pending | clarifying | awaiting_clarification | planning | running
-    # | completed | failed | cancelled
+    # pending | clarifying | awaiting_clarification | planning
+    # | awaiting_plan_approval | running | completed | failed | cancelled
 
     expert_hint_id: Mapped[str | None] = mapped_column(
         String(32), ForeignKey("experts.id", ondelete="SET NULL"), nullable=True

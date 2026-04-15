@@ -22,11 +22,8 @@ import { parseTaskEvents } from '../components/screens/tasks/event-parser';
 import type {
   Task,
   TaskDetail,
-  TaskPlan,
   NewTaskInput,
-  PhaseRuntimeState,
   RunInfo,
-  ClarificationQuestion,
   TaskLogEntry,
 } from '../components/screens/tasks/types';
 import type { RendererAgentEvent } from '../types/ipc';
@@ -38,17 +35,12 @@ import i18n from '../i18n';
 export interface LiveTaskState {
   taskId: string;
   runId: string;
-  phase: 'clarify' | 'execute';
-  plan: TaskPlan | null;
+  phase: 'plan' | 'execute';
   deliverableKind: string | null;
-  phases: Record<string, PhaseRuntimeState>;
-  activePhaseId: string | null;
   textAccumulated: string;
   logEntries: TaskLogEntry[];
   logSeqCounter: number;
   turnsUsed: number;
-  // Accumulated parsed results (so done handler doesn't rely solely on flush)
-  readySeen: boolean;
   /** Set when <clarification> tag was detected and questions posted to backend. */
   clarificationCaptured: boolean;
   deliverableMarkdown: string | null;
@@ -69,6 +61,7 @@ interface TaskContextValue {
   refresh: () => Promise<void>;
   createAndRunTask: (input: NewTaskInput) => Promise<Task>;
   submitClarification: (taskId: string, answers: Array<{ id: string; answer: string | boolean }>) => Promise<void>;
+  approvePlan: (taskId: string) => Promise<void>;
   followUpTask: (taskId: string, instruction: string, model?: string) => Promise<void>;
   resumeTask: (taskId: string) => Promise<void>;
   cancelTask: (id: string) => Promise<void>;
@@ -214,65 +207,21 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   // ── Parsed event handler (must be defined before doFinalize) ──
 
   const handleParsedEvent = useCallback((live: LiveTaskState, e: TaskStreamEvent) => {
-    if (e.type === 'ready') {
-      live.readySeen = true;
-      // Kill the clarify subprocess immediately — otherwise Claude Code
-      // reopens the turn loop (especially under a non-English language
-      // directive) and drifts into noisy continuation after <ready/>.
-      // Then jump straight to the execute phase; doFinalize's readySeen
-      // fallback still covers the case where the subprocess exits without
-      // ever emitting the tag (see stream-parser flush()).
-      void window.cerebro.agent.cancel(live.runId);
-      cleanup();
-      void autoStartExecuteRef.current?.(live.taskId, live.model);
-    } else if (e.type === 'clarification') {
+    if (e.type === 'clarification') {
       live.clarificationCaptured = true;
       void window.cerebro.invoke({
         method: 'POST',
         path: `/tasks/${live.taskId}/clarifications`,
         body: { questions: e.questions },
       }).then(() => {
-        // Kill the clarify subprocess — we captured the questions,
-        // continuing would just hit max-turns and error out.
+        // Kill the plan subprocess — we captured the questions, continuing
+        // would just hit max-turns and error out. The clarification panel
+        // takes over in the UI; on submit we'll spawn a new plan run with
+        // the answers.
         void window.cerebro.agent.cancel(live.runId);
         cleanup();
         refresh();
       });
-    } else if (e.type === 'plan') {
-      live.plan = e.plan;
-      live.deliverableKind = e.kind;
-      for (const phase of e.plan.phases) {
-        live.phases[phase.id] = { status: 'pending', name: phase.name, summary: null };
-      }
-      void window.cerebro.invoke({
-        method: 'POST',
-        path: `/tasks/${live.taskId}/plan`,
-        body: { kind: e.kind, phases: e.plan.phases },
-      });
-    } else if (e.type === 'phase_start') {
-      live.activePhaseId = e.phaseId;
-      if (live.phases[e.phaseId]) {
-        live.phases[e.phaseId].status = 'running';
-      } else {
-        live.phases[e.phaseId] = { status: 'running', name: e.name, summary: null };
-      }
-      live.logEntries.push({ kind: 'phase_start', phaseId: e.phaseId, name: e.name });
-      void window.cerebro.invoke({
-        method: 'PATCH',
-        path: `/tasks/${live.taskId}/phase`,
-        body: { phase_id: e.phaseId, status: 'running' },
-      });
-    } else if (e.type === 'phase_summary') {
-      if (live.phases[e.phaseId]) live.phases[e.phaseId].summary = e.summary;
-      void window.cerebro.invoke({
-        method: 'PATCH',
-        path: `/tasks/${live.taskId}/phase`,
-        body: { phase_id: e.phaseId, status: 'completed', summary: e.summary },
-      });
-    } else if (e.type === 'phase_end') {
-      if (live.phases[e.phaseId]) live.phases[e.phaseId].status = 'completed';
-      live.activePhaseId = null;
-      live.logEntries.push({ kind: 'phase_end', phaseId: e.phaseId });
     } else if (e.type === 'deliverable') {
       live.deliverableKind = e.kind;
       live.deliverableMarkdown = e.markdown;
@@ -292,8 +241,6 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   // processes inherit stdio.  The `finalized` flag ensures only the first
   // signal takes effect.
 
-  const autoStartExecuteRef = useRef<((taskId: string, model: string | undefined) => Promise<void>) | null>(null);
-
   const doFinalize = useCallback((
     live: LiveTaskState,
     status: 'completed' | 'failed',
@@ -308,25 +255,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       for (const e of parser.flush()) handleParsedEvent(live, e);
     }
 
-    // Mark any in-progress phases as done so the plan shows correct state
-    if (live.plan) {
-      const finalPhaseStatus = status === 'completed' ? 'completed' : 'failed';
-      for (const phase of live.plan.phases) {
-        if (phase.status === 'running' || phase.status === 'pending') {
-          phase.status = finalPhaseStatus;
-        }
-        const phaseState = live.phases[phase.id];
-        if (phaseState && (phaseState.status === 'running' || phaseState.status === 'pending')) {
-          phaseState.status = finalPhaseStatus;
-        }
-      }
-    }
-
-    // Flush persisted events, THEN cleanup — but capture the current unsub
-    // so that if autoStartExecute sets up a new subscription in the meantime,
-    // we don't tear down the NEW subscription (race condition fix).
-    // preserveBuffer=true so the Console tab can still replay PTY output
-    // after the task completes/fails.
+    // Flush persisted events, THEN cleanup. preserveBuffer=true so the
+    // Console tab can still replay PTY output after the task ends.
     const currentUnsub = unsubRef.current;
     void flushEvents(live.taskId).then(() => {
       if (unsubRef.current === currentUnsub) {
@@ -352,7 +282,6 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         },
       }).then(() => refresh());
 
-      // Optimistic update: immediately reflect completion in context tasks
       setTasks((prev) =>
         prev.map((t) =>
           t.id === live.taskId
@@ -364,30 +293,24 @@ export function TaskProvider({ children }: { children: ReactNode }) {
                   : t.deliverable_markdown,
                 deliverable_title: live.deliverableTitle ?? t.deliverable_title,
                 deliverable_kind: (live.deliverableKind ?? t.deliverable_kind) as Task['deliverable_kind'],
-                plan: live.plan ?? t.plan,
                 completed_at: new Date().toISOString(),
                 error: error ?? null,
               }
             : t,
         ),
       );
-    } else if (live.phase === 'clarify') {
-      if (status === 'failed' && !live.clarificationCaptured) {
-        // Only mark as failed if we never got a valid clarification.
-        // Race condition: Claude Code can hit max-turns and exit before
-        // the cancel fires — if questions were already captured, ignore.
+    } else if (live.phase === 'plan') {
+      // The plan subprocess exits when Claude emits <clarification> (cancelled
+      // by us), when it finishes writing PLAN.md, or on an error. If we've
+      // already captured a clarification, the clarification panel drives the
+      // next step — leave the task alone. Otherwise, ask the backend to look
+      // at the workspace: PLAN.md present → awaiting_plan_approval; missing
+      // → failed.
+      if (!live.clarificationCaptured) {
         void window.cerebro.invoke({
           method: 'POST',
-          path: `/tasks/${live.taskId}/finalize`,
-          body: { status: 'failed', error: error ?? null },
+          path: `/tasks/${live.taskId}/plan-done`,
         }).then(() => refresh());
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === live.taskId ? { ...t, status: 'failed' as Task['status'], error: error ?? null } : t,
-          ),
-        );
-      } else if (live.readySeen) {
-        void autoStartExecuteRef.current?.(live.taskId, live.model);
       }
     }
 
@@ -448,21 +371,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   // ── Actions ───────────────────────────────────────────────────
 
-  const startSubprocessRef = useRef<((
-    task: Task,
-    phase: 'clarify' | 'execute',
-    runId: string,
-    conversationId: string,
-    workspacePath: string | null,
-    clarificationAnswers?: string,
-    model?: string,
-    followUp?: { content: string; context: string },
-  ) => Promise<void>) | null>(null);
-
   const startSubprocess = useCallback(
     async (
       task: Task,
-      phase: 'clarify' | 'execute',
+      phase: 'plan' | 'execute',
       runId: string,
       conversationId: string,
       workspacePath: string | null,
@@ -471,7 +383,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       followUp?: { content: string; context: string },
       resumeSessionId?: string,
     ) => {
-      const parserMode = phase === 'clarify' ? 'clarify' : 'execute';
+      const parserMode: 'plan' | 'execute' = followUp ? 'execute' : phase;
       const parser = new TaskStreamParser(parserMode);
       parserRef.current = parser;
 
@@ -479,15 +391,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         taskId: task.id,
         runId,
         phase: parserMode,
-        plan: task.plan ?? null,
         deliverableKind: task.deliverable_kind ?? null,
-        phases: {},
-        activePhaseId: null,
         textAccumulated: '',
         logEntries: [],
         logSeqCounter: 0,
         turnsUsed: 0,
-        readySeen: false,
         clarificationCaptured: false,
         deliverableMarkdown: null,
         deliverableTitle: null,
@@ -511,7 +419,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         content: followUp?.content ?? task.goal,
         runType: 'task',
         taskPhase: followUp ? 'follow_up' : phase,
-        maxTurns: phase === 'clarify' ? 15 : task.max_turns,
+        maxTurns: phase === 'plan' ? 15 : task.max_turns,
         maxPhases: task.max_phases,
         maxClarifyQuestions: 5,
         runIdOverride: runId,
@@ -526,46 +434,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     [handleStreamEvent, flushEvents],
   );
 
-  startSubprocessRef.current = startSubprocess;
-
-  // Auto-start execute after <ready/> in clarify
-  const autoStartExecute = useCallback(async (taskId: string, model: string | undefined) => {
-    const taskRes = await window.cerebro.invoke<Task>({
-      method: 'GET',
-      path: `/tasks/${taskId}`,
-    });
-    if (!taskRes.ok) return;
-    const task = taskRes.data;
-
-    const runRes = await window.cerebro.invoke<{
-      task_id: string;
-      run_id: string;
-      conversation_id: string;
-      workspace_path: string | null;
-    }>({
-      method: 'POST',
-      path: `/tasks/${taskId}/run`,
-      body: { phase: 'execute' },
-    });
-    if (!runRes.ok) return;
-
-    await startSubprocessRef.current?.(
-      task,
-      'execute',
-      runRes.data.run_id,
-      runRes.data.conversation_id,
-      runRes.data.workspace_path,
-      undefined,
-      model,
-    );
-    await refresh();
-  }, [refresh]);
-
-  // Keep refs in sync
-  autoStartExecuteRef.current = autoStartExecute;
-
   const createAndRunTask = useCallback(async (input: NewTaskInput): Promise<Task> => {
-    // 1. Create task row
     const createRes = await window.cerebro.invoke<Task>({
       method: 'POST',
       path: '/tasks',
@@ -582,9 +451,6 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     if (!createRes.ok) throw new Error('Failed to create task');
     const task = createRes.data;
 
-    const firstPhase = task.skip_clarification ? 'execute' : 'clarify';
-
-    // 2. Start run (mints run_records row + workspace)
     const runRes = await window.cerebro.invoke<{
       task_id: string;
       run_id: string;
@@ -593,14 +459,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }>({
       method: 'POST',
       path: `/tasks/${task.id}/run`,
-      body: { phase: firstPhase },
+      body: { phase: 'plan' },
     });
     if (!runRes.ok) throw new Error('Failed to start task run');
 
-    // 3. Spawn subprocess
     await startSubprocess(
       task,
-      firstPhase,
+      'plan',
       runRes.data.run_id,
       runRes.data.conversation_id,
       runRes.data.workspace_path,
@@ -617,10 +482,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     taskId: string,
     answers: Array<{ id: string; answer: string | boolean }>,
   ) => {
-    // Capture model from current live state before cleanup
     const currentModel = liveTaskRef.current?.model;
 
-    // Post answers
     const res = await window.cerebro.invoke<{ task_id: string; answers_block: string }>({
       method: 'POST',
       path: `/tasks/${taskId}/clarify`,
@@ -628,10 +491,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     });
     if (!res.ok) throw new Error('Failed to submit clarification');
 
-    // Clean up the clarify subprocess listener
     cleanup();
 
-    // Get the latest task state
     const taskRes = await window.cerebro.invoke<Task>({
       method: 'GET',
       path: `/tasks/${taskId}`,
@@ -639,7 +500,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     if (!taskRes.ok) throw new Error('Failed to fetch task');
     const task = taskRes.data;
 
-    // Start execute phase
+    // Re-run the plan phase with the user's answers so Claude can now write
+    // PLAN.md. The user still reviews and approves it before execute starts.
     const runRes = await window.cerebro.invoke<{
       task_id: string;
       run_id: string;
@@ -648,17 +510,51 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }>({
       method: 'POST',
       path: `/tasks/${taskId}/run`,
-      body: { phase: 'execute' },
+      body: { phase: 'plan' },
     });
-    if (!runRes.ok) throw new Error('Failed to start execute run');
+    if (!runRes.ok) throw new Error('Failed to start plan run');
 
     await startSubprocess(
       task,
-      'execute',
+      'plan',
       runRes.data.run_id,
       runRes.data.conversation_id,
       runRes.data.workspace_path,
       res.data.answers_block,
+      currentModel,
+    );
+
+    await refresh();
+  }, [cleanup, startSubprocess, refresh]);
+
+  const approvePlan = useCallback(async (taskId: string) => {
+    const currentModel = liveTaskRef.current?.model;
+    cleanup();
+
+    const runRes = await window.cerebro.invoke<{
+      task_id: string;
+      run_id: string;
+      conversation_id: string;
+      workspace_path: string | null;
+    }>({
+      method: 'POST',
+      path: `/tasks/${taskId}/approve-plan`,
+    });
+    if (!runRes.ok) throw new Error('Failed to approve plan');
+
+    const taskRes = await window.cerebro.invoke<Task>({
+      method: 'GET',
+      path: `/tasks/${taskId}`,
+    });
+    if (!taskRes.ok) throw new Error('Failed to fetch task');
+
+    await startSubprocess(
+      taskRes.data,
+      'execute',
+      runRes.data.run_id,
+      runRes.data.conversation_id,
+      runRes.data.workspace_path,
+      undefined,
       currentModel,
     );
 
@@ -803,26 +699,22 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // For running tasks: subscribe for new live events on top of history
-    if ((task.status === 'running' || task.status === 'clarifying') && task.run_id) {
-      const parser = new TaskStreamParser(
-        task.status === 'clarifying' ? 'clarify' : 'execute',
-      );
+    // For live tasks: subscribe for new events on top of the history replay
+    const isLive = task.status === 'running' || task.status === 'planning';
+    if (isLive && task.run_id) {
+      const phase: 'plan' | 'execute' = task.status === 'planning' ? 'plan' : 'execute';
+      const parser = new TaskStreamParser(phase);
       parserRef.current = parser;
 
       const live: LiveTaskState = {
         taskId: task.id,
         runId: task.run_id,
-        phase: task.status === 'clarifying' ? 'clarify' : 'execute',
-        plan: task.plan ?? null,
+        phase,
         deliverableKind: task.deliverable_kind ?? null,
-        phases: {},
-        activePhaseId: null,
         textAccumulated: '',
         logEntries,
         logSeqCounter: maxSeq + 1,
         turnsUsed: 0,
-        readySeen: false,
         clarificationCaptured: false,
         deliverableMarkdown: null,
         deliverableTitle: null,
@@ -830,12 +722,6 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         model: undefined,
         finalized: false,
       };
-
-      if (task.plan?.phases) {
-        for (const phase of task.plan.phases) {
-          live.phases[phase.id] = { status: phase.status, name: phase.name, summary: phase.summary };
-        }
-      }
 
       liveTaskRef.current = live;
       setLiveTask(live);
@@ -846,38 +732,27 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       flushTimerRef.current = setInterval(() => {
         void flushEvents(task.id);
       }, FLUSH_INTERVAL_MS);
-    } else {
-      // Completed/failed/cancelled task — just set liveTask with historical
-      // logs so the LogsView can display them without a separate fetch
-      if (logEntries.length > 0) {
-        const live: LiveTaskState = {
-          taskId: task.id,
-          runId: task.run_id ?? '',
-          phase: 'execute',
-          plan: task.plan ?? null,
-          deliverableKind: task.deliverable_kind ?? null,
-          phases: {},
-          activePhaseId: null,
-          textAccumulated: '',
-          logEntries,
-          logSeqCounter: maxSeq + 1,
-          turnsUsed: 0,
-          readySeen: false,
+    } else if (logEntries.length > 0) {
+      // Terminal task — seed liveTask with historical logs so the Console
+      // tab can replay without a separate fetch.
+      const live: LiveTaskState = {
+        taskId: task.id,
+        runId: task.run_id ?? '',
+        phase: 'execute',
+        deliverableKind: task.deliverable_kind ?? null,
+        textAccumulated: '',
+        logEntries,
+        logSeqCounter: maxSeq + 1,
+        turnsUsed: 0,
         clarificationCaptured: false,
-          deliverableMarkdown: null,
-          deliverableTitle: null,
-          runInfo: null,
-          model: undefined,
-          finalized: true,
-        };
-        if (task.plan?.phases) {
-          for (const phase of task.plan.phases) {
-            live.phases[phase.id] = { status: phase.status, name: phase.name, summary: phase.summary };
-          }
-        }
-        liveTaskRef.current = live;
-        setLiveTask(live);
-      }
+        deliverableMarkdown: null,
+        deliverableTitle: null,
+        runInfo: null,
+        model: undefined,
+        finalized: true,
+      };
+      liveTaskRef.current = live;
+      setLiveTask(live);
     }
   }, [handleStreamEvent, flushEvents]);
 
@@ -902,7 +777,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   }, [cleanup]);
 
   const runningCount = tasks.filter(
-    (t) => t.status === 'running' || t.status === 'clarifying' || t.status === 'awaiting_clarification',
+    (t) =>
+      t.status === 'running' ||
+      t.status === 'planning' ||
+      t.status === 'awaiting_clarification' ||
+      t.status === 'awaiting_plan_approval',
   ).length;
 
   const value: TaskContextValue = {
@@ -914,6 +793,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     refresh,
     createAndRunTask,
     submitClarification,
+    approvePlan,
     followUpTask,
     resumeTask,
     cancelTask,

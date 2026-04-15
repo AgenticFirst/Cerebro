@@ -12,6 +12,7 @@ export const STATUS_CONFIG: Record<TaskStatus, StatusStyle> = {
   clarifying:              { dot: 'bg-blue-400',   text: 'text-blue-400',       label: 'Clarifying', glow: true },
   awaiting_clarification:  { dot: 'bg-blue-400',   text: 'text-blue-400',       label: 'Needs input', glow: true },
   planning:                { dot: 'bg-yellow-500',  text: 'text-yellow-500',    label: 'Planning', glow: true },
+  awaiting_plan_approval:  { dot: 'bg-amber-400',   text: 'text-amber-400',     label: 'Awaiting approval', glow: true },
   running:                 { dot: 'bg-yellow-500',  text: 'text-yellow-500',    label: 'Running', glow: true },
   completed:               { dot: 'bg-green-500',   text: 'text-green-500',     label: 'Completed' },
   failed:                  { dot: 'bg-red-500',     text: 'text-red-500',       label: 'Failed' },
@@ -30,8 +31,3 @@ export function formatElapsed(startedAt: string | null, completedAt: string | nu
   return `${m}m ${s}s`;
 }
 
-export function formatPhaseProgress(plan: { phases: Array<{ status: string }> } | null): string {
-  if (!plan || plan.phases.length === 0) return '';
-  const done = plan.phases.filter((p) => p.status === 'completed' || p.status === 'skipped').length;
-  return `${done}/${plan.phases.length} phases`;
-}

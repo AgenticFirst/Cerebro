@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import type { Task } from './types';
-import { STATUS_CONFIG, formatElapsed, formatPhaseProgress } from './helpers';
+import { STATUS_CONFIG, formatElapsed } from './helpers';
 
 interface TaskListCardProps {
   task: Task;
@@ -36,9 +36,6 @@ export default function TaskListCard({ task, isSelected, onClick }: TaskListCard
       </p>
       <div className="flex items-center gap-3 ml-3.5 text-[11px] text-text-tertiary">
         <span className={style.text}>{style.label}</span>
-        {task.plan && (
-          <span>{formatPhaseProgress(task.plan)}</span>
-        )}
         {(task.status === 'running' || task.status === 'completed' || task.status === 'failed') && (
           <span>{formatElapsed(task.started_at, task.completed_at)}</span>
         )}

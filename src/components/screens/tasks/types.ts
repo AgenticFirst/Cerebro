@@ -59,6 +59,7 @@ export type TaskStatus =
   | 'clarifying'
   | 'awaiting_clarification'
   | 'planning'
+  | 'awaiting_plan_approval'
   | 'running'
   | 'completed'
   | 'failed'
@@ -91,6 +92,8 @@ export interface Task {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+  plan_md: string | null;
+  plan_md_mtime: number | null;
 }
 
 export interface TaskDetail extends Task {
