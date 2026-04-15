@@ -227,10 +227,32 @@ When delegating, give the subagent the relevant context — don't just forward t
 
 You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 
-- \`create-expert\` — create a new expert when the user describes a recurring need that no current expert covers. First confirm the proposed name, description, and system prompt with the user, then invoke this skill to run the actual API call.
+- \`create-task\` — kick off a one-off, goal-oriented piece of work that produces a deliverable (markdown doc, runnable code app, or both). Tasks run autonomously: clarify → plan → execute. Confirm the title and goal with the user first, then invoke.
+- \`create-expert\` — create a new expert (a persistent specialist persona the user will talk to repeatedly) when the user describes a recurring need that no current expert covers. First confirm the proposed name, description, and system prompt with the user, then invoke.
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
 - \`summarize-conversation\` — used by routines.
+
+### Task vs Routine vs Expert — choose the right one
+
+These three concepts are easy to confuse. Pick the one that matches what the user actually wants:
+
+| User intent | What it is | What to do |
+|---|---|---|
+| "Build / draft / research / plan / produce **X** for me." Done **once**, with a finished artifact at the end. | **Task** — autonomous, single-shot work that ends in a deliverable. | Confirm title + goal in one sentence, then invoke \`create-task\`. |
+| "Every morning / every Sunday / on every push / when X happens, do Y." Same steps run **repeatedly** on a schedule or trigger. | **Routine** — a repeatable workflow. | Talk through the steps and the trigger with the user. (Routines are managed in the Routines screen — do NOT use \`create-task\` for these.) |
+| "I need a coach / tutor / advisor / specialist to help me with X over time." A **persona** the user will return to in many future conversations. | **Expert** — a persistent specialist subagent. | Propose a name, description, and system prompt, then invoke \`create-expert\`. |
+| Single question, chat, or info request. | None of the above. | Answer directly, or delegate to an existing expert via the \`Agent\` tool. |
+
+Decision rules of thumb:
+
+- **Has a finished artifact and ends → Task.** ("Write me a buying guide.")
+- **Recurs on a schedule or trigger → Routine.** ("Every morning, summarize my unread emails.")
+- **A who, not a what → Expert.** ("I want a fitness coach.")
+- A task can use experts (the task runner can delegate phases to them) — that does NOT make it an expert. If the user wants the work *done*, it is a task.
+- A routine is not a task. If you find yourself reaching for \`create-task\` for something that recurs, stop and discuss it as a routine instead.
+
+When the request is ambiguous, ask one short clarifying question (e.g. "Do you want me to do this once now, or set it up to run every week?") before invoking any skill.
 
 ## Task Mode
 
@@ -241,8 +263,9 @@ When a prompt arrives wrapped in \`<task_clarify>\` or \`<task_execute>\` you ar
 3. Emit a \`<plan>\` block, then for each phase emit \`<phase>\` markers around your delegation, then exactly one \`<deliverable>\` block at the end.
 4. For code_app/mixed deliverables, emit a \`<run_info>\` block after the deliverable.
 5. In task mode, the create-expert skill runs autonomously — do NOT stop to confirm with the user. Invent sensible fields and run the bash script directly. After SUCCESS, run \`bash "$CLAUDE_PROJECT_DIR/.claude/scripts/rematerialize-experts.sh"\` so the new expert is immediately invocable.
-6. Delegation depth is capped at 2 levels from you.
-7. Your working directory is the task workspace — write all files there.
+6. Never call \`create-task\` from inside task mode — you are already executing a task. Do the work directly in this run.
+7. Delegation depth is capped at 2 levels from you.
+8. Your working directory is the task workspace — write all files there.
 `;
 }
 
@@ -508,6 +531,58 @@ else
 fi
 `,
     },
+    {
+      name: 'create-task.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Creates a Cerebro task via the backend API.
+# Usage: bash create-task.sh <json-file>
+#   The JSON file must contain: title, goal
+#   Optional: expert_hint_id, skip_clarification, max_turns, max_phases
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
+  echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  echo "Usage: bash create-task.sh <json-file>" >&2
+  exit 1
+fi
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" -X POST "http://127.0.0.1:$PORT/tasks" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT (is the app running?)" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  TASK_TITLE=$(echo "$BODY_RESPONSE" | jq -r '.title // "unknown"')
+  TASK_ID=$(echo "$BODY_RESPONSE" | jq -r '.id // "unknown"')
+  echo "SUCCESS: Created task '$TASK_TITLE' (id: $TASK_ID)"
+  echo "$BODY_RESPONSE" | jq .
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2
+  echo "$BODY_RESPONSE" >&2
+  exit 1
+fi
+`,
+    },
   ];
 }
 
@@ -623,6 +698,61 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/create-expert.sh" "$CLAUDE_PROJECT_DIR
 \`\`\`
 
 If the output says **SUCCESS**, tell the user the expert is ready — it appears in the sidebar automatically. If you set a domain, mention that matching skills from the library were auto-assigned.
+If the output says **ERROR**, report the error to the user.
+`,
+    },
+    {
+      name: 'create-task',
+      description: 'Create a new Cerebro task (one-off, goal-oriented work that produces a deliverable) via the backend API.',
+      body: `# Create task
+
+This skill creates a new **task** — a one-off, goal-oriented unit of autonomous work that produces a concrete deliverable (a markdown artifact, a runnable code app, or both). Tasks run themselves: clarify → plan → execute → deliverable.
+
+## Use this skill when
+
+The user is asking for a discrete piece of work to be **done once**, with a finished artifact at the end. Cues:
+
+- Verbs like *build, draft, write, design, research, produce, plan, prototype, generate, refactor, port, migrate, set up*.
+- The user describes a goal with a clear endpoint (a doc, an app, a brief, a plan, a report).
+- It is naturally a single-shot unit of work, not something that recurs.
+
+Examples that ARE tasks:
+- "Build me a habit tracker mini-app."
+- "Research the top 5 espresso machines under $500 and write a buying guide."
+- "Draft a 2-week training plan for my upcoming 10K."
+- "Refactor my project's auth module."
+
+## Do NOT use this skill when
+
+- The user wants a **recurring workflow** (every morning, every Sunday, on every push, on a schedule, when X happens, etc.) → that is a **routine**, not a task. Discuss the steps and the schedule with the user first.
+- The user wants a **persistent persona** they will talk to again and again (a coach, a tutor, an advisor, a specialist subagent) → that is an **expert**. Use the \`create-expert\` skill.
+- The user is asking a question, chatting, or wants information directly — just answer or delegate to an existing expert.
+
+If you are unsure whether the user wants a task vs a routine vs an expert, ask one short clarifying question before invoking any skill.
+
+## How to invoke
+
+From the conversation, determine:
+
+- **title** — short, human-readable name for the task (3–8 words). Example: "Espresso Buying Guide", "Habit Tracker App".
+- **goal** — one or two crisp sentences describing the desired outcome and any constraints the user gave you. The autonomous task runner uses this as its north-star spec, so be specific.
+- **expert_hint_id** *(optional)* — id of an existing expert who is the natural lead for this work. Run \`list-experts\` first if you want to pick one. Omit if no expert is clearly relevant.
+- **skip_clarification** *(optional, default false)* — set to \`true\` only if the user gave you a fully-specified ask and you have already confirmed with them.
+
+**Confirm the title and goal with the user in one short sentence before invoking** (unless they explicitly said "just do it"). Then run this single Bash command, replacing the placeholder strings:
+
+\`\`\`bash
+jq -n \\
+  --arg title "REPLACE_TITLE" \\
+  --arg goal "REPLACE_GOAL" \\
+  '{title: $title, goal: $goal}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/new-task.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/create-task.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/new-task.json"
+\`\`\`
+
+If you want to attach an expert hint, add \`--arg expert_hint_id "EXPERT_ID"\` and include \`expert_hint_id: $expert_hint_id\` in the jq object.
+
+If the output says **SUCCESS**, tell the user the task was created and is visible in the **Tasks** screen — it will start clarifying / planning automatically. Do NOT try to execute the task yourself; the task runner handles it.
 If the output says **ERROR**, report the error to the user.
 `,
     },
