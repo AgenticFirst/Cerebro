@@ -15,6 +15,21 @@ import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
 const PTY_BUFFER_INTERVAL_MS = 16; // ~60fps
 const MAX_ACCUMULATED_TEXT = 512 * 1024; // cap ANSI-stripped text in memory
 
+/**
+ * Format a 32-char hex ID (as produced by Python's `uuid.uuid4().hex`) into
+ * the dashed UUID form that Claude Code's `--session-id` / `--resume` flags
+ * require. Leaves already-dashed UUIDs untouched.
+ */
+function toUuidFormat(id: string): string {
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return id;
+  }
+  if (/^[0-9a-f]{32}$/i.test(id)) {
+    return `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
+  }
+  return id;
+}
+
 /** Strip CSI codes used for coloring/cursor. Fast path for 'text' events. */
 function stripAnsi(data: string): string {
   return data
@@ -68,9 +83,9 @@ export class TaskPtyRunner extends EventEmitter {
     const args: string[] = [];
 
     if (options.resume && options.sessionId) {
-      args.push('--resume', options.sessionId);
+      args.push('--resume', toUuidFormat(options.sessionId));
     } else {
-      args.push('--session-id', options.sessionId || options.runId);
+      args.push('--session-id', toUuidFormat(options.sessionId || options.runId));
       args.push('--agent', options.agentName);
       args.push('--max-turns', String(options.maxTurns ?? 10));
     }

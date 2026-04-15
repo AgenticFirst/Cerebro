@@ -150,6 +150,34 @@ describe('TaskPtyRunner — command construction', () => {
     const idx = args.indexOf('--max-turns');
     expect(args[idx + 1]).toBe('10');
   });
+
+  it('formats a 32-char hex runId into a dashed UUID for --session-id', () => {
+    runner.start({ ...DEFAULT_OPTIONS, runId: 'e3a283b04fc342a8b48b45b73e2da528' });
+
+    const args = mockSpawn.mock.calls[0][1] as string[];
+    const idx = args.indexOf('--session-id');
+    expect(args[idx + 1]).toBe('e3a283b0-4fc3-42a8-b48b-45b73e2da528');
+  });
+
+  it('formats a 32-char hex sessionId for --resume', () => {
+    runner.start({
+      ...DEFAULT_OPTIONS,
+      resume: true,
+      sessionId: 'e3a283b04fc342a8b48b45b73e2da528',
+    });
+
+    const args = mockSpawn.mock.calls[0][1] as string[];
+    const idx = args.indexOf('--resume');
+    expect(args[idx + 1]).toBe('e3a283b0-4fc3-42a8-b48b-45b73e2da528');
+  });
+
+  it('leaves an already-dashed UUID untouched', () => {
+    runner.start({ ...DEFAULT_OPTIONS, runId: 'e3a283b0-4fc3-42a8-b48b-45b73e2da528' });
+
+    const args = mockSpawn.mock.calls[0][1] as string[];
+    const idx = args.indexOf('--session-id');
+    expect(args[idx + 1]).toBe('e3a283b0-4fc3-42a8-b48b-45b73e2da528');
+  });
 });
 
 describe('TaskPtyRunner — event emission', () => {

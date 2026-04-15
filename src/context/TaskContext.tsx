@@ -216,6 +216,15 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const handleParsedEvent = useCallback((live: LiveTaskState, e: TaskStreamEvent) => {
     if (e.type === 'ready') {
       live.readySeen = true;
+      // Kill the clarify subprocess immediately — otherwise Claude Code
+      // reopens the turn loop (especially under a non-English language
+      // directive) and drifts into noisy continuation after <ready/>.
+      // Then jump straight to the execute phase; doFinalize's readySeen
+      // fallback still covers the case where the subprocess exits without
+      // ever emitting the tag (see stream-parser flush()).
+      void window.cerebro.agent.cancel(live.runId);
+      cleanup();
+      void autoStartExecuteRef.current?.(live.taskId, live.model);
     } else if (e.type === 'clarification') {
       live.clarificationCaptured = true;
       void window.cerebro.invoke({
