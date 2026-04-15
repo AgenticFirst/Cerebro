@@ -108,6 +108,10 @@ export class TaskPtyRunner extends EventEmitter {
     const env: Record<string, string> = { ...process.env } as Record<string, string>;
     delete env.CLAUDECODE;
     env.FORCE_COLOR = '3';
+    // node-pty chdirs to `cwd` but doesn't update PWD — the child inherits
+    // the stale PWD from Electron's launch dir, so $PWD in the system prompt
+    // would resolve to HOME and Claude Code writes PLAN.md outside the workspace.
+    env.PWD = options.cwd;
 
     const wrapped = wrapClaudeSpawn({ claudeBinary: info.path, claudeArgs: args });
 

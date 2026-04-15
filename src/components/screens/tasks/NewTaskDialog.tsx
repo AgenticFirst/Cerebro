@@ -27,14 +27,12 @@ const MODELS = [
 
 const TEMPLATES = [
   { id: 'presentation', key: 'newTaskDialog.templatePresentation' },
-  { id: 'web-app', key: 'newTaskDialog.templateWebApp' },
-  { id: 'mobile-app', key: 'newTaskDialog.templateMobileApp' },
-  { id: 'research', key: 'newTaskDialog.templateResearchBrief' },
-  { id: 'trip-plan', key: 'newTaskDialog.templateTripPlan' },
-  { id: 'code-audit', key: 'newTaskDialog.templateCodeAudit' },
-  { id: 'meal-plan', key: 'newTaskDialog.templateMealPlan' },
-  { id: 'cli-tool', key: 'newTaskDialog.templateCliTool' },
 ];
+
+const PRESENTATION_DIRECTIVE = `
+
+---
+Output format: Build this as a single self-contained static HTML presentation at \`index.html\` in the workspace root. Use inline CSS and JavaScript (no build step, no external files). Emit a \`<run_info>\` block with \`"preview_type": "static"\` so the preview tab renders it directly.`;
 
 export default function NewTaskDialog({ open, onClose, onSubmit, initialGoal }: NewTaskDialogProps) {
   const { t } = useTranslation();
@@ -67,9 +65,12 @@ export default function NewTaskDialog({ open, onClose, onSubmit, initialGoal }: 
     const title = dotIdx > 0 && dotIdx < 80
       ? trimmed.slice(0, dotIdx)
       : trimmed.slice(0, 60) + (trimmed.length > 60 ? '...' : '');
+    const finalGoal = selectedTemplate === 'presentation'
+      ? trimmed + PRESENTATION_DIRECTIVE
+      : trimmed;
     onSubmit({
       title,
-      goal: trimmed,
+      goal: finalGoal,
       templateId: selectedTemplate ?? undefined,
       skipClarification,
       maxPhases,

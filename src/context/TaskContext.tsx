@@ -329,9 +329,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
     if (evt.type === 'text_delta') {
       live.textAccumulated += evt.delta;
-      const phaseId = parser.getCurrentPhaseId();
-      live.logEntries.push({ kind: 'text_delta', text: evt.delta, phaseId });
-      enqueueEvent('text_delta', { delta: evt.delta, phaseId });
+      live.logEntries.push({ kind: 'text_delta', text: evt.delta, phaseId: null });
+      enqueueEvent('text_delta', { delta: evt.delta, phaseId: null });
       for (const e of parser.feed(evt.delta)) handleParsedEvent(live, e);
       scheduleUIUpdate();
     } else if (evt.type === 'tool_start') {

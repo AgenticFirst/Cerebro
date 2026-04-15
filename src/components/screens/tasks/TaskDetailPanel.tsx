@@ -64,6 +64,7 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
 
   // When the task is awaiting plan approval, pull the user to the Plan tab
   // so they can review the checklist before approving.
+  const awaitingApproval = task?.status === 'awaiting_plan_approval';
   useEffect(() => {
     if (awaitingApproval) setActiveTab('plan');
   }, [awaitingApproval]);
@@ -104,7 +105,6 @@ export default function TaskDetailPanel({ taskId }: TaskDetailPanelProps) {
   const isActive = task != null && (task.status === 'running' || task.status === 'clarifying' || task.status === 'planning');
   const isTerminal = task != null && (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled');
   const showClarification = task?.status === 'awaiting_clarification';
-  const awaitingApproval = task?.status === 'awaiting_plan_approval';
 
   const hasWorkspace = task != null && (task.deliverable_kind === 'code_app' || task.deliverable_kind === 'mixed');
   // Show preview tab during execution (even before deliverable_kind is known)
