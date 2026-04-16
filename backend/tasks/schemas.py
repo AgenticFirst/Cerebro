@@ -12,6 +12,8 @@ class TaskCreate(BaseModel):
     priority: str = "normal"
     start_at: datetime | None = None
     due_at: datetime | None = None
+    project_path: str | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 class TaskUpdate(BaseModel):
@@ -21,6 +23,8 @@ class TaskUpdate(BaseModel):
     priority: str | None = None
     start_at: datetime | None = None
     due_at: datetime | None = None
+    project_path: str | None = None
+    tags: list[str] | None = None
 
 
 class TaskMove(BaseModel):
@@ -41,6 +45,8 @@ class TaskRead(BaseModel):
     position: float
     run_id: str | None
     last_error: str | None
+    project_path: str | None
+    tags: list[str] = []
     created_at: datetime
     updated_at: datetime
     started_at: datetime | None

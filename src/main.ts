@@ -618,9 +618,13 @@ function registerIpcHandlers(): void {
     return getTaskWorkspaceDir(taskId);
   });
 
-  // List files in the workspace as a nested tree (excluding .claude symlink and node_modules)
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, async (_event, taskId: string) => {
-    const baseDir = getTaskWorkspaceDir(taskId);
+  // List files in the workspace as a nested tree (excluding .claude symlink and node_modules).
+  // `overridePath` (optional) routes the listing to an external project folder; the backend
+  // sandbox validator already canonicalized and vetted the path at task create/update time.
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, async (_event, taskId: string, overridePath?: string) => {
+    const baseDir = overridePath && overridePath.trim() && path.isAbsolute(overridePath)
+      ? overridePath
+      : getTaskWorkspaceDir(taskId);
     if (!fs.existsSync(baseDir)) return [];
 
     const SKIP_DIRS = new Set(['.claude', 'node_modules', '.git', '.next', 'dist', 'build', '.venv', '__pycache__']);

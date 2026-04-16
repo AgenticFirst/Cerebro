@@ -10,6 +10,16 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from fastapi import Request
+
+
+def cerebro_data_dir(request: Request) -> str | None:
+    """Return the Cerebro data directory (parent of the SQLite DB), or None."""
+    db_path = getattr(request.app.state, "db_path", None)
+    if not db_path:
+        return None
+    return os.path.dirname(db_path)
+
 
 @dataclass
 class ValidationResult:

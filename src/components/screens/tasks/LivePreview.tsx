@@ -6,6 +6,8 @@ import clsx from 'clsx';
 interface LivePreviewProps {
   taskId: string;
   runId: string | null;
+  /** External project folder (if the task has one). Used when probing for index.html. */
+  projectPath?: string | null;
   className?: string;
 }
 
@@ -20,9 +22,12 @@ type PreviewSource = 'static' | 'dev_server';
  *    (from <run_info> blocks or common localhost patterns).
  * 3. When a URL is detected, switch iframe src to the live dev server.
  */
-export default function LivePreview({ taskId, runId, className }: LivePreviewProps) {
+export default function LivePreview({ taskId, runId, projectPath, className }: LivePreviewProps) {
   const { t } = useTranslation();
 
+  // Static iframe only works for the internal workspace protocol; external
+  // project folders rely on a dev-server URL detected from terminal output.
+  const isExternalProject = !!projectPath;
   const staticUrl = `cerebro-workspace://${taskId}/index.html`;
   const [previewUrl, setPreviewUrl] = useState<string>(staticUrl);
   const [source, setSource] = useState<PreviewSource>('static');
@@ -30,8 +35,14 @@ export default function LivePreview({ taskId, runId, className }: LivePreviewPro
   const [hasIndexFile, setHasIndexFile] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  // Probe the workspace for an index.html so we don't iframe a 404
+  // Probe the workspace for an index.html so we don't iframe a 404.
+  // The cerebro-workspace:// protocol only serves the internal workspace;
+  // skip static mode entirely when the task points to an external folder.
   useEffect(() => {
+    if (isExternalProject) {
+      setHasIndexFile(false);
+      return;
+    }
     let cancelled = false;
     const probe = async () => {
       try {
@@ -50,7 +61,7 @@ export default function LivePreview({ taskId, runId, className }: LivePreviewPro
       return () => { cancelled = true; clearInterval(id); };
     }
     return () => { cancelled = true; };
-  }, [taskId, runId, source, iframeKey]);
+  }, [taskId, runId, source, iframeKey, isExternalProject]);
 
   // Buffer for accumulating agent text to scan for URLs / <run_info> blocks.
   const textBufferRef = useRef('');

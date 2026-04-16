@@ -1,11 +1,13 @@
+import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import RunRecord, Task, TaskChecklistItem, TaskComment
+from sandbox.validation import cerebro_data_dir, validate_link_path
 
 from .schemas import (
     ChecklistItemCreate,
@@ -28,6 +30,38 @@ VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _validate_project_path(raw: str, request: Request) -> str:
+    result = validate_link_path(raw, cerebro_data_dir(request))
+    if not result.ok:
+        raise HTTPException(400, result.reason or "Invalid project_path")
+    return result.canonical
+
+
+def _parse_tags(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    return value if isinstance(value, list) else []
+
+
+def _serialize_tags(tags: list[str] | None) -> str | None:
+    if not tags:
+        return None
+    seen: set[str] = set()
+    unique: list[str] = []
+    for tag in tags:
+        if not isinstance(tag, str):
+            continue
+        cleaned = tag.strip()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            unique.append(cleaned)
+    return json.dumps(unique) if unique else None
 
 
 def _task_to_read(task: Task, db: Session) -> TaskRead:
@@ -58,6 +92,8 @@ def _task_to_read(task: Task, db: Session) -> TaskRead:
         position=task.position,
         run_id=task.run_id,
         last_error=task.last_error,
+        project_path=task.project_path,
+        tags=_parse_tags(task.tags),
         created_at=task.created_at,
         updated_at=task.updated_at,
         started_at=task.started_at,
@@ -81,11 +117,15 @@ def _add_system_comment(db: Session, task_id: str, body: str) -> None:
 # ── Task CRUD ──
 
 @router.post("", response_model=TaskRead)
-def create_task(body: TaskCreate, db: Session = Depends(get_db)):
+def create_task(body: TaskCreate, request: Request, db: Session = Depends(get_db)):
     if body.column not in VALID_COLUMNS:
         raise HTTPException(400, f"Invalid column: {body.column}")
     if body.priority not in VALID_PRIORITIES:
         raise HTTPException(400, f"Invalid priority: {body.priority}")
+
+    project_path = None
+    if body.project_path and body.project_path.strip():
+        project_path = _validate_project_path(body.project_path, request)
 
     max_pos = (
         db.query(func.max(Task.position))
@@ -103,6 +143,8 @@ def create_task(body: TaskCreate, db: Session = Depends(get_db)):
         start_at=body.start_at,
         due_at=body.due_at,
         position=max_pos + 1024.0,
+        project_path=project_path,
+        tags=_serialize_tags(body.tags),
     )
     db.add(task)
     db.flush()
@@ -133,7 +175,6 @@ def list_tasks(
 def task_stats(db: Session = Depends(get_db)):
     rows = (
         db.query(Task.column, func.count(Task.id))
-        .filter(Task.parent_task_id.is_(None))
         .group_by(Task.column)
         .all()
     )
@@ -156,7 +197,7 @@ def get_task(task_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/{task_id}", response_model=TaskRead)
-def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_db)):
+def update_task(task_id: str, body: TaskUpdate, request: Request, db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
@@ -164,6 +205,15 @@ def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_db)):
     updates = body.model_dump(exclude_unset=True)
     if "priority" in updates and updates["priority"] not in VALID_PRIORITIES:
         raise HTTPException(400, f"Invalid priority: {updates['priority']}")
+
+    if "project_path" in updates:
+        raw = updates["project_path"]
+        updates["project_path"] = (
+            _validate_project_path(raw, request) if raw and raw.strip() else None
+        )
+
+    if "tags" in updates:
+        updates["tags"] = _serialize_tags(updates["tags"])
 
     for key, val in updates.items():
         setattr(task, key, val)

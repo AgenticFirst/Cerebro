@@ -293,6 +293,14 @@ class Task(Base):
     )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Absolute path to a folder the agent should treat as its working directory.
+    # When set, runs spawn with cwd = project_path instead of the hidden per-task
+    # workspace. Stored as the realpath-resolved canonical form.
+    project_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
+    # Free-form tags for categorization. JSON-serialized list of strings.
+    tags: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

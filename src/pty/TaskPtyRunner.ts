@@ -58,6 +58,8 @@ export interface TaskPtyRunOptions {
   rows?: number;
   resume?: boolean;
   sessionId?: string;
+  /** Extra directories to expose via `--add-dir` (e.g. `.claude/` when cwd is external). */
+  addDirs?: string[];
 }
 
 /**
@@ -93,6 +95,10 @@ export class TaskPtyRunner extends EventEmitter {
     args.push('--verbose');
     args.push('--dangerously-skip-permissions');
     args.push('--permission-mode', 'bypassPermissions');
+
+    for (const dir of options.addDirs ?? []) {
+      args.push('--add-dir', dir);
+    }
 
     if (options.appendSystemPrompt && !options.resume) {
       args.push('--append-system-prompt', options.appendSystemPrompt);

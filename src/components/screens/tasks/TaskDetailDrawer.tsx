@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Maximize2, Minimize2, Trash2, Play, StopCircle } from 'lucide-react';
 import clsx from 'clsx';
@@ -9,6 +9,9 @@ import ChecklistEditor from './ChecklistEditor';
 import CommentThread from './CommentThread';
 import ExpertConsole from './ExpertConsole';
 import LivePreview from './LivePreview';
+import TagChipInput from './TagChipInput';
+import TaskArtifactStrip from './TaskArtifactStrip';
+import ProjectFolderField from './ProjectFolderField';
 
 type Tab = 'details' | 'console' | 'preview' | 'activity';
 
@@ -38,8 +41,14 @@ interface TaskDetailDrawerProps {
 
 export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProps) {
   const { t } = useTranslation();
-  const { updateTask, moveTask, deleteTask, startTask, cancelTask } = useTasks();
+  const { tasks, updateTask, moveTask, deleteTask, startTask, cancelTask } = useTasks();
   const { experts } = useExperts();
+
+  const tagSuggestions = useMemo(() => {
+    const set = new Set<string>();
+    for (const task of tasks) for (const tag of task.tags ?? []) set.add(tag);
+    return Array.from(set).sort();
+  }, [tasks]);
 
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [isFullWidth, setIsFullWidth] = useState(false);
@@ -146,6 +155,14 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
       moveTask(task.id, e.target.value as TaskColumn);
     },
     [task, moveTask],
+  );
+
+  const handleFolderChange = useCallback(
+    async (folder: string | null) => {
+      if (!task) return;
+      await updateTask(task.id, { project_path: folder });
+    },
+    [task, updateTask],
   );
 
   if (!task) return null;
@@ -312,6 +329,26 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
             className="bg-bg-elevated text-text-primary text-xs rounded-md px-2 py-1 border border-border-subtle outline-none focus:border-accent cursor-pointer"
           />
         </div>
+
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-text-tertiary text-xs">{t('tasks.drawerProjectFolder')}</span>
+          <ProjectFolderField
+            value={task.project_path}
+            onChange={handleFolderChange}
+            variant="compact"
+          />
+        </div>
+      </div>
+
+      <div className="flex items-start gap-2 px-5 py-2 border-b border-border-subtle">
+        <span className="text-text-tertiary text-xs pt-1.5 flex-shrink-0">{t('tasks.drawerTags')}</span>
+        <div className="flex-1 min-w-0">
+          <TagChipInput
+            tags={task.tags ?? []}
+            onChange={(tags) => updateTask(task.id, { tags })}
+            suggestions={tagSuggestions}
+          />
+        </div>
       </div>
     </>
   );
@@ -366,6 +403,13 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
       >
         {renderHeader()}
 
+        <TaskArtifactStrip
+          taskId={task.id}
+          projectPath={task.project_path}
+          runId={task.run_id}
+          onOpenFile={() => setActiveTab('preview')}
+        />
+
         {isFullWidth ? (
           // ── Focus Mode: 3-panel split ──
           <div className="flex-1 min-h-0 flex">
@@ -379,7 +423,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
             </div>
             {/* Preview panel (30%) */}
             <div className="w-[30%] min-w-[320px] max-w-[520px] min-h-0">
-              <LivePreview taskId={task.id} runId={task.run_id} />
+              <LivePreview taskId={task.id} runId={task.run_id} projectPath={task.project_path} />
             </div>
           </div>
         ) : (
@@ -415,7 +459,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
               )}
               {activeTab === 'preview' && (
                 <div className="flex-1 min-h-0">
-                  <LivePreview taskId={task.id} runId={task.run_id} />
+                  <LivePreview taskId={task.id} runId={task.run_id} projectPath={task.project_path} />
                 </div>
               )}
               {activeTab === 'activity' && activityContent}

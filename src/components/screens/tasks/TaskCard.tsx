@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MessageCircle, Calendar, ArrowUp, Play, ChevronDown, Trash2 } from 'lucide-react';
+import { MessageCircle, Calendar, ArrowUp, Play, ChevronDown, Trash2, FileText } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Task, TaskColumn } from '../../../context/TaskContext';
+import { countFiles } from '../../../utils/workspace-tree';
 
 // ── Constants ─────────────────────────────────────────────────
 
@@ -71,7 +72,24 @@ interface TaskCardProps {
 export default function TaskCard({ task, onClick, onMove, onStart, onDelete, expertName, isDragOverlay }: TaskCardProps) {
   const { t } = useTranslation();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [fileCount, setFileCount] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isDragOverlay) return;
+    let cancelled = false;
+    window.cerebro.taskTerminal
+      .listFiles(task.id, task.project_path ?? undefined)
+      .then((tree) => {
+        if (cancelled) return;
+        const next = countFiles(tree);
+        setFileCount((prev) => (prev === next ? prev : next));
+      })
+      .catch(() => {
+        if (!cancelled) setFileCount(0);
+      });
+    return () => { cancelled = true; };
+  }, [task.id, task.project_path, task.column, task.run_id, isDragOverlay]);
 
   const {
     attributes,
@@ -247,13 +265,44 @@ export default function TaskCard({ task, onClick, onMove, onStart, onDelete, exp
           </span>
         )}
 
-        {task.comment_count > 0 && (
-          <span className="inline-flex items-center gap-0.5 text-[11px] text-text-tertiary ml-auto">
-            <MessageCircle size={10} />
-            {task.comment_count}
+        {(fileCount > 0 || task.comment_count > 0) && (
+          <span className="ml-auto inline-flex items-center gap-2 text-[11px] text-text-tertiary">
+            {fileCount > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5"
+                title={t('tasks.cardFileCount', { count: fileCount })}
+              >
+                <FileText size={10} />
+                {fileCount}
+              </span>
+            )}
+            {task.comment_count > 0 && (
+              <span className="inline-flex items-center gap-0.5">
+                <MessageCircle size={10} />
+                {task.comment_count}
+              </span>
+            )}
           </span>
         )}
       </div>
+
+      {task.tags && task.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {task.tags.slice(0, 3).map((tag) => (
+            <span
+              key={tag}
+              className="inline-flex items-center px-1.5 py-[1px] text-[10px] font-medium bg-bg-hover text-text-tertiary rounded-full"
+            >
+              {tag}
+            </span>
+          ))}
+          {task.tags.length > 3 && (
+            <span className="inline-flex items-center px-1.5 py-[1px] text-[10px] font-medium text-text-tertiary">
+              +{task.tags.length - 3}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Start button — disabled for unassigned tasks */}
       {isStartableColumn && (onStart || onMove) && (

@@ -27,7 +27,7 @@ from .schemas import (
     SandboxConfig,
     SandboxConfigPatch,
 )
-from .validation import HOME_FORBIDDEN_SUBPATHS, validate_link_path
+from .validation import HOME_FORBIDDEN_SUBPATHS, cerebro_data_dir, validate_link_path
 
 router = APIRouter(tags=["sandbox"])
 
@@ -88,15 +88,8 @@ def _set_links(db, links: list[LinkedProject]) -> None:
     _set_str(db, KEY_LINKS, payload)
 
 
-def _cerebro_data_dir(request: Request) -> str | None:
-    db_path = getattr(request.app.state, "db_path", None)
-    if not db_path:
-        return None
-    return os.path.dirname(db_path)
-
-
 def _default_workspace(request: Request) -> str:
-    data_dir = _cerebro_data_dir(request)
+    data_dir = cerebro_data_dir(request)
     if not data_dir:
         return os.path.expanduser("~/cerebro-sandbox")
     return os.path.join(data_dir, "sandbox", "workspace")
@@ -152,7 +145,7 @@ def patch_config(
         # Workspace is always under the Cerebro data dir. Refuse any attempt to
         # move it outside — if the user wants a different layout they can link
         # a project instead.
-        data_dir = _cerebro_data_dir(request)
+        data_dir = cerebro_data_dir(request)
         candidate = os.path.realpath(os.path.expanduser(body.workspace_path))
         if data_dir:
             data_canonical = os.path.realpath(data_dir)
@@ -176,7 +169,7 @@ def add_link(
     body: LinkedProjectCreate,
     db=Depends(get_db),
 ):
-    data_dir = _cerebro_data_dir(request)
+    data_dir = cerebro_data_dir(request)
     result = validate_link_path(body.path, data_dir)
     if not result.ok:
         raise HTTPException(status_code=400, detail=result.reason or "Invalid path")

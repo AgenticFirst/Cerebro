@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import clsx from 'clsx';
 import { useTasks, type TaskPriority } from '../../../context/TaskContext';
 import { useExperts } from '../../../context/ExpertContext';
+import ProjectFolderField from './ProjectFolderField';
 
 interface NewTaskDialogProps {
   open: boolean;
@@ -24,6 +25,8 @@ export default function NewTaskDialog({ open, onClose }: NewTaskDialogProps) {
   const [priority, setPriority] = useState<TaskPriority>('normal');
   const [dueDate, setDueDate] = useState('');
   const [startDate, setStartDate] = useState('');
+  const [projectPath, setProjectPath] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Reset form and auto-focus on open
@@ -35,6 +38,8 @@ export default function NewTaskDialog({ open, onClose }: NewTaskDialogProps) {
       setPriority('normal');
       setDueDate('');
       setStartDate('');
+      setProjectPath(null);
+      setFormError(null);
       setIsSubmitting(false);
       setTimeout(() => titleRef.current?.focus(), 50);
     }
@@ -58,6 +63,7 @@ export default function NewTaskDialog({ open, onClose }: NewTaskDialogProps) {
     e.preventDefault();
     if (!canSubmit) return;
     setIsSubmitting(true);
+    setFormError(null);
     try {
       await createTask({
         title: title.trim(),
@@ -66,10 +72,12 @@ export default function NewTaskDialog({ open, onClose }: NewTaskDialogProps) {
         priority,
         due_at: dueDate || null,
         start_at: startDate || null,
+        project_path: projectPath,
       });
       onClose();
     } catch (err) {
-      console.error('Failed to create task:', err);
+      const message = err instanceof Error ? err.message : String(err);
+      setFormError(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -208,6 +216,20 @@ export default function NewTaskDialog({ open, onClose }: NewTaskDialogProps) {
               />
             </div>
           </div>
+
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">
+              {t('tasks.drawerProjectFolder')}{' '}
+              <span className="text-text-tertiary font-normal">{t('common.optional')}</span>
+            </label>
+            <ProjectFolderField value={projectPath} onChange={setProjectPath} variant="block" />
+          </div>
+
+          {formError && (
+            <div className="bg-red-500/5 border border-red-500/20 rounded-lg px-3 py-2 text-xs text-red-400">
+              {formError}
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2">

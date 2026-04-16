@@ -242,6 +242,9 @@ const es: TranslationKeys = {
     drawerPriority: 'Prioridad',
     drawerStartAt: 'Inicio',
     drawerDueAt: 'Vence',
+    drawerProjectFolder: 'Carpeta',
+    drawerPickFolder: 'Elegir carpeta\u2026',
+    drawerClearFolder: 'Quitar carpeta',
     drawerMinimize: 'Minimizar',
     drawerMaximize: 'Enfocar',
     drawerDelete: 'Eliminar tarea',
@@ -257,6 +260,19 @@ const es: TranslationKeys = {
     drawerPromote: 'Promover a tarea',
     drawerDeleteItem: 'Eliminar elemento',
     drawerAddItem: 'Agregar elemento\u2026',
+    // Tags
+    drawerTags: 'Etiquetas',
+    drawerAddTag: 'A\u00f1adir etiqueta\u2026',
+    drawerRemoveTag: 'Quitar etiqueta',
+    filterAllTags: 'Todas',
+    filterByTag: 'Filtrar por etiqueta',
+    clearTagFilter: 'Limpiar filtro',
+    // Artifacts
+    cardFileCount_one: '{{count}} archivo',
+    cardFileCount_other: '{{count}} archivos',
+    drawerArtifacts: 'Archivos',
+    drawerArtifactsEmpty: 'A\u00fan no hay archivos',
+    drawerArtifactsMore: '+{{count}} m\u00e1s',
   },
 
   // ── Pantalla de workspaces ──────────────────────────────────

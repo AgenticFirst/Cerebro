@@ -12,6 +12,7 @@
 
 import http from 'node:http';
 import crypto from 'node:crypto';
+import path from 'node:path';
 import { ipcMain } from 'electron';
 import type { AgentRunRequest, ActiveRunInfo, RendererAgentEvent } from './types';
 
@@ -104,6 +105,9 @@ export class AgentRuntime {
         agentName = expertAgentName(expert.id, expert.name);
       }
     }
+
+    const isExternalWorkspace =
+      isTaskRun && !!request.workspacePath && !request.workspacePath.startsWith(this.dataDir);
 
     // Build the prompt. Task runs get a structured envelope; chat runs
     // get conversation-history context prepended.
@@ -289,10 +293,15 @@ Immediately after the \`<deliverable>\` block, emit exactly one \`<run_info>\` b
 - If the plan is genuinely impossible or needs info only the user has, skip remaining items and explain inside a \`<deliverable kind="markdown">\` block.
 </task_execute>`;
     } else if (isTaskRun && request.taskPhase === 'direct') {
-      // Kanban direct-execution phase: no clarify/plan wizard, execute from title+description immediately.
       const wsPath = request.workspacePath ?? '$PWD';
+      const workspaceDescription = isExternalWorkspace
+        ? `the user's project directory at \`${wsPath}\` with full Read/Edit/Write/Bash access`
+        : `\`${wsPath}\` — an isolated per-task workspace with full Read/Edit/Write/Bash access. A \`.claude/\` directory is symlinked from the parent so skills and agents are discoverable`;
+      const externalProjectCaution = isExternalWorkspace
+        ? `- Be conservative — do NOT delete files or destructively modify existing code unless explicitly asked.\n`
+        : '';
       fullPrompt = `<task_direct>
-You are an Expert executing a task autonomously. Your working directory is \`${wsPath}\` — an isolated per-task workspace with full Read/Edit/Write/Bash access. A \`.claude/\` directory is symlinked from the parent so skills and agents are discoverable.
+You are an Expert executing a task autonomously. Your working directory is ${workspaceDescription}.
 
 ## Brief
 
@@ -313,7 +322,7 @@ ${content}
 - NEVER write outside the workspace directory.
 - NEVER spawn long-running dev servers or background processes here.
 - NEVER delegate more than 2 levels deep.
-- If a request is genuinely impossible, emit a markdown deliverable block explaining why instead of silently failing.
+${externalProjectCaution}- If a request is genuinely impossible, emit a markdown deliverable block explaining why instead of silently failing.
 </task_direct>`;
     } else if (request.recentMessages && request.recentMessages.length > 0) {
       // Chat mode: prepend recent conversation history
@@ -510,6 +519,7 @@ ${content}
         rows: request.rows,
         resume: !!request.resumeSessionId,
         sessionId: request.resumeSessionId || runId,
+        addDirs: isExternalWorkspace ? [path.join(this.dataDir, '.claude')] : undefined,
       });
     } else {
       // Chat runs use stream-json mode (no PTY).

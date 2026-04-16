@@ -241,6 +241,9 @@ const en = {
     drawerPriority: 'Priority',
     drawerStartAt: 'Start',
     drawerDueAt: 'Due',
+    drawerProjectFolder: 'Folder',
+    drawerPickFolder: 'Choose folder\u2026',
+    drawerClearFolder: 'Clear folder',
     drawerMinimize: 'Minimize',
     drawerMaximize: 'Focus',
     drawerDelete: 'Delete task',
@@ -256,6 +259,19 @@ const en = {
     drawerPromote: 'Promote to task',
     drawerDeleteItem: 'Delete item',
     drawerAddItem: 'Add an item\u2026',
+    // Tags
+    drawerTags: 'Tags',
+    drawerAddTag: 'Add tag\u2026',
+    drawerRemoveTag: 'Remove tag',
+    filterAllTags: 'All',
+    filterByTag: 'Filter by tag',
+    clearTagFilter: 'Clear filter',
+    // Artifacts
+    cardFileCount_one: '{{count}} file',
+    cardFileCount_other: '{{count}} files',
+    drawerArtifacts: 'Artifacts',
+    drawerArtifactsEmpty: 'No artifacts yet',
+    drawerArtifactsMore: '+{{count}} more',
   },
 
   // ── Workspaces screen ───────────────────────────────────────

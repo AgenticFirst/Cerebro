@@ -21,6 +21,8 @@ export interface Task {
   position: number;
   run_id: string | null;
   last_error: string | null;
+  project_path: string | null;
+  tags: string[];
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -78,6 +80,8 @@ interface CreateTaskInput {
   priority?: TaskPriority;
   start_at?: string | null;
   due_at?: string | null;
+  project_path?: string | null;
+  tags?: string[];
 }
 
 interface UpdateTaskInput {
@@ -87,6 +91,8 @@ interface UpdateTaskInput {
   priority?: TaskPriority;
   start_at?: string | null;
   due_at?: string | null;
+  project_path?: string | null;
+  tags?: string[];
 }
 
 interface TaskContextValue {
@@ -127,6 +133,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   // Map of taskId -> unsubscribe function for agent event listeners.
   // Persists across renders so listeners aren't leaked on re-render.
   const runListeners = useRef<Map<string, () => void>>(new Map());
+
+  // Monotonic counter so rapid drag-drops don't race: only the latest
+  // moveTask call's loadTasks result is applied.
+  const moveSeq = useRef(0);
 
   const loadTasks = useCallback(async () => {
     setIsLoading(true);
@@ -201,9 +211,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       path: '/tasks',
       body: input,
     });
-    if (!res.ok) throw new Error('Failed to create task');
+    if (!res.ok) {
+      const detail = (res.data as { detail?: string } | null)?.detail;
+      throw new Error(detail || 'Failed to create task');
+    }
     await loadTasks();
-    return res.data;
+    return res.data as Task;
   }, [loadTasks]);
 
   const updateTask = useCallback(async (id: string, input: UpdateTaskInput) => {
@@ -212,11 +225,15 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       path: `/tasks/${id}`,
       body: input,
     });
-    if (!res.ok) throw new Error('Failed to update task');
+    if (!res.ok) {
+      const detail = (res.data as { detail?: string } | null)?.detail;
+      throw new Error(detail || 'Failed to update task');
+    }
     await loadTasks();
   }, [loadTasks]);
 
   const moveTask = useCallback(async (id: string, column: TaskColumn, position?: number) => {
+    const seq = ++moveSeq.current;
     setTasks((prev) =>
       prev.map((t) => (t.id === id ? { ...t, column, position: position ?? t.position } : t)),
     );
@@ -225,6 +242,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       path: `/tasks/${id}/move`,
       body: { column, position },
     });
+    if (seq !== moveSeq.current) return;
     if (!res.ok) {
       await loadTasks();
       throw new Error('Failed to move task');
@@ -345,6 +363,14 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     runListeners.current.set(taskId, unsub);
   }, [loadTasks]);
 
+  // Precedence: explicit task.project_path > hidden per-task workspace fallback.
+  const resolveCwd = useCallback(async (task: Task): Promise<string> => {
+    if (task.project_path && task.project_path.trim()) {
+      return task.project_path;
+    }
+    return window.cerebro.taskTerminal.createWorkspace(task.id);
+  }, []);
+
   // Helpers: build the direct-execution prompt from a task's fields.
   const buildDirectPrompt = useCallback((
     task: Task,
@@ -372,33 +398,45 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new Error(`Task ${taskId} not found`);
 
-    // Fetch comments + create workspace in parallel — independent ops
-    const [allComments, workspacePath] = await Promise.all([
-      loadComments(taskId),
-      window.cerebro.taskTerminal.createWorkspace(taskId),
-    ]);
-    const instructions = allComments.filter((c) => c.kind === 'instruction');
-    const prompt = buildDirectPrompt(task, instructions);
+    try {
+      const [allComments, workspacePath] = await Promise.all([
+        loadComments(taskId),
+        resolveCwd(task),
+      ]);
+      const instructions = allComments.filter((c) => c.kind === 'instruction');
+      const prompt = buildDirectPrompt(task, instructions);
 
-    const runId = await window.cerebro.agent.run({
-      conversationId: taskId,
-      content: prompt,
-      expertId: task.expert_id,
-      runType: 'task',
-      taskPhase: 'direct',
-      workspacePath,
-      maxTurns: 30,
-    });
+      const runId = await window.cerebro.agent.run({
+        conversationId: taskId,
+        content: prompt,
+        expertId: task.expert_id,
+        runType: 'task',
+        taskPhase: 'direct',
+        workspacePath,
+        maxTurns: 30,
+      });
 
-    await window.cerebro.invoke({
-      method: 'POST',
-      path: `/tasks/${taskId}/run-event`,
-      body: { type: 'run_started', run_id: runId },
-    });
+      await window.cerebro.invoke({
+        method: 'POST',
+        path: `/tasks/${taskId}/run-event`,
+        body: { type: 'run_started', run_id: runId },
+      });
 
-    registerRunListener(taskId, runId);
-    await loadTasks();
-  }, [tasks, loadComments, buildDirectPrompt, registerRunListener, loadTasks]);
+      registerRunListener(taskId, runId);
+      await loadTasks();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await window.cerebro
+        .invoke({
+          method: 'POST',
+          path: `/tasks/${taskId}/run-event`,
+          body: { type: 'run_failed', run_id: null, error: `Failed to start: ${message}` },
+        })
+        .catch(() => { /* noop */ });
+      await loadTasks();
+      throw err;
+    }
+  }, [tasks, loadComments, buildDirectPrompt, registerRunListener, loadTasks, resolveCwd]);
 
   const sendInstruction = useCallback(async (taskId: string, instruction: string) => {
     const task = tasks.find((t) => t.id === taskId);
@@ -417,7 +455,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       .filter((c) => c.kind === 'instruction')
       .slice(0, -1); // exclude the one we just added — it's the new instruction
 
-    const workspacePath = await window.cerebro.taskTerminal.getWorkspacePath(taskId);
+    // resolveCwd is idempotent — re-creates the hidden workspace if a prior
+    // cancel/abort cleared it, so instructions after a restart still work.
+    const workspacePath = await resolveCwd(task);
 
     // Build follow-up context: original goal + prior instructions
     const contextLines: string[] = [];
@@ -455,7 +495,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
     registerRunListener(taskId, runId);
     await loadTasks();
-  }, [tasks, loadComments, registerRunListener, loadTasks]);
+  }, [tasks, loadComments, registerRunListener, loadTasks, resolveCwd]);
 
   const addComment = useCallback(async (taskId: string, kind: string, bodyMd: string): Promise<TaskComment> => {
     const res = await window.cerebro.invoke({

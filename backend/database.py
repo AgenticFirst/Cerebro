@@ -29,6 +29,8 @@ def _migrate(eng) -> None:
         ("step_records", "approval_id", "VARCHAR(32) REFERENCES approval_requests(id) ON DELETE SET NULL"),
         ("step_records", "approval_status", "VARCHAR(20)"),
         ("routines", "notify_channels", "TEXT"),
+        ("tasks", "project_path", "VARCHAR(1024)"),
+        ("tasks", "tags", "TEXT"),
     ]
     with eng.connect() as conn:
         for table, column, col_def in migrations:

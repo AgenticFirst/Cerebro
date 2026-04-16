@@ -202,8 +202,8 @@ const api: CerebroAPI = {
     getWorkspacePath(taskId: string): Promise<string> {
       return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_PATH, taskId);
     },
-    listFiles(taskId: string) {
-      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, taskId);
+    listFiles(taskId: string, overridePath?: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, taskId, overridePath);
     },
     readFile(taskId: string, relativePath: string): Promise<string | null> {
       return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_READ_FILE, taskId, relativePath);

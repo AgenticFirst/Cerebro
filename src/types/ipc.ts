@@ -319,8 +319,8 @@ export interface TaskTerminalAPI {
   createWorkspace(taskId: string): Promise<string>;
   /** Return derived workspace path without creating it. */
   getWorkspacePath(taskId: string): Promise<string>;
-  /** Recursively list files in the workspace as a tree. */
-  listFiles(taskId: string): Promise<WorkspaceFileNode[]>;
+  /** Recursively list files in the workspace as a tree. Pass an explicit path to list an external project folder. */
+  listFiles(taskId: string, overridePath?: string): Promise<WorkspaceFileNode[]>;
   /** Read a file from the workspace as text (1MB cap). */
   readFile(taskId: string, relativePath: string): Promise<string | null>;
   /** Remove the workspace directory when a task is deleted. */
