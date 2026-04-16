@@ -1,252 +1,232 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, ChevronDown } from 'lucide-react';
+import { X } from 'lucide-react';
 import clsx from 'clsx';
+import { useTasks, type TaskPriority } from '../../../context/TaskContext';
+import { useExperts } from '../../../context/ExpertContext';
 
 interface NewTaskDialogProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (input: {
-    title: string;
-    goal: string;
-    templateId?: string;
-    skipClarification: boolean;
-    maxPhases: number;
-    maxTurns: number;
-    model?: string;
-  }) => void;
-  /** Pre-fill the goal textarea (e.g. from suggestion chip). */
-  initialGoal?: string;
 }
 
-const MODELS = [
-  { value: '', key: 'newTaskDialog.modelSonnet' },
-  { value: 'opus', key: 'newTaskDialog.modelOpus' },
-  { value: 'haiku', key: 'newTaskDialog.modelHaiku' },
-] as const;
+const PRIORITY_OPTIONS: TaskPriority[] = ['low', 'normal', 'high', 'urgent'];
 
-const TEMPLATES = [
-  { id: 'presentation', key: 'newTaskDialog.templatePresentation' },
-];
-
-const PRESENTATION_DIRECTIVE = `
-
----
-Output format: Build this as a single self-contained static HTML presentation at \`index.html\` in the workspace root. Use inline CSS and JavaScript (no build step, no external files). Emit a \`<run_info>\` block with \`"preview_type": "static"\` so the preview tab renders it directly.`;
-
-export default function NewTaskDialog({ open, onClose, onSubmit, initialGoal }: NewTaskDialogProps) {
+export default function NewTaskDialog({ open, onClose }: NewTaskDialogProps) {
   const { t } = useTranslation();
-  const [goal, setGoal] = useState(initialGoal ?? '');
-  const [skipClarification, setSkipClarification] = useState(true);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [maxPhases, setMaxPhases] = useState(6);
-  const [maxTurns, setMaxTurns] = useState(30);
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [model, setModel] = useState('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { createTask } = useTasks();
+  const { experts } = useExperts();
+  const titleRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (open && initialGoal) {
-      setGoal(initialGoal);
-    }
-  }, [open, initialGoal]);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [expertId, setExpertId] = useState('');
+  const [priority, setPriority] = useState<TaskPriority>('normal');
+  const [dueDate, setDueDate] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Reset form and auto-focus on open
   useEffect(() => {
     if (open) {
-      setTimeout(() => textareaRef.current?.focus(), 100);
+      setTitle('');
+      setDescription('');
+      setExpertId('');
+      setPriority('normal');
+      setDueDate('');
+      setStartDate('');
+      setIsSubmitting(false);
+      setTimeout(() => titleRef.current?.focus(), 50);
     }
   }, [open]);
 
-  const handleSubmit = useCallback(() => {
-    const trimmed = goal.trim();
-    if (!trimmed) return;
-    // Derive title: first sentence or first 60 chars
-    const dotIdx = trimmed.indexOf('.');
-    const title = dotIdx > 0 && dotIdx < 80
-      ? trimmed.slice(0, dotIdx)
-      : trimmed.slice(0, 60) + (trimmed.length > 60 ? '...' : '');
-    const finalGoal = selectedTemplate === 'presentation'
-      ? trimmed + PRESENTATION_DIRECTIVE
-      : trimmed;
-    onSubmit({
-      title,
-      goal: finalGoal,
-      templateId: selectedTemplate ?? undefined,
-      skipClarification,
-      maxPhases,
-      maxTurns,
-      model: model || undefined,
-    });
-    setGoal('');
-    setSelectedTemplate(null);
-    setShowAdvanced(false);
-    onClose();
-  }, [goal, skipClarification, maxPhases, maxTurns, selectedTemplate, model, onSubmit, onClose]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault();
-      handleSubmit();
-    }
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  }, [handleSubmit, onClose]);
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [open, onClose]);
 
   if (!open) return null;
 
+  const canSubmit = title.trim().length > 0 && !isSubmitting;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setIsSubmitting(true);
+    try {
+      await createTask({
+        title: title.trim(),
+        description_md: description.trim() || undefined,
+        expert_id: expertId || null,
+        priority,
+        due_at: dueDate || null,
+        start_at: startDate || null,
+      });
+      onClose();
+    } catch (err) {
+      console.error('Failed to create task:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Filter to non-team experts for assignment
+  const assignableExperts = experts.filter((e) => e.type === 'expert' && e.isEnabled);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div
-        className="bg-bg-primary border border-border-default rounded-xl shadow-2xl w-full max-w-lg mx-4"
-        onKeyDown={handleKeyDown}
-      >
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="bg-bg-elevated border border-border-subtle rounded-xl max-w-lg w-full mx-4 p-6 animate-fade-in">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
-          <h2 className="text-base font-semibold text-text-primary">{t('newTaskDialog.title')}</h2>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-base font-medium text-text-primary">
+            {t('tasks.newTask')}
+          </h3>
           <button
             onClick={onClose}
-            className="p-1 rounded-md hover:bg-bg-secondary text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+            aria-label={t('common.close')}
+            className="p-1 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* Goal textarea */}
-        <div className="px-5 pb-3">
-          <textarea
-            ref={textareaRef}
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            placeholder={t('newTaskDialog.placeholder')}
-            className="w-full bg-bg-secondary border border-border-subtle rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary resize-none focus:outline-none focus:ring-1 focus:ring-accent/50 min-h-[100px] max-h-[240px]"
-            rows={4}
-          />
-        </div>
-
-        {/* Template chips */}
-        <div className="px-5 pb-3 flex flex-wrap gap-1.5">
-          {TEMPLATES.map((tp) => (
-            <button
-              key={tp.id}
-              onClick={() => {
-                setSelectedTemplate(tp.id === selectedTemplate ? null : tp.id);
-              }}
-              className={clsx(
-                'text-xs px-2.5 py-1 rounded-full border transition-colors cursor-pointer',
-                tp.id === selectedTemplate
-                  ? 'bg-accent/15 border-accent/30 text-accent'
-                  : 'bg-bg-secondary border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-default',
-              )}
-            >
-              {t(tp.key)}
-            </button>
-          ))}
-        </div>
-
-        {/* Skip clarification toggle */}
-        <div className="px-5 pb-2 flex items-center gap-2">
-          <button
-            onClick={() => setSkipClarification(!skipClarification)}
-            className={clsx(
-              'relative w-8 h-[18px] rounded-full transition-colors cursor-pointer',
-              skipClarification ? 'bg-accent' : 'bg-zinc-600',
-            )}
-          >
-            <div
-              className={clsx(
-                'absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform',
-                skipClarification ? 'translate-x-[16px]' : 'translate-x-[2px]',
-              )}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Title */}
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">
+              {t('tasks.titleLabel')}
+            </label>
+            <input
+              ref={titleRef}
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={t('tasks.titlePlaceholder')}
+              className="w-full bg-bg-surface border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/40 transition-colors"
             />
-          </button>
-          <span className="text-xs text-text-secondary">
-            {t('newTaskDialog.skipClarification')}
-          </span>
-        </div>
+          </div>
 
-        {/* Advanced */}
-        <div className="px-5 pb-3">
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-secondary transition-colors cursor-pointer"
-          >
-            <ChevronDown
-              size={12}
-              className={clsx('transition-transform', showAdvanced && 'rotate-180')}
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">
+              {t('tasks.descriptionLabel')}{' '}
+              <span className="text-text-tertiary font-normal">{t('common.optional')}</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t('tasks.descriptionPlaceholder')}
+              rows={3}
+              className="w-full bg-bg-surface border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/40 transition-colors resize-none"
             />
-            {t('newTaskDialog.advanced')}
-          </button>
-          {showAdvanced && (
-            <div className="mt-2 space-y-3">
-              <div>
-                <label className="text-xs text-text-secondary mb-1 block">
-                  {t('newTaskDialog.model')}
-                </label>
-                <div className="flex gap-1.5">
-                  {MODELS.map((m) => (
-                    <button
-                      key={m.value}
-                      onClick={() => setModel(m.value)}
-                      className={clsx(
-                        'text-xs px-2.5 py-1 rounded-md border transition-colors cursor-pointer',
-                        model === m.value
-                          ? 'bg-accent/15 border-accent/30 text-accent'
-                          : 'bg-bg-secondary border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-default',
-                      )}
-                    >
-                      {t(m.key)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-text-secondary mb-1 block">
-                  {t('newTaskDialog.maxPhases', { value: maxPhases })}
-                </label>
-                <input
-                  type="range"
-                  min={2}
-                  max={8}
-                  value={maxPhases}
-                  onChange={(e) => setMaxPhases(Number(e.target.value))}
-                  className="w-full accent-accent"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-text-secondary mb-1 block">
-                  {t('newTaskDialog.maxTurns', { value: maxTurns })}
-                </label>
-                <input
-                  type="range"
-                  min={5}
-                  max={50}
-                  step={5}
-                  value={maxTurns}
-                  onChange={(e) => setMaxTurns(Number(e.target.value))}
-                  className="w-full accent-accent"
-                />
-              </div>
+          </div>
+
+          {/* Expert + Priority row */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Expert */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                {t('tasks.expertLabel')}{' '}
+                <span className="text-text-tertiary font-normal">{t('common.optional')}</span>
+              </label>
+              <select
+                value={expertId}
+                onChange={(e) => setExpertId(e.target.value)}
+                className="w-full bg-bg-surface border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent/40 transition-colors appearance-none"
+              >
+                <option value="">{t('tasks.expertNone')}</option>
+                {assignableExperts.map((expert) => (
+                  <option key={expert.id} value={expert.id}>
+                    {expert.name}
+                  </option>
+                ))}
+              </select>
             </div>
-          )}
-        </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border-subtle">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm rounded-md text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!goal.trim()}
-            className="px-4 py-1.5 text-sm rounded-md bg-accent text-white font-medium hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-          >
-            {t('newTaskDialog.startTask')}
-          </button>
-        </div>
+            {/* Priority */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                {t('tasks.priorityLabel')}
+              </label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as TaskPriority)}
+                className="w-full bg-bg-surface border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent/40 transition-colors appearance-none"
+              >
+                {PRIORITY_OPTIONS.map((p) => (
+                  <option key={p} value={p}>
+                    {t(`tasks.priority_${p}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Date row */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Start date */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                {t('tasks.startDateLabel')}{' '}
+                <span className="text-text-tertiary font-normal">{t('common.optional')}</span>
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className={clsx(
+                  'w-full bg-bg-surface border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary',
+                  'focus:outline-none focus:border-accent/40 transition-colors',
+                  '[color-scheme:dark]',
+                )}
+              />
+            </div>
+
+            {/* Due date */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                {t('tasks.dueDateLabel')}{' '}
+                <span className="text-text-tertiary font-normal">{t('common.optional')}</span>
+              </label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className={clsx(
+                  'w-full bg-bg-surface border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary',
+                  'focus:outline-none focus:border-accent/40 transition-colors',
+                  '[color-scheme:dark]',
+                )}
+              />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3.5 py-1.5 text-sm text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-hover transition-colors"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="px-3.5 py-1.5 text-sm font-medium text-bg-base bg-accent hover:bg-accent-hover rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? t('common.loading') : t('tasks.createTask')}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

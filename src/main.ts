@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, protocol, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn, ChildProcess } from 'node:child_process';
@@ -48,6 +48,53 @@ let voiceSession: VoiceSessionManager | null = null;
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
+}
+
+// Register the cerebro-workspace:// scheme as privileged BEFORE app is ready.
+// This lets iframes load files from per-task workspaces for live preview.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'cerebro-workspace',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
+
+// Helper: resolve the base directory for a task's workspace
+function getTaskWorkspaceDir(taskId: string): string {
+  return path.join(app.getPath('userData'), 'task-workspaces', taskId);
+}
+
+// Minimal MIME-type map for files served via cerebro-workspace://
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+  '.wasm': 'application/wasm',
+};
+function mimeFor(filePath: string): string {
+  return MIME_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
 }
 
 // --- Python backend state ---
@@ -543,6 +590,112 @@ function registerIpcHandlers(): void {
     agentRuntime.terminalBufferStore.remove(runId);
   });
 
+  // --- Task Workspace (per-task isolated directory) ---
+
+  // Create the workspace directory and symlink .claude from parent dataDir
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_CREATE, async (_event, taskId: string): Promise<string> => {
+    if (!/^[a-z0-9]{32}$/i.test(taskId)) {
+      throw new Error(`Invalid taskId: ${taskId}`);
+    }
+    const dataDir = app.getPath('userData');
+    const workspacePath = getTaskWorkspaceDir(taskId);
+    fs.mkdirSync(workspacePath, { recursive: true });
+    // Symlink .claude/ from parent so skills/agents are discoverable
+    const claudeSrc = path.join(dataDir, '.claude');
+    const claudeDst = path.join(workspacePath, '.claude');
+    if (fs.existsSync(claudeSrc) && !fs.existsSync(claudeDst)) {
+      try {
+        fs.symlinkSync(claudeSrc, claudeDst, 'dir');
+      } catch (err) {
+        console.warn('[workspace] Failed to symlink .claude:', err);
+      }
+    }
+    return workspacePath;
+  });
+
+  // Return the derived workspace path without creating it
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_PATH, async (_event, taskId: string): Promise<string> => {
+    return getTaskWorkspaceDir(taskId);
+  });
+
+  // List files in the workspace as a nested tree (excluding .claude symlink and node_modules)
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, async (_event, taskId: string) => {
+    const baseDir = getTaskWorkspaceDir(taskId);
+    if (!fs.existsSync(baseDir)) return [];
+
+    const SKIP_DIRS = new Set(['.claude', 'node_modules', '.git', '.next', 'dist', 'build', '.venv', '__pycache__']);
+    const MAX_DEPTH = 6;
+
+    function walk(dir: string, depth: number): Array<{ name: string; path: string; type: 'dir' | 'file'; size?: number; mtime?: number; children?: unknown[] }> {
+      if (depth > MAX_DEPTH) return [];
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return [];
+      }
+      const results: Array<{ name: string; path: string; type: 'dir' | 'file'; size?: number; mtime?: number; children?: unknown[] }> = [];
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') && entry.name !== '.env.example') continue;
+        if (SKIP_DIRS.has(entry.name)) continue;
+        const fullPath = path.join(dir, entry.name);
+        const relPath = path.relative(baseDir, fullPath);
+        if (entry.isSymbolicLink()) continue;
+        if (entry.isDirectory()) {
+          results.push({
+            name: entry.name,
+            path: relPath,
+            type: 'dir',
+            children: walk(fullPath, depth + 1),
+          });
+        } else if (entry.isFile()) {
+          try {
+            const stat = fs.statSync(fullPath);
+            results.push({
+              name: entry.name,
+              path: relPath,
+              type: 'file',
+              size: stat.size,
+              mtime: stat.mtimeMs,
+            });
+          } catch {
+            // skip
+          }
+        }
+      }
+      results.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      return results;
+    }
+
+    return walk(baseDir, 0);
+  });
+
+  // Read a file from the workspace as text (1MB cap)
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_READ_FILE, async (_event, taskId: string, relativePath: string): Promise<string | null> => {
+    const baseDir = getTaskWorkspaceDir(taskId);
+    const filePath = path.normalize(path.join(baseDir, relativePath));
+    if (!filePath.startsWith(baseDir + path.sep) && filePath !== baseDir) return null;
+    if (!fs.existsSync(filePath)) return null;
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.size > 1024 * 1024) return '[file too large to display]';
+      return fs.readFileSync(filePath, 'utf8');
+    } catch {
+      return null;
+    }
+  });
+
+  // Remove the workspace directory (on task deletion)
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_REMOVE, async (_event, taskId: string): Promise<void> => {
+    const baseDir = getTaskWorkspaceDir(taskId);
+    if (fs.existsSync(baseDir)) {
+      fs.rmSync(baseDir, { recursive: true, force: true });
+    }
+  });
+
   // --- Execution Engine ---
 
   ipcMain.handle(IPC_CHANNELS.ENGINE_RUN, async (event, request: EngineRunRequest) => {
@@ -803,6 +956,58 @@ app.on('ready', async () => {
       app.dock.setIcon(icon);
     }
   }
+
+  // Serve task-workspace files via custom protocol so iframes can render live previews
+  protocol.handle('cerebro-workspace', async (request) => {
+    let filePath = '<unresolved>';
+    try {
+      const url = new URL(request.url);
+      const taskId = url.hostname;
+      if (!taskId || !/^[a-z0-9]{32}$/i.test(taskId)) {
+        return new Response('Invalid task id', { status: 400 });
+      }
+      const baseDir = getTaskWorkspaceDir(taskId);
+      let relPath = decodeURIComponent(url.pathname || '/');
+      if (relPath === '/' || relPath === '') relPath = '/index.html';
+      filePath = path.normalize(path.join(baseDir, relPath));
+      if (!filePath.startsWith(baseDir + path.sep) && filePath !== baseDir) {
+        return new Response('Forbidden', { status: 403 });
+      }
+      let stat: fs.Stats;
+      try {
+        stat = await fs.promises.stat(filePath);
+      } catch {
+        return new Response(`Not found: ${path.basename(filePath)}`, {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
+      if (stat.isDirectory()) {
+        filePath = path.join(filePath, 'index.html');
+        try {
+          stat = await fs.promises.stat(filePath);
+        } catch {
+          return new Response('No index.html in directory', {
+            status: 404,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          });
+        }
+      }
+      const data = await fs.promises.readFile(filePath);
+      // Convert Buffer → Uint8Array (Response constructor accepts both, but be explicit)
+      const body = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': mimeFor(filePath) },
+      });
+    } catch (err) {
+      console.error(`[cerebro-workspace] handler error for ${filePath}:`, err);
+      return new Response(`Error: ${(err as Error).message ?? err}`, {
+        status: 500,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
+  });
 
   registerIpcHandlers();
   createWindow();

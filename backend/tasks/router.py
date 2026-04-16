@@ -1,938 +1,426 @@
-"""FastAPI router for /tasks/* endpoints."""
+from datetime import datetime, timezone
 
-from __future__ import annotations
-
-import json
-import os
-
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from database import get_db
-from models import (
-    RunRecord,
-    Task,
-    TaskEvent,
-    _utcnow,
-    _uuid_hex,
-)
-from engine.schemas import RunRecordResponse
+from models import RunRecord, Task, TaskChecklistItem, TaskComment
 
 from .schemas import (
-    ClarifyResponse,
-    ClarifySubmit,
-    DevServerStartBody,
-    DevServerStatus,
-    PlanMdResponse,
-    PlanMdUpdate,
-    PreviewFileResponse,
-    RunInfo,
+    ChecklistItemCreate,
+    ChecklistItemRead,
+    ChecklistItemUpdate,
+    CommentCreate,
+    CommentRead,
     TaskCreate,
-    TaskDetailResponse,
-    TaskEventBatch,
-    TaskEventResponse,
-    TaskFinalize,
-    TaskFollowUp,
-    TaskFollowUpResponse,
-    TaskListResponse,
-    TaskPhaseUpdate,
-    TaskPlan,
-    TaskPlanUpsert,
-    TaskResponse,
-    TaskResumeResponse,
-    TaskRunStart,
-    TaskRunStartResponse,
-    WorkspaceFileResponse,
-    WorkspaceTreeResponse,
-)
-from .workspace import (
-    create_workspace,
-    delete_workspace,
-    find_preview_file,
-    list_tree,
-    read_file,
-    read_plan_md,
-    write_plan_md,
+    TaskMove,
+    TaskRead,
+    TaskStats,
+    TaskUpdate,
 )
 
-router = APIRouter(tags=["tasks"])
+router = APIRouter()
+
+VALID_COLUMNS = {"backlog", "in_progress", "to_review", "completed", "error"}
+VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 
 
-# ── Helpers ───────────────────────────────────────────────────────
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
-def _data_dir(request: Request) -> str:
-    db_path = getattr(request.app.state, "db_path", None)
-    if not db_path:
-        raise HTTPException(status_code=500, detail="db_path not configured")
-    return os.path.dirname(db_path)
-
-
-def _parse_plan(task: Task) -> TaskPlan | None:
-    if not task.plan_json:
-        return None
-    try:
-        data = json.loads(task.plan_json)
-        return TaskPlan(**data)
-    except Exception:
-        return None
-
-
-def _parse_run_info(task: Task) -> RunInfo | None:
-    if not task.run_info_json:
-        return None
-    try:
-        return RunInfo(**json.loads(task.run_info_json))
-    except Exception:
-        return None
-
-
-def _parse_clarifications(task: Task) -> dict | None:
-    if not task.clarifications_json:
-        return None
-    try:
-        return json.loads(task.clarifications_json)
-    except Exception:
-        return None
-
-
-def _parse_created_experts(task: Task) -> list[str]:
-    if not task.created_expert_ids_json:
-        return []
-    try:
-        ids = json.loads(task.created_expert_ids_json)
-        return [str(x) for x in ids] if isinstance(ids, list) else []
-    except Exception:
-        return []
-
-
-def _run_to_response(run: RunRecord) -> RunRecordResponse:
-    return RunRecordResponse(
-        id=run.id,
-        routine_id=run.routine_id,
-        expert_id=run.expert_id,
-        conversation_id=run.conversation_id,
-        parent_run_id=run.parent_run_id,
-        status=run.status,
-        run_type=run.run_type,
-        trigger=run.trigger,
-        dag_json=run.dag_json,
-        total_steps=run.total_steps,
-        completed_steps=run.completed_steps,
-        error=run.error,
-        failed_step_id=run.failed_step_id,
-        started_at=run.started_at,
-        completed_at=run.completed_at,
-        duration_ms=run.duration_ms,
-        steps=None,
+def _task_to_read(task: Task, db: Session) -> TaskRead:
+    checklist_items = (
+        db.query(TaskChecklistItem)
+        .filter(TaskChecklistItem.task_id == task.id)
+        .order_by(TaskChecklistItem.position)
+        .all()
     )
+    comment_count = (
+        db.query(func.count(TaskComment.id))
+        .filter(TaskComment.task_id == task.id)
+        .scalar()
+    )
+    total = len(checklist_items)
+    done = sum(1 for item in checklist_items if item.is_done)
 
-
-def _task_to_response(task: Task) -> TaskResponse:
-    plan_md_payload = None
-    plan_md_mtime: float | None = None
-    if task.workspace_path:
-        plan_md_payload = read_plan_md(task.workspace_path)
-        if plan_md_payload is not None:
-            plan_md_mtime = plan_md_payload.get("mtime")
-
-    return TaskResponse(
+    return TaskRead(
         id=task.id,
         title=task.title,
-        goal=task.goal,
-        status=task.status,
-        expert_hint_id=task.expert_hint_id,
-        template_id=task.template_id,
+        description_md=task.description_md,
+        column=task.column,
+        expert_id=task.expert_id,
+        parent_task_id=task.parent_task_id,
+        priority=task.priority,
+        start_at=task.start_at,
+        due_at=task.due_at,
+        position=task.position,
         run_id=task.run_id,
-        conversation_id=task.conversation_id,
-        plan=_parse_plan(task),
-        deliverable_markdown=task.deliverable_markdown,
-        deliverable_title=task.deliverable_title,
-        deliverable_kind=task.deliverable_kind or "markdown",
-        workspace_path=task.workspace_path,
-        run_info=_parse_run_info(task),
-        clarifications=_parse_clarifications(task),
-        skip_clarification=task.skip_clarification,
-        max_turns=task.max_turns,
-        max_phases=task.max_phases,
-        created_expert_ids=_parse_created_experts(task),
-        error=task.error,
+        last_error=task.last_error,
         created_at=task.created_at,
+        updated_at=task.updated_at,
         started_at=task.started_at,
         completed_at=task.completed_at,
-        plan_md=plan_md_payload["content"] if plan_md_payload else None,
-        plan_md_mtime=plan_md_mtime,
+        checklist=[ChecklistItemRead.model_validate(i) for i in checklist_items],
+        comment_count=comment_count or 0,
+        checklist_total=total,
+        checklist_done=done,
     )
 
 
-# ── Task CRUD ─────────────────────────────────────────────────────
+def _add_system_comment(db: Session, task_id: str, body: str) -> None:
+    db.add(TaskComment(
+        task_id=task_id,
+        kind="system",
+        author_kind="system",
+        body_md=body,
+    ))
 
 
-@router.post("", response_model=TaskResponse, status_code=201)
-def create_task(body: TaskCreate, db=Depends(get_db)):
+# ── Task CRUD ──
+
+@router.post("", response_model=TaskRead)
+def create_task(body: TaskCreate, db: Session = Depends(get_db)):
+    if body.column not in VALID_COLUMNS:
+        raise HTTPException(400, f"Invalid column: {body.column}")
+    if body.priority not in VALID_PRIORITIES:
+        raise HTTPException(400, f"Invalid priority: {body.priority}")
+
+    max_pos = (
+        db.query(func.max(Task.position))
+        .filter(Task.column == body.column)
+        .scalar()
+    ) or 0.0
+
     task = Task(
-        id=_uuid_hex(),
-        title=body.title.strip() or "Untitled task",
-        goal=body.goal.strip(),
-        status="pending",
-        expert_hint_id=body.expert_hint_id,
-        template_id=body.template_id,
-        max_turns=max(5, min(body.max_turns, 200)),
-        max_phases=max(1, min(body.max_phases, 12)),
-        skip_clarification=body.skip_clarification,
-        deliverable_kind="markdown",
+        title=body.title,
+        description_md=body.description_md,
+        column=body.column,
+        expert_id=body.expert_id,
+        parent_task_id=body.parent_task_id,
+        priority=body.priority,
+        start_at=body.start_at,
+        due_at=body.due_at,
+        position=max_pos + 1024.0,
     )
     db.add(task)
+    db.flush()
+    _add_system_comment(db, task.id, "Task created")
     db.commit()
     db.refresh(task)
-    return _task_to_response(task)
+    return _task_to_read(task, db)
 
 
-@router.get("", response_model=TaskListResponse)
+@router.get("", response_model=list[TaskRead])
 def list_tasks(
-    status: str | None = None,
-    offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
-    db=Depends(get_db),
+    column: str | None = None,
+    expert_id: str | None = None,
+    parent_task_id: str | None = None,
+    db: Session = Depends(get_db),
 ):
     q = db.query(Task)
-    if status:
-        q = q.filter(Task.status == status)
-    total = q.count()
-    rows = q.order_by(Task.created_at.desc()).offset(offset).limit(limit).all()
-    return TaskListResponse(
-        tasks=[_task_to_response(t) for t in rows],
-        total=total,
+    if column:
+        q = q.filter(Task.column == column)
+    if expert_id:
+        q = q.filter(Task.expert_id == expert_id)
+    if parent_task_id is not None:
+        q = q.filter(Task.parent_task_id == parent_task_id)
+    return [_task_to_read(t, db) for t in q.order_by(Task.position).all()]
+
+
+@router.get("/stats", response_model=TaskStats)
+def task_stats(db: Session = Depends(get_db)):
+    rows = (
+        db.query(Task.column, func.count(Task.id))
+        .filter(Task.parent_task_id.is_(None))
+        .group_by(Task.column)
+        .all()
+    )
+    counts = {col: cnt for col, cnt in rows}
+    return TaskStats(
+        backlog=counts.get("backlog", 0),
+        in_progress=counts.get("in_progress", 0),
+        to_review=counts.get("to_review", 0),
+        completed=counts.get("completed", 0),
+        error=counts.get("error", 0),
     )
 
 
-@router.get("/{task_id}", response_model=TaskDetailResponse)
-def get_task(task_id: str, request: Request, db=Depends(get_db)):
+@router.get("/{task_id}", response_model=TaskRead)
+def get_task(task_id: str, db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    base = _task_to_response(task).model_dump()
-
-    run = db.get(RunRecord, task.run_id) if task.run_id else None
-    run_resp = _run_to_response(run) if run else None
-
-    child_runs: list[RunRecordResponse] = []
-    if task.run_id:
-        # Flatten descendants one level at a time
-        frontier = [task.run_id]
-        while frontier:
-            kids = (
-                db.query(RunRecord)
-                .filter(RunRecord.parent_run_id.in_(frontier))
-                .order_by(RunRecord.started_at)
-                .all()
-            )
-            if not kids:
-                break
-            child_runs.extend(_run_to_response(k) for k in kids)
-            frontier = [k.id for k in kids]
-
-    # Dev server snapshot (best-effort — registry may not be loaded yet)
-    dev_server = None
-    try:
-        from .dev_server import get_registry  # type: ignore
-        registry = get_registry(request.app)
-        dev_server = registry.status(task_id)
-    except Exception:
-        dev_server = None
-
-    return TaskDetailResponse(
-        **base,
-        run=run_resp,
-        child_runs=child_runs,
-        dev_server=dev_server,
-    )
+        raise HTTPException(404, "Task not found")
+    return _task_to_read(task, db)
 
 
-@router.delete("/{task_id}", status_code=204)
-def delete_task(task_id: str, request: Request, db=Depends(get_db)):
+@router.patch("/{task_id}", response_model=TaskRead)
+def update_task(task_id: str, body: TaskUpdate, db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
     if not task:
-        return Response(status_code=204)
+        raise HTTPException(404, "Task not found")
 
-    # Stop any running dev server first
-    try:
-        from .dev_server import get_registry  # type: ignore
-        registry = get_registry(request.app)
-        registry.stop(task_id)
-    except Exception:
-        pass
+    updates = body.model_dump(exclude_unset=True)
+    if "priority" in updates and updates["priority"] not in VALID_PRIORITIES:
+        raise HTTPException(400, f"Invalid priority: {updates['priority']}")
 
-    # Null FK before deleting the RunRecord so SQLite doesn't trip on the
-    # task.run_id → run_records.id constraint.
-    prior_run_id = task.run_id
-    if prior_run_id:
-        task.run_id = None
-        db.flush()
-        db.query(RunRecord).filter(RunRecord.id == prior_run_id).delete(
-            synchronize_session=False
-        )
+    for key, val in updates.items():
+        setattr(task, key, val)
+    db.commit()
+    db.refresh(task)
+    return _task_to_read(task, db)
 
-    # Delete workspace (with realpath-prefix safety check inside)
-    try:
-        delete_workspace(_data_dir(request), task_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    # TaskEvent rows cascade-delete via FK ondelete="CASCADE"
+@router.post("/{task_id}/move", response_model=TaskRead)
+def move_task(task_id: str, body: TaskMove, db: Session = Depends(get_db)):
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+    if body.column not in VALID_COLUMNS:
+        raise HTTPException(400, f"Invalid column: {body.column}")
+
+    old_column = task.column
+    task.column = body.column
+
+    if body.position is not None:
+        task.position = body.position
+    else:
+        max_pos = (
+            db.query(func.max(Task.position))
+            .filter(Task.column == body.column, Task.id != task_id)
+            .scalar()
+        ) or 0.0
+        task.position = max_pos + 1024.0
+
+    if body.column == "in_progress" and old_column != "in_progress":
+        task.started_at = task.started_at or _utcnow()
+    elif body.column == "completed" and old_column != "completed":
+        task.completed_at = _utcnow()
+
+    if old_column != body.column:
+        label = body.column.replace("_", " ").title()
+        _add_system_comment(db, task.id, f"Moved to {label}")
+
+    db.commit()
+    db.refresh(task)
+    return _task_to_read(task, db)
+
+
+@router.delete("/{task_id}")
+def delete_task(task_id: str, db: Session = Depends(get_db)):
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
     db.delete(task)
     db.commit()
-    return Response(status_code=204)
+    return {"ok": True}
 
 
-# ── Run start / clarify / finalize ────────────────────────────────
-
-
-@router.post("/{task_id}/run", response_model=TaskRunStartResponse)
-def start_task_run(task_id: str, body: TaskRunStart, request: Request, db=Depends(get_db)):
+@router.post("/{task_id}/cancel", response_model=TaskRead)
+def cancel_task(task_id: str, db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    data_dir = _data_dir(request)
-
-    # Tasks are fully independent from conversations — no Conversation row.
-    # Mint a tracking ID for the frontend (passed to agent.run()) but do NOT
-    # store it on task.conversation_id to avoid FK constraint with conversations table.
-    tracking_id = _uuid_hex()
-
-    # Workspace is always created (cheap, needed even for markdown tasks
-    # as scratch space — and must live under data_dir for sandbox writes)
-    workspace_path = create_workspace(data_dir, task_id)
-    task.workspace_path = workspace_path
-
-    # Mint a fresh run_record per subprocess (clarify and execute are
-    # separate runs so Activity shows them distinctly)
-    run_id = _uuid_hex()
-    run = RunRecord(
-        id=run_id,
-        run_type="task",
-        trigger="manual",
-        status="running",
-        parent_run_id=None,
-    )
-    db.add(run)
-    task.run_id = run_id
-
-    if body.phase == "plan":
-        task.status = "planning"
-        if not task.started_at:
-            task.started_at = _utcnow()
-    elif body.phase == "clarify":
-        task.status = "clarifying"
-    else:
-        task.status = "running"
-        if not task.started_at:
-            task.started_at = _utcnow()
-
+        raise HTTPException(404, "Task not found")
+    task.column = "backlog"
+    task.run_id = None
+    _add_system_comment(db, task.id, "Task cancelled, moved back to Backlog")
     db.commit()
-
-    return TaskRunStartResponse(
-        task_id=task_id,
-        run_id=run_id,
-        conversation_id=tracking_id,
-        workspace_path=workspace_path,
-    )
+    db.refresh(task)
+    return _task_to_read(task, db)
 
 
-@router.post("/{task_id}/approve-plan", response_model=TaskRunStartResponse)
-def approve_plan(task_id: str, request: Request, db=Depends(get_db)):
-    """User has approved PLAN.md — mint an execute run and transition to running."""
+# ── Run event callback (called by Electron main process) ──
+
+@router.post("/{task_id}/run-event")
+def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if task.status != "awaiting_plan_approval":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Task is in status {task.status!r}; expected awaiting_plan_approval",
-        )
-    if not task.workspace_path or not read_plan_md(task.workspace_path):
-        raise HTTPException(status_code=400, detail="PLAN.md not found")
+        raise HTTPException(404, "Task not found")
 
-    tracking_id = _uuid_hex()
-    run_id = _uuid_hex()
-    run = RunRecord(
-        id=run_id,
-        run_type="task",
-        trigger="manual",
-        status="running",
-        parent_run_id=None,
-    )
-    db.add(run)
-    task.run_id = run_id
-    task.status = "running"
-    if not task.started_at:
-        task.started_at = _utcnow()
-    db.commit()
+    event_type = event.get("type")
+    run_id = event.get("run_id")
 
-    return TaskRunStartResponse(
-        task_id=task_id,
-        run_id=run_id,
-        conversation_id=tracking_id,
-        workspace_path=task.workspace_path,
-    )
-
-
-@router.get("/{task_id}/plan-md", response_model=PlanMdResponse)
-def get_plan_md(task_id: str, db=Depends(get_db)):
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if not task.workspace_path:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    data = read_plan_md(task.workspace_path)
-    if data is None:
-        raise HTTPException(status_code=404, detail="PLAN.md not found")
-    return PlanMdResponse(content=data["content"], mtime=data["mtime"])
-
-
-@router.put("/{task_id}/plan-md", response_model=PlanMdResponse)
-def put_plan_md(task_id: str, body: PlanMdUpdate, db=Depends(get_db)):
-    """Write PLAN.md content (used when user toggles a checkbox in the UI)."""
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if not task.workspace_path:
-        raise HTTPException(status_code=400, detail="Workspace not initialised")
-    try:
-        mtime = write_plan_md(task.workspace_path, body.content)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return PlanMdResponse(content=body.content, mtime=mtime)
-
-
-@router.post("/{task_id}/plan-done", response_model=TaskResponse)
-def plan_done(task_id: str, db=Depends(get_db)):
-    """Called when the plan subprocess exits.
-
-    If PLAN.md is present the task transitions to ``awaiting_plan_approval``.
-    If not, the task is marked ``failed`` with an explanatory error. This is
-    idempotent — terminal statuses are left alone.
-    """
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if task.status in ("completed", "failed", "cancelled", "awaiting_plan_approval"):
-        return _task_to_response(task)
-
-    has_plan = bool(
-        task.workspace_path and read_plan_md(task.workspace_path) is not None
-    )
-    if has_plan:
-        task.status = "awaiting_plan_approval"
-    else:
-        task.status = "failed"
-        task.error = "Plan subprocess exited without writing PLAN.md"
+    if event_type == "run_started":
+        # Ensure a RunRecord exists for this run_id — tasks.run_id has a FK to it.
+        # The Electron runtime mints the runId but doesn't create the DB row for task runs,
+        # so we create it here on first sight.
+        if run_id and not db.get(RunRecord, run_id):
+            db.add(RunRecord(
+                id=run_id,
+                expert_id=task.expert_id,
+                status="running",
+                run_type="task",
+                trigger="manual",
+                started_at=_utcnow(),
+            ))
+            db.flush()
+        task.column = "in_progress"
+        task.run_id = run_id
+        task.started_at = task.started_at or _utcnow()
+        _add_system_comment(db, task.id, "Expert started working")
+    elif event_type == "run_completed":
+        task.column = "to_review"
         task.completed_at = _utcnow()
-    db.commit()
-    db.refresh(task)
-    return _task_to_response(task)
-
-
-def _format_answers_block(questions: list[dict], answers: list[dict]) -> str:
-    """Produce a human-readable block that gets pasted into the execute envelope."""
-    q_by_id = {q["id"]: q for q in questions}
-    lines: list[str] = []
-    for a in answers:
-        q = q_by_id.get(a["id"])
-        label = q.get("q") if q else a["id"]
-        value = a.get("answer")
-        if isinstance(value, bool):
-            value_str = "yes" if value else "no"
-        elif value is None or value == "":
-            value_str = "(no answer — use your judgment)"
-        else:
-            value_str = str(value)
-        lines.append(f"- **{label}** {value_str}")
-    return "\n".join(lines) if lines else "(user skipped — use your best judgment)"
-
-
-@router.post("/{task_id}/clarify", response_model=ClarifyResponse)
-def submit_clarification(task_id: str, body: ClarifySubmit, db=Depends(get_db)):
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    existing = _parse_clarifications(task) or {}
-    questions = existing.get("questions", [])
-
-    answers_dump = [a.model_dump() for a in body.answers]
-    existing["answers"] = answers_dump
-    task.clarifications_json = json.dumps(existing)
-    task.status = "awaiting_clarification"  # transient; runner flips to running on next /run
-    db.commit()
-
-    answers_block = _format_answers_block(questions, answers_dump)
-    return ClarifyResponse(task_id=task_id, answers_block=answers_block)
-
-
-@router.post("/{task_id}/clarifications", response_model=TaskResponse)
-def set_clarification_questions(task_id: str, body: dict, db=Depends(get_db)):
-    """Renderer-driven upsert of the question set parsed from the clarify run.
-
-    Body shape: ``{"questions": [{id, q, kind, options?, default?, placeholder?}]}``
-    """
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    existing = _parse_clarifications(task) or {}
-    existing["questions"] = body.get("questions", [])
-    task.clarifications_json = json.dumps(existing)
-    task.status = "awaiting_clarification"
-    db.commit()
-    db.refresh(task)
-    return _task_to_response(task)
-
-
-@router.post("/{task_id}/plan", response_model=TaskResponse)
-def upsert_plan(task_id: str, body: TaskPlanUpsert, db=Depends(get_db)):
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    plan = TaskPlan(phases=body.phases)
-    task.plan_json = plan.model_dump_json()
-    if body.kind:
-        task.deliverable_kind = body.kind
-    if task.status not in ("completed", "failed", "cancelled"):
-        task.status = "running"
-    db.commit()
-    db.refresh(task)
-    return _task_to_response(task)
-
-
-@router.patch("/{task_id}/phase", response_model=TaskResponse)
-def update_phase(task_id: str, body: TaskPhaseUpdate, db=Depends(get_db)):
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    plan = _parse_plan(task)
-    if not plan:
-        raise HTTPException(status_code=400, detail="Plan not set yet")
-
-    for phase in plan.phases:
-        if phase.id == body.phase_id:
-            phase.status = body.status
-            if body.child_run_id is not None:
-                phase.child_run_id = body.child_run_id
-            if body.summary is not None:
-                phase.summary = body.summary
-            break
-    else:
-        raise HTTPException(status_code=404, detail=f"Phase {body.phase_id} not in plan")
-
-    task.plan_json = plan.model_dump_json()
-    db.commit()
-    db.refresh(task)
-    return _task_to_response(task)
-
-
-@router.post("/{task_id}/finalize", response_model=TaskResponse)
-def finalize_task(task_id: str, body: TaskFinalize, db=Depends(get_db)):
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    task.status = body.status
-    task.completed_at = _utcnow()
-    if body.deliverable_markdown is not None:
-        task.deliverable_markdown = body.deliverable_markdown
-    if body.deliverable_title is not None:
-        task.deliverable_title = body.deliverable_title
-    if body.deliverable_kind is not None:
-        task.deliverable_kind = body.deliverable_kind
-    if body.run_info is not None:
-        task.run_info_json = body.run_info.model_dump_json()
-    if body.error is not None:
-        task.error = body.error
-    if body.created_expert_ids is not None:
-        task.created_expert_ids_json = json.dumps(body.created_expert_ids)
-
-    if task.run_id:
-        run = db.get(RunRecord, task.run_id)
-        if run and run.status == "running":
-            run.status = body.status if body.status != "cancelled" else "cancelled"
-            run.completed_at = _utcnow()
-            if run.started_at:
-                # Strip tzinfo for subtraction — _utcnow() is tz-aware but
-                # values loaded from SQLite are tz-naive.
-                completed = run.completed_at.replace(tzinfo=None)
-                started = run.started_at.replace(tzinfo=None) if run.started_at.tzinfo else run.started_at
-                run.duration_ms = int(
-                    (completed - started).total_seconds() * 1000
-                )
-            if body.error:
-                run.error = body.error
+        if run_id:
+            run = db.get(RunRecord, run_id)
+            if run:
+                run.status = "completed"
+                run.completed_at = _utcnow()
+        _add_system_comment(db, task.id, "Expert finished — ready for review")
+    elif event_type == "run_failed":
+        task.column = "error"
+        task.last_error = event.get("error", "Unknown error")
+        if run_id:
+            run = db.get(RunRecord, run_id)
+            if run:
+                run.status = "failed"
+                run.error = task.last_error
+                run.completed_at = _utcnow()
+        _add_system_comment(db, task.id, f"Expert run failed: {task.last_error}")
+    elif event_type == "run_cancelled":
+        task.column = "error"
+        task.last_error = "Run was cancelled"
+        if run_id:
+            run = db.get(RunRecord, run_id)
+            if run:
+                run.status = "cancelled"
+                run.completed_at = _utcnow()
+        _add_system_comment(db, task.id, "Expert run cancelled")
 
     db.commit()
     db.refresh(task)
-    return _task_to_response(task)
+    return {"ok": True}
 
 
-@router.post("/{task_id}/cancel", response_model=TaskResponse)
-def cancel_task(task_id: str, request: Request, db=Depends(get_db)):
+# ── Comments ──
+
+@router.post("/{task_id}/comments", response_model=CommentRead)
+def create_comment(task_id: str, body: CommentCreate, db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(404, "Task not found")
+    if body.kind not in ("comment", "instruction"):
+        raise HTTPException(400, f"Invalid comment kind: {body.kind}")
 
-    if task.status in ("completed", "failed", "cancelled"):
-        return _task_to_response(task)
-
-    task.status = "cancelled"
-    task.completed_at = _utcnow()
-
-    if task.run_id:
-        run = db.get(RunRecord, task.run_id)
-        if run and run.status == "running":
-            run.status = "cancelled"
-            run.completed_at = _utcnow()
-
-    db.commit()
-
-    # Stop dev server if any
-    try:
-        from .dev_server import get_registry  # type: ignore
-        registry = get_registry(request.app)
-        registry.stop(task_id)
-    except Exception:
-        pass
-
-    db.refresh(task)
-    return _task_to_response(task)
-
-
-# ── Follow-up ────────────────────────────────────────────────────
-
-
-@router.post("/{task_id}/follow-up", response_model=TaskFollowUpResponse)
-def follow_up_task(task_id: str, body: TaskFollowUp, request: Request, db=Depends(get_db)):
-    """Start a follow-up run on a completed/failed task.
-
-    Reuses the same workspace and conversation. Transitions the task back to
-    running, mints a new run_record, and returns pre-formatted context for the
-    follow-up prompt envelope.
-    """
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    if task.status not in ("completed", "failed", "cancelled"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot follow up on a task with status '{task.status}' — task must be terminal",
-        )
-
-    data_dir = _data_dir(request)
-
-    # Ensure workspace exists (should already from the original run)
-    workspace_path = task.workspace_path
-    if not workspace_path:
-        workspace_path = create_workspace(data_dir, task_id)
-        task.workspace_path = workspace_path
-
-    # Tasks are independent from conversations — just a tracking ID for agent.run()
-    tracking_id = _uuid_hex()
-
-    # Mint a new run_record for this follow-up
-    run_id = _uuid_hex()
-    run = RunRecord(
-        id=run_id,
-        run_type="task",
-        trigger="follow_up",
-        status="running",
-        parent_run_id=None,
-    )
-    db.add(run)
-    task.run_id = run_id
-    task.status = "running"
-    task.error = None
-    task.completed_at = None
-    db.commit()
-
-    # Build follow-up context block for the prompt envelope
-    MAX_DELIVERABLE_CHARS = 50_000
-    raw_deliverable = task.deliverable_markdown or "(no previous deliverable)"
-    if len(raw_deliverable) > MAX_DELIVERABLE_CHARS:
-        previous_deliverable = raw_deliverable[:MAX_DELIVERABLE_CHARS] + "\n\n...(truncated — full deliverable is in the workspace)"
-    else:
-        previous_deliverable = raw_deliverable
-    context_parts = [
-        f"Original goal: {task.goal}",
-        f"Deliverable kind: {task.deliverable_kind or 'markdown'}",
-    ]
-
-    # Include clarification answers if they exist
-    clarifications = _parse_clarifications(task)
-    if clarifications and clarifications.get("answers"):
-        questions = clarifications.get("questions", [])
-        answers = clarifications["answers"]
-        answers_block = _format_answers_block(questions, answers)
-        context_parts.append(f"User's clarification answers:\n{answers_block}")
-
-    context_parts.append(f"\nPrevious deliverable:\n{previous_deliverable}")
-
-    follow_up_context = "\n".join(context_parts)
-
-    return TaskFollowUpResponse(
+    comment = TaskComment(
         task_id=task_id,
-        run_id=run_id,
-        conversation_id=tracking_id,
-        workspace_path=workspace_path,
-        follow_up_context=follow_up_context,
+        kind=body.kind,
+        author_kind="user",
+        body_md=body.body_md,
     )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return CommentRead.model_validate(comment)
 
 
-@router.post("/{task_id}/resume", response_model=TaskResumeResponse)
-def resume_task(task_id: str, request: Request, db=Depends(get_db)):
-    """Resume a terminal task by restarting Claude Code with --resume <prior_run_id>.
+@router.get("/{task_id}/comments", response_model=list[CommentRead])
+def list_comments(task_id: str, db: Session = Depends(get_db)):
+    comments = (
+        db.query(TaskComment)
+        .filter(TaskComment.task_id == task_id)
+        .order_by(TaskComment.created_at)
+        .all()
+    )
+    return [CommentRead.model_validate(c) for c in comments]
 
-    Reuses the same workspace. The Claude CLI session ID equals the prior
-    run_id (set via --session-id on original spawn), so Claude will pick up
-    the conversation where it left off.
-    """
+
+# ── Checklist ──
+
+@router.post("/{task_id}/checklist", response_model=ChecklistItemRead)
+def create_checklist_item(
+    task_id: str, body: ChecklistItemCreate, db: Session = Depends(get_db)
+):
     task = db.get(Task, task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise HTTPException(404, "Task not found")
 
-    if task.status not in ("completed", "failed", "cancelled"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot resume a task with status '{task.status}' — task must be terminal",
-        )
+    max_pos = (
+        db.query(func.max(TaskChecklistItem.position))
+        .filter(TaskChecklistItem.task_id == task_id)
+        .scalar()
+    ) or 0.0
 
-    prior_run_id = task.run_id
-    if not prior_run_id:
-        raise HTTPException(status_code=400, detail="Task has no prior run to resume")
-
-    data_dir = _data_dir(request)
-
-    workspace_path = task.workspace_path
-    if not workspace_path:
-        workspace_path = create_workspace(data_dir, task_id)
-        task.workspace_path = workspace_path
-
-    tracking_id = _uuid_hex()
-    run_id = _uuid_hex()
-    run = RunRecord(
-        id=run_id,
-        run_type="task",
-        trigger="resume",
-        status="running",
-        parent_run_id=None,
-    )
-    db.add(run)
-    task.run_id = run_id
-    task.status = "running"
-    task.error = None
-    task.completed_at = None
-    db.commit()
-
-    return TaskResumeResponse(
+    item = TaskChecklistItem(
         task_id=task_id,
-        run_id=run_id,
-        conversation_id=tracking_id,
-        workspace_path=workspace_path,
-        resume_session_id=prior_run_id,
+        body=body.body,
+        position=max_pos + 1024.0,
     )
-
-
-# ── Event persistence ────────────────────────────────────────────
-
-
-@router.post("/{task_id}/events", status_code=201)
-def append_events(task_id: str, body: TaskEventBatch, db=Depends(get_db)):
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    # Batch dedup: single query instead of per-event SELECT
-    incoming_seqs = [item.seq for item in body.events]
-    existing_seqs = set()
-    if incoming_seqs:
-        rows = (
-            db.query(TaskEvent.seq)
-            .filter(TaskEvent.task_id == task_id, TaskEvent.seq.in_(incoming_seqs))
-            .all()
-        )
-        existing_seqs = {r[0] for r in rows}
-
-    created = 0
-    for item in body.events:
-        if item.seq in existing_seqs:
-            continue
-        db.add(TaskEvent(
-            id=_uuid_hex(),
-            task_id=task_id,
-            seq=item.seq,
-            kind=item.kind,
-            payload_json=item.payload_json,
-            ts=item.ts or _utcnow(),
-        ))
-        created += 1
+    db.add(item)
     db.commit()
-    return {"created": created}
+    db.refresh(item)
+    return ChecklistItemRead.model_validate(item)
 
 
-@router.get("/{task_id}/events", response_model=list[TaskEventResponse])
-def list_events(
+@router.patch("/{task_id}/checklist/{item_id}", response_model=ChecklistItemRead)
+def update_checklist_item(
     task_id: str,
-    after_seq: int = Query(-1, ge=-1),
-    limit: int = Query(1000, ge=1, le=5000),
-    db=Depends(get_db),
+    item_id: str,
+    body: ChecklistItemUpdate,
+    db: Session = Depends(get_db),
 ):
-    q = (
-        db.query(TaskEvent)
-        .filter(TaskEvent.task_id == task_id)
-        .filter(TaskEvent.seq > after_seq)
-        .order_by(TaskEvent.seq)
-        .limit(limit)
+    item = db.get(TaskChecklistItem, item_id)
+    if not item or item.task_id != task_id:
+        raise HTTPException(404, "Checklist item not found")
+
+    updates = body.model_dump(exclude_unset=True)
+    for key, val in updates.items():
+        setattr(item, key, val)
+    db.commit()
+    db.refresh(item)
+    return ChecklistItemRead.model_validate(item)
+
+
+@router.post("/{task_id}/checklist/{item_id}/promote", response_model=TaskRead)
+def promote_checklist_item(
+    task_id: str,
+    item_id: str,
+    db: Session = Depends(get_db),
+):
+    item = db.get(TaskChecklistItem, item_id)
+    if not item or item.task_id != task_id:
+        raise HTTPException(404, "Checklist item not found")
+    if item.promoted_task_id:
+        raise HTTPException(400, "Item already promoted")
+
+    parent = db.get(Task, task_id)
+    if not parent:
+        raise HTTPException(404, "Task not found")
+
+    max_pos = (
+        db.query(func.max(Task.position))
+        .filter(Task.column == parent.column)
+        .scalar()
+    ) or 0.0
+
+    child = Task(
+        title=item.body,
+        column=parent.column,
+        expert_id=parent.expert_id,
+        parent_task_id=task_id,
+        priority=parent.priority,
+        position=max_pos + 1024.0,
     )
-    return [TaskEventResponse.model_validate(e) for e in q.all()]
+    db.add(child)
+    db.flush()
+
+    item.promoted_task_id = child.id
+    _add_system_comment(task_id=task_id, db=db, body=f"Promoted \"{item.body}\" to card")
+    _add_system_comment(task_id=child.id, db=db, body="Created from parent checklist item")
+
+    db.commit()
+    db.refresh(child)
+    return _task_to_read(child, db)
 
 
-# ── Workspace browsing ───────────────────────────────────────────
-
-
-@router.get("/{task_id}/workspace/tree", response_model=WorkspaceTreeResponse)
-def get_workspace_tree(task_id: str, request: Request, db=Depends(get_db)):
-    task = db.get(Task, task_id)
-    if not task or not task.workspace_path:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    files, truncated = list_tree(task.workspace_path)
-    return WorkspaceTreeResponse(files=files, truncated=truncated)
-
-
-@router.get("/{task_id}/workspace/file", response_model=WorkspaceFileResponse)
-def get_workspace_file(
-    task_id: str,
-    path: str = Query(..., description="relative path inside workspace"),
-    request: Request = None,
-    db=Depends(get_db),
+@router.delete("/{task_id}/checklist/{item_id}")
+def delete_checklist_item(
+    task_id: str, item_id: str, db: Session = Depends(get_db)
 ):
-    task = db.get(Task, task_id)
-    if not task or not task.workspace_path:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    try:
-        result = read_file(task.workspace_path, path)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return WorkspaceFileResponse(**result)
-
-
-@router.get("/{task_id}/workspace/preview-file", response_model=PreviewFileResponse)
-def get_preview_file(
-    task_id: str,
-    request: Request,
-    known_path: str | None = Query(None, description="Skip scan; read this path directly"),
-    if_mtime_neq: float | None = Query(None, description="Return content only when mtime differs"),
-    db=Depends(get_db),
-):
-    task = db.get(Task, task_id)
-    if not task or not task.workspace_path:
-        return PreviewFileResponse(found=False)
-    result = find_preview_file(task.workspace_path, known_path=known_path)
-    if result is None:
-        return PreviewFileResponse(found=False)
-    # When caller already has this mtime, skip sending content
-    if if_mtime_neq is not None and result["mtime"] == if_mtime_neq:
-        return PreviewFileResponse(
-            found=True,
-            path=result["path"],
-            mtime=result["mtime"],
-            size=result["size"],
-        )
-    return PreviewFileResponse(
-        found=True,
-        path=result["path"],
-        content=result["content"],
-        mtime=result["mtime"],
-        size=result["size"],
-    )
-
-
-# ── Dev server ───────────────────────────────────────────────────
-
-
-@router.post("/{task_id}/dev-server/start")
-def start_dev_server(
-    task_id: str,
-    body: DevServerStartBody | None = None,
-    *,
-    request: Request,
-    db=Depends(get_db),
-):
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if not task.workspace_path:
-        raise HTTPException(status_code=400, detail="Task has no workspace")
-
-    # Accept run_info from body (live mode) or fall back to DB
-    run_info: RunInfo | None = None
-    if body and body.run_info:
-        run_info = body.run_info
-        # Persist so status endpoint works
-        if not task.run_info_json:
-            task.run_info_json = run_info.model_dump_json()
-            db.commit()
-    elif task.run_info_json:
-        try:
-            run_info = RunInfo(**json.loads(task.run_info_json))
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"invalid run_info: {exc}") from exc
-
-    if not run_info:
-        raise HTTPException(
-            status_code=400,
-            detail="Task has no run_info — not a code_app",
-        )
-
-    from .dev_server import get_registry
-    registry = get_registry(request.app)
-
-    pid = registry.start(task_id, task.workspace_path, run_info)
-    return {"task_id": task_id, "pid": pid, "stream_url": f"/tasks/{task_id}/dev-server/stream"}
-
-
-@router.post("/{task_id}/dev-server/stop")
-def stop_dev_server(task_id: str, request: Request, db=Depends(get_db)):
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    from .dev_server import get_registry
-    registry = get_registry(request.app)
-    stopped = registry.stop(task_id)
-    return {"stopped": stopped}
-
-
-@router.get("/{task_id}/dev-server/status", response_model=DevServerStatus)
-def get_dev_server_status(task_id: str, request: Request, db=Depends(get_db)):
-    task = db.get(Task, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    from .dev_server import get_registry
-    registry = get_registry(request.app)
-    snapshot = registry.status(task_id) or {
-        "running": False,
-        "pid": None,
-        "url": None,
-        "started_at": None,
-        "stdout_tail": None,
-        "preview_type": None,
-    }
-    return DevServerStatus(**snapshot)
-
-
-@router.websocket("/{task_id}/dev-server/stream")
-async def dev_server_stream_ws(ws: WebSocket, task_id: str):
-    from .dev_server import dev_server_stream
-    await dev_server_stream(ws, task_id)
+    item = db.get(TaskChecklistItem, item_id)
+    if not item or item.task_id != task_id:
+        raise HTTPException(404, "Checklist item not found")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}

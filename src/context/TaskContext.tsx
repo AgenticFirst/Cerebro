@@ -1,815 +1,538 @@
-/**
- * TaskContext — manages task lifecycle, live streaming, and event persistence.
- *
- * Mirrors the ApprovalContext debounced-refresh pattern. Each task run spawns
- * a Claude Code subprocess via `window.cerebro.agent.run()`; the context
- * subscribes to stream events via `window.cerebro.agent.onEvent()`, feeds
- * them through TaskStreamParser, and persists batches to the backend via
- * `POST /tasks/{id}/events`.
- */
-
 import {
   createContext,
   useContext,
   useState,
   useCallback,
-  useRef,
   useEffect,
+  useRef,
   type ReactNode,
 } from 'react';
-import { TaskStreamParser, type TaskStreamEvent } from '../components/screens/tasks/stream-parser';
-import { parseTaskEvents } from '../components/screens/tasks/event-parser';
-import type {
-  Task,
-  TaskDetail,
-  NewTaskInput,
-  RunInfo,
-  TaskLogEntry,
-} from '../components/screens/tasks/types';
-import type { RendererAgentEvent } from '../types/ipc';
-import { appendTaskTerminalData, clearTaskTerminalBuffer } from '../components/screens/tasks/taskTerminalBuffer';
-import i18n from '../i18n';
 
-// ── Context types ───────────────────────────────────────────────
+export interface Task {
+  id: string;
+  title: string;
+  description_md: string;
+  column: TaskColumn;
+  expert_id: string | null;
+  parent_task_id: string | null;
+  priority: TaskPriority;
+  start_at: string | null;
+  due_at: string | null;
+  position: number;
+  run_id: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  checklist: ChecklistItem[];
+  comment_count: number;
+  checklist_total: number;
+  checklist_done: number;
+}
 
-export interface LiveTaskState {
-  taskId: string;
-  runId: string;
-  phase: 'plan' | 'execute';
-  deliverableKind: string | null;
-  textAccumulated: string;
-  logEntries: TaskLogEntry[];
-  logSeqCounter: number;
-  turnsUsed: number;
-  /** Set when <clarification> tag was detected and questions posted to backend. */
-  clarificationCaptured: boolean;
-  deliverableMarkdown: string | null;
-  deliverableTitle: string | null;
-  runInfo: RunInfo | null;
-  model: string | undefined;
-  /** Set once finalization has been triggered — prevents double-finalize. */
-  finalized: boolean;
+export type TaskColumn =
+  | 'backlog'
+  | 'in_progress'
+  | 'to_review'
+  | 'completed'
+  | 'error';
+
+export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+export interface ChecklistItem {
+  id: string;
+  task_id: string;
+  body: string;
+  is_done: boolean;
+  position: number;
+  promoted_task_id: string | null;
+  created_at: string;
+}
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  kind: 'comment' | 'instruction' | 'system';
+  author_kind: 'user' | 'expert' | 'system';
+  expert_id: string | null;
+  body_md: string;
+  triggered_run_id: string | null;
+  created_at: string;
+}
+
+export interface TaskStats {
+  backlog: number;
+  in_progress: number;
+  to_review: number;
+  completed: number;
+  error: number;
+}
+
+interface CreateTaskInput {
+  title: string;
+  description_md?: string;
+  column?: TaskColumn;
+  expert_id?: string | null;
+  parent_task_id?: string | null;
+  priority?: TaskPriority;
+  start_at?: string | null;
+  due_at?: string | null;
+}
+
+interface UpdateTaskInput {
+  title?: string;
+  description_md?: string;
+  expert_id?: string | null;
+  priority?: TaskPriority;
+  start_at?: string | null;
+  due_at?: string | null;
 }
 
 interface TaskContextValue {
   tasks: Task[];
-  runningCount: number;
+  stats: TaskStats;
   isLoading: boolean;
-  selectedTaskId: string | null;
-  liveTask: LiveTaskState | null;
-
-  refresh: () => Promise<void>;
-  createAndRunTask: (input: NewTaskInput) => Promise<Task>;
-  submitClarification: (taskId: string, answers: Array<{ id: string; answer: string | boolean }>) => Promise<void>;
-  approvePlan: (taskId: string) => Promise<void>;
-  followUpTask: (taskId: string, instruction: string, model?: string) => Promise<void>;
-  resumeTask: (taskId: string) => Promise<void>;
-  cancelTask: (id: string) => Promise<void>;
+  loadTasks: () => Promise<void>;
+  createTask: (input: CreateTaskInput) => Promise<Task>;
+  updateTask: (id: string, input: UpdateTaskInput) => Promise<void>;
+  moveTask: (id: string, column: TaskColumn, position?: number) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
-  setSelectedTaskId: (id: string | null) => void;
-  watchTask: (id: string) => Promise<void>;
-  unwatchTask: () => void;
+  cancelTask: (id: string) => Promise<void>;
+  /** Start the Expert working on a task — spawns Claude Code, moves card to In Progress. */
+  startTask: (id: string) => Promise<void>;
+  /** Post an instruction comment AND trigger a follow-up Expert run in the same workspace. */
+  sendInstruction: (id: string, instruction: string) => Promise<void>;
+  loadComments: (taskId: string) => Promise<TaskComment[]>;
+  addComment: (taskId: string, kind: string, bodyMd: string) => Promise<TaskComment>;
+  addChecklistItem: (taskId: string, body: string) => Promise<ChecklistItem>;
+  updateChecklistItem: (taskId: string, itemId: string, updates: Partial<ChecklistItem>) => Promise<void>;
+  deleteChecklistItem: (taskId: string, itemId: string) => Promise<void>;
+  promoteChecklistItem: (taskId: string, itemId: string) => Promise<Task>;
 }
 
 const TaskContext = createContext<TaskContextValue | null>(null);
 
-// ── Event flush helper ──────────────────────────────────────────
-
-const FLUSH_INTERVAL_MS = 300;
-const FLUSH_BATCH_SIZE = 50;
-
-// ── Provider ────────────────────────────────────────────────────
-
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [liveTask, setLiveTask] = useState<LiveTaskState | null>(null);
+  const [stats, setStats] = useState<TaskStats>({
+    backlog: 0,
+    in_progress: 0,
+    to_review: 0,
+    completed: 0,
+    error: 0,
+  });
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Refs for live state that changes at stream frequency
-  const liveTaskRef = useRef<LiveTaskState | null>(null);
-  const parserRef = useRef<TaskStreamParser | null>(null);
-  const unsubRef = useRef<(() => void) | null>(null);
-  const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pendingEventsRef = useRef<Array<{ seq: number; kind: string; payload_json: string }>>([]);
+  // Map of taskId -> unsubscribe function for agent event listeners.
+  // Persists across renders so listeners aren't leaked on re-render.
+  const runListeners = useRef<Map<string, () => void>>(new Map());
 
-  // Debounced refresh (same pattern as ApprovalContext)
-  const refreshInFlight = useRef(false);
-  const refreshQueued = useRef(false);
-
-  const refresh = useCallback(async () => {
-    if (refreshInFlight.current) {
-      refreshQueued.current = true;
-      return;
-    }
-    refreshInFlight.current = true;
+  const loadTasks = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const res = await window.cerebro.invoke<{ tasks: Task[]; total: number }>({
-        method: 'GET',
-        path: '/tasks?limit=100',
-      });
-      if (res.ok && res.data?.tasks) {
-        setTasks(res.data.tasks);
-      }
-    } catch {
-      // Backend not ready
+      const [tasksRes, statsRes] = await Promise.all([
+        window.cerebro.invoke({ method: 'GET', path: '/tasks' }),
+        window.cerebro.invoke({ method: 'GET', path: '/tasks/stats' }),
+      ]);
+      if (tasksRes.ok) setTasks(tasksRes.data);
+      if (statsRes.ok) setStats(statsRes.data);
     } finally {
       setIsLoading(false);
-      refreshInFlight.current = false;
-      if (refreshQueued.current) {
-        refreshQueued.current = false;
-        queueMicrotask(() => void refresh());
-      }
     }
   }, []);
 
-  // Initial fetch
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    loadTasks();
+  }, [loadTasks]);
 
-  // Single IPC channel captures PTY data for ALL runs, subscribed once at mount.
-  // This avoids per-run subscription timing gaps — data buffers from the moment
-  // it flows, and Console components read the buffer on mount.
+  // Orphan recovery: on mount, find any in_progress tasks whose runs are no longer
+  // active (e.g. app was killed mid-run) and transition them to error.
   useEffect(() => {
-    const unsub = window.cerebro.taskTerminal.onGlobalData((runId, data) => {
-      appendTaskTerminalData(runId, data);
-    });
-    return unsub;
-  }, []);
-
-  // ── Event flushing ────────────────────────────────────────────
-
-  const flushEvents = useCallback(async (taskId: string) => {
-    const batch = pendingEventsRef.current.splice(0, 500);
-    if (batch.length === 0) return;
-    try {
-      await window.cerebro.invoke({
-        method: 'POST',
-        path: `/tasks/${taskId}/events`,
-        body: { events: batch },
-      });
-    } catch {
-      // Re-queue on failure (best-effort)
-      pendingEventsRef.current.unshift(...batch);
-    }
-  }, []);
-
-  const enqueueEvent = useCallback((kind: string, payload: unknown) => {
-    const live = liveTaskRef.current;
-    if (!live) return;
-    const seq = live.logSeqCounter++;
-    pendingEventsRef.current.push({
-      seq,
-      kind,
-      payload_json: JSON.stringify(payload),
-    });
-    if (pendingEventsRef.current.length >= FLUSH_BATCH_SIZE) {
-      void flushEvents(live.taskId);
-    }
-  }, [flushEvents]);
-
-  // ── Cleanup ───────────────────────────────────────────────────
-
-  const cleanup = useCallback((preserveBuffer = false) => {
-    if (unsubRef.current) {
-      unsubRef.current();
-      unsubRef.current = null;
-    }
-    if (flushTimerRef.current) {
-      clearInterval(flushTimerRef.current);
-      flushTimerRef.current = null;
-    }
-    parserRef.current = null;
-    // Clear the PTY terminal buffer only for completed/finalized runs.
-    // Running tasks keep their buffer so data isn't lost during
-    // unwatchTask/watchTask cycles triggered by status changes.
-    if (!preserveBuffer) {
-      const live = liveTaskRef.current;
-      if (live) clearTaskTerminalBuffer(live.runId);
-    }
-  }, []);
-
-  // ── Throttled UI update ──────────────────────────────────────
-  // Stream events arrive at very high frequency (hundreds of text_deltas/s).
-  // Mutate the ref immediately but batch React state updates to ~60fps.
-  const uiUpdateScheduled = useRef(false);
-  const scheduleUIUpdate = useCallback(() => {
-    if (uiUpdateScheduled.current) return;
-    uiUpdateScheduled.current = true;
-    requestAnimationFrame(() => {
-      uiUpdateScheduled.current = false;
-      const live = liveTaskRef.current;
-      if (live) setLiveTask({ ...live });
-    });
-  }, []);
-
-  // ── Parsed event handler (must be defined before doFinalize) ──
-
-  const handleParsedEvent = useCallback((live: LiveTaskState, e: TaskStreamEvent) => {
-    if (e.type === 'clarification') {
-      live.clarificationCaptured = true;
-      void window.cerebro.invoke({
-        method: 'POST',
-        path: `/tasks/${live.taskId}/clarifications`,
-        body: { questions: e.questions },
-      }).then(() => {
-        // Kill the plan subprocess — we captured the questions, continuing
-        // would just hit max-turns and error out. The clarification panel
-        // takes over in the UI; on submit we'll spawn a new plan run with
-        // the answers.
-        void window.cerebro.agent.cancel(live.runId);
-        cleanup();
-        refresh();
-      });
-    } else if (e.type === 'deliverable') {
-      live.deliverableKind = e.kind;
-      live.deliverableMarkdown = e.markdown;
-      live.deliverableTitle = e.title;
-    } else if (e.type === 'run_info') {
-      live.runInfo = e.info;
-    }
-  }, [refresh]);
-
-  // ── Idempotent finalization ────────────────────────────────────
-  //
-  // Multiple signals can indicate a run is done: the `done` IPC event,
-  // the `result` system event (last stream-json line before process exit),
-  // or the `error` event.  The `result` event is the most reliable —
-  // it fires when the CLI writes its final JSON line, before process exit.
-  // The `done` event depends on process.close which hangs when child
-  // processes inherit stdio.  The `finalized` flag ensures only the first
-  // signal takes effect.
-
-  const doFinalize = useCallback((
-    live: LiveTaskState,
-    status: 'completed' | 'failed',
-    error?: string,
-  ) => {
-    if (live.finalized) return;
-    live.finalized = true;
-
-    // Flush any remaining parser buffer
-    const parser = parserRef.current;
-    if (parser) {
-      for (const e of parser.flush()) handleParsedEvent(live, e);
-    }
-
-    // Flush persisted events, THEN cleanup. preserveBuffer=true so the
-    // Console tab can still replay PTY output after the task ends.
-    const currentUnsub = unsubRef.current;
-    void flushEvents(live.taskId).then(() => {
-      if (unsubRef.current === currentUnsub) {
-        cleanup(true);
+    let cancelled = false;
+    const recover = async () => {
+      try {
+        const [activeRuns, tasksNow] = await Promise.all([
+          window.cerebro.agent.activeRuns(),
+          window.cerebro.invoke({ method: 'GET', path: '/tasks' }),
+        ]);
+        if (cancelled || !tasksNow.ok) return;
+        const activeRunIds = new Set(activeRuns.map((r) => r.runId));
+        const list = tasksNow.data as Task[];
+        let recovered = 0;
+        for (const t of list) {
+          if (cancelled) return;
+          if (t.column === 'in_progress' && t.run_id && !activeRunIds.has(t.run_id)) {
+            await window.cerebro.invoke({
+              method: 'POST',
+              path: `/tasks/${t.id}/run-event`,
+              body: {
+                type: 'run_failed',
+                run_id: t.run_id,
+                error: 'Run was interrupted by app restart',
+              },
+            });
+            recovered++;
+          }
+        }
+        if (!cancelled && recovered > 0) await loadTasks();
+      } catch (err) {
+        console.warn('[task] Orphan recovery failed:', err);
       }
-    });
+    };
+    recover();
+    return () => { cancelled = true; };
+  }, [loadTasks]);
 
-    if (live.phase === 'execute') {
-      void window.cerebro.invoke({
-        method: 'POST',
-        path: `/tasks/${live.taskId}/finalize`,
-        body: {
-          status,
-          deliverable_markdown: status === 'completed'
-            ? (live.deliverableMarkdown || live.textAccumulated || null)
-            : null,
-          deliverable_title: status === 'completed'
-            ? (live.deliverableTitle ?? null)
-            : null,
-          deliverable_kind: live.deliverableKind ?? 'markdown',
-          run_info: live.runInfo ?? null,
-          error: error ?? null,
-        },
-      }).then(() => refresh());
-
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === live.taskId
-            ? {
-                ...t,
-                status: status as Task['status'],
-                deliverable_markdown: status === 'completed'
-                  ? (live.deliverableMarkdown || live.textAccumulated || t.deliverable_markdown)
-                  : t.deliverable_markdown,
-                deliverable_title: live.deliverableTitle ?? t.deliverable_title,
-                deliverable_kind: (live.deliverableKind ?? t.deliverable_kind) as Task['deliverable_kind'],
-                completed_at: new Date().toISOString(),
-                error: error ?? null,
-              }
-            : t,
-        ),
-      );
-    } else if (live.phase === 'plan') {
-      // The plan subprocess exits when Claude emits <clarification> (cancelled
-      // by us), when it finishes writing PLAN.md, or on an error. If we've
-      // already captured a clarification, the clarification panel drives the
-      // next step — leave the task alone. Otherwise, ask the backend to look
-      // at the workspace: PLAN.md present → awaiting_plan_approval; missing
-      // → failed.
-      if (!live.clarificationCaptured) {
-        void window.cerebro.invoke({
-          method: 'POST',
-          path: `/tasks/${live.taskId}/plan-done`,
-        }).then(() => refresh());
+  // Clean up all event listeners on unmount
+  useEffect(() => {
+    const listeners = runListeners.current;
+    return () => {
+      for (const unsub of listeners.values()) {
+        try { unsub(); } catch { /* noop */ }
       }
-    }
+      listeners.clear();
+    };
+  }, []);
 
-    setLiveTask({ ...live });
-  }, [flushEvents, handleParsedEvent, refresh, cleanup]);
-
-  // ── Stream event handler ──────────────────────────────────────
-  // Routed through a ref so the IPC subscription never holds a stale closure.
-
-  const handleStreamEventRef = useRef<(evt: RendererAgentEvent) => void>(() => {});
-
-  handleStreamEventRef.current = (evt: RendererAgentEvent) => {
-    const live = liveTaskRef.current;
-    const parser = parserRef.current;
-    if (!live || !parser) return;
-
-    if (evt.type === 'text_delta') {
-      live.textAccumulated += evt.delta;
-      live.logEntries.push({ kind: 'text_delta', text: evt.delta, phaseId: null });
-      enqueueEvent('text_delta', { delta: evt.delta, phaseId: null });
-      for (const e of parser.feed(evt.delta)) handleParsedEvent(live, e);
-      scheduleUIUpdate();
-    } else if (evt.type === 'tool_start') {
-      live.logEntries.push({ kind: 'tool_start', toolCallId: evt.toolCallId, toolName: evt.toolName, args: evt.args });
-      enqueueEvent('tool_start', { toolCallId: evt.toolCallId, toolName: evt.toolName, args: evt.args });
-      scheduleUIUpdate();
-    } else if (evt.type === 'tool_end') {
-      live.logEntries.push({ kind: 'tool_end', toolCallId: evt.toolCallId, toolName: evt.toolName, result: evt.result, isError: evt.isError });
-      enqueueEvent('tool_end', { toolCallId: evt.toolCallId, toolName: evt.toolName, result: evt.result, isError: evt.isError });
-      scheduleUIUpdate();
-    } else if (evt.type === 'system') {
-      live.logEntries.push({ kind: 'system', message: evt.message });
-      enqueueEvent('system', { message: evt.message, subtype: evt.subtype });
-      if (evt.subtype === 'result') {
-        doFinalize(live, 'completed');
-      } else {
-        scheduleUIUpdate();
-      }
-    } else if (evt.type === 'turn_start') {
-      live.turnsUsed = evt.turn;
-      enqueueEvent('turn_start', { turn: evt.turn });
-    } else if (evt.type === 'done') {
-      enqueueEvent('done', { messageContent: evt.messageContent });
-      doFinalize(live, 'completed');
-    } else if (evt.type === 'error') {
-      live.logEntries.push({ kind: 'error', message: evt.error });
-      enqueueEvent('error', { error: evt.error });
-      doFinalize(live, 'failed', evt.error);
-    }
-  };
-
-  // Stable callback that delegates to the ref — safe for IPC subscriptions
-  const handleStreamEvent = useCallback(
-    (evt: RendererAgentEvent) => handleStreamEventRef.current(evt),
-    [],
-  );
-
-  // ── Actions ───────────────────────────────────────────────────
-
-  const startSubprocess = useCallback(
-    async (
-      task: Task,
-      phase: 'plan' | 'execute',
-      runId: string,
-      conversationId: string,
-      workspacePath: string | null,
-      clarificationAnswers?: string,
-      model?: string,
-      followUp?: { content: string; context: string },
-      resumeSessionId?: string,
-    ) => {
-      const parserMode: 'plan' | 'execute' = followUp ? 'execute' : phase;
-      const parser = new TaskStreamParser(parserMode);
-      parserRef.current = parser;
-
-      const live: LiveTaskState = {
-        taskId: task.id,
-        runId,
-        phase: parserMode,
-        deliverableKind: task.deliverable_kind ?? null,
-        textAccumulated: '',
-        logEntries: [],
-        logSeqCounter: 0,
-        turnsUsed: 0,
-        clarificationCaptured: false,
-        deliverableMarkdown: null,
-        deliverableTitle: null,
-        runInfo: null,
-        model,
-        finalized: false,
-      };
-      liveTaskRef.current = live;
-      setLiveTask(live);
-      pendingEventsRef.current = [];
-
-      const unsub = window.cerebro.agent.onEvent(runId, handleStreamEvent);
-      unsubRef.current = unsub;
-
-      flushTimerRef.current = setInterval(() => {
-        void flushEvents(task.id);
-      }, FLUSH_INTERVAL_MS);
-
-      await window.cerebro.agent.run({
-        conversationId,
-        content: followUp?.content ?? task.goal,
-        runType: 'task',
-        taskPhase: followUp ? 'follow_up' : phase,
-        maxTurns: phase === 'plan' ? 15 : task.max_turns,
-        maxPhases: task.max_phases,
-        maxClarifyQuestions: 5,
-        runIdOverride: runId,
-        workspacePath: workspacePath ?? undefined,
-        clarificationAnswers,
-        model,
-        followUpContext: followUp?.context,
-        language: i18n.language !== 'en' ? i18n.language : undefined,
-        resumeSessionId,
-      });
-    },
-    [handleStreamEvent, flushEvents],
-  );
-
-  const createAndRunTask = useCallback(async (input: NewTaskInput): Promise<Task> => {
-    const createRes = await window.cerebro.invoke<Task>({
+  const createTask = useCallback(async (input: CreateTaskInput): Promise<Task> => {
+    const res = await window.cerebro.invoke({
       method: 'POST',
       path: '/tasks',
-      body: {
-        title: input.title,
-        goal: input.goal,
-        expert_hint_id: input.expertHintId ?? null,
-        template_id: input.templateId ?? null,
-        max_turns: input.maxTurns ?? 30,
-        max_phases: input.maxPhases ?? 6,
-        skip_clarification: input.skipClarification ?? false,
-      },
+      body: input,
     });
-    if (!createRes.ok) throw new Error('Failed to create task');
-    const task = createRes.data;
+    if (!res.ok) throw new Error('Failed to create task');
+    await loadTasks();
+    return res.data;
+  }, [loadTasks]);
 
-    const runRes = await window.cerebro.invoke<{
-      task_id: string;
-      run_id: string;
-      conversation_id: string;
-      workspace_path: string | null;
-    }>({
-      method: 'POST',
-      path: `/tasks/${task.id}/run`,
-      body: { phase: 'plan' },
+  const updateTask = useCallback(async (id: string, input: UpdateTaskInput) => {
+    const res = await window.cerebro.invoke({
+      method: 'PATCH',
+      path: `/tasks/${id}`,
+      body: input,
     });
-    if (!runRes.ok) throw new Error('Failed to start task run');
+    if (!res.ok) throw new Error('Failed to update task');
+    await loadTasks();
+  }, [loadTasks]);
 
-    await startSubprocess(
-      task,
-      'plan',
-      runRes.data.run_id,
-      runRes.data.conversation_id,
-      runRes.data.workspace_path,
-      undefined,
-      input.model,
+  const moveTask = useCallback(async (id: string, column: TaskColumn, position?: number) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, column, position: position ?? t.position } : t)),
     );
-
-    setSelectedTaskId(task.id);
-    await refresh();
-    return task;
-  }, [startSubprocess, refresh]);
-
-  const submitClarification = useCallback(async (
-    taskId: string,
-    answers: Array<{ id: string; answer: string | boolean }>,
-  ) => {
-    const currentModel = liveTaskRef.current?.model;
-
-    const res = await window.cerebro.invoke<{ task_id: string; answers_block: string }>({
+    const res = await window.cerebro.invoke({
       method: 'POST',
-      path: `/tasks/${taskId}/clarify`,
-      body: { answers },
+      path: `/tasks/${id}/move`,
+      body: { column, position },
     });
-    if (!res.ok) throw new Error('Failed to submit clarification');
-
-    cleanup();
-
-    const taskRes = await window.cerebro.invoke<Task>({
-      method: 'GET',
-      path: `/tasks/${taskId}`,
-    });
-    if (!taskRes.ok) throw new Error('Failed to fetch task');
-    const task = taskRes.data;
-
-    // Re-run the plan phase with the user's answers so Claude can now write
-    // PLAN.md. The user still reviews and approves it before execute starts.
-    const runRes = await window.cerebro.invoke<{
-      task_id: string;
-      run_id: string;
-      conversation_id: string;
-      workspace_path: string | null;
-    }>({
-      method: 'POST',
-      path: `/tasks/${taskId}/run`,
-      body: { phase: 'plan' },
-    });
-    if (!runRes.ok) throw new Error('Failed to start plan run');
-
-    await startSubprocess(
-      task,
-      'plan',
-      runRes.data.run_id,
-      runRes.data.conversation_id,
-      runRes.data.workspace_path,
-      res.data.answers_block,
-      currentModel,
-    );
-
-    await refresh();
-  }, [cleanup, startSubprocess, refresh]);
-
-  const approvePlan = useCallback(async (taskId: string) => {
-    const currentModel = liveTaskRef.current?.model;
-    cleanup();
-
-    const runRes = await window.cerebro.invoke<{
-      task_id: string;
-      run_id: string;
-      conversation_id: string;
-      workspace_path: string | null;
-    }>({
-      method: 'POST',
-      path: `/tasks/${taskId}/approve-plan`,
-    });
-    if (!runRes.ok) throw new Error('Failed to approve plan');
-
-    const taskRes = await window.cerebro.invoke<Task>({
-      method: 'GET',
-      path: `/tasks/${taskId}`,
-    });
-    if (!taskRes.ok) throw new Error('Failed to fetch task');
-
-    await startSubprocess(
-      taskRes.data,
-      'execute',
-      runRes.data.run_id,
-      runRes.data.conversation_id,
-      runRes.data.workspace_path,
-      undefined,
-      currentModel,
-    );
-
-    await refresh();
-  }, [cleanup, startSubprocess, refresh]);
-
-  const followUpTask = useCallback(async (
-    taskId: string,
-    instruction: string,
-    model?: string,
-  ) => {
-    cleanup();
-
-    const res = await window.cerebro.invoke<{
-      task_id: string;
-      run_id: string;
-      conversation_id: string;
-      workspace_path: string | null;
-      follow_up_context: string;
-    }>({
-      method: 'POST',
-      path: `/tasks/${taskId}/follow-up`,
-      body: { instruction, model: model ?? null },
-    });
-    if (!res.ok) throw new Error('Failed to start follow-up');
-
-    const taskRes = await window.cerebro.invoke<Task>({
-      method: 'GET',
-      path: `/tasks/${taskId}`,
-    });
-    if (!taskRes.ok) throw new Error('Failed to fetch task');
-
-    await startSubprocess(
-      taskRes.data,
-      'execute',
-      res.data.run_id,
-      res.data.conversation_id,
-      res.data.workspace_path,
-      undefined,
-      model,
-      { content: instruction, context: res.data.follow_up_context },
-    );
-
-    await refresh();
-  }, [cleanup, startSubprocess, refresh]);
-
-  const resumeTask = useCallback(async (taskId: string) => {
-    cleanup();
-
-    const res = await window.cerebro.invoke<{
-      task_id: string;
-      run_id: string;
-      conversation_id: string;
-      workspace_path: string | null;
-      resume_session_id: string;
-    }>({
-      method: 'POST',
-      path: `/tasks/${taskId}/resume`,
-    });
-    if (!res.ok) throw new Error('Failed to resume task');
-
-    const taskRes = await window.cerebro.invoke<Task>({
-      method: 'GET',
-      path: `/tasks/${taskId}`,
-    });
-    if (!taskRes.ok) throw new Error('Failed to fetch task');
-
-    await startSubprocess(
-      taskRes.data,
-      'execute',
-      res.data.run_id,
-      res.data.conversation_id,
-      res.data.workspace_path,
-      undefined,
-      undefined,
-      undefined,
-      res.data.resume_session_id,
-    );
-
-    await refresh();
-  }, [cleanup, startSubprocess, refresh]);
-
-  const cancelTask = useCallback(async (id: string) => {
-    const live = liveTaskRef.current;
-    if (live && live.taskId === id && live.runId) {
-      await window.cerebro.agent.cancel(live.runId);
-      cleanup();
+    if (!res.ok) {
+      await loadTasks();
+      throw new Error('Failed to move task');
     }
-    await window.cerebro.invoke({
-      method: 'POST',
-      path: `/tasks/${id}/cancel`,
-    });
-    liveTaskRef.current = null;
-    setLiveTask(null);
-    await refresh();
-  }, [cleanup, refresh]);
+    await loadTasks();
+  }, [loadTasks]);
 
   const deleteTask = useCallback(async (id: string) => {
-    const task = tasks.find((tk) => tk.id === id);
-    const live = liveTaskRef.current;
-    if (live && live.taskId === id) {
-      if (live.runId) {
-        await window.cerebro.agent.cancel(live.runId);
-      }
-      cleanup();
-      liveTaskRef.current = null;
-      setLiveTask(null);
+    // Find the task to get its run_id for terminal buffer cleanup
+    const task = tasks.find((t) => t.id === id);
+    // Clean up active listener
+    const unsub = runListeners.current.get(id);
+    if (unsub) {
+      unsub();
+      runListeners.current.delete(id);
     }
-    await window.cerebro.invoke({
+    // Kill any active run
+    if (task?.run_id) {
+      try { await window.cerebro.agent.cancel(task.run_id); } catch { /* noop */ }
+    }
+    const res = await window.cerebro.invoke({
       method: 'DELETE',
       path: `/tasks/${id}`,
     });
-    // Remove the persisted terminal buffer file so disk doesn't accumulate orphans.
-    const runIdToPurge = live?.taskId === id ? live.runId : task?.run_id ?? null;
-    if (runIdToPurge) {
-      void window.cerebro.taskTerminal.removeBuffer(runIdToPurge);
+    if (!res.ok) throw new Error('Failed to delete task');
+    // Permanent cleanup: workspace files + terminal buffer
+    await Promise.all([
+      window.cerebro.taskTerminal.removeWorkspace(id).catch(() => { /* noop */ }),
+      task?.run_id
+        ? window.cerebro.taskTerminal.removeBuffer(task.run_id).catch(() => { /* noop */ })
+        : Promise.resolve(),
+    ]);
+    await loadTasks();
+  }, [loadTasks, tasks]);
+
+  const loadComments = useCallback(async (taskId: string): Promise<TaskComment[]> => {
+    const res = await window.cerebro.invoke({
+      method: 'GET',
+      path: `/tasks/${taskId}/comments`,
+    });
+    return res.ok ? res.data : [];
+  }, []);
+
+  const cancelTask = useCallback(async (id: string) => {
+    // Find the task to get its run_id
+    const task = tasks.find((t) => t.id === id);
+    // Kill the PTY if there's an active run
+    if (task?.run_id) {
+      try {
+        await window.cerebro.agent.cancel(task.run_id);
+      } catch (err) {
+        console.warn('[task] Failed to cancel agent run:', err);
+      }
+      // Clean up event listener
+      const unsub = runListeners.current.get(id);
+      if (unsub) {
+        unsub();
+        runListeners.current.delete(id);
+      }
+      // Fire run_cancelled event to transition card
+      try {
+        await window.cerebro.invoke({
+          method: 'POST',
+          path: `/tasks/${id}/run-event`,
+          body: { type: 'run_cancelled', run_id: task.run_id },
+        });
+      } catch (err) {
+        console.warn('[task] Failed to post run_cancelled:', err);
+      }
+    } else {
+      // No active run — fall back to backend cancel endpoint
+      const res = await window.cerebro.invoke({
+        method: 'POST',
+        path: `/tasks/${id}/cancel`,
+      });
+      if (!res.ok) throw new Error('Failed to cancel task');
     }
-    if (selectedTaskId === id) setSelectedTaskId(null);
-    await refresh();
-  }, [tasks, cleanup, refresh, selectedTaskId]);
+    await loadTasks();
+  }, [loadTasks, tasks]);
 
-  const watchTask = useCallback(async (id: string) => {
-    const res = await window.cerebro.invoke<TaskDetail>({
-      method: 'GET',
-      path: `/tasks/${id}`,
-    });
-    if (!res.ok) return;
-    const task = res.data;
+  // Register an agent event listener that auto-transitions the card on done/error.
+  const registerRunListener = useCallback((taskId: string, runId: string) => {
+    // Clean up any prior listener for this task
+    const prior = runListeners.current.get(taskId);
+    if (prior) prior();
 
-    // Load persisted events so logs survive navigation (works for both
-    // running and completed tasks)
-    const eventsRes = await window.cerebro.invoke<Array<{ seq: number; kind: string; payload_json: string }>>({
-      method: 'GET',
-      path: `/tasks/${id}/events?limit=5000`,
+    const unsub = window.cerebro.agent.onEvent(runId, async (event) => {
+      if (event.type === 'done') {
+        try {
+          await window.cerebro.invoke({
+            method: 'POST',
+            path: `/tasks/${taskId}/run-event`,
+            body: { type: 'run_completed', run_id: runId },
+          });
+        } catch (err) {
+          console.warn('[task] Failed to post run_completed:', err);
+        }
+        const u = runListeners.current.get(taskId);
+        if (u) u();
+        runListeners.current.delete(taskId);
+        loadTasks();
+      } else if (event.type === 'error') {
+        try {
+          await window.cerebro.invoke({
+            method: 'POST',
+            path: `/tasks/${taskId}/run-event`,
+            body: { type: 'run_failed', run_id: runId, error: event.error },
+          });
+        } catch (err) {
+          console.warn('[task] Failed to post run_failed:', err);
+        }
+        const u = runListeners.current.get(taskId);
+        if (u) u();
+        runListeners.current.delete(taskId);
+        loadTasks();
+      }
     });
-    let logEntries: TaskLogEntry[] = [];
-    let maxSeq = 0;
-    if (eventsRes.ok && Array.isArray(eventsRes.data)) {
-      logEntries = parseTaskEvents(eventsRes.data);
-      for (const evt of eventsRes.data) {
-        if (evt.seq > maxSeq) maxSeq = evt.seq;
+    runListeners.current.set(taskId, unsub);
+  }, [loadTasks]);
+
+  // Helpers: build the direct-execution prompt from a task's fields.
+  const buildDirectPrompt = useCallback((
+    task: Task,
+    instructionComments: TaskComment[],
+  ): string => {
+    const lines: string[] = [];
+    lines.push(`Title: ${task.title}`);
+    if (task.description_md?.trim()) {
+      lines.push('', '## Description', task.description_md.trim());
+    }
+    const openItems = task.checklist.filter((i) => !i.is_done);
+    if (openItems.length > 0) {
+      lines.push('', '## Checklist', ...openItems.map((i) => `- [ ] ${i.body}`));
+    }
+    if (instructionComments.length > 0) {
+      lines.push('', '## Previous instructions from the user');
+      for (const c of instructionComments) {
+        lines.push(`- ${c.body_md.trim()}`);
       }
     }
+    return lines.join('\n');
+  }, []);
 
-    // For live tasks: subscribe for new events on top of the history replay
-    const isLive = task.status === 'running' || task.status === 'planning';
-    if (isLive && task.run_id) {
-      const phase: 'plan' | 'execute' = task.status === 'planning' ? 'plan' : 'execute';
-      const parser = new TaskStreamParser(phase);
-      parserRef.current = parser;
+  const startTask = useCallback(async (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error(`Task ${taskId} not found`);
 
-      const live: LiveTaskState = {
-        taskId: task.id,
-        runId: task.run_id,
-        phase,
-        deliverableKind: task.deliverable_kind ?? null,
-        textAccumulated: '',
-        logEntries,
-        logSeqCounter: maxSeq + 1,
-        turnsUsed: 0,
-        clarificationCaptured: false,
-        deliverableMarkdown: null,
-        deliverableTitle: null,
-        runInfo: null,
-        model: undefined,
-        finalized: false,
-      };
+    // Fetch comments + create workspace in parallel — independent ops
+    const [allComments, workspacePath] = await Promise.all([
+      loadComments(taskId),
+      window.cerebro.taskTerminal.createWorkspace(taskId),
+    ]);
+    const instructions = allComments.filter((c) => c.kind === 'instruction');
+    const prompt = buildDirectPrompt(task, instructions);
 
-      liveTaskRef.current = live;
-      setLiveTask(live);
+    const runId = await window.cerebro.agent.run({
+      conversationId: taskId,
+      content: prompt,
+      expertId: task.expert_id,
+      runType: 'task',
+      taskPhase: 'direct',
+      workspacePath,
+      maxTurns: 30,
+    });
 
-      const unsub = window.cerebro.agent.onEvent(task.run_id, handleStreamEvent);
-      unsubRef.current = unsub;
+    await window.cerebro.invoke({
+      method: 'POST',
+      path: `/tasks/${taskId}/run-event`,
+      body: { type: 'run_started', run_id: runId },
+    });
 
-      flushTimerRef.current = setInterval(() => {
-        void flushEvents(task.id);
-      }, FLUSH_INTERVAL_MS);
-    } else if (logEntries.length > 0) {
-      // Terminal task — seed liveTask with historical logs so the Console
-      // tab can replay without a separate fetch.
-      const live: LiveTaskState = {
-        taskId: task.id,
-        runId: task.run_id ?? '',
-        phase: 'execute',
-        deliverableKind: task.deliverable_kind ?? null,
-        textAccumulated: '',
-        logEntries,
-        logSeqCounter: maxSeq + 1,
-        turnsUsed: 0,
-        clarificationCaptured: false,
-        deliverableMarkdown: null,
-        deliverableTitle: null,
-        runInfo: null,
-        model: undefined,
-        finalized: true,
-      };
-      liveTaskRef.current = live;
-      setLiveTask(live);
+    registerRunListener(taskId, runId);
+    await loadTasks();
+  }, [tasks, loadComments, buildDirectPrompt, registerRunListener, loadTasks]);
+
+  const sendInstruction = useCallback(async (taskId: string, instruction: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error(`Task ${taskId} not found`);
+
+    // Create the instruction comment first (so the user sees it in the thread)
+    await window.cerebro.invoke({
+      method: 'POST',
+      path: `/tasks/${taskId}/comments`,
+      body: { kind: 'instruction', body_md: instruction },
+    });
+
+    // Load all comments to build follow-up context
+    const allComments = await loadComments(taskId);
+    const priorInstructions = allComments
+      .filter((c) => c.kind === 'instruction')
+      .slice(0, -1); // exclude the one we just added — it's the new instruction
+
+    const workspacePath = await window.cerebro.taskTerminal.getWorkspacePath(taskId);
+
+    // Build follow-up context: original goal + prior instructions
+    const contextLines: string[] = [];
+    contextLines.push(`Original task: ${task.title}`);
+    if (task.description_md?.trim()) {
+      contextLines.push(task.description_md.trim());
     }
-  }, [handleStreamEvent, flushEvents]);
+    if (priorInstructions.length > 0) {
+      contextLines.push('', 'Prior instructions:');
+      for (const c of priorInstructions) {
+        contextLines.push(`- ${c.body_md.trim()}`);
+      }
+    }
+    const followUpContext = contextLines.join('\n');
 
-  const unwatchTask = useCallback(() => {
-    // Flush any pending events before tearing down so logs persist
-    const live = liveTaskRef.current;
-    if (live) void flushEvents(live.taskId);
-    // Always preserve the PTY buffer — the Console tab needs it to replay
-    // the real terminal output (with colors, tool calls, etc.) when the user
-    // navigates back to a completed task. Buffer is only cleared on task
-    // deletion or when a new follow-up run starts.
-    cleanup(true);
-    liveTaskRef.current = null;
-    setLiveTask(null);
-  }, [cleanup, flushEvents]);
+    // Start a fresh Claude Code run rather than resuming the prior session.
+    // Sessions don't reliably survive across subprocess exits, but the workspace
+    // files are preserved on disk so the agent picks up where it left off.
+    const runId = await window.cerebro.agent.run({
+      conversationId: taskId,
+      content: instruction,
+      expertId: task.expert_id,
+      runType: 'task',
+      taskPhase: 'follow_up',
+      workspacePath,
+      followUpContext,
+      maxTurns: 30,
+    });
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      cleanup();
-    };
-  }, [cleanup]);
+    await window.cerebro.invoke({
+      method: 'POST',
+      path: `/tasks/${taskId}/run-event`,
+      body: { type: 'run_started', run_id: runId },
+    });
 
-  const runningCount = tasks.filter(
-    (t) =>
-      t.status === 'running' ||
-      t.status === 'planning' ||
-      t.status === 'awaiting_clarification' ||
-      t.status === 'awaiting_plan_approval',
-  ).length;
+    registerRunListener(taskId, runId);
+    await loadTasks();
+  }, [tasks, loadComments, registerRunListener, loadTasks]);
 
-  const value: TaskContextValue = {
-    tasks,
-    runningCount,
-    isLoading,
-    selectedTaskId,
-    liveTask,
-    refresh,
-    createAndRunTask,
-    submitClarification,
-    approvePlan,
-    followUpTask,
-    resumeTask,
-    cancelTask,
-    deleteTask,
-    setSelectedTaskId,
-    watchTask,
-    unwatchTask,
-  };
+  const addComment = useCallback(async (taskId: string, kind: string, bodyMd: string): Promise<TaskComment> => {
+    const res = await window.cerebro.invoke({
+      method: 'POST',
+      path: `/tasks/${taskId}/comments`,
+      body: { kind, body_md: bodyMd },
+    });
+    if (!res.ok) throw new Error('Failed to add comment');
+    return res.data;
+  }, []);
+
+  const addChecklistItem = useCallback(async (taskId: string, body: string): Promise<ChecklistItem> => {
+    const res = await window.cerebro.invoke({
+      method: 'POST',
+      path: `/tasks/${taskId}/checklist`,
+      body: { body },
+    });
+    if (!res.ok) throw new Error('Failed to add checklist item');
+    await loadTasks();
+    return res.data;
+  }, [loadTasks]);
+
+  const updateChecklistItem = useCallback(async (taskId: string, itemId: string, updates: Partial<ChecklistItem>) => {
+    const res = await window.cerebro.invoke({
+      method: 'PATCH',
+      path: `/tasks/${taskId}/checklist/${itemId}`,
+      body: updates,
+    });
+    if (!res.ok) throw new Error('Failed to update checklist item');
+    await loadTasks();
+  }, [loadTasks]);
+
+  const deleteChecklistItem = useCallback(async (taskId: string, itemId: string) => {
+    const res = await window.cerebro.invoke({
+      method: 'DELETE',
+      path: `/tasks/${taskId}/checklist/${itemId}`,
+    });
+    if (!res.ok) throw new Error('Failed to delete checklist item');
+    await loadTasks();
+  }, [loadTasks]);
+
+  const promoteChecklistItem = useCallback(async (taskId: string, itemId: string): Promise<Task> => {
+    const res = await window.cerebro.invoke({
+      method: 'POST',
+      path: `/tasks/${taskId}/checklist/${itemId}/promote`,
+    });
+    if (!res.ok) throw new Error('Failed to promote checklist item');
+    await loadTasks();
+    return res.data;
+  }, [loadTasks]);
 
   return (
-    <TaskContext.Provider value={value}>
+    <TaskContext.Provider
+      value={{
+        tasks,
+        stats,
+        isLoading,
+        loadTasks,
+        createTask,
+        updateTask,
+        moveTask,
+        deleteTask,
+        cancelTask,
+        startTask,
+        sendInstruction,
+        loadComments,
+        addComment,
+        addChecklistItem,
+        updateChecklistItem,
+        deleteChecklistItem,
+        promoteChecklistItem,
+      }}
+    >
       {children}
     </TaskContext.Provider>
   );
 }
-
-// ── Hook ────────────────────────────────────────────────────────
 
 export function useTasks(): TaskContextValue {
   const ctx = useContext(TaskContext);

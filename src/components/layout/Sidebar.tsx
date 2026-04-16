@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
+  FolderOpen,
   type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -39,6 +40,7 @@ interface NavItem extends NavItemDef {
 const NAV_PRIMARY: NavItemDef[] = [
   { id: 'chat', icon: MessageSquare },
   { id: 'tasks', icon: Target },
+  { id: 'workspaces', icon: FolderOpen },
   { id: 'experts', icon: Users },
   { id: 'routines', icon: Zap },
 ];
@@ -188,6 +190,7 @@ function groupByTime(conversations: Conversation[]): GroupedConversations[] {
 const NAV_LABEL_KEYS: Record<string, string> = {
   chat: 'nav.chat',
   tasks: 'nav.tasks',
+  workspaces: 'nav.workspaces',
   experts: 'nav.experts',
   routines: 'nav.routines',
   activity: 'nav.activity',
@@ -210,7 +213,7 @@ export default function Sidebar() {
     deleteConversation,
   } = useChat();
   const { pendingCount } = useApprovals();
-  const { runningCount } = useTasks();
+  const { stats } = useTasks();
   const { flags } = useFeatureFlags();
 
   const [collapsed, setCollapsed] = useState(false);
@@ -221,15 +224,16 @@ export default function Sidebar() {
   const resolveLabels = (items: NavItemDef[]): NavItem[] =>
     items.map((item) => ({ ...item, label: t(NAV_LABEL_KEYS[item.id] ?? item.id) }));
 
+  const tasksBadge = stats.in_progress + stats.to_review;
   const navPrimary = useMemo<NavItem[]>(() =>
     resolveLabels(NAV_PRIMARY)
       .filter((item) => item.id !== 'tasks' || flags.tasks)
       .map((item) =>
-        item.id === 'tasks' && runningCount > 0
-          ? { ...item, badge: runningCount }
+        item.id === 'tasks' && tasksBadge > 0
+          ? { ...item, badge: tasksBadge }
           : item,
       ),
-    [runningCount, t, flags.tasks],
+    [tasksBadge, t, flags.tasks],
   );
 
   const navOversight = useMemo<NavItem[]>(() =>

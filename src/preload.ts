@@ -196,6 +196,21 @@ const api: CerebroAPI = {
     removeBuffer(runId: string): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.TASK_TERMINAL_REMOVE_BUFFER, runId);
     },
+    createWorkspace(taskId: string): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_CREATE, taskId);
+    },
+    getWorkspacePath(taskId: string): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_PATH, taskId);
+    },
+    listFiles(taskId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, taskId);
+    },
+    readFile(taskId: string, relativePath: string): Promise<string | null> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_READ_FILE, taskId, relativePath);
+    },
+    removeWorkspace(taskId: string): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_REMOVE, taskId);
+    },
   },
 
   shell: {

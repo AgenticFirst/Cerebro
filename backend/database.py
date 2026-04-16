@@ -53,6 +53,27 @@ def _migrate(eng) -> None:
                 conn.rollback()
 
 
+def _drop_legacy_task_tables(eng) -> None:
+    """Drop old task tables from the pre-Kanban schema so create_all builds the new ones."""
+    with eng.connect() as conn:
+        try:
+            # If 'tasks' exists but lacks 'position' (new schema column), it's the old schema
+            conn.execute(text("SELECT position FROM tasks LIMIT 0"))
+            conn.rollback()
+        except Exception:
+            conn.rollback()
+            try:
+                # Check if old tasks table actually exists
+                conn.execute(text("SELECT 1 FROM tasks LIMIT 0"))
+                conn.execute(text("DROP TABLE IF EXISTS task_events"))
+                conn.execute(text("DROP TABLE IF EXISTS tasks"))
+                conn.commit()
+                log.info("Dropped legacy task tables (pre-Kanban schema)")
+            except Exception:
+                # No tasks table at all — fresh install, nothing to do
+                conn.rollback()
+
+
 def init_db(db_path: str) -> None:
     global engine, SessionLocal
 
@@ -65,6 +86,9 @@ def init_db(db_path: str) -> None:
         cursor.close()
 
     SessionLocal = sessionmaker(bind=engine)
+
+    # Drop legacy task tables before create_all so new schema can be created
+    _drop_legacy_task_tables(engine)
 
     Base.metadata.create_all(bind=engine)
     _migrate(engine)

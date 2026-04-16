@@ -15,6 +15,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import SkillsLibraryScreen from '../screens/SkillsLibraryScreen';
 import CallScreen from '../screens/CallScreen';
 import TasksScreen from '../screens/TasksScreen';
+import WorkspacesScreen from '../screens/WorkspacesScreen';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
 
@@ -53,6 +54,9 @@ export default function AppLayout() {
     }
     if (activeScreen === 'tasks') {
       return <TasksScreen />;
+    }
+    if (activeScreen === 'workspaces') {
+      return <WorkspacesScreen />;
     }
     if (activeScreen === 'experts') {
       return <ExpertsScreen />;

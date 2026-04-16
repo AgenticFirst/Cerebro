@@ -1,258 +1,104 @@
-"""Pydantic schemas for /tasks/* endpoints."""
-
-from __future__ import annotations
-
 from datetime import datetime
-from typing import Any, Literal
 
-from pydantic import BaseModel
-
-from engine.schemas import RunRecordResponse
-
-
-# ── Plan ──────────────────────────────────────────────────────────
-
-
-class PlanPhase(BaseModel):
-    id: str
-    name: str
-    description: str
-    expert_slug: str | None = None
-    needs_new_expert: bool = False
-    new_expert: dict | None = None
-    status: Literal["pending", "running", "completed", "failed", "skipped"] = "pending"
-    child_run_id: str | None = None
-    summary: str | None = None
-
-
-class TaskPlan(BaseModel):
-    phases: list[PlanPhase]
-
-
-# ── Clarification ────────────────────────────────────────────────
-
-
-class ClarificationQuestion(BaseModel):
-    id: str
-    q: str
-    kind: Literal["text", "select", "bool"]
-    options: list[str] | None = None
-    default: Any | None = None
-    placeholder: str | None = None
-
-
-class ClarificationAnswer(BaseModel):
-    id: str
-    answer: Any
-
-
-class ClarifySubmit(BaseModel):
-    answers: list[ClarificationAnswer]
-
-
-class ClarifyResponse(BaseModel):
-    task_id: str
-    answers_block: str
-
-
-# ── Run info (dev server) ────────────────────────────────────────
-
-
-class RunInfo(BaseModel):
-    preview_type: Literal["web", "expo", "cli", "static"]
-    setup_commands: list[str] = []
-    start_command: str
-    preview_url_pattern: str | None = None
-    notes: str | None = None
-
-
-# ── Task CRUD / lifecycle ────────────────────────────────────────
+from pydantic import BaseModel, Field
 
 
 class TaskCreate(BaseModel):
-    title: str
-    goal: str
-    expert_hint_id: str | None = None
-    template_id: str | None = None
-    max_turns: int = 60
-    max_phases: int = 6
-    skip_clarification: bool = False
+    title: str = Field(..., max_length=200)
+    description_md: str = ""
+    column: str = "backlog"
+    expert_id: str | None = None
+    parent_task_id: str | None = None
+    priority: str = "normal"
+    start_at: datetime | None = None
+    due_at: datetime | None = None
 
 
-class TaskRunStart(BaseModel):
-    phase: Literal["plan", "clarify", "execute"]
+class TaskUpdate(BaseModel):
+    title: str | None = None
+    description_md: str | None = None
+    expert_id: str | None = None
+    priority: str | None = None
+    start_at: datetime | None = None
+    due_at: datetime | None = None
 
 
-class PlanMdUpdate(BaseModel):
-    content: str
+class TaskMove(BaseModel):
+    column: str
+    position: float | None = None
 
 
-class TaskFollowUp(BaseModel):
-    instruction: str
-    model: str | None = None
-
-
-class TaskRunStartResponse(BaseModel):
-    task_id: str
-    run_id: str
-    conversation_id: str
-    workspace_path: str | None = None
-
-
-class TaskFollowUpResponse(BaseModel):
-    task_id: str
-    run_id: str
-    conversation_id: str
-    workspace_path: str | None = None
-    follow_up_context: str
-
-
-class TaskResumeResponse(BaseModel):
-    task_id: str
-    run_id: str
-    conversation_id: str
-    workspace_path: str | None = None
-    resume_session_id: str
-
-
-class TaskPlanUpsert(BaseModel):
-    kind: Literal["markdown", "code_app", "mixed"] | None = None
-    phases: list[PlanPhase]
-
-
-class TaskPhaseUpdate(BaseModel):
-    phase_id: str
-    status: Literal["pending", "running", "completed", "failed", "skipped"]
-    child_run_id: str | None = None
-    summary: str | None = None
-
-
-class TaskFinalize(BaseModel):
-    status: Literal["completed", "failed", "cancelled"]
-    deliverable_markdown: str | None = None
-    deliverable_title: str | None = None
-    deliverable_kind: Literal["markdown", "code_app", "mixed"] | None = None
-    run_info: RunInfo | None = None
-    error: str | None = None
-    created_expert_ids: list[str] | None = None
-
-
-class TaskEventCreate(BaseModel):
-    seq: int
-    kind: str
-    payload_json: str
-    ts: datetime | None = None
-
-
-class TaskEventBatch(BaseModel):
-    events: list[TaskEventCreate]
-
-
-class TaskEventResponse(BaseModel):
-    id: str
-    task_id: str
-    seq: int
-    kind: str
-    payload_json: str
-    ts: datetime
-
-    model_config = {"from_attributes": True}
-
-
-# ── Responses ────────────────────────────────────────────────────
-
-
-class TaskResponse(BaseModel):
+class TaskRead(BaseModel):
     id: str
     title: str
-    goal: str
-    status: str
-    expert_hint_id: str | None = None
-    template_id: str | None = None
-    run_id: str | None = None
-    conversation_id: str | None = None
-    plan: TaskPlan | None = None
-    deliverable_markdown: str | None = None
-    deliverable_title: str | None = None
-    deliverable_kind: str = "markdown"
-    workspace_path: str | None = None
-    run_info: RunInfo | None = None
-    clarifications: dict | None = None
-    skip_clarification: bool = False
-    max_turns: int = 60
-    max_phases: int = 6
-    created_expert_ids: list[str] = []
-    error: str | None = None
+    description_md: str
+    column: str
+    expert_id: str | None
+    parent_task_id: str | None
+    priority: str
+    start_at: datetime | None
+    due_at: datetime | None
+    position: float
+    run_id: str | None
+    last_error: str | None
     created_at: datetime
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
-    plan_md: str | None = None
-    plan_md_mtime: float | None = None
+    updated_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    checklist: list["ChecklistItemRead"] = []
+    comment_count: int = 0
+    checklist_total: int = 0
+    checklist_done: int = 0
+
+    class Config:
+        from_attributes = True
 
 
-class PlanMdResponse(BaseModel):
-    content: str
-    mtime: float | None = None
+class ChecklistItemCreate(BaseModel):
+    body: str = Field(..., max_length=500)
 
 
-class TaskDetailResponse(TaskResponse):
-    run: RunRecordResponse | None = None
-    child_runs: list[RunRecordResponse] = []
-    dev_server: dict | None = None
+class ChecklistItemUpdate(BaseModel):
+    body: str | None = None
+    is_done: bool | None = None
+    position: float | None = None
 
 
-class TaskListResponse(BaseModel):
-    tasks: list[TaskResponse]
-    total: int
-
-
-# ── Workspace browsing ───────────────────────────────────────────
-
-
-class WorkspaceFileEntry(BaseModel):
-    path: str
-    size: int
-    is_dir: bool
-
-
-class WorkspaceTreeResponse(BaseModel):
-    files: list[WorkspaceFileEntry]
-    truncated: bool = False
-
-
-class WorkspaceFileResponse(BaseModel):
-    path: str
-    content: str
-    language: str | None = None
-    size: int
-    mtime: float | None = None
-
-
-class PreviewFileResponse(BaseModel):
-    found: bool
-    path: str | None = None
-    content: str | None = None
-    mtime: float | None = None
-    size: int | None = None
-
-
-# ── Dev server ───────────────────────────────────────────────────
-
-
-class DevServerStatus(BaseModel):
-    running: bool
-    pid: int | None = None
-    url: str | None = None
-    started_at: datetime | None = None
-    stdout_tail: str | None = None
-    preview_type: str | None = None
-
-
-class DevServerStartBody(BaseModel):
-    run_info: RunInfo | None = None
-
-
-class DevServerStartResponse(BaseModel):
+class ChecklistItemRead(BaseModel):
+    id: str
     task_id: str
-    pid: int
-    stream_url: str
+    body: str
+    is_done: bool
+    position: float
+    promoted_task_id: str | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CommentCreate(BaseModel):
+    kind: str = "comment"
+    body_md: str
+
+
+class CommentRead(BaseModel):
+    id: str
+    task_id: str
+    kind: str
+    author_kind: str
+    expert_id: str | None
+    body_md: str
+    triggered_run_id: str | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TaskStats(BaseModel):
+    backlog: int = 0
+    in_progress: int = 0
+    to_review: int = 0
+    completed: int = 0
+    error: int = 0

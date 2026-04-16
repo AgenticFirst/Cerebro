@@ -5,6 +5,7 @@ export type Role = 'user' | 'assistant' | 'system';
 export type Screen =
   | 'chat'
   | 'tasks'
+  | 'workspaces'
   | 'experts'
   | 'routines'
   | 'activity'

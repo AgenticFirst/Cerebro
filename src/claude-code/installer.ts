@@ -235,26 +235,12 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 
 ### Task vs Routine vs Expert — choose the right one
 
-- **Task** = one-shot work with a finished artifact ("build / draft / research X"). Use \`create-task\`.
+- **Task** = a card on the Kanban board, assigned to an Expert who executes it autonomously. Use \`create-task\` when the user wants something tracked, owned, and queued — not just answered in chat.
 - **Routine** = same steps repeating on a schedule or trigger ("every morning…", "on every push…"). Managed in the Routines screen — never \`create-task\`.
 - **Expert** = a persistent persona the user returns to ("I need a fitness coach"). Use \`create-expert\`.
-- A task may delegate phases to experts; that does NOT make it an expert.
 - A plain question or chat → answer directly or delegate to an existing expert via the \`Agent\` tool.
 
 If ambiguous, ask one short clarifier (e.g. "Do you want me to do this once now, or set it up to run every week?") before invoking any skill.
-
-## Task Mode
-
-When a prompt arrives wrapped in \`<task_clarify>\` or \`<task_execute>\` you are running an autonomous task. Follow the envelope's protocol strictly:
-
-1. Never ask the user for clarification, confirmation, or approval.
-2. Read the expert roster first via list-experts.
-3. Emit a \`<plan>\` block, then for each phase emit \`<phase>\` markers around your delegation, then exactly one \`<deliverable>\` block at the end.
-4. For code_app/mixed deliverables, emit a \`<run_info>\` block after the deliverable.
-5. In task mode, the create-expert skill runs autonomously — do NOT stop to confirm with the user. Invent sensible fields and run the bash script directly. After SUCCESS, run \`bash "$CLAUDE_PROJECT_DIR/.claude/scripts/rematerialize-experts.sh"\` so the new expert is immediately invocable.
-6. Never call \`create-task\` from inside task mode — you are already executing a task. Do the work directly in this run.
-7. Delegation depth is capped at 2 levels from you.
-8. Your working directory is the task workspace — write all files there.
 `;
 }
 
@@ -525,11 +511,6 @@ fi
       content: `#!/usr/bin/env bash
 set -euo pipefail
 
-# Creates a Cerebro task via the backend API.
-# Usage: bash create-task.sh <json-file>
-#   The JSON file must contain: title, goal
-#   Optional: expert_hint_id, skip_clarification, max_turns, max_phases
-
 RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
 
 if [ ! -f "$RUNTIME_JSON" ]; then
@@ -563,7 +544,7 @@ BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
 if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
   TASK_TITLE=$(echo "$BODY_RESPONSE" | jq -r '.title // "unknown"')
   TASK_ID=$(echo "$BODY_RESPONSE" | jq -r '.id // "unknown"')
-  echo "SUCCESS: Created task '$TASK_TITLE' (id: $TASK_ID)"
+  echo "SUCCESS: Created task '$TASK_TITLE' (id: $TASK_ID) in Backlog"
   echo "$BODY_RESPONSE" | jq .
 else
   echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2
@@ -692,36 +673,38 @@ If the output says **ERROR**, report the error to the user.
     },
     {
       name: 'create-task',
-      description: 'Create a new Cerebro task (one-off, goal-oriented work that produces a deliverable) via the backend API.',
+      description: 'Create a new Kanban task card assigned to an Expert via the backend API.',
       body: `# Create task
 
-This skill creates a new **task** — a one-off, goal-oriented unit of autonomous work that produces a concrete deliverable (a markdown artifact, a runnable code app, or both). Tasks run themselves: clarify → plan → execute → deliverable.
+This skill creates a new **task** — a card on the Kanban board that can be assigned to an Expert for autonomous execution.
 
-You should only be here after deciding the user wants a **one-shot, deliverable-producing piece of work** (not a recurring routine, not a new expert persona). If you have not made that call yet, stop and re-read the Task vs Routine vs Expert guidance in your main system prompt.
+You should only be here after deciding the user wants a **tracked, queued piece of work** (not a recurring routine, not a new expert persona, not a quick question to answer in chat).
 
 ## How to invoke
 
 From the conversation, determine:
 
-- **title** — short, human-readable name for the task (3–8 words). Example: "Espresso Buying Guide", "Habit Tracker App".
-- **goal** — one or two crisp sentences describing the desired outcome and any constraints the user gave you. The autonomous task runner uses this as its north-star spec, so be specific.
-- **expert_hint_id** *(optional)* — id of an existing expert who is the natural lead for this work. Run \`list-experts\` first if you want to pick one. Omit if no expert is clearly relevant.
-- **skip_clarification** *(optional, default false)* — set to \`true\` only if the user gave you a fully-specified ask and you have already confirmed with them.
+- **title** — short, human-readable name for the task (3–8 words).
+- **description_md** *(optional)* — markdown body with details, constraints, acceptance criteria.
+- **expert_id** *(optional)* — id of an existing expert to assign. Run \`list-experts\` first to pick one.
+- **priority** *(optional)* — \`low\`, \`normal\` (default), \`high\`, or \`urgent\`.
+- **due_at** *(optional)* — ISO 8601 date string for the due date.
+- **start_at** *(optional)* — ISO 8601 date string; the scheduler auto-starts the task at this time.
 
-**Confirm the title and goal with the user in one short sentence before invoking** (unless they explicitly said "just do it"). Then run this single Bash command, replacing the placeholder strings:
+**Confirm the title with the user before invoking** (unless they explicitly said "just do it"). Then run:
 
 \`\`\`bash
 jq -n \\
   --arg title "REPLACE_TITLE" \\
-  --arg goal "REPLACE_GOAL" \\
-  '{title: $title, goal: $goal}' \\
+  --arg description_md "REPLACE_DESCRIPTION" \\
+  '{title: $title, description_md: $description_md}' \\
   > "$CLAUDE_PROJECT_DIR/.claude/tmp/new-task.json" && \\
 bash "$CLAUDE_PROJECT_DIR/.claude/scripts/create-task.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/new-task.json"
 \`\`\`
 
-If you want to attach an expert hint, add \`--arg expert_hint_id "EXPERT_ID"\` and include \`expert_hint_id: $expert_hint_id\` in the jq object.
+To assign an expert, add \`--arg expert_id "EXPERT_ID"\` and include \`expert_id: $expert_id\` in the jq object.
 
-If the output says **SUCCESS**, tell the user the task was created and is visible in the **Tasks** screen — it will start clarifying / planning automatically. Do NOT try to execute the task yourself; the task runner handles it.
+If the output says **SUCCESS**, tell the user the task was created in the **Backlog** column on the Tasks board. They can drag it to "In Progress" to start the Expert, or set a start date for automatic scheduling.
 If the output says **ERROR**, report the error to the user.
 `,
     },

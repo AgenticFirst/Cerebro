@@ -57,6 +57,13 @@ export const IPC_CHANNELS = {
   TASK_TERMINAL_REMOVE_BUFFER: 'task-terminal:remove-buffer',  // Renderer → main: delete persisted buffer on task deletion
   taskTerminalData: (runId: string) => `task-terminal:data:${runId}`,  // Legacy per-run
 
+  // Task workspace (per-task isolated directory for agent builds)
+  TASK_WORKSPACE_CREATE: 'task-workspace:create',       // Creates dir + .claude symlink, returns path
+  TASK_WORKSPACE_PATH: 'task-workspace:path',           // Returns derived path (no creation)
+  TASK_WORKSPACE_LIST_FILES: 'task-workspace:list-files',
+  TASK_WORKSPACE_READ_FILE: 'task-workspace:read-file',
+  TASK_WORKSPACE_REMOVE: 'task-workspace:remove',       // Deletes workspace on task delete
+
   // Sandbox
   SANDBOX_PICK_DIRECTORY: 'sandbox:pick-directory',
   SANDBOX_REVEAL_WORKSPACE: 'sandbox:reveal-workspace',
@@ -128,7 +135,7 @@ export interface AgentRunRequest {
 
   // Task mode
   runType?: 'chat' | 'task';
-  taskPhase?: 'plan' | 'execute' | 'follow_up';
+  taskPhase?: 'plan' | 'execute' | 'follow_up' | 'direct';
   maxTurns?: number;
   maxPhases?: number;
   maxClarifyQuestions?: number;
@@ -307,4 +314,24 @@ export interface TaskTerminalAPI {
   readBuffer(runId: string): Promise<string | null>;
   /** Delete the persisted terminal buffer for a run. */
   removeBuffer(runId: string): Promise<void>;
+
+  /** Create an isolated workspace directory for a task. Returns absolute path. */
+  createWorkspace(taskId: string): Promise<string>;
+  /** Return derived workspace path without creating it. */
+  getWorkspacePath(taskId: string): Promise<string>;
+  /** Recursively list files in the workspace as a tree. */
+  listFiles(taskId: string): Promise<WorkspaceFileNode[]>;
+  /** Read a file from the workspace as text (1MB cap). */
+  readFile(taskId: string, relativePath: string): Promise<string | null>;
+  /** Remove the workspace directory when a task is deleted. */
+  removeWorkspace(taskId: string): Promise<void>;
+}
+
+export interface WorkspaceFileNode {
+  name: string;
+  path: string; // relative to workspace root
+  type: 'dir' | 'file';
+  size?: number;
+  mtime?: number;
+  children?: WorkspaceFileNode[];
 }

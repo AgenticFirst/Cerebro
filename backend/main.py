@@ -48,32 +48,14 @@ async def lifespan(application: FastAPI):
         init_voice_singletons()
         print(f"[Cerebro] Voice models directory: {voice_models_dir}")
 
-    # Seed builtin skills + clean up orphaned task conversations
+    # Seed builtin skills
     from database import SessionLocal
     from skills.seed import seed_builtin_skills
-    from models import Task
     if SessionLocal is not None:
         db = SessionLocal()
         try:
             seed_builtin_skills(db)
             print("[Cerebro] Builtin skills seeded")
-
-            # One-time cleanup: delete Conversation rows that were created by tasks.
-            # Tasks no longer create Conversations, but old ones may linger.
-            task_conv_ids = [
-                cid for (cid,) in db.query(Task.conversation_id)
-                .filter(Task.conversation_id.isnot(None))
-                .all()
-            ]
-            if task_conv_ids:
-                deleted = (
-                    db.query(Conversation)
-                    .filter(Conversation.id.in_(task_conv_ids))
-                    .delete(synchronize_session=False)
-                )
-                if deleted:
-                    db.commit()
-                    print(f"[Cerebro] Cleaned up {deleted} orphaned task conversation(s)")
         finally:
             db.close()
 

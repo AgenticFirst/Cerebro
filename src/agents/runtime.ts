@@ -183,10 +183,11 @@ ${answersSection}
 </task_plan>`;
     } else if (isTaskRun && request.taskPhase === 'follow_up') {
       const maxPhases = request.maxPhases ?? 4;
+      const wsPath = request.workspacePath ?? '$PWD';
       fullPrompt = `<task_follow_up>
 You are operating in AUTONOMOUS TASK MODE — this is a FOLLOW-UP run on a previously completed task. The user wants you to modify, extend, or redo part of the output.
 
-Your working directory is the same isolated per-task workspace at $PWD. It contains all files from the previous run(s). You have full Read/Edit/Write/Bash access inside it.
+Your working directory is the same isolated per-task workspace at \`${wsPath}\`. It contains all files from the previous run(s). You have full Read/Edit/Write/Bash access inside it.
 
 ## Context from previous run
 
@@ -287,6 +288,33 @@ Immediately after the \`<deliverable>\` block, emit exactly one \`<run_info>\` b
 - NEVER spawn a long-running dev server or background process — use bounded commands only.
 - If the plan is genuinely impossible or needs info only the user has, skip remaining items and explain inside a \`<deliverable kind="markdown">\` block.
 </task_execute>`;
+    } else if (isTaskRun && request.taskPhase === 'direct') {
+      // Kanban direct-execution phase: no clarify/plan wizard, execute from title+description immediately.
+      const wsPath = request.workspacePath ?? '$PWD';
+      fullPrompt = `<task_direct>
+You are an Expert executing a task autonomously. Your working directory is \`${wsPath}\` — an isolated per-task workspace with full Read/Edit/Write/Bash access. A \`.claude/\` directory is symlinked from the parent so skills and agents are discoverable.
+
+## Brief
+
+${content}
+
+## Protocol
+
+1. Execute the task completely in the workspace directory (\`${wsPath}\`). No PLAN.md required — the title, description, checklist, and any prior instructions above ARE the spec.
+2. Work directly: create files, install dependencies, verify things compile with a bounded command (e.g. \`npm run build\`, \`npx tsc --noEmit\`). Do NOT spawn long-running dev servers — the UI handles that post-completion.
+3. For each checklist item, complete it before moving on. You may delegate phases to other experts via the \`Agent\` tool when specialist expertise helps.
+4. When finished, emit a single deliverable block summarizing what you built. The block opens with \`<\` + \`deliverable kind="markdown|code_app|mixed" title="Short title">\` and closes with the matching \`</\` + \`deliverable>\` tag. The body is markdown — for code_app, include overview, file structure, setup + run commands, notes.
+
+5. For \`code_app\` or \`mixed\` deliverables, immediately follow with a run_info block (opens with \`<\` + \`run_info>\`, closes with \`</\` + \`run_info>\`) containing JSON with these keys: \`preview_type\` (one of: web, expo, cli, static), \`setup_commands\` (array), \`start_command\` (string), \`preview_url_pattern\` (regex with one capture group), \`notes\` (optional string).
+
+## Hard rules
+
+- NEVER ask the user for clarification — interpret the brief and execute.
+- NEVER write outside the workspace directory.
+- NEVER spawn long-running dev servers or background processes here.
+- NEVER delegate more than 2 levels deep.
+- If a request is genuinely impossible, emit a markdown deliverable block explaining why instead of silently failing.
+</task_direct>`;
     } else if (request.recentMessages && request.recentMessages.length > 0) {
       // Chat mode: prepend recent conversation history
       const MAX_MSG_CHARS = 500;
@@ -367,7 +395,13 @@ Immediately after the \`<deliverable>\` block, emit exactly one \`<run_info>\` b
       const ptyRunner = new TaskPtyRunner();
       activeRun.ptyRunner = ptyRunner;
 
-      // Raw PTY data → global channel + disk (survives app restart).
+      // Completion detection: Claude Code TUI sits at a REPL after the agent
+      // finishes — it never exits on its own. We watch the accumulated text for
+      // the agent's `</deliverable>` close tag (its protocol-defined "done"
+      // marker) and then send `/exit` to gracefully terminate the subprocess.
+      let completionDetected = false;
+      let gracefulExitInitiated = false;
+
       ptyRunner.on('data', (data: string) => {
         this.terminalBufferStore.append(runId, data);
         if (!webContents.isDestroyed()) {
@@ -375,8 +409,6 @@ Immediately after the \`<deliverable>\` block, emit exactly one \`<run_info>\` b
         }
       });
 
-      // ANSI-stripped text → text_delta events for the stream parser
-      // (Plan/Deliverable tabs extract structured tags from this text)
       ptyRunner.on('text', (text: string) => {
         activeRun.accumulatedText += text;
         if (!webContents.isDestroyed()) {
@@ -384,6 +416,35 @@ Immediately after the \`<deliverable>\` block, emit exactly one \`<run_info>\` b
             type: 'text_delta',
             delta: text,
           } as RendererAgentEvent);
+        }
+
+        // Match a complete deliverable block (opening tag with attributes + closing tag).
+        // Requiring both tags avoids false positives from stray text and ensures the
+        // agent has actually emitted its deliverable (not just mentioned it).
+        if (!completionDetected && /<deliverable\b[^>]*>[\s\S]*?<\/deliverable>/i.test(activeRun.accumulatedText)) {
+          completionDetected = true;
+          // Allow 3s for <run_info> to follow the deliverable, then ask Claude
+          // Code to exit cleanly; if it doesn't, force-abort after another 5s.
+          setTimeout(() => {
+            if (gracefulExitInitiated || ptyRunner.isAborted()) return;
+            gracefulExitInitiated = true;
+            try { ptyRunner.write('/exit\r'); } catch { /* noop */ }
+            setTimeout(() => {
+              if (!ptyRunner.isAborted()) {
+                // Force-abort and emit done ourselves since abort suppresses the
+                // normal exit-handler path.
+                ptyRunner.abort();
+                if (!webContents.isDestroyed()) {
+                  webContents.send(channel, {
+                    type: 'done',
+                    runId,
+                    messageContent: activeRun.accumulatedText,
+                  } as RendererAgentEvent);
+                }
+                this.finalizeRun(runId, 'completed', activeRun.accumulatedText);
+              }
+            }, 5000);
+          }, 3000);
         }
       });
 
@@ -413,7 +474,9 @@ Immediately after the \`<deliverable>\` block, emit exactly one \`<run_info>\` b
 
         // node-pty on macOS can report signal as 0 (number) for normal exits.
         const realSignal = signal && signal !== '0' && signal !== 'undefined' ? signal : null;
-        const isError = (code !== 0 && code !== null) || realSignal != null;
+        // If we already saw a deliverable, treat any exit as a successful completion
+        // (the non-zero exit code is just from our /exit sequence).
+        const isError = !completionDetected && ((code !== 0 && code !== null) || realSignal != null);
         if (isError) {
           const detail = realSignal
             ? `Claude Code was killed (${realSignal})`
