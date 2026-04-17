@@ -162,8 +162,8 @@ export default function SandboxSection() {
     }
     if (enabled && !platformSupported) {
       return (
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 rounded-full">
-          <AlertTriangle size={12} /> Unsupported platform
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-text-tertiary bg-bg-elevated border border-border-subtle px-2.5 py-1 rounded-full">
+          <ShieldOff size={12} /> {t('sandbox.macOsOnly')}
         </span>
       );
     }
