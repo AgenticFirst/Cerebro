@@ -72,6 +72,7 @@ export const IPC_CHANNELS = {
 
   // Shell
   SHELL_OPEN_PATH: 'shell:open-path',
+  SHELL_REVEAL_PATH: 'shell:reveal-path',
 
   // Telegram bridge
   TELEGRAM_VERIFY: 'telegram:verify',
@@ -301,6 +302,7 @@ export interface CerebroAPI {
 
 export interface ShellAPI {
   openPath(filePath: string): Promise<void>;
+  revealPath(filePath: string): Promise<void>;
 }
 
 export interface TaskTerminalAPI {

@@ -112,6 +112,7 @@ export interface Message {
 export interface Conversation {
   id: string;
   title: string;
+  expertId?: string | null;
   createdAt: Date;
   updatedAt: Date;
   messages: Message[];

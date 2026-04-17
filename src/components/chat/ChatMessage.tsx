@@ -42,14 +42,42 @@ function parseFileRefs(content: string): { attachments: AttachmentInfo[]; text: 
   return { attachments, text: lines.slice(i).join('\n').trim() };
 }
 
+function parseTrailingFileRefs(content: string): { attachments: AttachmentInfo[]; text: string } {
+  const lines = content.split('\n');
+  const attachments: AttachmentInfo[] = [];
+  let cut = lines.length;
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (line.startsWith('@/') || line.startsWith('@~')) {
+      const filePath = line.slice(1);
+      const fileName = filePath.split('/').pop() || filePath;
+      const ext = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
+      attachments.unshift({ id: filePath, filePath, fileName, fileSize: 0, extension: ext });
+      cut = i;
+    } else if (line === '') {
+      continue;
+    } else {
+      break;
+    }
+  }
+
+  return { attachments, text: lines.slice(0, cut).join('\n').trimEnd() };
+}
+
 export default function ChatMessage({ message }: ChatMessageProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
 
-  const { attachments: fileRefs, text: displayContent } = isUser
+  const { attachments: userFileRefs, text: userText } = isUser
     ? parseFileRefs(message.content)
-    : { attachments: [], text: message.content };
+    : { attachments: [], text: '' };
+  const { attachments: assistantFileRefs, text: assistantText } = !isUser
+    ? parseTrailingFileRefs(message.content)
+    : { attachments: [], text: '' };
+  const fileRefs = isUser ? userFileRefs : assistantFileRefs;
+  const displayContent = isUser ? userText : assistantText;
 
   const hasContent = displayContent.length > 0;
 
@@ -127,7 +155,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       {isUser && fileRefs.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {fileRefs.map((att) => (
-            <AttachmentChip key={att.id} attachment={att} />
+            <AttachmentChip key={att.id} attachment={att} source="user" />
           ))}
         </div>
       )}
@@ -144,9 +172,18 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{displayContent}</p>
           ) : (
             <div className={clsx(message.isStreaming && 'streaming-cursor')}>
-              <MarkdownContent content={message.content} />
+              <MarkdownContent content={displayContent} />
             </div>
           )}
+        </div>
+      )}
+
+      {/* File attachments emitted by the expert */}
+      {!isUser && fileRefs.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {fileRefs.map((att) => (
+            <AttachmentChip key={att.id} attachment={att} source="assistant" />
+          ))}
         </div>
       )}
 

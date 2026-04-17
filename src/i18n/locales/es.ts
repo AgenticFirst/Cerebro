@@ -400,6 +400,22 @@ const es: TranslationKeys = {
     deleteExpert: 'Eliminar experto',
     alwaysActive: 'Siempre activo',
     connected: 'Conectado',
+    // Pesta\u00f1a de mensajes (mensajer\u00eda estilo Slack con expertos)
+    tabMessages: 'Mensajes',
+    tabHierarchy: 'Jerarqu\u00eda',
+    searchPlaceholder: 'Buscar expertos\u2026',
+    starred: 'Destacados',
+    directMessages: 'Mensajes directos',
+    noThreadsYet: 'Sin hilos todav\u00eda. Saluda para empezar.',
+    newThread: 'Nuevo hilo',
+    threadsHeader: 'Hilos',
+    openProfile: 'Perfil',
+    editInHierarchy: 'Editar en jerarqu\u00eda',
+    messagesEmptyState: 'Elige un experto para empezar a chatear',
+    typingIndicator: '{{name}} est\u00e1 escribiendo\u2026',
+    fileReceived: 'Archivo recibido',
+    openFile: 'Abrir archivo',
+    revealInFolder: 'Mostrar en carpeta',
   },
 
   // ── Di\u00e1logo de crear experto ───────────────────────────────

@@ -4,6 +4,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   type ReactNode,
 } from 'react';
@@ -40,8 +41,12 @@ interface ChatState {
   chatError: ChatError | null;
 }
 
+interface CreateConversationOptions {
+  expertId?: string | null;
+}
+
 interface ChatActions {
-  createConversation: (firstMessage?: string) => string;
+  createConversation: (firstMessage?: string, opts?: CreateConversationOptions) => string;
   setActiveConversation: (id: string | null) => void;
   addMessage: (conversationId: string, role: Message['role'], content: string, metadata?: Record<string, unknown>) => string;
   updateMessage: (conversationId: string, messageId: string, partial: Partial<Message>) => void;
@@ -50,6 +55,8 @@ interface ChatActions {
   sendMessage: (content: string) => void;
   setActiveExpertId: (id: string | null) => void;
   dismissChatError: () => void;
+  getConversationsForExpert: (expertId: string) => Conversation[];
+  generalConversations: Conversation[];
 }
 
 type ChatContextValue = ChatState &
@@ -70,11 +77,15 @@ async function apiLoadConversations(): Promise<Conversation[]> {
   return res.data.conversations.map(fromApiConversation);
 }
 
-function apiCreateConversation(id: string, title: string): Promise<unknown> {
+function apiCreateConversation(
+  id: string,
+  title: string,
+  expertId?: string | null,
+): Promise<unknown> {
   return window.cerebro.invoke({
     method: 'POST',
     path: '/conversations',
-    body: { id, title },
+    body: { id, title, expert_id: expertId ?? null },
   });
 }
 
@@ -184,22 +195,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const createConversation = useCallback((firstMessage?: string) => {
-    const id = generateId();
-    const now = new Date();
-    const title = firstMessage ? titleFromContent(firstMessage) : 'New conversation';
-    const conversation: Conversation = {
-      id,
-      title,
-      createdAt: now,
-      updatedAt: now,
-      messages: [],
-    };
-    setConversations((prev) => [conversation, ...prev]);
-    setActiveConversationIdState(id);
-    chainWrite(id, () => apiCreateConversation(id, title)).catch(console.error);
-    return id;
-  }, [chainWrite]);
+  const createConversation = useCallback(
+    (firstMessage?: string, opts?: CreateConversationOptions) => {
+      const id = generateId();
+      const now = new Date();
+      const title = firstMessage ? titleFromContent(firstMessage) : 'New conversation';
+      const expertId = opts?.expertId ?? null;
+      const conversation: Conversation = {
+        id,
+        title,
+        expertId,
+        createdAt: now,
+        updatedAt: now,
+        messages: [],
+      };
+      setConversations((prev) => [conversation, ...prev]);
+      setActiveConversationIdState(id);
+      chainWrite(id, () => apiCreateConversation(id, title, expertId)).catch(console.error);
+      return id;
+    },
+    [chainWrite],
+  );
 
   const setActiveConversation = useCallback((id: string | null) => {
     setActiveConversationIdState(id);
@@ -276,7 +292,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       let convId = activeConversationId;
       if (!convId) {
-        convId = createConversation(content);
+        // Auto-scope new conversations to the selected expert so threads
+        // started from the Experts > Messages tab are discoverable there.
+        convId = createConversation(content, { expertId: activeExpertId });
       }
       addMessage(convId, 'user', content);
 
@@ -632,6 +650,30 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
 
+  const generalConversations = useMemo(
+    () => conversations.filter((c) => !c.expertId),
+    [conversations],
+  );
+
+  const conversationsByExpert = useMemo(() => {
+    const map = new Map<string, Conversation[]>();
+    for (const c of conversations) {
+      if (!c.expertId) continue;
+      const list = map.get(c.expertId) ?? [];
+      list.push(c);
+      map.set(c.expertId, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    }
+    return map;
+  }, [conversations]);
+
+  const getConversationsForExpert = useCallback(
+    (expertId: string) => conversationsByExpert.get(expertId) ?? [],
+    [conversationsByExpert],
+  );
+
   return (
     <ChatContext.Provider
       value={{
@@ -653,6 +695,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         sendMessage,
         setActiveExpertId,
         dismissChatError,
+        getConversationsForExpert,
+        generalConversations,
       }}
     >
       {children}

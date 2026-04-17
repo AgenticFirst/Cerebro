@@ -399,6 +399,22 @@ const en = {
     deleteExpert: 'Delete Expert',
     alwaysActive: 'Always Active',
     connected: 'Connected',
+    // Messages tab (Slack-style DMs with experts)
+    tabMessages: 'Messages',
+    tabHierarchy: 'Hierarchy',
+    searchPlaceholder: 'Search experts…',
+    starred: 'Starred',
+    directMessages: 'Direct Messages',
+    noThreadsYet: 'No threads yet. Say hi to get started.',
+    newThread: 'New thread',
+    threadsHeader: 'Threads',
+    openProfile: 'Profile',
+    editInHierarchy: 'Edit in hierarchy',
+    messagesEmptyState: 'Pick an expert to start chatting',
+    typingIndicator: '{{name}} is typing…',
+    fileReceived: 'File received',
+    openFile: 'Open file',
+    revealInFolder: 'Reveal in folder',
   },
 
   // ── Create expert dialog ────────────────────────────────────

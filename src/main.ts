@@ -864,6 +864,13 @@ function registerIpcHandlers(): void {
     },
   );
 
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_REVEAL_PATH,
+    async (_event, filePath: string) => {
+      shell.showItemInFolder(filePath);
+    },
+  );
+
   ipcMain.handle(IPC_CHANNELS.SANDBOX_GET_PROFILE, async () => {
     const config = getCachedSandboxConfig();
     if (!config) return '';

@@ -21,6 +21,12 @@ class Conversation(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
     title: Mapped[str] = mapped_column(String(255), default="New Chat")
+    expert_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("experts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 

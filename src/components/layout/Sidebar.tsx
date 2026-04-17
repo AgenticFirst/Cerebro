@@ -202,7 +202,7 @@ const NAV_LABEL_KEYS: Record<string, string> = {
 export default function Sidebar() {
   const { t } = useTranslation();
   const {
-    conversations,
+    generalConversations,
     activeConversationId,
     activeScreen,
     isLoading,
@@ -216,7 +216,7 @@ export default function Sidebar() {
 
   const [collapsed, setCollapsed] = useState(false);
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null);
-  const grouped = useMemo(() => groupByTime(conversations), [conversations]);
+  const grouped = useMemo(() => groupByTime(generalConversations), [generalConversations]);
 
   /** Resolve a NavItemDef[] to NavItem[] with translated labels */
   const resolveLabels = (items: NavItemDef[]): NavItem[] =>

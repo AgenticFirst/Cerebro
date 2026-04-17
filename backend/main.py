@@ -3,9 +3,10 @@ import json
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Literal
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import selectinload
 
@@ -102,6 +103,7 @@ class SettingResponse(BaseModel):
 class ConversationCreate(BaseModel):
     id: str
     title: str = "New Chat"
+    expert_id: str | None = None
 
 
 class MessageCreate(BaseModel):
@@ -133,6 +135,7 @@ class MessageResponse(BaseModel):
 class ConversationResponse(BaseModel):
     id: str
     title: str
+    expert_id: str | None = None
     created_at: datetime
     updated_at: datetime
     messages: list[MessageResponse]
@@ -187,13 +190,19 @@ def delete_setting(key: str, db=Depends(get_db)):
 
 
 @app.get("/conversations", response_model=ConversationListResponse)
-def list_conversations(db=Depends(get_db)):
-    convs = (
-        db.query(Conversation)
-        .options(selectinload(Conversation.messages))
-        .order_by(Conversation.updated_at.desc())
-        .all()
-    )
+def list_conversations(
+    db=Depends(get_db),
+    expert_id: str | None = Query(None),
+    scope: Literal["general", "expert", "all"] = Query("all"),
+):
+    query = db.query(Conversation).options(selectinload(Conversation.messages))
+    if expert_id is not None:
+        query = query.filter(Conversation.expert_id == expert_id)
+    elif scope == "general":
+        query = query.filter(Conversation.expert_id.is_(None))
+    elif scope == "expert":
+        query = query.filter(Conversation.expert_id.is_not(None))
+    convs = query.order_by(Conversation.updated_at.desc()).all()
     return ConversationListResponse(conversations=convs)
 
 
@@ -202,7 +211,7 @@ def create_conversation(body: ConversationCreate, db=Depends(get_db)):
     existing = db.get(Conversation, body.id)
     if existing:
         raise HTTPException(status_code=409, detail="Conversation already exists")
-    conv = Conversation(id=body.id, title=body.title)
+    conv = Conversation(id=body.id, title=body.title, expert_id=body.expert_id)
     db.add(conv)
     db.commit()
     db.refresh(conv)

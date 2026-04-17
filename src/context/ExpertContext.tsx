@@ -136,6 +136,8 @@ function toApiBody(input: CreateExpertInput): Record<string, unknown> {
 
 // ── Context ────────────────────────────────────────────────────
 
+export type ExpertsTab = 'messages' | 'hierarchy';
+
 interface ExpertContextValue {
   experts: Expert[];
   total: number;
@@ -148,6 +150,15 @@ interface ExpertContextValue {
   deleteExpert: (id: string) => Promise<void>;
   toggleEnabled: (expert: Expert) => Promise<void>;
   togglePinned: (expert: Expert) => Promise<void>;
+  // Tab state on the Experts screen, persists across remounts.
+  lastExpertsTab: ExpertsTab;
+  setLastExpertsTab: (tab: ExpertsTab) => void;
+  // Cross-tab navigation: jump to Hierarchy tab with a specific expert's
+  // detail panel pre-opened. The hierarchy view consumes this pending id on
+  // mount and then clears it.
+  pendingDetailExpertId: string | null;
+  openExpertInHierarchy: (expertId: string) => void;
+  consumePendingDetailExpertId: () => string | null;
 }
 
 const ExpertContext = createContext<ExpertContextValue | null>(null);
@@ -156,6 +167,19 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
   const [experts, setExperts] = useState<Expert[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [lastExpertsTab, setLastExpertsTab] = useState<ExpertsTab>('messages');
+  const [pendingDetailExpertId, setPendingDetailExpertId] = useState<string | null>(null);
+
+  const openExpertInHierarchy = useCallback((expertId: string) => {
+    setPendingDetailExpertId(expertId);
+    setLastExpertsTab('hierarchy');
+  }, []);
+
+  const consumePendingDetailExpertId = useCallback(() => {
+    const id = pendingDetailExpertId;
+    if (id) setPendingDetailExpertId(null);
+    return id;
+  }, [pendingDetailExpertId]);
 
   const activeCount = useMemo(
     () => experts.filter((e) => e.isEnabled).length,
@@ -284,6 +308,11 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
         deleteExpert,
         toggleEnabled,
         togglePinned,
+        lastExpertsTab,
+        setLastExpertsTab,
+        pendingDetailExpertId,
+        openExpertInHierarchy,
+        consumePendingDetailExpertId,
       }}
     >
       {children}

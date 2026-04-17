@@ -171,3 +171,75 @@ def test_patch_nonexistent_message_returns_404(client):
         json={"metadata": {"foo": "bar"}},
     )
     assert r.status_code == 404
+
+
+# ── Expert-scoped conversations (Messages tab) ────────────────────
+
+
+def _make_expert(client, name: str) -> str:
+    r = client.post(
+        "/experts",
+        json={"name": name, "description": f"desc for {name}", "type": "expert"},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def test_create_conversation_with_expert_id(client):
+    expert_id = _make_expert(client, "Design Lead")
+    conv_id = _hex_id()
+    r = client.post(
+        "/conversations",
+        json={"id": conv_id, "title": "Logo crit", "expert_id": expert_id},
+    )
+    assert r.status_code == 201
+    assert r.json()["expert_id"] == expert_id
+
+
+def test_list_conversations_filtered_by_expert_id(client):
+    designer = _make_expert(client, "Designer")
+    coder = _make_expert(client, "Coder")
+
+    general_id = _hex_id()
+    designer_id = _hex_id()
+    coder_id = _hex_id()
+
+    client.post("/conversations", json={"id": general_id, "title": "General"})
+    client.post(
+        "/conversations",
+        json={"id": designer_id, "title": "D1", "expert_id": designer},
+    )
+    client.post(
+        "/conversations",
+        json={"id": coder_id, "title": "C1", "expert_id": coder},
+    )
+
+    # expert_id query returns only that expert's threads
+    r = client.get(f"/conversations?expert_id={designer}")
+    ids = {c["id"] for c in r.json()["conversations"]}
+    assert ids == {designer_id}
+
+    # scope=general returns only NULL-expert conversations
+    r = client.get("/conversations?scope=general")
+    ids = {c["id"] for c in r.json()["conversations"]}
+    assert general_id in ids
+    assert designer_id not in ids
+    assert coder_id not in ids
+
+    # scope=expert returns only expert-scoped conversations
+    r = client.get("/conversations?scope=expert")
+    ids = {c["id"] for c in r.json()["conversations"]}
+    assert ids == {designer_id, coder_id}
+
+    # default scope=all still returns everything
+    r = client.get("/conversations")
+    ids = {c["id"] for c in r.json()["conversations"]}
+    assert {general_id, designer_id, coder_id} <= ids
+
+
+def test_expert_id_defaults_to_null(client):
+    conv_id = _hex_id()
+    client.post("/conversations", json={"id": conv_id, "title": "Plain"})
+    r = client.get("/conversations?scope=general")
+    ids = {c["id"] for c in r.json()["conversations"]}
+    assert conv_id in ids

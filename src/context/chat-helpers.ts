@@ -28,6 +28,7 @@ export interface ApiMessage {
 export interface ApiConversation {
   id: string;
   title: string;
+  expert_id: string | null;
   created_at: string;
   updated_at: string;
   messages: ApiMessage[];
@@ -148,6 +149,7 @@ export function fromApiConversation(c: ApiConversation): Conversation {
   return {
     id: c.id,
     title: c.title,
+    expertId: c.expert_id ?? null,
     createdAt: new Date(c.created_at),
     updatedAt: new Date(c.updated_at),
     messages: c.messages.map(fromApiMessage),
