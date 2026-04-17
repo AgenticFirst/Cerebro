@@ -455,6 +455,7 @@ ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown
       // marker) and then send `/exit` to gracefully terminate the subprocess.
       let completionDetected = false;
       let gracefulExitInitiated = false;
+      let forceKillTimer: ReturnType<typeof setTimeout> | null = null;
 
       // On --resume, Claude Code re-renders the FULL prior conversation in the
       // TUI, including any <deliverable> block from the previous attempt. That
@@ -465,6 +466,40 @@ ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown
       let completionScanOffset = 0;
       let resumeSettled = !request.resumeSessionId;
       let settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+      // Shared two-phase shutdown: write `/exit` to TUI, then force-kill after
+      // 5s if it hasn't exited. Used by both completion detection and idle timeout.
+      const initiateGracefulExit = (outcome: 'completed' | 'error', detail?: string) => {
+        if (gracefulExitInitiated || ptyRunner.isAborted()) return;
+        gracefulExitInitiated = true;
+        try { ptyRunner.write('/exit\r'); } catch { /* noop */ }
+        forceKillTimer = setTimeout(() => {
+          forceKillTimer = null;
+          if (ptyRunner.isAborted()) return;
+          ptyRunner.abort();
+          if (!webContents.isDestroyed()) {
+            if (outcome === 'completed') {
+              webContents.send(channel, { type: 'done', runId, messageContent: activeRun.accumulatedText } as RendererAgentEvent);
+            } else {
+              webContents.send(channel, { type: 'error', runId, error: detail } as RendererAgentEvent);
+            }
+          }
+          this.finalizeRun(runId, outcome, activeRun.accumulatedText, detail);
+        }, 5000);
+      };
+
+      // Idle timeout: if no text output for 2 minutes, the TUI is probably
+      // stuck at its REPL prompt after the agent finished (without emitting a
+      // deliverable). Gracefully exit, then force-kill.
+      const IDLE_TIMEOUT_MS = 2 * 60 * 1000;
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      const resetIdleTimer = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          console.log(`[AgentRuntime] idle timeout fired for run ${runId} — sending /exit`);
+          initiateGracefulExit('error', 'Agent idle timeout — no output for 2 minutes. Re-run to resume the session.');
+        }, IDLE_TIMEOUT_MS);
+      };
 
       ptyRunner.on('data', (data: string) => {
         this.terminalBufferStore.append(runId, data);
@@ -487,9 +522,12 @@ ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown
           settleTimer = setTimeout(() => {
             completionScanOffset = activeRun.accumulatedText.length;
             resumeSettled = true;
+            resetIdleTimer();
           }, 2000);
           return;
         }
+
+        resetIdleTimer();
 
         // Match a complete deliverable block with a CONCRETE kind value. The
         // prompt itself contains `<deliverable kind="markdown|code_app|mixed">`
@@ -506,28 +544,8 @@ ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown
           /<deliverable\b[^>]*?\bkind=["'](?:markdown|code_app|mixed)["'][^>]*>[\s\S]*?<\/deliverable>/i.test(scanWindow)
         ) {
           completionDetected = true;
-          // Allow 3s for <run_info> to follow the deliverable, then ask Claude
-          // Code to exit cleanly; if it doesn't, force-abort after another 5s.
-          setTimeout(() => {
-            if (gracefulExitInitiated || ptyRunner.isAborted()) return;
-            gracefulExitInitiated = true;
-            try { ptyRunner.write('/exit\r'); } catch { /* noop */ }
-            setTimeout(() => {
-              if (!ptyRunner.isAborted()) {
-                // Force-abort and emit done ourselves since abort suppresses the
-                // normal exit-handler path.
-                ptyRunner.abort();
-                if (!webContents.isDestroyed()) {
-                  webContents.send(channel, {
-                    type: 'done',
-                    runId,
-                    messageContent: activeRun.accumulatedText,
-                  } as RendererAgentEvent);
-                }
-                this.finalizeRun(runId, 'completed', activeRun.accumulatedText);
-              }
-            }, 5000);
-          }, 3000);
+          // Allow 3s for <run_info> to follow the deliverable, then gracefully exit.
+          setTimeout(() => initiateGracefulExit('completed'), 3000);
         }
       });
 
@@ -549,6 +567,8 @@ ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown
 
       ptyRunner.on('exit', (code: number, signal?: string) => {
         if (settleTimer) clearTimeout(settleTimer);
+        if (idleTimer) clearTimeout(idleTimer);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
         ipcMain.removeListener(IPC_CHANNELS.TASK_TERMINAL_RESIZE, resizeHandler);
         ipcMain.removeListener(IPC_CHANNELS.TASK_TERMINAL_INPUT, inputHandler);
         this.terminalBufferStore.flush(runId);
@@ -601,6 +621,10 @@ ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown
         sessionId: request.resumeSessionId || runId,
         addDirs: isExternalWorkspace ? [path.join(this.dataDir, '.claude')] : undefined,
       });
+
+      // Start idle timer immediately for fresh runs (resume runs start it
+      // after the settle period completes).
+      if (resumeSettled) resetIdleTimer();
     } else {
       // Chat runs use stream-json mode (no PTY).
       const runner = new ClaudeCodeRunner();

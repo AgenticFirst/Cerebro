@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Maximize2, Minimize2, Trash2, Play, StopCircle } from 'lucide-react';
+import { X, Maximize2, Minimize2, Trash2, Play, StopCircle, RotateCcw, Copy, Terminal } from 'lucide-react';
 import clsx from 'clsx';
 import { useTasks, type Task, type TaskColumn, type TaskPriority } from '../../../context/TaskContext';
 import { useExperts } from '../../../context/ExpertContext';
@@ -42,7 +42,7 @@ interface TaskDetailDrawerProps {
 
 export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProps) {
   const { t } = useTranslation();
-  const { tasks, updateTask, moveTask, deleteTask, startTask, cancelTask } = useTasks();
+  const { tasks, updateTask, moveTask, deleteTask, startTask, cancelTask, getActiveRunId } = useTasks();
   const { experts } = useExperts();
 
   const tagSuggestions = useMemo(() => {
@@ -56,6 +56,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [isStarting, setIsStarting] = useState(false);
+  const [showHardReset, setShowHardReset] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const prevColumnRef = useRef<TaskColumn | null>(null);
 
@@ -72,6 +73,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     setActiveTab(task.column === 'in_progress' ? 'console' : 'details');
     setIsFullWidth(false);
     setIsEditingTitle(false);
+    setShowHardReset(false);
     prevColumnRef.current = task.column;
   }, [task?.id]);
 
@@ -150,6 +152,27 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     }
   }, [task, cancelTask]);
 
+  const cancelIfRunning = useCallback(async () => {
+    if (task?.column === 'in_progress') {
+      try { await cancelTask(task.id); } catch { /* noop */ }
+    }
+  }, [task, cancelTask]);
+
+  const handleHardReset = useCallback(async () => {
+    if (!task?.run_id) return;
+    await cancelIfRunning();
+    window.cerebro.taskTerminal.removeBuffer(task.run_id).catch(() => {});
+    setShowHardReset(true);
+    setActiveTab('console');
+  }, [task, cancelIfRunning]);
+
+  const handleResume = useCallback(async () => {
+    if (!task) return;
+    setShowHardReset(false);
+    await cancelIfRunning();
+    handleStart();
+  }, [task, cancelIfRunning, handleStart]);
+
   const handleColumnChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       if (!task) return;
@@ -173,10 +196,66 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   const canStart = isStartableColumn && hasExpert;
   const isRunning = task.column === 'in_progress';
   const hasRun = !!task.run_id;
+  const consoleRunId = getActiveRunId(task.id);
   const startLabel =
     task.column === 'to_review' ? t('tasks.rerunTask')
     : task.column === 'error' ? t('tasks.retryTask')
     : t('tasks.startTask');
+
+  // Shared between compact and focus modes
+  const consolePanel = (
+    <div className="flex flex-col h-full min-h-0">
+      {hasRun && (
+        <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 border-b border-border-subtle bg-bg-surface">
+          <Terminal size={13} className="text-text-tertiary mr-1" />
+          <div className="flex-1" />
+          <button
+            onClick={handleHardReset}
+            className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-text-tertiary hover:text-text-primary hover:bg-bg-hover rounded-md transition-colors cursor-pointer"
+            title={t('tasks.consoleHardResetTitle')}
+          >
+            <RotateCcw size={12} />
+            {t('tasks.consoleHardReset')}
+          </button>
+          <button
+            onClick={handleResume}
+            disabled={isRunning || isStarting}
+            className={clsx(
+              'flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer',
+              isRunning || isStarting
+                ? 'text-text-tertiary/50 cursor-not-allowed'
+                : 'text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10',
+            )}
+            title={t('tasks.consoleResumeTitle')}
+          >
+            <Play size={12} />
+            {t('tasks.consoleResume')}
+          </button>
+        </div>
+      )}
+      <div className="flex-1 min-h-0">
+        {showHardReset && task.run_id ? (
+          <div className="w-full h-full bg-[#1a1a1a] flex flex-col items-center justify-center gap-4 p-8">
+            <Terminal size={32} className="text-zinc-500" />
+            <p className="text-sm text-zinc-400 text-center">{t('tasks.consoleHardResetTitle')}</p>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`claude --resume ${task.run_id}`);
+              }}
+              className="group flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors cursor-pointer"
+            >
+              <code className="text-sm text-emerald-400 font-mono">
+                claude --resume {task.run_id}
+              </code>
+              <Copy size={14} className="text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+            </button>
+          </div>
+        ) : (
+          <ExpertConsole runId={consoleRunId} />
+        )}
+      </div>
+    </div>
+  );
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'details', label: t('tasks.tabDetails') },
@@ -422,11 +501,11 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
             </div>
             {/* Console panel (40%) */}
             <div className="flex-1 border-r border-border-subtle min-w-0 min-h-0">
-              <ExpertConsole runId={task.run_id} />
+              {consolePanel}
             </div>
             {/* Preview panel (30%) */}
             <div className="w-[30%] min-w-[320px] max-w-[520px] min-h-0">
-              <LivePreview taskId={task.id} runId={task.run_id} isRunning={isRunning} projectPath={task.project_path} />
+              <LivePreview taskId={task.id} runId={consoleRunId} isRunning={isRunning} projectPath={task.project_path} />
             </div>
           </div>
         ) : (
@@ -457,12 +536,12 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
               {activeTab === 'details' && detailsContent}
               {activeTab === 'console' && (
                 <div className="flex-1 min-h-0">
-                  <ExpertConsole runId={task.run_id} />
+                  {consolePanel}
                 </div>
               )}
               {activeTab === 'preview' && (
                 <div className="flex-1 min-h-0">
-                  <LivePreview taskId={task.id} runId={task.run_id} isRunning={isRunning} projectPath={task.project_path} />
+                  <LivePreview taskId={task.id} runId={consoleRunId} isRunning={isRunning} projectPath={task.project_path} />
                 </div>
               )}
               {activeTab === 'activity' && activityContent}

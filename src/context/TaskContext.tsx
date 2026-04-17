@@ -139,6 +139,8 @@ interface TaskContextValue {
   updateChecklistItem: (taskId: string, itemId: string, updates: Partial<ChecklistItem>) => Promise<void>;
   deleteChecklistItem: (taskId: string, itemId: string) => Promise<void>;
   promoteChecklistItem: (taskId: string, itemId: string) => Promise<Task>;
+  /** Get the active internal Electron runId for a task (may differ from task.run_id on re-runs). */
+  getActiveRunId: (taskId: string) => string | null;
 }
 
 const TaskContext = createContext<TaskContextValue | null>(null);
@@ -428,6 +430,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       // stopped (especially when a prior run exited without a deliverable).
       const resumeSessionId = task.run_id || undefined;
 
+      // Clear stale terminal buffer from the previous run so the console
+      // starts fresh when ExpertConsole re-mounts with the new runId.
+      if (resumeSessionId) {
+        window.cerebro.taskTerminal.removeBuffer(resumeSessionId).catch(() => {});
+      }
+
       const runId = await window.cerebro.agent.run({
         conversationId: taskId,
         content: prompt,
@@ -479,6 +487,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     // Resume the prior Claude Code session on follow-up so the agent keeps
     // its full context and file awareness from the prior deliverable.
     const resumeSessionId = task.run_id || undefined;
+
+    if (resumeSessionId) {
+      window.cerebro.taskTerminal.removeBuffer(resumeSessionId).catch(() => {});
+    }
 
     const runId = await window.cerebro.agent.run({
       conversationId: task.id,
@@ -844,6 +856,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     return res.data;
   }, [loadTasks]);
 
+  const getActiveRunId = useCallback((taskId: string): string | null => {
+    return activeInternalRunIds.current.get(taskId)
+      ?? tasks.find((t) => t.id === taskId)?.run_id
+      ?? null;
+  }, [tasks]);
+
   return (
     <TaskContext.Provider
       value={{
@@ -868,6 +886,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         updateChecklistItem,
         deleteChecklistItem,
         promoteChecklistItem,
+        getActiveRunId,
       }}
     >
       {children}
