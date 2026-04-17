@@ -92,6 +92,14 @@ const MIME_TYPES: Record<string, string> = {
   '.md': 'text/plain; charset=utf-8',
   '.xml': 'application/xml; charset=utf-8',
   '.wasm': 'application/wasm',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.pdf': 'application/pdf',
+  '.avif': 'image/avif',
 };
 function mimeFor(filePath: string): string {
   return MIME_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
@@ -946,8 +954,13 @@ const createWindow = () => {
     voiceSession.setWebContents(mainWindow.webContents);
   }
 
-  // Open the DevTools.
-  mainWindow.webContents.openDevTools();
+  // Open DevTools in dev mode — but never in E2E mode, where an extra
+  // DevTools WebContents exposes itself over CDP and Playwright can bind to
+  // it instead of the actual renderer (the failing screenshots show only
+  // DevTools with a blank left pane).
+  if (!process.env.CEREBRO_E2E_DEBUG_PORT) {
+    mainWindow.webContents.openDevTools();
+  }
 };
 
 // This method will be called when Electron has finished

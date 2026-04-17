@@ -63,6 +63,7 @@ export default function KanbanColumn({ column, tasks, onCardClick, onMoveTask, o
 
   return (
     <div
+      data-testid={`kanban-column-${column}`}
       className={clsx(
         'w-[calc(25%-12px)] flex-shrink-0 flex flex-col',
         'bg-bg-surface/50 border border-border-subtle rounded-xl',

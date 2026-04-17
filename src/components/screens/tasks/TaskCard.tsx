@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Task, TaskColumn } from '../../../context/TaskContext';
 import { countFiles } from '../../../utils/workspace-tree';
+import AlertModal from '../../ui/AlertModal';
 
 // ── Constants ─────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ export default function TaskCard({ task, onClick, onMove, onStart, onDelete, exp
   const { t } = useTranslation();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [fileCount, setFileCount] = useState(0);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -148,10 +150,13 @@ export default function TaskCard({ task, onClick, onMove, onStart, onDelete, exp
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!onDelete) return;
-    const confirmed = window.confirm(
-      `Permanently delete "${task.title}"?\n\nThis will remove the task, all comments, checklist items, and the entire workspace directory. This cannot be undone.`,
-    );
-    if (confirmed) onDelete(task.id);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = () => {
+    if (!onDelete) return;
+    onDelete(task.id);
+    setShowDeleteConfirm(false);
   };
 
   const handleColumnSelect = (e: React.MouseEvent, col: TaskColumn) => {
@@ -161,6 +166,7 @@ export default function TaskCard({ task, onClick, onMove, onStart, onDelete, exp
   };
 
   return (
+    <>
     <div
       ref={setNodeRef}
       style={style}
@@ -322,5 +328,25 @@ export default function TaskCard({ task, onClick, onMove, onStart, onDelete, exp
         </button>
       )}
     </div>
+
+    {showDeleteConfirm && (
+      <AlertModal
+        icon={<Trash2 size={18} className="text-red-400" />}
+        iconTone="danger"
+        title={t('tasks.deleteTaskTitle')}
+        message={t('tasks.deleteTaskMessage', { title: task.title })}
+        onClose={() => setShowDeleteConfirm(false)}
+        actions={[
+          { label: t('common.cancel'), onClick: () => setShowDeleteConfirm(false) },
+          {
+            label: t('common.delete'),
+            primary: true,
+            variant: 'danger',
+            onClick: confirmDelete,
+          },
+        ]}
+      />
+    )}
+    </>
   );
 }

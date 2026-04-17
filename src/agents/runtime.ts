@@ -51,7 +51,7 @@ const RUN_INFO_EXAMPLE = `<run_info>
 }
 </run_info>`;
 
-const DELIVERABLE_HARD_RULE = `**ALWAYS end with a \`<deliverable>…</deliverable>\` block.** Cerebro uses this sentinel to mark the task complete — without it, the task will stay stuck in progress or be marked as an error. This is non-negotiable, even for trivial tasks.`;
+const DELIVERABLE_HARD_RULE = `**ALWAYS end every run with a \`<deliverable kind="…" title="…">…</deliverable>\` block.** \`kind\` MUST be exactly one of \`markdown\`, \`code_app\`, or \`mixed\` (no other values, no pipe-separated lists — pick ONE). Cerebro uses this block as the machine-readable completion sentinel — without it, your work is invisible to the user and the task will NOT complete. This applies to EVERY task no matter how trivial: a one-line haiku, a one-word answer, a "hello world" — wrap the final result in a deliverable block. Do NOT output your final answer as plain text outside the block. If you've already written the result as prose, your last action is still to emit the deliverable block with the same content inside.`;
 
 interface ActiveRun {
   runId: string;
@@ -65,6 +65,32 @@ interface ActiveRun {
   /** PTY runner (used for task execute/follow_up — sole process, no stream runner). */
   ptyRunner: TaskPtyRunner | null;
   isTaskRun: boolean;
+}
+
+/**
+ * Synthesize a `<deliverable>` envelope when the agent exited cleanly with
+ * substantive output but never emitted the tagged block itself. We strip
+ * known TUI footer noise (bypass banner, token counter, resume line, agent
+ * label bubble, and the `</task_direct>` user-prompt tail) and wrap the
+ * cleaned tail in a minimal markdown deliverable so the downstream parser
+ * and Task card have something to render.
+ */
+function wrapProseAsDeliverable(raw: string): string {
+  let cleaned = raw;
+  // Drop Claude Code's session goodbye line plus the --resume hint.
+  cleaned = cleaned.replace(/Resume this session with:[\s\S]*$/m, '');
+  // Drop the "bypass permissions on" TUI footer line and token count.
+  cleaned = cleaned.replace(/[›»▸▶]{1,3}\s*bypass permissions[^\n]*\d+\s*tokens[^\n]*/g, '');
+  // Drop the agent-name label bubble that Claude Code prints after responses.
+  cleaned = cleaned.replace(/^\s*[a-z0-9-]+\s*$/gm, '');
+  // Drop the task_direct closing tag and anything above it (user prompt echo).
+  const afterTaskDirect = cleaned.lastIndexOf('</task_direct>');
+  if (afterTaskDirect >= 0) {
+    cleaned = cleaned.slice(afterTaskDirect + '</task_direct>'.length);
+  }
+  // Cap body so we don't embed megabytes of tool-call transcripts.
+  const body = cleaned.trim().slice(-8000).trim() || 'Task finished.';
+  return `<deliverable kind="markdown" title="Task Result">\n${body}\n</deliverable>`;
 }
 
 interface ExpertNameLookup {
@@ -313,19 +339,25 @@ ${content}
 
 ## Protocol
 
-1. Review what you already did and finish any remaining work.
-2. When done (even if the work was already complete), you MUST emit a single deliverable block summarizing the final result:
+1. Run \`ls\` in the workspace to inventory what already exists.
+2. If a renderable artifact (\`index.html\`, \`.mp4\` / \`.webm\` / \`.mov\`, \`.png\` / \`.jpg\` / \`.svg\`, \`.pdf\`) is already there and matches the brief, emit the deliverable now — do NOT redo work.
+3. If only source files exist (\`.tsx\`, \`.py\`, etc.), you are NOT done — finish the build/render step:
+   - **Remotion**: \`npx remotion render src/index.tsx <composition-id> out/video.mp4 --log=error\`. If render is too slow, fall back to \`npx remotion still src/index.tsx <composition-id> out/still.png --log=error\`.
+   - **Web app (React / Next / Vite)**: \`npm run build\`, then copy the built \`index.html\` to the workspace root.
+   - **Other**: produce whatever file the user needs to SEE the result (rendered PNG, compiled output, etc.).
+4. Run \`ls\` again to confirm the artifact is on disk.
+5. Emit the deliverable block:
 
 ${DELIVERABLE_EXAMPLE}
 
-3. For \`code_app\` or \`mixed\` deliverables, immediately follow with a \`<run_info>\` block:
+6. For \`code_app\` / \`mixed\` deliverables, immediately follow with a \`<run_info>\` block:
 
 ${RUN_INFO_EXAMPLE}
 
 ## Hard rules
 
 - ${DELIVERABLE_HARD_RULE}
-- If the previous run already completed the work but simply stopped before emitting the deliverable, emit it NOW based on what you built. Do not redo the work.
+- Do NOT emit the deliverable until a renderable artifact is on disk.
 - NEVER ask the user for clarification.
 </task_resume>`;
     } else if (isTaskRun && request.taskPhase === 'direct') {
@@ -368,6 +400,34 @@ ${RUN_INFO_EXAMPLE}
 - NEVER spawn long-running dev servers or background processes here.
 - NEVER delegate more than 2 levels deep.
 ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown deliverable block explaining why instead of silently failing.
+- PRODUCE A RENDERABLE FINAL ARTIFACT. The Preview tab auto-renders: \`index.html\`, \`.mp4\` / \`.webm\` / \`.mov\`, \`.png\` / \`.jpg\` / \`.svg\` / \`.gif\`, \`.pdf\`, \`.mp3\` / \`.wav\`. Source files alone are NOT enough — the user must see a rendered result without running anything themselves.
+
+## Finish the job — required exit criteria
+
+You are NOT done when source files are written. You are done when a renderable artifact exists in the workspace. BEFORE emitting your deliverable:
+
+1. **Verify the artifact exists** by running \`ls\` (or equivalent) in the workspace and seeing the file in the output.
+2. If no renderable artifact exists yet, KEEP WORKING — do the build/render step. Scaffolding without running the build is a failed task from the user's perspective.
+
+**Video / Remotion tasks.** Scaffolding alone is a failure. After writing source files:
+  - Run \`npm install\` (suppress noise with \`--silent\` if it spams).
+  - Run \`npx remotion render src/index.tsx <composition-id> out/video.mp4 --log=error\` to produce the MP4. Remotion will auto-download Chromium on first run (~60-90s) — that's expected; let it finish.
+  - If \`render\` fails or takes too long (>3 min), fall back to \`npx remotion still src/index.tsx <composition-id> out/still.png --log=error\` to produce at least a first-frame PNG. A PNG preview is MUCH better than no preview.
+  - Confirm with \`ls out/\` that the file exists before emitting the deliverable.
+
+**Web apps (React / Next / Vite).** Run \`npm install && npm run build\`. If the build emits \`dist/index.html\` or similar, copy that \`index.html\` to the workspace root so the static preview auto-renders.
+
+**CLI / library tasks.** If there's no natural visual output, at minimum produce a demo screenshot / sample output file in addition to the README.
+
+If genuinely none of the above applies, emit a markdown deliverable with a clear explanation of what was produced and why no visual preview is possible.
+
+## Your very last output
+
+Your FINAL output MUST be a deliverable block in this exact shape, with real content inside:
+
+\`<deliverable kind="markdown" title="…">…</deliverable>\`
+
+Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE — no pipes, no placeholder ellipsis). Replace \`title\` with a short task-specific label. Replace the inner \`…\` with your actual markdown result. Do not end with prose outside the block. Without this block the task is finalized as an error no matter how much work you did. This applies to every task, including trivial ones.
 </task_direct>`;
     } else if (request.recentMessages && request.recentMessages.length > 0) {
       // Chat mode: prepend recent conversation history
@@ -449,6 +509,13 @@ ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown
       const ptyRunner = new TaskPtyRunner();
       activeRun.ptyRunner = ptyRunner;
 
+      // Buffer key — terminal output is persisted/replayed under the task's
+      // *session* id (what `task.run_id` points at), not the Electron-minted
+      // internal `runId`. For fresh runs they're identical; for resume/rerun
+      // the session id is the original Claude Code session so the buffer
+      // survives across rerun cycles and the Console tab stays populated.
+      const bufferKey = request.resumeSessionId || runId;
+
       // Completion detection: Claude Code TUI sits at a REPL after the agent
       // finishes — it never exits on its own. We watch the accumulated text for
       // the agent's `</deliverable>` close tag (its protocol-defined "done"
@@ -501,15 +568,66 @@ ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown
         }, IDLE_TIMEOUT_MS);
       };
 
+      // Polled completion detector. We only *look* for the deliverable once the
+      // PTY has been idle for QUIESCE_MS — this is crucial because:
+      //   1. The TUI echoes the user prompt (which may contain `<deliverable>`
+      //      examples) on startup. During the echo the PTY is streaming text
+      //      continuously, so the detector stays silent.
+      //   2. A real deliverable is emitted, then Claude Code falls idle at its
+      //      REPL. The quiesce check fires and we detect the match cleanly.
+      // This replaces the prior "scan on every text event" loop that was
+      // susceptible to echo false-triggers.
+      const QUIESCE_MS = 2_000;
+      let lastTextAt = Date.now();
+      const completionPollTimer = setInterval(() => {
+        if (gracefulExitInitiated || ptyRunner.isAborted()) return;
+        if (!resumeSettled) return;
+        if (Date.now() - lastTextAt < QUIESCE_MS) return;
+
+        const scanStart = Math.max(completionScanOffset, activeRun.accumulatedText.length - 16384);
+        const scanWindow = activeRun.accumulatedText.slice(scanStart);
+
+        // Two load-bearing constraints:
+        //  1. Strict `kind` enum — prompt templates use pipe-separated or
+        //     ellipsis placeholder forms that this regex rejects.
+        //  2. Body must contain ≥10 word characters — the user-prompt nudge
+        //     shows `<deliverable kind="markdown" title="…">…</deliverable>`
+        //     whose body is a single ellipsis with zero word chars. A real
+        //     agent emission has substantial markdown content. This guard
+        //     survives TUI echoes of the nudge itself.
+        const deliverableMatch = scanWindow.match(
+          /<deliverable\s+kind=["'](?:markdown|code_app|mixed)["'][^>]*>([\s\S]*?)<\/deliverable>/,
+        );
+        if (!completionDetected && deliverableMatch) {
+          const bodyWordChars = (deliverableMatch[1].match(/\w/g) ?? []).length;
+          if (bodyWordChars >= 10) {
+            completionDetected = true;
+            initiateGracefulExit('completed');
+            return;
+          }
+        }
+
+        // Claude Code's session-ended goodbye line. If we see it in a quiesced
+        // state without a prior deliverable match, the agent ended without
+        // completing properly — finalize as error immediately.
+        if (scanWindow.includes('Resume this session with:')) {
+          initiateGracefulExit(
+            'error',
+            'Agent ended the session without emitting a deliverable. Re-run to resume.',
+          );
+        }
+      }, 500);
+
       ptyRunner.on('data', (data: string) => {
-        this.terminalBufferStore.append(runId, data);
+        this.terminalBufferStore.append(bufferKey, data);
         if (!webContents.isDestroyed()) {
-          webContents.send(IPC_CHANNELS.TASK_TERMINAL_DATA, runId, data);
+          webContents.send(IPC_CHANNELS.TASK_TERMINAL_DATA, bufferKey, data);
         }
       });
 
       ptyRunner.on('text', (text: string) => {
         activeRun.accumulatedText += text;
+        lastTextAt = Date.now();
         if (!webContents.isDestroyed()) {
           webContents.send(channel, {
             type: 'text_delta',
@@ -529,37 +647,28 @@ ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown
 
         resetIdleTimer();
 
-        // Match a complete deliverable block with a CONCRETE kind value. The
-        // prompt itself contains `<deliverable kind="markdown|code_app|mixed">`
-        // example blocks that the TUI echoes into the terminal; requiring a
-        // single real kind value prevents those placeholder echoes from
-        // triggering premature completion. Bound the scan to a rolling tail
-        // (deliverable blocks are well under 16KB) so long runs don't pay
-        // O(n²) slicing the full transcript on every PTY chunk.
-        const scanStart = Math.max(completionScanOffset, activeRun.accumulatedText.length - 16384);
-        const scanWindow = activeRun.accumulatedText.slice(scanStart);
-        if (
-          !completionDetected &&
-          scanWindow.includes('</deliverable>') &&
-          /<deliverable\b[^>]*?\bkind=["'](?:markdown|code_app|mixed)["'][^>]*>[\s\S]*?<\/deliverable>/i.test(scanWindow)
-        ) {
-          completionDetected = true;
-          // Allow 3s for <run_info> to follow the deliverable, then gracefully exit.
-          setTimeout(() => initiateGracefulExit('completed'), 3000);
+        // Inline check for just the goodbye line. Completion detection runs
+        // on the QUIESCE_MS timer above.
+        if (activeRun.accumulatedText.includes('Resume this session with:')) {
+          initiateGracefulExit(
+            'error',
+            'Agent ended the session without emitting a deliverable. Re-run to resume.',
+          );
         }
       });
 
-      // Resize IPC
+      // Resize IPC — filter by bufferKey since the renderer binds the Console
+      // to the session id, not the internal Electron runId.
       const resizeHandler = (_event: Electron.IpcMainEvent, resizeRunId: string, cols: number, rows: number) => {
-        if (resizeRunId === runId) {
+        if (resizeRunId === bufferKey) {
           ptyRunner.resize(cols, rows);
         }
       };
       ipcMain.on(IPC_CHANNELS.TASK_TERMINAL_RESIZE, resizeHandler);
 
-      // Input IPC — renderer writes keystrokes to PTY stdin
+      // Input IPC — renderer writes keystrokes to PTY stdin (also keyed by bufferKey).
       const inputHandler = (_event: Electron.IpcMainEvent, inputRunId: string, data: string) => {
-        if (inputRunId === runId) {
+        if (inputRunId === bufferKey) {
           ptyRunner.write(data);
         }
       };
@@ -569,40 +678,55 @@ ${externalProjectCaution}- If a request is genuinely impossible, emit a markdown
         if (settleTimer) clearTimeout(settleTimer);
         if (idleTimer) clearTimeout(idleTimer);
         if (forceKillTimer) clearTimeout(forceKillTimer);
+        clearInterval(completionPollTimer);
         ipcMain.removeListener(IPC_CHANNELS.TASK_TERMINAL_RESIZE, resizeHandler);
         ipcMain.removeListener(IPC_CHANNELS.TASK_TERMINAL_INPUT, inputHandler);
-        this.terminalBufferStore.flush(runId);
+        this.terminalBufferStore.flush(bufferKey);
 
         // Aborted by cancelRun — finalization already handled by caller.
         if (ptyRunner.isAborted()) return;
 
         // node-pty on macOS can report signal as 0 (number) for normal exits.
         const realSignal = signal && signal !== '0' && signal !== 'undefined' ? signal : null;
-        // A run only succeeds if we actually saw a <deliverable> block. Claude
-        // Code can exit code 0 on its own after finishing a turn — without a
-        // deliverable that means the model stopped early or ran out of turns,
-        // NOT that the task was completed. Treat that as an error so cards
-        // never falsely transition to to_review.
-        const isError = !completionDetected;
-        if (isError) {
+
+        // Completion policy: prefer the structured `<deliverable>` block, but
+        // accept a clean PTY exit with substantive output as a successful run
+        // even if the agent emitted prose instead of tags. The deliverable
+        // block is the machine-readable *ideal*, not a hard contract — agents
+        // don't emit it 100% of the time and failing to `to_review` for every
+        // agent compliance miss makes Tasks feel broken. When the block is
+        // absent we synthesize a minimal markdown deliverable from the tail
+        // of the transcript so the UI has something to display.
+        const hasSubstantiveOutput = activeRun.accumulatedText.trim().length >= 120;
+        const cleanExit = !realSignal && (code === 0 || code === null);
+        const acceptAsCompleted = completionDetected || (cleanExit && hasSubstantiveOutput);
+
+        if (!acceptAsCompleted) {
           const detail = realSignal
-            ? `Agent was killed (${realSignal}) before emitting a deliverable. Re-run to resume the session.`
+            ? `Agent was killed (${realSignal}) before producing output. Re-run to resume the session.`
             : code !== 0 && code !== null
-              ? `Agent exited with code ${code} before emitting a deliverable. Re-run to resume the session.`
-              : 'Agent stopped before emitting a deliverable (may have run out of turns). Re-run to resume the session.';
+              ? `Agent exited with code ${code} before producing output. Re-run to resume the session.`
+              : 'Agent stopped without producing output. Re-run to resume the session.';
           if (!webContents.isDestroyed()) {
             webContents.send(channel, { type: 'error', runId, error: detail } as RendererAgentEvent);
           }
           this.finalizeRun(runId, 'error', activeRun.accumulatedText, detail);
         } else {
+          // Synthesize a deliverable envelope if the agent emitted prose
+          // instead of a tagged block. Downstream consumers (deliverable
+          // parser, Task card) depend on the envelope being present.
+          let messageContent = activeRun.accumulatedText;
+          if (!completionDetected) {
+            messageContent = wrapProseAsDeliverable(activeRun.accumulatedText);
+          }
           if (!webContents.isDestroyed()) {
             webContents.send(channel, {
               type: 'done',
               runId,
-              messageContent: activeRun.accumulatedText,
+              messageContent,
             } as RendererAgentEvent);
           }
-          this.finalizeRun(runId, 'completed', activeRun.accumulatedText);
+          this.finalizeRun(runId, 'completed', messageContent);
         }
         this.postRunSync(webContents);
       });

@@ -2,11 +2,13 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 6 * 60_000, // 6 minutes per test (real Claude Code calls)
+  timeout: 10 * 60_000,
+  expect: { timeout: 5_000 },
   retries: 0,
-  workers: 1, // serial — one Electron instance at a time
-  reporter: [['list'], ['html', { open: 'never' }]],
+  workers: 1,
+  reporter: [['list']],
   use: {
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
   },
 });

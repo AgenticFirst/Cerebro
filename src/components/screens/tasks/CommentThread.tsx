@@ -31,7 +31,7 @@ export default function CommentThread({
   filterSystem = true,
 }: CommentThreadProps) {
   const { t } = useTranslation();
-  const { loadComments, discardQueuedInstruction } = useTasks();
+  const { tasks, loadComments, discardQueuedInstruction } = useTasks();
   const { experts } = useExperts();
 
   const [comments, setComments] = useState<TaskComment[]>([]);
@@ -47,9 +47,14 @@ export default function CommentThread({
     }
   }, [taskId, loadComments]);
 
+  // Refresh when the parent task transitions (e.g. cancel flips pending
+  // instructions to discarded in the DB — the list must reflect that).
+  const task = tasks.find((t) => t.id === taskId);
+  const taskColumn = task?.column;
+  const taskRunId = task?.run_id ?? null;
   useEffect(() => {
     refresh();
-  }, [refresh]);
+  }, [refresh, taskColumn, taskRunId]);
 
   const visibleComments = useMemo(
     () => (filterSystem ? comments.filter((c) => c.kind !== 'system') : comments),

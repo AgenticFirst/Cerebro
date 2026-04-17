@@ -58,26 +58,32 @@ export default function BetaFeaturesSection() {
         </div>
       </div>
 
-      {BETA_FEATURES.map((feature, idx) => (
-        <div
-          key={feature.key}
-          className={clsx(
-            'flex items-start justify-between gap-4 py-3',
-            idx < BETA_FEATURES.length - 1 && 'border-b border-white/[0.06]',
-          )}
-        >
-          <div>
-            <p className="text-sm text-text-primary">{t(feature.labelKey)}</p>
-            <p className="text-xs text-text-secondary mt-0.5">
-              {t(feature.descriptionKey)}
-            </p>
+      {BETA_FEATURES.length === 0 ? (
+        <p className="text-xs text-text-tertiary text-center py-8">
+          {t('betaFeatures.emptyState')}
+        </p>
+      ) : (
+        BETA_FEATURES.map((feature, idx) => (
+          <div
+            key={feature.key}
+            className={clsx(
+              'flex items-start justify-between gap-4 py-3',
+              idx < BETA_FEATURES.length - 1 && 'border-b border-white/[0.06]',
+            )}
+          >
+            <div>
+              <p className="text-sm text-text-primary">{t(feature.labelKey)}</p>
+              <p className="text-xs text-text-secondary mt-0.5">
+                {t(feature.descriptionKey)}
+              </p>
+            </div>
+            <Toggle
+              checked={flags[feature.key]}
+              onChange={() => handleToggle(feature.key)}
+            />
           </div>
-          <Toggle
-            checked={flags[feature.key]}
-            onChange={() => handleToggle(feature.key)}
-          />
-        </div>
-      ))}
+        ))
+      )}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import LivePreview from './LivePreview';
 import TagChipInput from './TagChipInput';
 import TaskArtifactStrip from './TaskArtifactStrip';
 import ProjectFolderField from './ProjectFolderField';
+import AlertModal from '../../ui/AlertModal';
 
 type Tab = 'details' | 'console' | 'preview' | 'activity';
 
@@ -57,6 +58,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   const [editTitle, setEditTitle] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [showHardReset, setShowHardReset] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const prevColumnRef = useRef<TaskColumn | null>(null);
 
@@ -88,6 +90,18 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     }
   }, [task?.column]);
 
+  useEffect(() => {
+    if (!task) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [task, onClose]);
+
   const handleTitleClick = useCallback(() => {
     if (!task) return;
     setEditTitle(task.title);
@@ -113,11 +127,13 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
 
   const handleDelete = useCallback(() => {
     if (!task) return;
-    const confirmed = window.confirm(
-      `Permanently delete "${task.title}"?\n\nThis will remove the task, all comments, checklist items, and the entire workspace directory. This cannot be undone.`,
-    );
-    if (!confirmed) return;
+    setShowDeleteConfirm(true);
+  }, [task]);
+
+  const confirmDelete = useCallback(() => {
+    if (!task) return;
     deleteTask(task.id);
+    setShowDeleteConfirm(false);
     onClose();
   }, [task, deleteTask, onClose]);
 
@@ -196,7 +212,12 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   const canStart = isStartableColumn && hasExpert;
   const isRunning = task.column === 'in_progress';
   const hasRun = !!task.run_id;
-  const consoleRunId = getActiveRunId(task.id);
+  // Console binds to task.run_id (the persistent session id) — the Electron
+  // runtime buffers PTY output under this key too, so the console stays
+  // populated across rerun cycles. We only fall back to the active internal
+  // runId during the brief window between agent.run() and the backend's
+  // run_started echo that sets task.run_id.
+  const consoleRunId = task.run_id ?? getActiveRunId(task.id);
   const startLabel =
     task.column === 'to_review' ? t('tasks.rerunTask')
     : task.column === 'error' ? t('tasks.retryTask')
@@ -549,6 +570,25 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
           </>
         )}
       </div>
+
+      {showDeleteConfirm && task && (
+        <AlertModal
+          icon={<Trash2 size={18} className="text-red-400" />}
+          iconTone="danger"
+          title={t('tasks.deleteTaskTitle')}
+          message={t('tasks.deleteTaskMessage', { title: task.title })}
+          onClose={() => setShowDeleteConfirm(false)}
+          actions={[
+            { label: t('common.cancel'), onClick: () => setShowDeleteConfirm(false) },
+            {
+              label: t('common.delete'),
+              primary: true,
+              variant: 'danger',
+              onClick: confirmDelete,
+            },
+          ]}
+        />
+      )}
     </>
   );
 }

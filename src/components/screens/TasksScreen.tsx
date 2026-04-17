@@ -1,18 +1,21 @@
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
-import type { Task } from '../../context/TaskContext';
+import { useTasks, type Task } from '../../context/TaskContext';
 import KanbanBoard from './tasks/KanbanBoard';
 import TaskDetailDrawer from './tasks/TaskDetailDrawer';
 import NewTaskDialog from './tasks/NewTaskDialog';
 
 export default function TasksScreen() {
   const { t } = useTranslation();
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const { tasks } = useTasks();
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
+  const selectedTask = selectedTaskId ? tasks.find((x) => x.id === selectedTaskId) ?? null : null;
+
   const handleCardClick = useCallback(
-    (task: Task) => setSelectedTask(task),
+    (task: Task) => setSelectedTaskId(task.id),
     [],
   );
 
@@ -35,7 +38,7 @@ export default function TasksScreen() {
 
       <TaskDetailDrawer
         task={selectedTask}
-        onClose={() => setSelectedTask(null)}
+        onClose={() => setSelectedTaskId(null)}
       />
 
       <NewTaskDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />

@@ -16,14 +16,17 @@ interface AlertAction {
 
 interface AlertModalProps {
   icon?: ReactNode;
+  /** Tints the icon wrapper. Defaults to accent; `danger` tints red to match destructive actions. */
+  iconTone?: 'accent' | 'danger';
   title: string;
   message: string;
   actions?: AlertAction[];
   onClose: () => void;
 }
 
-export default function AlertModal({ icon, title, message, actions, onClose }: AlertModalProps) {
+export default function AlertModal({ icon, iconTone = 'accent', title, message, actions, onClose }: AlertModalProps) {
   const { t } = useTranslation();
+  const iconWrapClass = iconTone === 'danger' ? 'bg-red-500/10' : 'bg-accent/10';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
@@ -42,7 +45,7 @@ export default function AlertModal({ icon, title, message, actions, onClose }: A
 
           <div className="flex items-center gap-3 mb-3">
             {icon && (
-              <div className="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+              <div className={`w-9 h-9 rounded-lg ${iconWrapClass} flex items-center justify-center flex-shrink-0`}>
                 {icon}
               </div>
             )}

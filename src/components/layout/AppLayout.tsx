@@ -1,8 +1,7 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChat } from '../../context/ChatContext';
-import { useFeatureFlags } from '../../context/FeatureFlagsContext';
 import { useTasks } from '../../context/TaskContext';
 import { useExperts } from '../../context/ExpertContext';
 import Sidebar from './Sidebar';
@@ -33,7 +32,6 @@ export default function AppLayout() {
     dismissChatError,
     setActiveScreen,
   } = useChat();
-  const { flags, isLoading: flagsLoading } = useFeatureFlags();
   const { pendingFailurePrompts, confirmFailurePrompt, dismissFailurePrompt } = useTasks();
   const { experts } = useExperts();
 
@@ -43,12 +41,6 @@ export default function AppLayout() {
     if (!activePrompt?.targetExpertId) return null;
     return experts.find((e) => e.id === activePrompt.targetExpertId)?.name ?? null;
   }, [activePrompt, experts]);
-
-  useEffect(() => {
-    if (!flagsLoading && activeScreen === 'tasks' && !flags.tasks) {
-      setActiveScreen('chat');
-    }
-  }, [flagsLoading, activeScreen, flags.tasks, setActiveScreen]);
 
   const renderContent = () => {
     if (activeScreen === 'chat') {

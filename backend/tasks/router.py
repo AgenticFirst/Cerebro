@@ -288,6 +288,12 @@ def cancel_task(task_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Task not found")
     task.column = "backlog"
     task.run_id = None
+    # A pending queued instruction must not quietly drain into a future run
+    # of the same task after cancellation — drop it here.
+    db.query(TaskComment).filter(
+        TaskComment.task_id == task_id,
+        TaskComment.queue_status == "pending",
+    ).update({TaskComment.queue_status: "discarded"})
     _add_system_comment(db, task.id, "Task cancelled, moved back to Backlog")
     db.commit()
     db.refresh(task)
@@ -295,6 +301,9 @@ def cancel_task(task_id: str, db: Session = Depends(get_db)):
 
 
 # ── Run event callback (called by Electron main process) ──
+
+TERMINAL_EVENTS = {"run_completed", "run_failed", "run_cancelled"}
+
 
 @router.post("/{task_id}/run-event")
 def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_db)):
@@ -307,8 +316,8 @@ def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_db)):
 
     if event_type == "run_started":
         # Ensure a RunRecord exists for this run_id — tasks.run_id has a FK to it.
-        # The Electron runtime mints the runId but doesn't create the DB row for task runs,
-        # so we create it here on first sight.
+        # The Electron runtime mints the runId but doesn't create the DB row for
+        # task runs, so we create it here on first sight.
         if run_id and not db.get(RunRecord, run_id):
             db.add(RunRecord(
                 id=run_id,
@@ -323,34 +332,48 @@ def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_db)):
         task.run_id = run_id
         task.started_at = task.started_at or _utcnow()
         _add_system_comment(db, task.id, "Expert started working")
-    elif event_type == "run_completed":
-        task.column = "to_review"
-        task.completed_at = _utcnow()
-        if run_id:
-            run = db.get(RunRecord, run_id)
-            if run:
-                run.status = "completed"
-                run.completed_at = _utcnow()
-        _add_system_comment(db, task.id, "Expert finished — ready for review")
-    elif event_type == "run_failed":
-        task.column = "error"
-        task.last_error = event.get("error", "Unknown error")
-        if run_id:
-            run = db.get(RunRecord, run_id)
-            if run:
-                run.status = "failed"
-                run.error = task.last_error
-                run.completed_at = _utcnow()
-        _add_system_comment(db, task.id, f"Expert run failed: {task.last_error}")
-    elif event_type == "run_cancelled":
-        task.column = "error"
-        task.last_error = "Run was cancelled"
-        if run_id:
-            run = db.get(RunRecord, run_id)
-            if run:
-                run.status = "cancelled"
-                run.completed_at = _utcnow()
-        _add_system_comment(db, task.id, "Expert run cancelled")
+    elif event_type in TERMINAL_EVENTS:
+        # Ignore events from a stale run. After cancel/re-run the task's
+        # run_id points at the new run; a late event carrying the old run_id
+        # must not stomp the current state.
+        if run_id and task.run_id and task.run_id != run_id:
+            return {"ok": True, "ignored": "stale_run_id"}
+        # Ignore terminal events when the task has already reached a terminal
+        # column. Stops `error → to_review` resurrections and makes repeated
+        # `run_completed` events idempotent (no duplicate system comments).
+        if task.column in ("to_review", "completed", "error"):
+            return {"ok": True, "ignored": "already_terminal"}
+
+        if event_type == "run_completed":
+            task.column = "to_review"
+            task.completed_at = _utcnow()
+            if run_id:
+                run = db.get(RunRecord, run_id)
+                if run:
+                    run.status = "completed"
+                    run.completed_at = _utcnow()
+            _add_system_comment(db, task.id, "Expert finished — ready for review")
+        elif event_type == "run_failed":
+            task.column = "error"
+            task.last_error = event.get("error", "Unknown error")
+            if run_id:
+                run = db.get(RunRecord, run_id)
+                if run:
+                    run.status = "failed"
+                    run.error = task.last_error
+                    run.completed_at = _utcnow()
+            _add_system_comment(db, task.id, f"Expert run failed: {task.last_error}")
+        elif event_type == "run_cancelled":
+            task.column = "error"
+            task.last_error = "Run was cancelled"
+            if run_id:
+                run = db.get(RunRecord, run_id)
+                if run:
+                    run.status = "cancelled"
+                    run.completed_at = _utcnow()
+            _add_system_comment(db, task.id, "Expert run cancelled")
+    else:
+        raise HTTPException(400, f"Invalid run-event type: {event_type!r}")
 
     db.commit()
     db.refresh(task)

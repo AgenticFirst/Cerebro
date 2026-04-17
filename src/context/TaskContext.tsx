@@ -299,9 +299,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const cancelTask = useCallback(async (id: string) => {
     const task = tasks.find((t) => t.id === id);
     if (task?.run_id) {
-      // Tear down the listener BEFORE cancelling + routing through handleTermRef.
-      // Otherwise a late `done`/`error` event from the PTY can fire after cancel
-      // and double-post run_completed / double-drain the queued instruction.
+      // Tear down the listener BEFORE killing so a late `done`/`error` PTY
+      // event can't double-post run_completed after we've reset the task.
       const unsub = runListeners.current.get(id);
       if (unsub) {
         unsub();
@@ -316,17 +315,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         console.warn('[task] Failed to cancel agent run:', err);
       }
-      // Route through the ref so cancel = failure for the queue (prompt surfaces
-      // if an instruction was pending).
-      await handleTermRef.current?.(id, task.run_id, 'cancelled');
-    } else {
-      const res = await window.cerebro.invoke({
-        method: 'POST',
-        path: `/tasks/${id}/cancel`,
-      });
-      if (!res.ok) throw new Error('Failed to cancel task');
-      await loadTasks();
     }
+    const res = await window.cerebro.invoke({
+      method: 'POST',
+      path: `/tasks/${id}/cancel`,
+    });
+    if (!res.ok) throw new Error('Failed to cancel task');
+    await loadTasks();
   }, [tasks, loadTasks]);
 
   const registerRunListener = useCallback((taskId: string, runId: string, reportedRunId?: string) => {

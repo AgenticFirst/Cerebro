@@ -27,6 +27,10 @@ export async function connectToApp(): Promise<{ browser: Browser; page: Page }> 
   for (const ctx of contexts) {
     for (const p of ctx.pages()) {
       const url = p.url();
+      // Exclude Electron's detached DevTools window — it reports as a page
+      // under CDP but obviously isn't the app renderer. Without this filter,
+      // screenshots render DevTools and all app-scoped locators miss.
+      if (url.startsWith('devtools://')) continue;
       if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) {
         page = p;
         break;
@@ -45,18 +49,40 @@ export async function connectToApp(): Promise<{ browser: Browser; page: Page }> 
   return { browser, page };
 }
 
+/** Dismiss any open modal (NewTaskDialog, AlertModal) or task detail drawer. */
+export async function dismissModals(page: Page): Promise<void> {
+  for (let i = 0; i < 6; i++) {
+    const zIndex50 = page.locator('.fixed.inset-0.z-50');
+    const drawerPanel = page.locator('div.fixed.inset-y-0.right-0.z-40');
+    const modalOpen = (await zIndex50.count()) > 0;
+    const drawerOpen = (await drawerPanel.count()) > 0;
+    if (!modalOpen && !drawerOpen) return;
+
+    // Click the explicit close button — far more reliable than Escape when
+    // focus is stuck inside an input/textarea with its own Escape handler.
+    const root = modalOpen ? zIndex50 : drawerPanel;
+    const closeBtn = root.locator('button[aria-label="Close"], button:has(svg.lucide-x)').first();
+    if ((await closeBtn.count()) > 0) {
+      await closeBtn.click({ force: true }).catch(() => {});
+    } else {
+      await page.keyboard.press('Escape');
+    }
+    await page.waitForTimeout(150);
+  }
+}
+
 /** Navigate to the Tasks screen via sidebar. */
 export async function goToTasks(page: Page): Promise<void> {
+  await dismissModals(page);
   const tasksBtn = page.locator('nav button').filter({ hasText: /Tasks/i });
   await tasksBtn.first().click();
   await page.waitForSelector('h1:has-text("Tasks")', { timeout: 5_000 });
-  // Wait for the kanban board to mount — every column renders a header label.
   await page.waitForSelector(`text=${COLUMN_LABELS.backlog}`, { timeout: 5_000 });
 }
 
-/** Return the column container by its label text. */
+/** Return the column container by its stable testid. */
 export function column(page: Page, col: ColumnKey): Locator {
-  return page.locator(`div.flex-col:has(> div:has(span:text-is("${COLUMN_LABELS[col]}")))`).first();
+  return page.locator(`[data-testid="kanban-column-${col}"]`);
 }
 
 /** Locate a specific task card by title inside any column. */
@@ -100,18 +126,18 @@ export async function createTaskViaDialog(
 
   const submit = dialog.locator('button[type="submit"]').filter({ hasText: /Create Task/i });
   await submit.click();
-  await dialog.waitFor({ state: 'hidden', timeout: 5_000 });
+  await dialog.waitFor({ state: 'hidden', timeout: 15_000 });
 }
 
-/** Quick-add a task via a column header's `+` button. */
+/** Quick-add a task via a column's "Add card" button. */
 export async function quickAddInColumn(
   page: Page,
   col: ColumnKey,
   title: string,
 ): Promise<void> {
   const col_ = column(page, col);
-  const headerPlus = col_.locator('div').first().locator('button').first();
-  await headerPlus.click();
+  const addCardBtn = col_.locator('button').filter({ hasText: /ADD CARD/i }).first();
+  await addCardBtn.click();
   const input = col_.locator('input[placeholder*="Task title"]');
   await input.fill(title);
   await input.press('Enter');
@@ -128,18 +154,29 @@ export async function openDetail(page: Page, title: string): Promise<Locator> {
 
 /** Start button in the detail drawer. */
 export function startButton(page: Page): Locator {
-  return page.locator('button').filter({ hasText: /^Start$/ }).first();
+  return page.locator('div.z-40 button').filter({ hasText: /^(Start|Re-run|Retry)$/ }).first();
 }
 
-/** Cancel button in the detail drawer (square icon). */
+/** Cancel button in the detail drawer. */
 export function cancelButton(page: Page): Locator {
-  return page.locator('button svg.lucide-square').locator('..').first();
+  return page.locator('div.z-40 button').filter({ hasText: /Cancel task/i }).first();
 }
 
 /** Send a queued instruction via the detail drawer composer. */
 export async function sendInstruction(page: Page, text: string): Promise<void> {
-  await page.locator('textarea').last().fill(text);
-  await page.locator('button').filter({ hasText: /Send to Expert/i }).first().click();
+  const composer = page
+    .locator('div.space-y-2')
+    .filter({ has: page.locator('button', { hasText: /Send to Expert/i }) })
+    .first();
+  const ta = composer.locator('textarea').first();
+  await ta.click();
+  await ta.fill(text);
+  // MentionTextarea's onChange fires from the input event; fill() dispatches it,
+  // but belt-and-braces: confirm the value and type one char if stale.
+  if (((await ta.inputValue()) || '').trim().length === 0) {
+    await ta.pressSequentially(text, { delay: 10 });
+  }
+  await composer.locator('button', { hasText: /Send to Expert/i }).first().click();
 }
 
 /** The detail-drawer status pill (header dot + label). */
@@ -215,3 +252,29 @@ export async function firstExpertName(page: Page): Promise<string | null> {
 export async function screenshot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: `e2e/screenshots/${name}.png`, fullPage: true });
 }
+
+/** Delete every task whose title begins with any of the given prefixes. Uses the
+ * renderer's IPC bridge so we don't need to know the backend's random port. */
+export async function deleteTasksByPrefix(
+  page: Page,
+  prefixes: readonly string[],
+): Promise<void> {
+  await page.evaluate(async (pfxs: string[]) => {
+    const invoke = (window as unknown as {
+      cerebro: { invoke: (req: { method: string; path: string }) => Promise<{ ok: boolean; data: unknown }> };
+    }).cerebro.invoke;
+    const list = await invoke({ method: 'GET', path: '/tasks' });
+    if (!list.ok) return;
+    const tasks = list.data as Array<{ id: string; title: string; column: string; run_id: string | null }>;
+    for (const t of tasks) {
+      if (!pfxs.some((p) => t.title.startsWith(p))) continue;
+      // Cancel first (kills any active agent run + clears run_id) before delete
+      // so we never leave an orphaned Claude Code subprocess behind.
+      if (t.run_id) {
+        await invoke({ method: 'POST', path: `/tasks/${t.id}/cancel` }).catch(() => {});
+      }
+      await invoke({ method: 'DELETE', path: `/tasks/${t.id}` }).catch(() => {});
+    }
+  }, [...prefixes]);
+}
+
