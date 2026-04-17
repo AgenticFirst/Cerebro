@@ -9,6 +9,16 @@ import {
 } from 'react';
 import { stripMentionSyntax } from '../lib/mentions';
 
+function extractDetail(data: unknown, fallback: string): string {
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d: unknown) => (d as { msg?: string })?.msg ?? String(d)).join(', ');
+  }
+  return fallback;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -212,10 +222,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       path: '/tasks',
       body: input,
     });
-    if (!res.ok) {
-      const detail = (res.data as { detail?: string } | null)?.detail;
-      throw new Error(detail || 'Failed to create task');
-    }
+    if (!res.ok) throw new Error(extractDetail(res.data, 'Failed to create task'));
     await loadTasks();
     return res.data as Task;
   }, [loadTasks]);
@@ -226,10 +233,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       path: `/tasks/${id}`,
       body: input,
     });
-    if (!res.ok) {
-      const detail = (res.data as { detail?: string } | null)?.detail;
-      throw new Error(detail || 'Failed to update task');
-    }
+    if (!res.ok) throw new Error(extractDetail(res.data, 'Failed to update task'));
     await loadTasks();
   }, [loadTasks]);
 
@@ -777,10 +781,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           pending_expert_id: needsReassign ? targetExpertId : null,
         },
       });
-      if (!res.ok) {
-        const detail = (res.data as { detail?: string } | null)?.detail;
-        throw new Error(detail || 'Failed to queue instruction');
-      }
+      if (!res.ok) throw new Error(extractDetail(res.data, 'Failed to queue instruction'));
       await loadTasks();
       return;
     }
