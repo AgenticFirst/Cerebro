@@ -367,13 +367,14 @@ def recover_stale_runs(db=Depends(get_db)):
     from models import Task
     stale_tasks = (
         db.query(Task)
-        .filter(Task.status.in_(["running", "clarifying", "planning"]))
+        .filter(Task.column == "in_progress")
+        .filter(Task.run_id.isnot(None))
         .all()
     )
     recovered_tasks = 0
     for task in stale_tasks:
-        task.status = "failed"
-        task.error = "Interrupted — app was closed while task was running"
+        task.column = "error"
+        task.last_error = "Interrupted — app was closed while task was running"
         task.completed_at = now
         recovered_tasks += 1
 
