@@ -255,37 +255,53 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     await loadTasks();
   }, [loadTasks]);
 
+  // In-flight delete set — dedupe concurrent calls for the same task id so
+  // accidental double-clicks / drawer-plus-card double-wired handlers can't
+  // fire a second DELETE while the first is still resolving.
+  const deletingRef = useRef<Set<string>>(new Set());
+
   const deleteTask = useCallback(async (id: string) => {
-    // Find the task to get its run_id for terminal buffer cleanup
-    const task = tasks.find((t) => t.id === id);
-    // Clean up active listener
-    const unsub = runListeners.current.get(id);
-    if (unsub) {
-      unsub();
-      runListeners.current.delete(id);
+    if (deletingRef.current.has(id)) return;
+    deletingRef.current.add(id);
+    try {
+      // Find the task to get its run_id for terminal buffer cleanup
+      const task = tasks.find((t) => t.id === id);
+      // Clean up active listener
+      const unsub = runListeners.current.get(id);
+      if (unsub) {
+        unsub();
+        runListeners.current.delete(id);
+      }
+      const internalRunId = activeInternalRunIds.current.get(id) ?? task?.run_id;
+      activeInternalRunIds.current.delete(id);
+      // Kill any active run
+      if (internalRunId) {
+        try { await window.cerebro.agent.cancel(internalRunId); } catch { /* noop */ }
+      }
+      const res = await window.cerebro.invoke({
+        method: 'DELETE',
+        path: `/tasks/${id}`,
+      });
+      // Idempotent: 404 means the task is already gone — treat as success
+      // instead of throwing. Otherwise a stale retry after a successful
+      // delete surfaces as a spurious user-visible error.
+      if (!res.ok && res.status !== 404) {
+        throw new Error(`Failed to delete task (status ${res.status})`);
+      }
+      // Permanent cleanup: workspace files + terminal buffer
+      await Promise.all([
+        window.cerebro.taskTerminal.removeWorkspace(id).catch(() => { /* noop */ }),
+        task?.run_id
+          ? window.cerebro.taskTerminal.removeBuffer(task.run_id).catch(() => { /* noop */ })
+          : Promise.resolve(),
+      ]);
+      // FK cascade drops the comments backend-side, but local prompt state
+      // must match — otherwise a modal would linger pointing at a dead task.
+      setPendingFailurePrompts((prev) => prev.filter((p) => p.taskId !== id));
+      await loadTasks();
+    } finally {
+      deletingRef.current.delete(id);
     }
-    const internalRunId = activeInternalRunIds.current.get(id) ?? task?.run_id;
-    activeInternalRunIds.current.delete(id);
-    // Kill any active run
-    if (internalRunId) {
-      try { await window.cerebro.agent.cancel(internalRunId); } catch { /* noop */ }
-    }
-    const res = await window.cerebro.invoke({
-      method: 'DELETE',
-      path: `/tasks/${id}`,
-    });
-    if (!res.ok) throw new Error('Failed to delete task');
-    // Permanent cleanup: workspace files + terminal buffer
-    await Promise.all([
-      window.cerebro.taskTerminal.removeWorkspace(id).catch(() => { /* noop */ }),
-      task?.run_id
-        ? window.cerebro.taskTerminal.removeBuffer(task.run_id).catch(() => { /* noop */ })
-        : Promise.resolve(),
-    ]);
-    // FK cascade drops the comments backend-side, but local prompt state
-    // must match — otherwise a modal would linger pointing at a dead task.
-    setPendingFailurePrompts((prev) => prev.filter((p) => p.taskId !== id));
-    await loadTasks();
   }, [loadTasks, tasks]);
 
   const loadComments = useCallback(async (taskId: string): Promise<TaskComment[]> => {
