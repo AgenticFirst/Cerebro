@@ -829,7 +829,7 @@ function registerIpcHandlers(): void {
     const [parent] = BrowserWindow.getAllWindows();
     const result = await dialog.showOpenDialog(parent, {
       title: 'Link a project directory',
-      message: 'Cerebro will grant its agents access to this directory.',
+      ...(process.platform === 'darwin' ? { message: 'Cerebro will grant its agents access to this directory.' } : {}),
       properties: ['openDirectory', 'createDirectory'],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
@@ -917,8 +917,10 @@ const createWindow = () => {
     minHeight: 600,
     title: 'Cerebro',
     icon: path.join(app.getAppPath(), 'assets', 'icon.png'),
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 12 },
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset' as const,
+      trafficLightPosition: { x: 16, y: 12 },
+    } : {}),
     backgroundColor: '#09090b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

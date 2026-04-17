@@ -52,16 +52,20 @@ describe('parseAllowlistRaw', () => {
 });
 
 describe('redactForChat', () => {
-  const dataDir = '/Users/alice/Library/Application Support/Cerebro';
+  const macDataDir = '/Users/alice/Library/Application Support/Cerebro';
+  const linuxDataDir = '/home/alice/.config/Cerebro';
 
   it('scrubs bot tokens', () => {
     const text = 'leaked: 123456789:AAEabcdefghijklmnopqrstuvwxy123 end';
-    const out = redactForChat(text, dataDir);
+    const out = redactForChat(text, macDataDir);
     expect(out).not.toContain('AAEabcdefghijklmnopqrstuvwxy123');
     expect(out).toContain('***');
   });
 
-  it('masks paths under the data dir', () => {
+  it.each([
+    ['macOS', macDataDir],
+    ['Linux', linuxDataDir],
+  ])('masks paths under the data dir (%s)', (_platform, dataDir) => {
     const text = `see ${dataDir}/telegram-tmp/abc.ogg for details`;
     const out = redactForChat(text, dataDir);
     expect(out).not.toContain('telegram-tmp/abc.ogg');
@@ -70,14 +74,14 @@ describe('redactForChat', () => {
 
   it('masks generic sk-* keys', () => {
     const text = 'api key: sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const out = redactForChat(text, dataDir);
+    const out = redactForChat(text, macDataDir);
     expect(out).toContain('<key>');
     expect(out).not.toMatch(/sk-proj-[A-Z0-9]{20,}/);
   });
 
   it('leaves ordinary text intact', () => {
     const text = 'Nothing sensitive here.';
-    expect(redactForChat(text, dataDir)).toBe(text);
+    expect(redactForChat(text, macDataDir)).toBe(text);
   });
 });
 
