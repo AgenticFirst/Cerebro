@@ -87,7 +87,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     !isUser && (message.isThinking || message.isStreaming === true) && !hasContent;
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in" data-testid="chat-message" data-role={isUser ? 'user' : 'assistant'}>
       <div className="flex items-center gap-2 mb-1.5">
         <span
           className={clsx('text-xs font-medium', isUser ? 'text-accent' : 'text-text-secondary')}

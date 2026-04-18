@@ -295,3 +295,316 @@ export async function deleteTasksByPrefix(
   }, [...prefixes]);
 }
 
+// ─── Experts Messages helpers ──────────────────────────────────────────────
+// Shared by e2e/experts-messages.spec.ts. Kept in this file so the whole suite
+// pulls from one helpers module.
+
+/** Generic-exit-error regex — the subprocess-crash line we never want a user
+ *  to see in their chat. Lifted from expert-chat.spec.ts so both specs share it. */
+export const GENERIC_EXIT_ERROR = /Claude Code exited unexpectedly/i;
+
+/** Structured-error regex — acceptable *only* in environments without an API
+ *  key. Tests that match this fail loudly so the operator fixes the env. */
+export const STRUCTURED_ERROR =
+  /Authentication error|Rate limited|maximum number of turns|Expert not installed|not.*found|ENOENT/i;
+
+export interface VerifiedExpertMeta {
+  /** Backend slug from `backend/experts/seed.py`. */
+  slug: string;
+  /** Visible display name in `ExpertListRail` rows and `ThreadHeader`. */
+  name: string;
+  /** Capitalized label surfaced under the name in list rows. */
+  domain: 'engineering' | 'creative' | 'research' | 'productivity';
+  /** Regex the W2 reply must match — any keyword an expert naturally uses. */
+  keywords: RegExp;
+}
+
+/** Verified expert roster — mirrored from backend/experts/seed.py. Order
+ *  matches the seed file. Keep these in sync; the C1 test asserts the roster. */
+export const VERIFIED_EXPERT_NAMES: readonly VerifiedExpertMeta[] = [
+  { slug: 'full-stack-engineer', name: 'Principal Full-Stack Engineer', domain: 'engineering', keywords: /api|migration|endpoint|schema|handler/i },
+  { slug: 'product-designer', name: 'Staff Product Designer', domain: 'creative', keywords: /visual|layout|color|typography|design|figma/i },
+  { slug: 'frontend-engineer', name: 'Principal Frontend Engineer', domain: 'engineering', keywords: /component|accessib|state|react|render|hook/i },
+  { slug: 'technical-writer', name: 'Senior Technical Writer', domain: 'creative', keywords: /section|audience|example|documentation|clarity|guide/i },
+  { slug: 'ios-engineer', name: 'Principal iOS Engineer', domain: 'engineering', keywords: /swift|view|state|ios|testflight|app\s*store/i },
+  { slug: 'growth-marketer', name: 'Growth Marketing Lead', domain: 'creative', keywords: /positioning|audience|cta|funnel|campaign|conversion/i },
+  { slug: 'security-engineer', name: 'Security Engineer', domain: 'engineering', keywords: /threat|mitigation|attacker|vulnerability|risk|auth/i },
+  { slug: 'backend-engineer', name: 'Principal Backend Engineer', domain: 'engineering', keywords: /migration|backfill|index|slo|idempot|queue/i },
+  { slug: 'data-analyst', name: 'Senior Data Analyst', domain: 'research', keywords: /groupby|aggregate|channel|analysis|pandas|sql|chart/i },
+  { slug: 'product-manager', name: 'Senior Product Manager', domain: 'productivity', keywords: /problem|metric|scope|prd|jobs?-to-be-done|roadmap/i },
+  { slug: 'customer-support-specialist', name: 'Customer Support Specialist', domain: 'productivity', keywords: /classif|escalat|reply|ticket|customer|bug/i },
+];
+
+/** A file or folder chip in the last assistant message bubble. */
+export interface ChipHandle {
+  /** The root DOM node of the chip (button for folder, div for file). */
+  locator: Locator;
+  /** Extension label text displayed on the chip, e.g., 'TS', 'MD', 'SW'. */
+  label: string;
+  /** Filename text displayed on the chip (the `.truncate` span). */
+  name: string;
+  /** True if this is a folder chip (single "Open folder" branch). */
+  isFolder: boolean;
+}
+
+/** Convert a test title into a filesystem-safe slug for per-test workspaces. */
+function slugify(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+}
+
+/** Absolute workspace path handed to the LLM when we want it to write files
+ *  there. Always `/tmp/cerebro-e2e/<slug>`. */
+export function workspacePathFor(testTitle: string): string {
+  return `/tmp/cerebro-e2e/${slugify(testTitle)}`;
+}
+
+/** Per-test workspace "creation" — a no-op. The LLM's `Write` tool invokes
+ *  `mkdir -p` on the parent directory before writing, so we don't need the
+ *  path to exist ahead of time. Returns the deterministic path so the spec
+ *  can hand it to the LLM inside the prompt. */
+export async function createWorkspace(_page: Page, testTitle: string): Promise<string> {
+  return workspacePathFor(testTitle);
+}
+
+/** Per-test workspace teardown — a no-op for now. The renderer has no
+ *  `rm -rf` IPC, /tmp rotates on reboot, and per-test slugs don't collide
+ *  across runs, so leftover files are cosmetic rather than pollutant. If a
+ *  future run needs deterministic teardown, add a thin `shell:rmTree` IPC
+ *  (gated on a test-only path prefix) rather than shelling out here. */
+export async function cleanupWorkspace(_page: Page, _testTitle: string): Promise<void> {
+  // intentionally empty — see comment
+}
+
+/** Stat a path via the shell IPC. Returns `{ exists, isDirectory, size }`. */
+export async function statPath(
+  page: Page,
+  absolutePath: string,
+): Promise<{ exists: boolean; isDirectory: boolean; size: number }> {
+  return page.evaluate(async (p: string) => {
+    const shell = (window as unknown as {
+      cerebro: { shell: { statPath: (p: string) => Promise<{ exists: boolean; isDirectory: boolean; size: number }> } };
+    }).cerebro.shell;
+    return shell.statPath(p);
+  }, absolutePath);
+}
+
+/** Copy a file to ~/Downloads via the shell IPC. Returns the destination path. */
+export async function downloadToDownloads(page: Page, absolutePath: string): Promise<string> {
+  return page.evaluate(async (p: string) => {
+    const shell = (window as unknown as {
+      cerebro: { shell: { downloadToDownloads: (p: string) => Promise<string> } };
+    }).cerebro.shell;
+    return shell.downloadToDownloads(p);
+  }, absolutePath);
+}
+
+/** Navigate into the Messages tab of the Experts screen. Assumes already on Experts. */
+export async function gotoMessagesTab(page: Page): Promise<void> {
+  // ExpertsTabs renders "Messages" and "Hierarchy" buttons; click Messages.
+  // `exact` regex so we don't match other things on the page containing "Messages".
+  const btn = page.locator('button').filter({ hasText: /^Messages$/ }).first();
+  if ((await btn.count()) > 0) await btn.click({ force: true }).catch(() => {});
+  // Search input in ExpertListRail is the tab's unique marker.
+  await page.waitForSelector('input[placeholder*="Search experts" i]', { timeout: 5_000 });
+}
+
+/** Locator for the row in `ExpertListRail` whose visible name matches `expertName`.
+ *  Scopes to the rail container (parent of the "Search experts" input) so the
+ *  ThreadHeader / chat-message instances of the same name don't collide. */
+export function expertRow(page: Page, expertName: string): Locator {
+  const rail = page
+    .locator('input[placeholder*="Search experts" i]')
+    .locator('xpath=ancestor::div[contains(@class, "w-[260px]") or contains(@class, "flex-col")][1]')
+    .first();
+  return rail
+    .locator('button')
+    .filter({ hasText: new RegExp(expertName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) })
+    .first();
+}
+
+/** Click the row for `expertName`. Filters via the search box first to stabilize
+ *  scroll position. Returns the row locator. */
+export async function selectExpertInMessagesTab(page: Page, expertName: string): Promise<Locator> {
+  await gotoMessagesTab(page);
+  const search = page.locator('input[placeholder*="Search experts" i]').first();
+  await search.click();
+  await search.fill(expertName);
+  const row = expertRow(page, expertName);
+  await expect(row).toBeVisible({ timeout: 5_000 });
+  await row.click();
+  // Clear the search filter so subsequent selections in the same test don't
+  // fail because the other expert is filtered out of the list.
+  await search.fill('');
+  return row;
+}
+
+/** The ChatInput textarea scoped to the active `ExpertThreadView` (not the
+ *  global Chat screen's composer). */
+export function expertThreadComposer(page: Page): Locator {
+  // ExpertThreadView wraps ChatInput in `<div className="mx-auto max-w-3xl">`.
+  // The textarea uses the i18n placeholder "Send a message...".
+  return page.locator('textarea[placeholder*="Send a message" i]').last();
+}
+
+/** Type `text` into the expert thread composer and send it. */
+export async function sendExpertMessage(page: Page, text: string): Promise<void> {
+  const ta = expertThreadComposer(page);
+  await ta.click();
+  await ta.fill(text);
+  // fill() dispatches input; belt-and-braces — confirm the value before send.
+  if (((await ta.inputValue()) || '').trim().length === 0) {
+    await ta.pressSequentially(text, { delay: 10 });
+  }
+  await ta.press('Enter');
+}
+
+/** Open a fresh thread for the currently-selected expert via the Clock dropdown. */
+export async function openNewThread(page: Page): Promise<void> {
+  // ThreadHeader renders a Clock-icon button with title="Threads" (i18n'd).
+  const clockBtn = page.locator('button[title="Threads"]').first();
+  await clockBtn.click();
+  // ThreadsDropdown renders a "New thread" button at the top.
+  const newThreadBtn = page.locator('button').filter({ hasText: /^New thread$/ }).first();
+  await expect(newThreadBtn).toBeVisible({ timeout: 3_000 });
+  await newThreadBtn.click();
+}
+
+/** Locator for the last assistant message bubble in the active thread.
+ *  ChatMessage exposes `data-testid="chat-message"` + `data-role="assistant"`
+ *  so we don't accidentally match nested tool-call cards that reuse the same
+ *  `animate-fade-in` class. */
+export function lastAssistantMessage(page: Page): Locator {
+  return page.locator('[data-testid="chat-message"][data-role="assistant"]').last();
+}
+
+/** Wait for the most recent assistant message to finalize: `MarkdownContent`
+ *  (`.prose`) block rendered with non-empty text, no "Working on it…" pill,
+ *  no "Cerebro is thinking" indicator. Returns the rendered markdown text.
+ *
+ *  We anchor on `.prose` rather than the bubble's `innerText` because the
+ *  bubble can contain tool-call cards + a ThinkingIndicator while still
+ *  mid-stream — all of which inflate `innerText` without meaning a reply
+ *  actually arrived. */
+export async function waitForExpertReply(
+  page: Page,
+  opts: { timeoutMs?: number } = {},
+): Promise<string> {
+  const deadline = Date.now() + (opts.timeoutMs ?? 120_000);
+  while (Date.now() < deadline) {
+    const msg = lastAssistantMessage(page);
+    if ((await msg.count()) > 0) {
+      // "Working on it…" pill and "Cerebro is thinking" indicator both signal
+      // an in-flight stream — if either is visible, we're not done.
+      const busy =
+        (await msg.locator('text=/Working on it/i').count()) > 0 ||
+        (await msg.locator('text=/is thinking/i').count()) > 0;
+      const prose = msg.locator('.prose').first();
+      const hasProse = (await prose.count()) > 0;
+      if (!busy && hasProse) {
+        const proseText = (await prose.innerText().catch(() => '')).trim();
+        if (proseText.length > 0) return proseText;
+      }
+    }
+    await page.waitForTimeout(500);
+  }
+  // Return whatever is there so the caller can include it in the assertion msg.
+  const msg = lastAssistantMessage(page);
+  const prose = msg.locator('.prose').first();
+  if ((await prose.count()) > 0) {
+    return (await prose.innerText().catch(() => '')).trim();
+  }
+  return (await msg.innerText().catch(() => '')).trim();
+}
+
+/** List all attachment chips rendered on the last assistant message.
+ *  File chips are identified by their "Download to Downloads" button; folder
+ *  chips are identified as the outer button with title="Open folder". This
+ *  avoids depending on Tailwind class-name stability. */
+export async function attachmentChipsOf(messageLocator: Locator): Promise<ChipHandle[]> {
+  const chips: ChipHandle[] = [];
+
+  // File chips — locate each Download button, walk up to its chip root wrapper.
+  const fileDownloadBtns = messageLocator.locator('button[title="Download to Downloads"]');
+  const fileCount = await fileDownloadBtns.count();
+  for (let i = 0; i < fileCount; i++) {
+    const downloadBtn = fileDownloadBtns.nth(i);
+    // Chip root is the nearest ancestor div with role-less sibling buttons. The
+    // chip renders as `<div class="inline-flex ...">`. `locator('xpath=..')`
+    // gives the immediate parent which is the chip root.
+    const root = downloadBtn.locator('xpath=..');
+    const label = (await root.locator('span').first().innerText().catch(() => '')).trim();
+    const name = (await root.locator('span.truncate').first().innerText().catch(() => '')).trim();
+    chips.push({ locator: root, label, name, isFolder: false });
+  }
+
+  // Folder chips — the outer <button> itself has title="Open folder".
+  const folderBtns = messageLocator.locator('button[title="Open folder"]');
+  const folderCount = await folderBtns.count();
+  for (let i = 0; i < folderCount; i++) {
+    const root = folderBtns.nth(i);
+    const name = (await root.locator('span.truncate').first().innerText().catch(() => '')).trim();
+    chips.push({ locator: root, label: 'DIR', name, isFolder: true });
+  }
+
+  return chips;
+}
+
+/** Click the download button on a file chip. Asserts the button exists. */
+export async function clickChipDownload(chip: ChipHandle): Promise<void> {
+  if (chip.isFolder) throw new Error('clickChipDownload called on a folder chip');
+  const btn = chip.locator.locator('button[title="Download to Downloads"]').first();
+  await expect(btn).toBeVisible({ timeout: 3_000 });
+  await btn.click();
+}
+
+/** Click the reveal button on a file chip. */
+export async function clickChipReveal(chip: ChipHandle): Promise<void> {
+  if (chip.isFolder) throw new Error('clickChipReveal called on a folder chip');
+  const btn = chip.locator.locator('button[title="Reveal in folder"]').first();
+  await expect(btn).toBeVisible({ timeout: 3_000 });
+  await btn.click();
+}
+
+/** Click the "Open folder" button on a folder chip. */
+export async function clickFolderOpen(chip: ChipHandle): Promise<void> {
+  if (!chip.isFolder) throw new Error('clickFolderOpen called on a file chip');
+  await chip.locator.click();
+}
+
+/** Snapshot every current conversation ID. Used at the start of a test run
+ *  so that the afterAll hook can delete only the conversations the suite
+ *  created (no title-prefix coupling required). */
+export async function snapshotConversationIds(page: Page): Promise<Set<string>> {
+  const ids = await page.evaluate(async () => {
+    const invoke = (window as unknown as {
+      cerebro: { invoke: (req: { method: string; path: string }) => Promise<{ ok: boolean; data: unknown }> };
+    }).cerebro.invoke;
+    const list = await invoke({ method: 'GET', path: '/conversations' });
+    if (!list.ok) return [] as string[];
+    const body = list.data as { conversations: Array<{ id: string }> };
+    return (body.conversations || []).map((c) => c.id);
+  });
+  return new Set(ids);
+}
+
+/** Delete every conversation whose ID is NOT in `preexisting`. Used in afterAll
+ *  to clean up exactly the conversations the suite created. */
+export async function deleteConversationsNotIn(
+  page: Page,
+  preexisting: Set<string>,
+): Promise<void> {
+  await page.evaluate(async (keep: string[]) => {
+    const invoke = (window as unknown as {
+      cerebro: { invoke: (req: { method: string; path: string }) => Promise<{ ok: boolean; data: unknown }> };
+    }).cerebro.invoke;
+    const list = await invoke({ method: 'GET', path: '/conversations' });
+    if (!list.ok) return;
+    const body = list.data as { conversations: Array<{ id: string; title: string }> };
+    const keepSet = new Set(keep);
+    for (const c of body.conversations || []) {
+      if (keepSet.has(c.id)) continue;
+      await invoke({ method: 'DELETE', path: `/conversations/${c.id}` }).catch(() => {});
+    }
+  }, [...preexisting]);
+}
+
