@@ -219,9 +219,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const setActiveConversation = useCallback((id: string | null) => {
     setActiveConversationIdState(id);
-    if (id !== null) {
-      setActiveScreen('chat');
-    }
   }, []);
 
   const addMessage = useCallback(

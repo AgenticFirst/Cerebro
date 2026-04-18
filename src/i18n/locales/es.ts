@@ -25,7 +25,7 @@ const es: TranslationKeys = {
 
   // ── Barra lateral / navegaci\u00f3n ─────────────────────────────
   nav: {
-    chat: 'Chat',
+    chat: 'Cerebro',
     tasks: 'Tareas',
     workspaces: 'Workspaces',
     experts: 'Expertos',
@@ -52,9 +52,18 @@ const es: TranslationKeys = {
 
   // ── Chat ────────────────────────────────────────────────────
   chat: {
-    welcomeTitle: '\u00bfEn qu\u00e9 podemos ayudarte?',
+    welcomeTitle: 'Chatea con Cerebro',
     welcomeSubtitle:
-      'Chatea con Cerebro o consulta a un experto \u2014 planificaremos, ejecutaremos y daremos seguimiento.',
+      'Tu experto principal. Preg\u00fantale lo que sea \u2014 Cerebro planifica el trabajo, delega a especialistas cuando hace falta y hace seguimiento.',
+    welcomeCapPlan: 'Planifica tareas',
+    welcomeCapPlanDesc: 'Divide el objetivo en pasos antes de actuar',
+    welcomeCapDelegate: 'Delega a expertos',
+    welcomeCapDelegateDesc: 'Deriva el trabajo al especialista adecuado',
+    welcomeCapRoutines: 'Propone rutinas',
+    welcomeCapRoutinesDesc: 'Automatiza flujos recurrentes',
+    welcomeCapMemory: 'Recuerda lo importante',
+    welcomeCapMemoryDesc: 'Aprende hechos y contexto con el tiempo',
+    welcomeHint: 'Para hablar con un experto concreto en privado, abre Expertos \u2192 Mensajes.',
     sendPlaceholder: 'Escribe un mensaje...',
     attachFiles: 'Adjuntar archivos',
     dropToAttach: 'Suelta archivos para adjuntar',
@@ -400,7 +409,7 @@ const es: TranslationKeys = {
     deleteExpert: 'Eliminar experto',
     alwaysActive: 'Siempre activo',
     connected: 'Conectado',
-    // Pesta\u00f1a de mensajes (mensajer\u00eda estilo Slack con expertos)
+    // Pesta\u00f1a de mensajes (mensajes directos con expertos)
     tabMessages: 'Mensajes',
     tabHierarchy: 'Jerarqu\u00eda',
     searchPlaceholder: 'Buscar expertos\u2026',

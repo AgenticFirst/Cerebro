@@ -48,11 +48,16 @@ export class ClaudeCodeRunner extends EventEmitter {
   private process: ChildProcess | null = null;
   private accumulatedText = '';
   private stderrTail = '';
+  private stdoutTail = '';
+  private agentNameUsed = '';
+  private cwdUsed = '';
   private killed = false;
   private closeHandled = false;
 
   start(options: ClaudeCodeRunOptions): void {
     const { runId, prompt, agentName, cwd } = options;
+    this.agentNameUsed = agentName;
+    this.cwdUsed = cwd;
     const info = getCachedClaudeCodeInfo();
 
     if (info.status !== 'available' || !info.path) {
@@ -143,10 +148,15 @@ export class ClaudeCodeRunner extends EventEmitter {
           detail = this.stderrTail
             ? `Claude Code was killed (${signal}): ${this.stderrTail}`
             : `Claude Code was killed by ${signal}`;
+        } else if (this.stderrTail) {
+          detail = `Claude Code error (code ${code}): ${this.stderrTail}`;
+        } else if (this.stdoutTail) {
+          // stderr was empty but stdout had a non-JSON line before exit —
+          // that's almost always the actual error (e.g. "Unknown agent 'foo'").
+          detail = `Claude Code error (code ${code}): ${this.stdoutTail}`;
         } else {
-          detail = this.stderrTail
-            ? `Claude Code error (code ${code}): ${this.stderrTail}`
-            : `Claude Code exited unexpectedly (code ${code})`;
+          const ctx = this.agentNameUsed ? ` — agent '${this.agentNameUsed}' in ${this.cwdUsed}` : '';
+          detail = `Claude Code exited unexpectedly (code ${code})${ctx}`;
         }
         this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
         this.emit('error', detail);
@@ -241,6 +251,10 @@ export class ClaudeCodeRunner extends EventEmitter {
     try {
       parsed = JSON.parse(line);
     } catch {
+      // Non-JSON line on stdout — usually an error string printed before the
+      // CLI crashed. Keep the last ~500 chars so the close handler can surface
+      // it instead of the generic "exited unexpectedly" fallback.
+      this.stdoutTail = (this.stdoutTail + '\n' + line).slice(-500).trim();
       console.debug(`[ClaudeCode:stream] non-JSON line: ${line.slice(0, 100)}`);
       return;
     }

@@ -38,9 +38,9 @@ interface NavItem extends NavItemDef {
 // Primary — daily-use surfaces
 const NAV_PRIMARY: NavItemDef[] = [
   { id: 'chat', icon: MessageSquare },
+  { id: 'experts', icon: Users },
   { id: 'tasks', icon: Target },
   { id: 'workspaces', icon: FolderOpen },
-  { id: 'experts', icon: Users },
   { id: 'routines', icon: Zap },
 ];
 

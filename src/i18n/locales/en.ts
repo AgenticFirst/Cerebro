@@ -24,7 +24,7 @@ const en = {
 
   // ── Sidebar / navigation ───────────────────────────────────
   nav: {
-    chat: 'Chat',
+    chat: 'Cerebro',
     tasks: 'Tasks',
     workspaces: 'Workspaces',
     experts: 'Experts',
@@ -51,9 +51,18 @@ const en = {
 
   // ── Chat ────────────────────────────────────────────────────
   chat: {
-    welcomeTitle: 'What can we help with?',
+    welcomeTitle: 'Chat with Cerebro',
     welcomeSubtitle:
-      "Chat with Cerebro or ask an expert \u2014 we'll plan, execute, and follow up.",
+      "Your lead expert. Ask anything \u2014 Cerebro will plan the work, delegate to specialists when needed, and follow up.",
+    welcomeCapPlan: 'Plans tasks',
+    welcomeCapPlanDesc: 'Breaks goals into steps before acting',
+    welcomeCapDelegate: 'Delegates to experts',
+    welcomeCapDelegateDesc: 'Routes work to the right specialist',
+    welcomeCapRoutines: 'Proposes routines',
+    welcomeCapRoutinesDesc: 'Automates recurring workflows',
+    welcomeCapMemory: 'Remembers what matters',
+    welcomeCapMemoryDesc: 'Learns facts and context over time',
+    welcomeHint: 'To message one specific expert directly, open Experts \u2192 Messages.',
     sendPlaceholder: 'Send a message...',
     attachFiles: 'Attach files',
     dropToAttach: 'Drop files to attach',
@@ -399,7 +408,7 @@ const en = {
     deleteExpert: 'Delete Expert',
     alwaysActive: 'Always Active',
     connected: 'Connected',
-    // Messages tab (Slack-style DMs with experts)
+    // Messages tab (direct messages with experts)
     tabMessages: 'Messages',
     tabHierarchy: 'Hierarchy',
     searchPlaceholder: 'Search experts…',

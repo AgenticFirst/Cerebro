@@ -1,9 +1,10 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Conversation } from '../../types/chat';
 import MessageList from './MessageList';
 import ChatInput, { type ChatInputHandle } from './ChatInput';
 import SandboxBanner from './SandboxBanner';
 import { useDropZone } from '../../hooks/useDropZone';
+import { useChat } from '../../context/ChatContext';
 
 interface ChatViewProps {
   conversation: Conversation;
@@ -14,6 +15,13 @@ interface ChatViewProps {
 
 export default function ChatView({ conversation, onSend, isStreaming, isThinking }: ChatViewProps) {
   const chatInputRef = useRef<ChatInputHandle>(null);
+  const { setActiveExpertId } = useChat();
+
+  // The main Chat screen always talks to Cerebro. If the user just came back
+  // from the Experts > Messages tab, clear any expert that was pinned there.
+  useEffect(() => {
+    setActiveExpertId(null);
+  }, [conversation.id, setActiveExpertId]);
 
   const { isDragOver, dropProps } = useDropZone({
     onDrop: (files) => chatInputRef.current?.addAttachments(files),

@@ -28,7 +28,8 @@ export interface AgentEventSink {
 import { ClaudeCodeRunner } from '../claude-code/stream-adapter';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
-import { getAgentNameForExpert, installAll } from '../claude-code/installer';
+import { getAgentNameForExpert, installAll, installExpert, expertAgentName } from '../claude-code/installer';
+import fsSync from 'node:fs';
 import { IPC_CHANNELS } from '../types/ipc';
 import { buildSystemPrompt } from '../i18n/language-directive';
 
@@ -128,26 +129,18 @@ export class AgentRuntime {
     const { conversationId, content, expertId } = request;
 
     // Resolve which subagent to invoke. Default to the main "cerebro" agent
-    // when no expert is specified. For experts, look up the slug from the
-    // installer's sidecar index — if it's not there yet, fall back to a
-    // backend fetch + re-derive (covers a freshly-created expert before
-    // the next sync).
+    // when no expert is specified. For experts, we must guarantee both (a) the
+    // slug is in the sidecar index AND (b) the `<slug>.md` file exists on disk
+    // at the time we spawn `claude -p --agent <slug>`. Otherwise the subprocess
+    // exits 1 with empty stderr and the user sees the generic "exited
+    // unexpectedly" error.
     let agentName = 'cerebro';
+    let agentResolutionError: string | null = null;
     if (expertId) {
-      const fromIndex = getAgentNameForExpert(this.dataDir, expertId);
-      if (fromIndex) {
-        agentName = fromIndex;
-      } else {
-        const expert = await this.fetchExpertName(expertId);
-        if (!expert) {
-          throw new Error(`Expert ${expertId} not found`);
-        }
-        // Re-derive (matches expertAgentName) — falls through to the next sync
-        // pass to actually write the file. If the file is missing, Claude Code
-        // will error out and we surface that to the user.
-        const { expertAgentName } = await import('../claude-code/installer');
-        agentName = expertAgentName(expert.id, expert.name);
-      }
+      agentName = await this.resolveExpertAgentSlug(expertId).catch((err: Error) => {
+        agentResolutionError = err.message;
+        return '';
+      });
     }
 
     const isExternalWorkspace =
@@ -484,6 +477,24 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     };
 
     this.activeRuns.set(runId, activeRun);
+
+    // Pre-spawn guard: if expert-slug resolution failed, emit a structured
+    // error event and finalize the run as 'error' without spawning. This
+    // replaces the previous failure path where we'd spawn `claude -p` with a
+    // bogus slug and surface the generic "Claude Code exited unexpectedly" to
+    // the user.
+    if (agentResolutionError) {
+      if (!webContents.isDestroyed()) {
+        webContents.send(channel, { type: 'run_start', runId } as RendererAgentEvent);
+        webContents.send(channel, {
+          type: 'error',
+          runId,
+          error: agentResolutionError,
+        } as RendererAgentEvent);
+      }
+      this.finalizeRun(runId, 'error', '', agentResolutionError);
+      return runId;
+    }
 
     // Persist agent_runs row (fire-and-forget — non-critical).
     // For task runs the run_records row is already minted by POST /tasks/{id}/run,
@@ -856,6 +867,69 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
 
   private async fetchExpertName(expertId: string): Promise<ExpertNameLookup | null> {
     return this.backendGet<ExpertNameLookup>(`/experts/${expertId}`);
+  }
+
+  /**
+   * Resolve an expertId to the agent slug that exists on disk. Guarantees the
+   * backing `.md` file is present before returning. Throws a user-facing error
+   * message if the expert cannot be installed (unknown id, backend offline,
+   * or disk write failed).
+   *
+   * Fixes the class of bugs where a freshly-created expert's chat produces the
+   * generic "Claude Code exited unexpectedly (code 1)" reply — which was caused
+   * by spawning `claude -p --agent <slug>` before `ExpertContext.syncExpert`
+   * had materialized the agent file.
+   */
+  private async resolveExpertAgentSlug(expertId: string): Promise<string> {
+    const paths = {
+      agentsDir: path.join(this.dataDir, '.claude', 'agents'),
+    };
+    const fileExistsFor = (slug: string): boolean =>
+      fsSync.existsSync(path.join(paths.agentsDir, `${slug}.md`));
+
+    // Fast path: index + file both present.
+    const fromIndex = getAgentNameForExpert(this.dataDir, expertId);
+    if (fromIndex && fileExistsFor(fromIndex)) {
+      return fromIndex;
+    }
+
+    // Slow path: materialize from backend. Serialize through the sync chain
+    // so concurrent runs can't race on the index/files.
+    const expert = await this.fetchExpertName(expertId);
+    if (!expert) {
+      throw new Error(`Expert not installed: ${expertId} (not found in backend)`);
+    }
+
+    const derivedSlug = expertAgentName(expert.id, expert.name);
+    if (fileExistsFor(derivedSlug)) {
+      // File is already on disk but index entry was missing — a single
+      // installAll pass will reconcile.
+      await this.runThroughSyncChain(() =>
+        installAll({ dataDir: this.dataDir, backendPort: this.backendPort }),
+      );
+      if (fileExistsFor(derivedSlug)) return derivedSlug;
+    }
+
+    // We need to fetch the full expert row (installExpert requires the complete
+    // ExpertData shape, not just {id, name}). Cheapest way: use installAll,
+    // which re-fetches and materializes every enabled expert.
+    await this.runThroughSyncChain(() =>
+      installAll({ dataDir: this.dataDir, backendPort: this.backendPort }),
+    );
+
+    const afterSlug = getAgentNameForExpert(this.dataDir, expertId) || derivedSlug;
+    if (fileExistsFor(afterSlug)) return afterSlug;
+
+    throw new Error(
+      `Expert not installed: agent file for '${expert.name}' is missing on disk. Try again in a moment or restart.`,
+    );
+  }
+
+  /** Chain an install op onto the serialized syncChain and await its result. */
+  private async runThroughSyncChain(op: () => Promise<void>): Promise<void> {
+    const next = this.syncChain.then(op, op);
+    this.syncChain = next.catch(() => {});
+    await next;
   }
 
   private backendGet<T>(path: string): Promise<T | null> {

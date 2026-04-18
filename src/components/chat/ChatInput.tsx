@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, useImperativeHandle, forwardRef, type Ke
 import { useTranslation } from 'react-i18next';
 import { ArrowUp, Square, Paperclip } from 'lucide-react';
 import clsx from 'clsx';
-import ExpertTray from './ExpertTray';
 import AttachmentChip from './AttachmentChip';
 import type { AttachmentInfo } from '../../types/attachments';
 import { generateId } from '../../context/chat-helpers';
@@ -106,8 +105,6 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     return (
       <div className="flex flex-col gap-1.5">
-        <ExpertTray />
-
         {/* Attachment chips */}
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5 animate-fade-in">

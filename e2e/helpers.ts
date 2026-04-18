@@ -80,6 +80,23 @@ export async function goToTasks(page: Page): Promise<void> {
   await page.waitForSelector(`text=${COLUMN_LABELS.backlog}`, { timeout: 5_000 });
 }
 
+/** Navigate to the Chat (Cerebro) screen via sidebar. The primary-nav label is
+ *  the app name "Cerebro" — not "Chat" — per `nav.chat` in i18n/locales/en.ts. */
+export async function goToChat(page: Page): Promise<void> {
+  await dismissModals(page);
+  await page.locator('nav button').filter({ hasText: /^Cerebro$/ }).first().click({ force: true });
+  await page.waitForSelector('textarea[placeholder*="message" i]', { timeout: 10_000 });
+}
+
+/** Navigate to the Experts screen via sidebar. */
+export async function goToExperts(page: Page): Promise<void> {
+  await dismissModals(page);
+  await page.locator('nav button').filter({ hasText: /^Experts$/ }).first().click({ force: true });
+  // ExpertsTabs renders two tab labels that don't exist on any other screen.
+  await page.waitForSelector('text=/^Messages$/', { timeout: 5_000 });
+  await page.waitForSelector('text=/^Hierarchy$/', { timeout: 5_000 });
+}
+
 /** Return the column container by its stable testid. */
 export function column(page: Page, col: ColumnKey): Locator {
   return page.locator(`[data-testid="kanban-column-${col}"]`);
