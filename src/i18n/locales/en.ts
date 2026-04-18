@@ -430,6 +430,11 @@ const en = {
     fileReceived: 'File received',
     openFile: 'Open file',
     revealInFolder: 'Reveal in folder',
+    downloadFile: 'Download to Downloads',
+    downloadedToDownloads: 'Saved {{name}} to Downloads',
+    downloadFailed: 'Could not copy file to Downloads',
+    openFolder: 'Open folder',
+    attachmentMissing: 'File no longer exists at this path',
   },
 
   // ── Create expert dialog ────────────────────────────────────

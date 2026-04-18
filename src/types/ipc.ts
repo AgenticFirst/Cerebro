@@ -73,6 +73,8 @@ export const IPC_CHANNELS = {
   // Shell
   SHELL_OPEN_PATH: 'shell:open-path',
   SHELL_REVEAL_PATH: 'shell:reveal-path',
+  SHELL_STAT_PATH: 'shell:stat-path',
+  SHELL_DOWNLOAD_TO_DOWNLOADS: 'shell:download-to-downloads',
 
   // Telegram bridge
   TELEGRAM_VERIFY: 'telegram:verify',
@@ -300,9 +302,19 @@ export interface CerebroAPI {
   telegram: TelegramAPI;
 }
 
+export interface ShellStatResult {
+  exists: boolean;
+  isDirectory: boolean;
+  size: number;
+}
+
 export interface ShellAPI {
   openPath(filePath: string): Promise<void>;
   revealPath(filePath: string): Promise<void>;
+  statPath(filePath: string): Promise<ShellStatResult>;
+  /** Copy a regular file to the user's OS Downloads folder, deduping on collision.
+   *  Returns the final destination path. Throws if source is missing or a directory. */
+  downloadToDownloads(filePath: string): Promise<string>;
 }
 
 export interface TaskTerminalAPI {

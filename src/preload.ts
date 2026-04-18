@@ -220,6 +220,12 @@ const api: CerebroAPI = {
     revealPath(filePath: string): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL_REVEAL_PATH, filePath);
     },
+    statPath(filePath: string): Promise<{ exists: boolean; isDirectory: boolean; size: number }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL_STAT_PATH, filePath);
+    },
+    downloadToDownloads(filePath: string): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL_DOWNLOAD_TO_DOWNLOADS, filePath);
+    },
   },
 
   sandbox: {

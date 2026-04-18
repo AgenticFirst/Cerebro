@@ -871,6 +871,52 @@ function registerIpcHandlers(): void {
     },
   );
 
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_STAT_PATH,
+    async (_event, filePath: string) => {
+      try {
+        const stat = await fs.promises.stat(filePath);
+        return {
+          exists: true,
+          isDirectory: stat.isDirectory(),
+          size: stat.isDirectory() ? 0 : stat.size,
+        };
+      } catch {
+        return { exists: false, isDirectory: false, size: 0 };
+      }
+    },
+  );
+
+  // Copy a file emitted by an expert into the user's OS Downloads folder,
+  // auto-deduping the destination name on collision. Returns the final path.
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_DOWNLOAD_TO_DOWNLOADS,
+    async (_event, sourcePath: string) => {
+      const src = await fs.promises.stat(sourcePath).catch(() => null);
+      if (!src || src.isDirectory()) {
+        throw new Error('Source is not a regular file');
+      }
+      const downloads = app.getPath('downloads');
+      await fs.promises.mkdir(downloads, { recursive: true });
+      const base = path.basename(sourcePath);
+      const ext = path.extname(base);
+      const stem = path.basename(base, ext);
+      let dest = path.join(downloads, base);
+      let counter = 1;
+      while (true) {
+        try {
+          await fs.promises.access(dest);
+          dest = path.join(downloads, `${stem}-${counter}${ext}`);
+          counter++;
+        } catch {
+          break;
+        }
+      }
+      await fs.promises.copyFile(sourcePath, dest);
+      return dest;
+    },
+  );
+
   ipcMain.handle(IPC_CHANNELS.SANDBOX_GET_PROFILE, async () => {
     const config = getCachedSandboxConfig();
     if (!config) return '';

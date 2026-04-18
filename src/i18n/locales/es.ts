@@ -431,6 +431,11 @@ const es: TranslationKeys = {
     fileReceived: 'Archivo recibido',
     openFile: 'Abrir archivo',
     revealInFolder: 'Mostrar en carpeta',
+    downloadFile: 'Descargar a Descargas',
+    downloadedToDownloads: 'Se guard\u00f3 {{name}} en Descargas',
+    downloadFailed: 'No se pudo copiar el archivo a Descargas',
+    openFolder: 'Abrir carpeta',
+    attachmentMissing: 'El archivo ya no existe en esta ruta',
   },
 
   // ── Di\u00e1logo de crear experto ───────────────────────────────

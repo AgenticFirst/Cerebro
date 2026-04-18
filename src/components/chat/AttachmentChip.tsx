@@ -1,7 +1,9 @@
-import { X, ExternalLink, FolderOpen } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X, Download, FolderOpen, Folder, Check, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { AttachmentInfo } from '../../types/attachments';
+import { useToast } from '../../context/ToastContext';
 
 const EXT_LABELS: Record<string, string> = {
   ts: 'TS', tsx: 'TX', js: 'JS', jsx: 'JX',
@@ -22,30 +24,106 @@ interface AttachmentChipProps {
   attachment: AttachmentInfo;
   onRemove?: (id: string) => void;
   /** 'user' = chip on the user's own message (default). 'assistant' = chip for
-   *  a file emitted by an expert — renders Open/Reveal actions instead of remove. */
+   *  a file emitted by an expert — renders Download/Reveal actions instead of remove. */
   source?: 'user' | 'assistant';
 }
 
 export default function AttachmentChip({ attachment, onRemove, source = 'user' }: AttachmentChipProps) {
   const { t } = useTranslation();
-  const extLabel = EXT_LABELS[attachment.extension] || attachment.extension.slice(0, 2).toUpperCase() || '?';
+  const { addToast } = useToast();
   const isAssistant = source === 'assistant';
 
-  const handleOpen = () => {
-    window.cerebro.shell.openPath(attachment.filePath).catch(() => undefined);
-  };
+  // Live-stat the path on mount so we can pick the right UI (file vs folder)
+  // and show accurate size. Stays 'undefined' until the stat returns so we can
+  // render a quiet placeholder instead of the wrong chip type.
+  const [isDirectory, setIsDirectory] = useState<boolean | undefined>(attachment.isDirectory);
+  const [fileSize, setFileSize] = useState<number>(attachment.fileSize);
+  const [missing, setMissing] = useState(false);
+  const [downloadState, setDownloadState] = useState<'idle' | 'running' | 'done'>('idle');
+
+  useEffect(() => {
+    if (!isAssistant) return;
+    if (attachment.isDirectory !== undefined) return;
+    let cancelled = false;
+    window.cerebro.shell
+      .statPath(attachment.filePath)
+      .then((stat) => {
+        if (cancelled) return;
+        if (!stat.exists) {
+          setMissing(true);
+          return;
+        }
+        setIsDirectory(stat.isDirectory);
+        if (!stat.isDirectory && stat.size > 0) setFileSize(stat.size);
+      })
+      .catch(() => {
+        if (!cancelled) setMissing(true);
+      });
+    return () => { cancelled = true; };
+  }, [attachment.filePath, attachment.isDirectory, isAssistant]);
+
+  const extLabel = EXT_LABELS[attachment.extension] || attachment.extension.slice(0, 2).toUpperCase() || '?';
+
   const handleReveal = () => {
     window.cerebro.shell.revealPath(attachment.filePath).catch(() => undefined);
   };
+  const handleOpenFolder = () => {
+    // Opens the directory itself in Finder/Explorer.
+    window.cerebro.shell.openPath(attachment.filePath).catch(() => undefined);
+  };
+  const handleDownload = async () => {
+    if (downloadState === 'running') return;
+    setDownloadState('running');
+    try {
+      const dest = await window.cerebro.shell.downloadToDownloads(attachment.filePath);
+      setDownloadState('done');
+      addToast(t('experts.downloadedToDownloads', { name: attachment.fileName }), 'success');
+      // Snap back to the default icon after a moment so the chip is usable again.
+      setTimeout(() => setDownloadState('idle'), 2000);
+      // A tiny nudge in case the user wants to grab the freshly-copied file.
+      void dest;
+    } catch {
+      setDownloadState('idle');
+      addToast(t('experts.downloadFailed'), 'error');
+    }
+  };
 
+  // ── Folder chip — single "Open folder" action ────────────────────
+  if (isAssistant && isDirectory === true) {
+    return (
+      <button
+        onClick={handleOpenFolder}
+        className={clsx(
+          'inline-flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-md cursor-pointer',
+          'bg-bg-elevated border border-border-subtle text-xs text-text-secondary',
+          'group transition-all duration-150',
+          'hover:border-accent/40 hover:bg-accent/[0.04] hover:text-text-primary',
+        )}
+        title={t('experts.openFolder')}
+      >
+        <span className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 bg-accent/10 text-accent">
+          <Folder size={12} strokeWidth={2.25} />
+        </span>
+        <span className="max-w-[160px] truncate">{attachment.fileName}</span>
+        <FolderOpen
+          size={11}
+          className="flex-shrink-0 opacity-60 group-hover:opacity-100 transition-opacity"
+        />
+      </button>
+    );
+  }
+
+  // ── File chip — download primary, reveal secondary ───────────────
   return (
     <div
       className={clsx(
         'inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-md',
         'bg-bg-elevated border border-border-subtle text-xs text-text-secondary',
         'group transition-colors',
-        (onRemove || isAssistant) && 'hover:border-border-default',
+        (onRemove || isAssistant) && !missing && 'hover:border-border-default',
+        missing && 'opacity-60',
       )}
+      title={missing ? t('experts.attachmentMissing') : undefined}
     >
       <span
         className={clsx(
@@ -56,24 +134,36 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user' }
         {extLabel}
       </span>
       <span className="max-w-[140px] truncate">{attachment.fileName}</span>
-      {attachment.fileSize > 0 && (
-        <span className="text-text-tertiary text-[10px]">{formatSize(attachment.fileSize)}</span>
+      {fileSize > 0 && (
+        <span className="text-text-tertiary text-[10px]">{formatSize(fileSize)}</span>
       )}
-      {isAssistant && (
+      {isAssistant && !missing && (
         <>
           <button
-            onClick={handleOpen}
-            className="w-4 h-4 flex items-center justify-center rounded flex-shrink-0 opacity-70 hover:opacity-100 hover:bg-bg-hover transition-all"
-            title={t('experts.openFile')}
+            onClick={handleDownload}
+            disabled={downloadState === 'running'}
+            className={clsx(
+              'w-5 h-5 flex items-center justify-center rounded flex-shrink-0 transition-all',
+              downloadState === 'done'
+                ? 'text-emerald-500'
+                : 'opacity-70 hover:opacity-100 hover:bg-bg-hover text-text-secondary',
+            )}
+            title={t('experts.downloadFile')}
           >
-            <ExternalLink size={10} />
+            {downloadState === 'running' ? (
+              <Loader2 size={11} className="animate-spin" />
+            ) : downloadState === 'done' ? (
+              <Check size={11} strokeWidth={2.5} />
+            ) : (
+              <Download size={11} />
+            )}
           </button>
           <button
             onClick={handleReveal}
-            className="w-4 h-4 flex items-center justify-center rounded flex-shrink-0 opacity-70 hover:opacity-100 hover:bg-bg-hover transition-all"
+            className="w-5 h-5 flex items-center justify-center rounded flex-shrink-0 opacity-70 hover:opacity-100 hover:bg-bg-hover transition-all"
             title={t('experts.revealInFolder')}
           >
-            <FolderOpen size={10} />
+            <FolderOpen size={11} />
           </button>
         </>
       )}
