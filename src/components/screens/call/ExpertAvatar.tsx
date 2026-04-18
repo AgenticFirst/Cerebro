@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Bot } from 'lucide-react';
+import { BadgeCheck, Bot } from 'lucide-react';
 import type { VoiceSessionState } from '../../../voice/types';
 import { getAvatar } from '../../../constants/avatars';
 import { useAmplitudePulse } from '../../../hooks/useAmplitudePulse';
@@ -21,9 +21,10 @@ interface ExpertAvatarProps {
   sessionState: VoiceSessionState;
   avatarUrl: string | null;
   analyser: AnalyserNode | null;
+  isVerified?: boolean;
 }
 
-export default function ExpertAvatar({ domain, name, sessionState, avatarUrl, analyser }: ExpertAvatarProps) {
+export default function ExpertAvatar({ domain, name, sessionState, avatarUrl, analyser, isVerified }: ExpertAvatarProps) {
   const color = (domain && DOMAIN_COLORS[domain.toLowerCase()]) || DEFAULT_COLOR;
   const avatar = getAvatar(avatarUrl);
   const pulseRef = useRef<HTMLDivElement>(null);
@@ -65,10 +66,20 @@ export default function ExpertAvatar({ domain, name, sessionState, avatarUrl, an
             <Bot size={56} style={{ color }} />
           )}
         </div>
+        {isVerified && (
+          <BadgeCheck
+            size={28}
+            className="absolute bottom-2 right-2 text-accent fill-bg-primary"
+            strokeWidth={2.25}
+          />
+        )}
       </div>
 
       <div className="text-center">
-        <h2 className="text-lg font-semibold text-text-primary">{name}</h2>
+        <h2 className="flex items-center justify-center gap-1.5 text-lg font-semibold text-text-primary">
+          {name}
+          {isVerified && <BadgeCheck size={16} className="text-accent" strokeWidth={2.25} />}
+        </h2>
         {domain && (
           <span
             className="text-xs font-medium px-2 py-0.5 rounded-full mt-1 inline-block"

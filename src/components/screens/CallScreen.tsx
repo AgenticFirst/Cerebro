@@ -246,6 +246,7 @@ export default function CallScreen() {
             sessionState={sessionState}
             avatarUrl={expert?.avatarUrl ?? null}
             analyser={speakerAnalyser}
+            isVerified={expert?.isVerified ?? false}
           />
         )}
       </div>

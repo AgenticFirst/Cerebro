@@ -121,6 +121,17 @@ def update_expert(expert_id: str, body: ExpertUpdate, db=Depends(get_db)):
         raise HTTPException(status_code=404, detail="Expert not found")
 
     updates = body.model_dump(exclude_unset=True)
+
+    # Verified experts only allow toggles; body/persona fields are locked
+    if expert.is_verified:
+        allowed = {"is_enabled", "is_pinned"}
+        locked = set(updates.keys()) - allowed
+        if locked:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot modify verified experts (toggles only: is_enabled, is_pinned)",
+            )
+
     updates = _serialize_json_fields(updates)
 
     # Check slug uniqueness if being changed
@@ -141,6 +152,8 @@ def delete_expert(expert_id: str, db=Depends(get_db)):
     expert = db.get(Expert, expert_id)
     if not expert:
         raise HTTPException(status_code=404, detail="Expert not found")
+    if expert.is_verified:
+        raise HTTPException(status_code=403, detail="Cannot delete verified experts")
     if expert.source == "builtin":
         raise HTTPException(status_code=403, detail="Cannot delete builtin experts")
     db.delete(expert)

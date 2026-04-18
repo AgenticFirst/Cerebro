@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, Star } from 'lucide-react';
+import { BadgeCheck, Search, Star } from 'lucide-react';
 import clsx from 'clsx';
 import type { Expert } from '../../../../context/ExpertContext';
 import ExpertAvatar from './ExpertAvatar';
@@ -52,6 +52,9 @@ function Row({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="text-[13px] font-medium truncate">{expert.name}</span>
+          {expert.isVerified && (
+            <BadgeCheck size={11} className="text-accent flex-shrink-0" strokeWidth={2.25} />
+          )}
           {expert.isPinned && <Star size={10} className="text-accent flex-shrink-0" strokeWidth={2.5} />}
         </div>
         {expert.domain && (

@@ -19,6 +19,7 @@ export interface Expert {
   source: ExpertSource;
   isEnabled: boolean;
   isPinned: boolean;
+  isVerified: boolean;
   toolAccess: string[] | null;
   policies: Record<string, unknown> | null;
   requiredConnections: string[] | null;

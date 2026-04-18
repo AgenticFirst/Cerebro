@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Clock, Info } from 'lucide-react';
+import { BadgeCheck, Clock, Info } from 'lucide-react';
 import clsx from 'clsx';
 import type { Expert } from '../../../../context/ExpertContext';
 import type { Conversation } from '../../../../types/chat';
@@ -36,9 +36,17 @@ export default function ThreadHeader({
         <div className="flex-1 min-w-0">
           <button
             onClick={onOpenProfile}
-            className="text-[14px] font-semibold text-text-primary hover:text-accent transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-text-primary hover:text-accent transition-colors cursor-pointer"
           >
             {expert.name}
+            {expert.isVerified && (
+              <BadgeCheck
+                size={14}
+                className="text-accent"
+                strokeWidth={2.25}
+                aria-label={t('experts.verified')}
+              />
+            )}
           </button>
           <div className="text-[11px] text-text-tertiary capitalize">
             {isTyping ? (

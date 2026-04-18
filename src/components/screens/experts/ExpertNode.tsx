@@ -1,4 +1,4 @@
-import { Brain, Bot, Users, Pin } from 'lucide-react';
+import { BadgeCheck, Brain, Bot, Users, Pin } from 'lucide-react';
 import clsx from 'clsx';
 import type { Expert } from '../../../context/ExpertContext';
 import { getAvatar } from '../../../constants/avatars';
@@ -141,6 +141,14 @@ export default function ExpertNode({
             <Pin size={10} className="text-accent" />
           </div>
         )}
+        {/* Verified badge */}
+        {!isCerebro && expert?.isVerified && (
+          <BadgeCheck
+            size={18}
+            className="absolute -bottom-1.5 -right-1.5 text-accent fill-bg-base"
+            strokeWidth={2.25}
+          />
+        )}
       </div>
 
       {/* Status dot + name */}
@@ -154,11 +162,14 @@ export default function ExpertNode({
         />
         <span
           className={clsx(
-            'text-xs font-medium leading-tight',
+            'inline-flex items-center gap-1 text-xs font-medium leading-tight',
             isSelected ? 'text-text-primary' : 'text-text-secondary',
           )}
         >
           {isCerebro ? 'Cerebro' : expert?.name}
+          {!isCerebro && expert?.isVerified && (
+            <BadgeCheck size={11} className="text-accent" strokeWidth={2.25} />
+          )}
         </span>
       </div>
 

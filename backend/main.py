@@ -49,14 +49,17 @@ async def lifespan(application: FastAPI):
         init_voice_singletons()
         print(f"[Cerebro] Voice models directory: {voice_models_dir}")
 
-    # Seed builtin skills
+    # Seed builtin skills + verified experts
     from database import SessionLocal
     from skills.seed import seed_builtin_skills
+    from experts.seed import seed_verified_experts
     if SessionLocal is not None:
         db = SessionLocal()
         try:
             seed_builtin_skills(db)
             print("[Cerebro] Builtin skills seeded")
+            seed_verified_experts(db)
+            print("[Cerebro] Verified experts seeded")
         finally:
             db.close()
 

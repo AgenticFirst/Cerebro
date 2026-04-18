@@ -84,6 +84,7 @@ class Expert(Base):
     source: Mapped[str] = mapped_column(String(20), default="user")       # builtin | user | marketplace
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     tool_access: Mapped[str | None] = mapped_column(Text, nullable=True)           # JSON list
     policies: Mapped[str | None] = mapped_column(Text, nullable=True)              # JSON object
     required_connections: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list

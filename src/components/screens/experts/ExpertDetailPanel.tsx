@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Copy, Check, Trash2, UserPlus, XCircle, Users, Phone } from 'lucide-react';
+import { X, Copy, Check, Trash2, UserPlus, XCircle, Users, Phone, BadgeCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { useVoice } from '../../../context/VoiceContext';
 import type { Expert } from '../../../context/ExpertContext';
@@ -108,6 +108,8 @@ export default function ExpertDetailPanel({
     }
   }, [expert?.id, expert?.name, expert?.description, expert?.domain, expert?.systemPrompt]);
 
+  const isLocked = !!expert?.isVerified;
+
   // Team member helpers
   const isTeam = expert?.type === 'team';
   const memberIds = new Set(expert?.teamMembers?.map((m) => m.expertId) ?? []);
@@ -136,7 +138,9 @@ export default function ExpertDetailPanel({
   };
 
   const saveField = (snakeField: string, value: unknown) => {
-    if (expert) onUpdate(expert.id, { [snakeField]: value });
+    if (!expert) return;
+    if (isLocked) return;
+    onUpdate(expert.id, { [snakeField]: value });
   };
 
   const handleCopy = () => {
@@ -207,6 +211,17 @@ export default function ExpertDetailPanel({
           </>
         ) : expert ? (
           <>
+            {isLocked && (
+              <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-accent/5 border border-accent/20">
+                <BadgeCheck size={14} className="text-accent mt-0.5 flex-shrink-0" strokeWidth={2.25} />
+                <div className="text-[11px] text-text-secondary leading-relaxed">
+                  <span className="text-accent font-medium">{t('experts.verified')}</span>
+                  {' — '}
+                  {t('experts.verifiedReadOnly')}
+                </div>
+              </div>
+            )}
+
             {/* Expert ID */}
             <Section label={t('experts.nodeId')}>
               <div className="flex items-center gap-2">
@@ -233,7 +248,9 @@ export default function ExpertDetailPanel({
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     onBlur={() => name !== expert.name && saveField('name', name)}
-                    className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors"
+                    readOnly={isLocked}
+                    disabled={isLocked}
+                    className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -247,7 +264,8 @@ export default function ExpertDetailPanel({
                       setDomain(e.target.value);
                       saveField('domain', e.target.value || null);
                     }}
-                    className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent/30 transition-colors"
+                    disabled={isLocked}
+                    className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent/30 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <option value="">{t('common.none')}</option>
                     {DOMAINS.filter(Boolean).map((d) => (
@@ -270,7 +288,9 @@ export default function ExpertDetailPanel({
                       saveField('description', description)
                     }
                     rows={3}
-                    className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-secondary placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors resize-none"
+                    readOnly={isLocked}
+                    disabled={isLocked}
+                    className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-secondary placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors resize-none disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
 
@@ -371,7 +391,9 @@ export default function ExpertDetailPanel({
                 }
                 placeholder={t('experts.systemPromptPlaceholder')}
                 rows={8}
-                className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-secondary font-mono leading-relaxed placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors resize-none"
+                readOnly={isLocked}
+                disabled={isLocked}
+                className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-secondary font-mono leading-relaxed placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors resize-none disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </Section>
 

@@ -25,6 +25,7 @@ export interface Expert {
   source: ExpertSource;
   isEnabled: boolean;
   isPinned: boolean;
+  isVerified: boolean;
   toolAccess: string[] | null;
   policies: Record<string, unknown> | null;
   requiredConnections: string[] | null;
@@ -66,6 +67,7 @@ interface ApiExpert {
   source: string;
   is_enabled: boolean;
   is_pinned: boolean;
+  is_verified: boolean;
   tool_access: string[] | null;
   policies: Record<string, unknown> | null;
   required_connections: string[] | null;
@@ -92,6 +94,7 @@ function toExpert(api: ApiExpert): Expert {
     source: api.source as ExpertSource,
     isEnabled: api.is_enabled,
     isPinned: api.is_pinned,
+    isVerified: api.is_verified ?? false,
     toolAccess: api.tool_access,
     policies: api.policies,
     requiredConnections: api.required_connections,

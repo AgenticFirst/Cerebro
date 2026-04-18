@@ -31,6 +31,7 @@ class ExpertCreate(BaseModel):
     source: str = "user"
     is_enabled: bool = True
     is_pinned: bool = False
+    is_verified: bool = False
     tool_access: list[str] | None = None
     policies: dict | None = None
     required_connections: list[str] | None = None
@@ -54,6 +55,7 @@ class ExpertUpdate(BaseModel):
     source: str | None = None
     is_enabled: bool | None = None
     is_pinned: bool | None = None
+    is_verified: bool | None = None
     tool_access: list[str] | None = None
     policies: dict | None = None
     required_connections: list[str] | None = None
@@ -81,6 +83,7 @@ class ExpertResponse(BaseModel):
     source: str
     is_enabled: bool
     is_pinned: bool
+    is_verified: bool
     tool_access: list[str] | None
     policies: dict | None
     required_connections: list[str] | None
