@@ -12,6 +12,7 @@ import { VoiceProvider } from './context/VoiceContext';
 import { SandboxProvider } from './context/SandboxContext';
 import { FeatureFlagsProvider } from './context/FeatureFlagsContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { UIPreferencesProvider } from './context/UIPreferencesContext';
 import AppLayout from './components/layout/AppLayout';
 import ToastContainer from './components/ui/Toast';
 
@@ -19,6 +20,7 @@ function App() {
   return (
     <ToastProvider>
       <ThemeProvider>
+      <UIPreferencesProvider>
       <ProviderProvider>
         <SandboxProvider>
           <FeatureFlagsProvider>
@@ -42,6 +44,7 @@ function App() {
           </FeatureFlagsProvider>
         </SandboxProvider>
       </ProviderProvider>
+      </UIPreferencesProvider>
       </ThemeProvider>
       <ToastContainer />
     </ToastProvider>

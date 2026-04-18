@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import Toggle from '../../ui/Toggle';
 import { loadSetting, saveSetting } from '../../../lib/settings';
 import { useTheme, type Theme } from '../../../context/ThemeContext';
+import { useUIPreferences } from '../../../context/UIPreferencesContext';
 
 /** Language options — autonym labels so users can always find their language. */
 const LANGUAGES = [
@@ -19,6 +20,7 @@ const THEMES: ReadonlyArray<{ value: Theme; labelKey: string }> = [
 export default function AppearanceSection() {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
+  const { showToolCalls, setShowToolCalls } = useUIPreferences();
   const [showHistoricalLogs, setShowHistoricalLogs] = useState(false);
 
   useEffect(() => {
@@ -84,6 +86,17 @@ export default function AppearanceSection() {
             </option>
           ))}
         </select>
+      </div>
+
+      {/* Show tool calls toggle */}
+      <div className="flex items-start justify-between gap-4 py-3 border-b border-white/[0.06]">
+        <div>
+          <p className="text-sm text-text-primary">{t('appearance.showToolCalls')}</p>
+          <p className="text-xs text-text-secondary mt-0.5">
+            {t('appearance.showToolCallsDesc')}
+          </p>
+        </div>
+        <Toggle checked={showToolCalls} onChange={() => setShowToolCalls(!showToolCalls)} />
       </div>
 
       {/* Historical logs toggle */}

@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
+import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Message } from '../../types/chat';
 import MarkdownContent from './MarkdownContent';
 import ThinkingIndicator from './ThinkingIndicator';
-import ToolCallCard from './ToolCallCard';
+import ToolCallsGroup from './ToolCallsGroup';
 import RunLogCard from './RunLogCard';
 import RoutineProposalCard from './RoutineProposalCard';
 import ExpertProposalCard from './ExpertProposalCard';
@@ -80,6 +81,10 @@ export default function ChatMessage({ message }: ChatMessageProps) {
   const displayContent = isUser ? userText : assistantText;
 
   const hasContent = displayContent.length > 0;
+  // Assistant is still producing its reply — keep a live indicator visible even
+  // when all tool calls have finished but no text has arrived yet.
+  const assistantBusy =
+    !isUser && (message.isThinking || message.isStreaming === true) && !hasContent;
 
   return (
     <div className="animate-fade-in">
@@ -92,13 +97,9 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         <span className="text-xs text-text-tertiary">{formatTime(message.createdAt)}</span>
       </div>
 
-      {/* Tool calls (before text content) */}
+      {/* Tool calls (before text content) — hidden by default, user can opt in via Settings → Appearance */}
       {hasToolCalls && (
-        <div className="flex flex-col gap-2 mb-2">
-          {message.toolCalls!.map((tc) => (
-            <ToolCallCard key={tc.id} toolCall={tc} />
-          ))}
-        </div>
+        <ToolCallsGroup toolCalls={message.toolCalls!} isBusy={assistantBusy} />
       )}
 
       {/* Run log card */}
@@ -148,8 +149,9 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         </div>
       )}
 
-      {/* Thinking indicator */}
-      {!isUser && message.isThinking && !hasContent && <ThinkingIndicator />}
+      {/* Thinking indicator — only when there are no tool calls; otherwise the
+          ToolCallsGroup already surfaces a live "Working on it..." signal. */}
+      {!isUser && message.isThinking && !hasContent && !hasToolCalls && <ThinkingIndicator />}
 
       {/* File attachments for user messages */}
       {isUser && fileRefs.length > 0 && (
@@ -171,10 +173,23 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           {isUser ? (
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{displayContent}</p>
           ) : (
-            <div className={clsx(message.isStreaming && 'streaming-cursor')}>
-              <MarkdownContent content={displayContent} />
-            </div>
+            <MarkdownContent content={displayContent} />
           )}
+        </div>
+      )}
+
+      {/* Streaming indicator — shown while the assistant is still composing its
+          reply after text has started arriving. Replaces the old blinking
+          cursor with a live "Working on it..." pill that mirrors the tool-call
+          group style so the UI speaks one consistent language of progress. */}
+      {!isUser && message.isStreaming && hasContent && (
+        <div className="mt-2 animate-fade-in">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/[0.06] text-accent px-2.5 py-1 text-[11px] font-medium">
+            <Loader2 size={10} className="animate-spin flex-shrink-0" />
+            <span className="tracking-tight">
+              {t('toolCall.workingOnIt')}
+            </span>
+          </span>
         </div>
       )}
 

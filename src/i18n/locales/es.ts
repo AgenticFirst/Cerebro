@@ -81,6 +81,9 @@ const es: TranslationKeys = {
     waitingFor: 'Esperando a {{name}}...',
     runningElapsed: 'Ejecutando... {{seconds}}s',
     running: 'Ejecutando...',
+    workingOnIt: 'Trabajando en ello\u2026',
+    actionsCount_one: '{{count}} acci\u00f3n',
+    actionsCount_other: '{{count}} acciones',
   },
 
   // ── Tarjeta de registro de ejecuci\u00f3n ───────────────────────
@@ -886,6 +889,9 @@ const es: TranslationKeys = {
     themeLight: 'Claro',
     themeDark: 'Oscuro',
     themeSystem: 'Sistema',
+    showToolCalls: 'Mostrar llamadas a herramientas',
+    showToolCallsDesc:
+      'Muestra cada herramienta que usa el experto en el chat (b\u00fasquedas, lecturas de archivos, delegaciones). Al desactivarlo, ver\u00e1s un resumen compacto que puedes expandir.',
     showHistoricalLogs: 'Mostrar registros hist\u00f3ricos de pasos',
     showHistoricalLogsDesc:
       'Muestra los registros paso a paso al ver ejecuciones pasadas de rutinas. Los registros siempre se graban \u2014 esto controla si aparecen en la interfaz.',

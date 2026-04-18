@@ -173,19 +173,6 @@ body {
   animation: fadeIn 0.3s ease-out;
 }
 
-/* Streaming cursor */
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-.streaming-cursor::after {
-  content: '▊';
-  color: var(--color-accent);
-  animation: blink 1s step-end infinite;
-  margin-left: 2px;
-}
-
 /* Prose overrides for dark mode markdown */
 .prose {
   --tw-prose-body: var(--color-text-secondary);
@@ -346,6 +333,30 @@ html.light .canvas-grid {
 
 .animate-slide-in-right {
   animation: slideInRight 0.25s ease-out;
+}
+
+/* Collapsible (CSS Grid trick — animates between 0fr and 1fr, no content-height
+   measurement required). Used by the tool-calls summary pill to expand smoothly. */
+.collapsible-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapsible-grid.is-open {
+  grid-template-rows: 1fr;
+}
+
+.collapsible-grid > .collapsible-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.collapsible-grid.is-open > .collapsible-inner {
+  /* Let any focus ring / shadow escape once fully open so nested cards don't
+     get clipped after the animation settles. */
+  overflow: visible;
+  transition: overflow 0s 0.28s;
 }
 
 /* ── Voice Call Animations ────────────────────────────────────── */

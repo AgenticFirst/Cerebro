@@ -80,6 +80,9 @@ const en = {
     waitingFor: 'Waiting for {{name}}...',
     runningElapsed: 'Running... {{seconds}}s',
     running: 'Running...',
+    workingOnIt: 'Working on it\u2026',
+    actionsCount_one: '{{count}} action',
+    actionsCount_other: '{{count}} actions',
   },
 
   // ── Run log card ────────────────────────────────────────────
@@ -895,6 +898,9 @@ const en = {
     themeLight: 'Light',
     themeDark: 'Dark',
     themeSystem: 'System',
+    showToolCalls: 'Show tool calls in chat',
+    showToolCallsDesc:
+      'Show every tool the expert uses inline (searches, file reads, delegations). When off, you\u2019ll see a compact summary you can click to expand.',
     showHistoricalLogs: 'Show historical step logs',
     showHistoricalLogsDesc:
       'Display step-by-step logs when viewing past routine runs. Logs are always recorded \u2014 this controls whether they appear in the UI.',
