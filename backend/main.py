@@ -29,6 +29,7 @@ from voice.router import router as voice_router, init_voice_singletons
 from sandbox.router import router as sandbox_router
 from tasks.router import router as tasks_router
 from sync.router import router as sync_router
+from files.router import router as files_router
 
 
 @asynccontextmanager
@@ -83,6 +84,7 @@ app.include_router(voice_router, prefix="/voice")
 app.include_router(sandbox_router, prefix="/sandbox")
 app.include_router(tasks_router, prefix="/tasks")
 app.include_router(sync_router, prefix="/sync")
+app.include_router(files_router, prefix="/files")
 
 
 @app.get("/health")

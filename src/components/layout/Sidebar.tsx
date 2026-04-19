@@ -40,7 +40,7 @@ const NAV_PRIMARY: NavItemDef[] = [
   { id: 'chat', icon: MessageSquare },
   { id: 'experts', icon: Users },
   { id: 'tasks', icon: Target },
-  { id: 'workspaces', icon: FolderOpen },
+  { id: 'files', icon: FolderOpen },
   { id: 'routines', icon: Zap },
 ];
 
@@ -189,7 +189,7 @@ function groupByTime(conversations: Conversation[]): GroupedConversations[] {
 const NAV_LABEL_KEYS: Record<string, string> = {
   chat: 'nav.chat',
   tasks: 'nav.tasks',
-  workspaces: 'nav.workspaces',
+  files: 'nav.files',
   experts: 'nav.experts',
   routines: 'nav.routines',
   activity: 'nav.activity',

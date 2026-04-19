@@ -157,7 +157,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       {isUser && fileRefs.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {fileRefs.map((att) => (
-            <AttachmentChip key={att.id} attachment={att} source="user" />
+            <AttachmentChip key={att.id} attachment={att} source="user" conversationId={message.conversationId} messageId={message.id} />
           ))}
         </div>
       )}
@@ -197,7 +197,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       {!isUser && fileRefs.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-2">
           {fileRefs.map((att) => (
-            <AttachmentChip key={att.id} attachment={att} source="assistant" />
+            <AttachmentChip key={att.id} attachment={att} source="assistant" conversationId={message.conversationId} messageId={message.id} />
           ))}
         </div>
       )}

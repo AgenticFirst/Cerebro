@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { X, Download, FolderOpen, Folder, Check, Loader2 } from 'lucide-react';
+import { X, Download, FolderOpen, Folder, Check, Loader2, Save } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { AttachmentInfo } from '../../types/attachments';
 import { useToast } from '../../context/ToastContext';
 import { useMarkdownDocument } from '../../context/MarkdownDocumentContext';
+import { useFiles } from '../../context/FilesContext';
 
 const EXT_LABELS: Record<string, string> = {
   ts: 'TS', tsx: 'TX', js: 'JS', jsx: 'JX',
@@ -27,13 +28,19 @@ interface AttachmentChipProps {
   /** 'user' = chip on the user's own message (default). 'assistant' = chip for
    *  a file emitted by an expert — renders Download/Reveal actions instead of remove. */
   source?: 'user' | 'assistant';
+  /** Conversation/message refs are stored alongside the saved file so it can be
+   *  traced back to its origin. */
+  conversationId?: string;
+  messageId?: string;
 }
 
-export default function AttachmentChip({ attachment, onRemove, source = 'user' }: AttachmentChipProps) {
+export default function AttachmentChip({ attachment, onRemove, source = 'user', conversationId, messageId }: AttachmentChipProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
   const { open: openMarkdown } = useMarkdownDocument();
+  const { saveExternalToFiles } = useFiles();
   const isAssistant = source === 'assistant';
+  const [saveState, setSaveState] = useState<'idle' | 'running' | 'done'>('idle');
 
   // Live-stat the path on mount so we can pick the right UI (file vs folder)
   // and show accurate size. Stays 'undefined' until the stat returns so we can
@@ -94,6 +101,29 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user' }
         ? t('markdown.loadTooLarge')
         : t('markdown.loadFailed');
       addToast(message, 'error');
+    }
+  };
+
+  const handleSaveToFiles = async () => {
+    if (saveState === 'running') return;
+    setSaveState('running');
+    try {
+      const item = await saveExternalToFiles({
+        sourcePath: attachment.filePath,
+        source: isAssistant ? 'workspace-save' : 'chat-save',
+        sourceConversationId: conversationId ?? null,
+        sourceMessageId: messageId ?? null,
+        displayName: attachment.fileName,
+      });
+      if (item) {
+        setSaveState('done');
+        setTimeout(() => setSaveState('idle'), 2000);
+      } else {
+        setSaveState('idle');
+      }
+    } catch {
+      setSaveState('idle');
+      addToast(t('experts.downloadFailed'), 'error');
     }
   };
 
@@ -179,6 +209,27 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user' }
         </button>
       ) : (
         bodyContent
+      )}
+      {isAssistant && !missing && isDirectory === false && (
+        <button
+          onClick={handleSaveToFiles}
+          disabled={saveState === 'running'}
+          className={clsx(
+            'w-5 h-5 flex items-center justify-center rounded flex-shrink-0 transition-all',
+            saveState === 'done'
+              ? 'text-emerald-500'
+              : 'opacity-70 hover:opacity-100 hover:bg-bg-hover text-text-secondary',
+          )}
+          title={t('files.saveToFiles')}
+        >
+          {saveState === 'running' ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : saveState === 'done' ? (
+            <Check size={11} strokeWidth={2.5} />
+          ) : (
+            <Save size={11} />
+          )}
+        </button>
       )}
       {isAssistant && !missing && (
         <>

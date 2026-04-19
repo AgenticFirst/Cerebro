@@ -50,11 +50,21 @@ if (started) {
   app.quit();
 }
 
-// Register the cerebro-workspace:// scheme as privileged BEFORE app is ready.
-// This lets iframes load files from per-task workspaces for live preview.
+// Register privileged schemes BEFORE app is ready.
+// - cerebro-workspace:// serves files from per-task workspaces for live preview.
+// - cerebro-files://     serves managed bucket files (image thumbnails, html previews).
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'cerebro-workspace',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+  {
+    scheme: 'cerebro-files',
     privileges: {
       standard: true,
       secure: true,
@@ -67,6 +77,22 @@ protocol.registerSchemesAsPrivileged([
 // Helper: resolve the base directory for a task's workspace
 function getTaskWorkspaceDir(taskId: string): string {
   return path.join(app.getPath('userData'), 'task-workspaces', taskId);
+}
+
+// Helper: root directory holding all managed bucket files
+function getFilesRoot(): string {
+  return path.join(app.getPath('userData'), 'files');
+}
+
+// Resolve a managed file's relative path to an absolute path, refusing
+// any traversal that would escape the files root.
+function resolveManagedPath(relPath: string): string {
+  const root = getFilesRoot();
+  const abs = path.normalize(path.join(root, relPath));
+  if (abs !== root && !abs.startsWith(root + path.sep)) {
+    throw new Error(`Refusing path outside files root: ${relPath}`);
+  }
+  return abs;
 }
 
 // Minimal MIME-type map for files served via cerebro-workspace://
@@ -949,6 +975,208 @@ function registerIpcHandlers(): void {
     setCachedSandboxConfig(config);
   });
 
+  // --- Files (managed buckets) ---
+
+  ipcMain.handle(IPC_CHANNELS.FILES_PICK_FILES, async () => {
+    const [parent] = BrowserWindow.getAllWindows();
+    const result = await dialog.showOpenDialog(parent, {
+      title: 'Add files to Cerebro',
+      properties: ['openFile', 'multiSelections'],
+    });
+    if (result.canceled) return [];
+    return result.filePaths;
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_IMPORT_TO_BUCKET,
+    async (_event, args: { sourcePath: string; bucketId: string; fileId: string; destExt: string }) => {
+      const { sourcePath, bucketId, fileId, destExt } = args;
+      if (!path.isAbsolute(sourcePath)) {
+        throw new Error('Source path must be absolute');
+      }
+      if (!/^[a-z0-9]{32}$/i.test(bucketId)) {
+        throw new Error(`Invalid bucketId: ${bucketId}`);
+      }
+      if (!/^[a-z0-9]{32}$/i.test(fileId)) {
+        throw new Error(`Invalid fileId: ${fileId}`);
+      }
+      const cleanExt = (destExt || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
+      const baseName = cleanExt ? `${fileId}.${cleanExt}` : fileId;
+      const destDir = path.join(getFilesRoot(), bucketId);
+      const destAbs = path.join(destDir, baseName);
+      await fs.promises.mkdir(destDir, { recursive: true });
+
+      const srcStat = await fs.promises.stat(sourcePath);
+      if (srcStat.isDirectory()) throw new Error('Source is a directory');
+
+      const hash = crypto.createHash('sha256');
+      let bytes = 0;
+      await new Promise<void>((resolve, reject) => {
+        const reader = fs.createReadStream(sourcePath);
+        const writer = fs.createWriteStream(destAbs);
+        reader.on('data', (chunk: Buffer | string) => {
+          const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+          hash.update(buf);
+          bytes += buf.length;
+        });
+        reader.on('error', reject);
+        writer.on('error', reject);
+        writer.on('finish', resolve);
+        reader.pipe(writer);
+      });
+
+      const destRelPath = path.posix.join(bucketId, baseName);
+      return {
+        destRelPath,
+        sha256: hash.digest('hex'),
+        sizeBytes: bytes,
+        mime: mimeFor(destAbs).split(';')[0] || null,
+      };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_COPY_MANAGED,
+    async (_event, args: { srcRelPath: string; destBucketId: string; destFileId: string; destExt: string }) => {
+      const srcAbs = resolveManagedPath(args.srcRelPath);
+      if (!/^[a-z0-9]{32}$/i.test(args.destBucketId)) {
+        throw new Error(`Invalid destBucketId: ${args.destBucketId}`);
+      }
+      if (!/^[a-z0-9]{32}$/i.test(args.destFileId)) {
+        throw new Error(`Invalid destFileId: ${args.destFileId}`);
+      }
+      const cleanExt = (args.destExt || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
+      const baseName = cleanExt ? `${args.destFileId}.${cleanExt}` : args.destFileId;
+      const destDir = path.join(getFilesRoot(), args.destBucketId);
+      const destAbs = path.join(destDir, baseName);
+      await fs.promises.mkdir(destDir, { recursive: true });
+
+      const hash = crypto.createHash('sha256');
+      let bytes = 0;
+      await new Promise<void>((resolve, reject) => {
+        const reader = fs.createReadStream(srcAbs);
+        const writer = fs.createWriteStream(destAbs);
+        reader.on('data', (chunk: Buffer | string) => {
+          const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+          hash.update(buf);
+          bytes += buf.length;
+        });
+        reader.on('error', reject);
+        writer.on('error', reject);
+        writer.on('finish', resolve);
+        reader.pipe(writer);
+      });
+
+      const destRelPath = path.posix.join(args.destBucketId, baseName);
+      return {
+        destRelPath,
+        sha256: hash.digest('hex'),
+        sizeBytes: bytes,
+        mime: mimeFor(destAbs).split(';')[0] || null,
+      };
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.FILES_DELETE_MANAGED, async (_event, relPath: string) => {
+    const abs = resolveManagedPath(relPath);
+    try {
+      await fs.promises.unlink(abs);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FILES_DELETE_MANAGED_BATCH, async (_event, relPaths: string[]) => {
+    for (const rel of relPaths) {
+      try {
+        const abs = resolveManagedPath(rel);
+        await fs.promises.unlink(abs).catch((err) => {
+          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+        });
+      } catch (err) {
+        console.warn(`[files] delete batch skipped ${rel}:`, err);
+      }
+    }
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_PREVIEW_URL,
+    async (_event, args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }) => {
+      if (args.storageKind === 'managed') {
+        const segments = args.storagePath.split('/').filter(Boolean).map((s) => encodeURIComponent(s));
+        return `cerebro-files://local/${segments.join('/')}`;
+      }
+      // workspace
+      if (!args.taskId) throw new Error('taskId required for workspace previews');
+      const segments = args.storagePath.split('/').filter(Boolean).map((s) => encodeURIComponent(s));
+      return `cerebro-workspace://${args.taskId}/${segments.join('/')}`;
+    },
+  );
+
+  // For workspace files we accept either a relative path (resolved against the
+  // task workspace dir) or an absolute path (an external project folder linked
+  // to the task — already vetted by the sandbox validator at task create time).
+  function resolveStoragePath(args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }): string {
+    if (args.storageKind === 'managed') {
+      return resolveManagedPath(args.storagePath);
+    }
+    if (path.isAbsolute(args.storagePath)) return args.storagePath;
+    if (!args.taskId) throw new Error('taskId required for workspace files');
+    return path.join(getTaskWorkspaceDir(args.taskId), args.storagePath);
+  }
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_REVEAL,
+    async (_event, args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }) => {
+      const abs = resolveStoragePath(args);
+      shell.showItemInFolder(abs);
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_OPEN,
+    async (_event, args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }) => {
+      const abs = resolveStoragePath(args);
+      await shell.openPath(abs);
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_DOWNLOAD,
+    async (_event, args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }) => {
+      const abs = resolveStoragePath(args);
+      const src = await fs.promises.stat(abs).catch(() => null);
+      if (!src || src.isDirectory()) throw new Error('Source is not a regular file');
+      const downloads = app.getPath('downloads');
+      await fs.promises.mkdir(downloads, { recursive: true });
+      const base = path.basename(abs);
+      const ext = path.extname(base);
+      const stem = path.basename(base, ext);
+      let dest = path.join(downloads, base);
+      let counter = 1;
+      while (true) {
+        try {
+          await fs.promises.access(dest);
+          dest = path.join(downloads, `${stem}-${counter}${ext}`);
+          counter++;
+        } catch {
+          break;
+        }
+      }
+      await fs.promises.copyFile(abs, dest);
+      return dest;
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.FILES_READ_MANAGED_TEXT, async (_event, relPath: string) => {
+    const abs = resolveManagedPath(relPath);
+    const content = await fs.promises.readFile(abs, 'utf8');
+    if (content.length > 2 * 1024 * 1024) {
+      throw new Error('File too large to preview (>2 MB)');
+    }
+    return content;
+  });
+
   // --- Telegram bridge ---
 
   ipcMain.handle(IPC_CHANNELS.TELEGRAM_VERIFY, async (_event, token: string) => {
@@ -1087,6 +1315,49 @@ app.on('ready', async () => {
       });
     } catch (err) {
       console.error(`[cerebro-workspace] handler error for ${filePath}:`, err);
+      return new Response(`Error: ${(err as Error).message ?? err}`, {
+        status: 500,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
+  });
+
+  // Serve managed bucket files via cerebro-files://<bucketId>/<fileId>.<ext>
+  protocol.handle('cerebro-files', async (request) => {
+    let filePath = '<unresolved>';
+    try {
+      const url = new URL(request.url);
+      // Path = "/<bucketId>/<fileId>.<ext>"; hostname is empty for opaque hosts.
+      const parts = decodeURIComponent(url.pathname || '/').split('/').filter(Boolean);
+      // Some Chromium variants stuff the first segment into url.hostname for non-standard schemes.
+      if (url.hostname) parts.unshift(url.hostname);
+      const relPath = parts.join('/');
+      if (!relPath) return new Response('Missing path', { status: 400 });
+      try {
+        filePath = resolveManagedPath(relPath);
+      } catch {
+        return new Response('Forbidden', { status: 403 });
+      }
+      let stat: fs.Stats;
+      try {
+        stat = await fs.promises.stat(filePath);
+      } catch {
+        return new Response(`Not found: ${path.basename(filePath)}`, {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
+      if (stat.isDirectory()) {
+        return new Response('Is a directory', { status: 400 });
+      }
+      const data = await fs.promises.readFile(filePath);
+      const body = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': mimeFor(filePath) },
+      });
+    } catch (err) {
+      console.error(`[cerebro-files] handler error for ${filePath}:`, err);
       return new Response(`Error: ${(err as Error).message ?? err}`, {
         status: 500,
         headers: { 'Content-Type': 'text/plain; charset=utf-8' },

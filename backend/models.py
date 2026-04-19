@@ -331,6 +331,58 @@ class TaskChecklistItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class Bucket(Base):
+    __tablename__ = "buckets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    name: Mapped[str] = mapped_column(String(255))
+    color: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    icon: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[float] = mapped_column(default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class FileItem(Base):
+    __tablename__ = "file_items"
+    __table_args__ = (
+        Index("ix_file_items_bucket_deleted", "bucket_id", "deleted_at"),
+        Index("ix_file_items_sha256", "sha256"),
+        Index("ix_file_items_starred", "starred"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    bucket_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("buckets.id", ondelete="SET NULL"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(512))
+    ext: Mapped[str] = mapped_column(String(32), default="")
+    mime: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    storage_kind: Mapped[str] = mapped_column(String(16), default="managed")
+    # managed: relative under <userData>/files; workspace: absolute path
+    storage_path: Mapped[str] = mapped_column(String(1024))
+    source: Mapped[str] = mapped_column(String(32), default="manual")
+    # upload | chat-save | workspace-save | manual
+    source_conversation_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
+    )
+    source_message_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
+    )
+    source_task_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True
+    )
+    starred: Mapped[bool] = mapped_column(Boolean, default=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+    last_opened_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class TaskComment(Base):
     __tablename__ = "task_comments"
 

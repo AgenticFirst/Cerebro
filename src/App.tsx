@@ -14,6 +14,7 @@ import { FeatureFlagsProvider } from './context/FeatureFlagsContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { UIPreferencesProvider } from './context/UIPreferencesContext';
 import { MarkdownDocumentProvider } from './context/MarkdownDocumentContext';
+import { FilesProvider } from './context/FilesContext';
 import AppLayout from './components/layout/AppLayout';
 import ToastContainer from './components/ui/Toast';
 
@@ -32,11 +33,13 @@ function App() {
                   <ApprovalProvider>
                     <TaskProvider>
                       <ChatProvider>
-                        <VoiceProvider>
-                          <MarkdownDocumentProvider>
-                            <AppLayout />
-                          </MarkdownDocumentProvider>
-                        </VoiceProvider>
+                        <FilesProvider>
+                          <VoiceProvider>
+                            <MarkdownDocumentProvider>
+                              <AppLayout />
+                            </MarkdownDocumentProvider>
+                          </VoiceProvider>
+                        </FilesProvider>
                       </ChatProvider>
                     </TaskProvider>
                   </ApprovalProvider>

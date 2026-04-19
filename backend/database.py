@@ -82,6 +82,22 @@ def _drop_legacy_task_tables(eng) -> None:
                 conn.rollback()
 
 
+def _seed_default_bucket(eng) -> None:
+    """Ensure exactly one row exists with is_default=True (the 'Default' bucket)."""
+    from models import Bucket  # local import to avoid circular at module load
+
+    session = sessionmaker(bind=eng)()
+    try:
+        existing = session.query(Bucket).filter(Bucket.is_default.is_(True)).first()
+        if existing:
+            return
+        session.add(Bucket(name="Default", is_default=True, is_pinned=True))
+        session.commit()
+        log.info("Seeded Default bucket")
+    finally:
+        session.close()
+
+
 def init_db(db_path: str) -> None:
     global engine, SessionLocal
 
@@ -100,6 +116,7 @@ def init_db(db_path: str) -> None:
 
     Base.metadata.create_all(bind=engine)
     _migrate(engine)
+    _seed_default_bucket(engine)
 
 
 def get_db() -> Generator[Session]:

@@ -260,6 +260,39 @@ const api: CerebroAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_STATUS);
     },
   },
+
+  files: {
+    pickFiles() {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_PICK_FILES);
+    },
+    importToBucket(args) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_IMPORT_TO_BUCKET, args);
+    },
+    copyManaged(args) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_COPY_MANAGED, args);
+    },
+    deleteManaged(relPath) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_DELETE_MANAGED, relPath);
+    },
+    deleteManagedBatch(relPaths) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_DELETE_MANAGED_BATCH, relPaths);
+    },
+    previewUrl(args) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_PREVIEW_URL, args);
+    },
+    reveal(args) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_REVEAL, args);
+    },
+    open(args) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_OPEN, args);
+    },
+    download(args) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_DOWNLOAD, args);
+    },
+    readManagedText(relPath) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_READ_MANAGED_TEXT, relPath);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('cerebro', api);

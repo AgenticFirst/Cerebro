@@ -82,6 +82,18 @@ export const IPC_CHANNELS = {
   TELEGRAM_ENABLE: 'telegram:enable',
   TELEGRAM_DISABLE: 'telegram:disable',
   TELEGRAM_STATUS: 'telegram:status',
+
+  // Files (managed buckets at <userData>/files)
+  FILES_PICK_FILES: 'files:pick-files',
+  FILES_IMPORT_TO_BUCKET: 'files:import-to-bucket',
+  FILES_DELETE_MANAGED: 'files:delete-managed',
+  FILES_DELETE_MANAGED_BATCH: 'files:delete-managed-batch',
+  FILES_PREVIEW_URL: 'files:preview-url',
+  FILES_COPY_MANAGED: 'files:copy-managed',
+  FILES_REVEAL: 'files:reveal',
+  FILES_OPEN: 'files:open',
+  FILES_DOWNLOAD: 'files:download',
+  FILES_READ_MANAGED_TEXT: 'files:read-managed-text',
 } as const;
 
 // --- Backend Request/Response ---
@@ -282,6 +294,54 @@ export interface TelegramAPI {
   status(): Promise<TelegramStatusResponse>;
 }
 
+// --- Files (managed buckets) ---
+
+export interface FilesImportArgs {
+  sourcePath: string;     // absolute path on disk
+  bucketId: string;       // destination bucket id (used as subdir)
+  fileId: string;         // pre-allocated id, becomes the on-disk basename
+  destExt: string;        // lowercased ext (no dot), preserved on disk
+}
+
+export interface FilesImportResult {
+  destRelPath: string;    // relative to <userData>/files
+  sha256: string;         // hex
+  sizeBytes: number;
+  mime: string | null;    // best-effort guess
+}
+
+export interface FilesCopyArgs {
+  srcRelPath: string;     // relative to <userData>/files
+  destBucketId: string;
+  destFileId: string;
+  destExt: string;
+}
+
+export interface FilesAPI {
+  /** Open a multi-select file picker. Returns absolute paths or empty array if cancelled. */
+  pickFiles(): Promise<string[]>;
+  /** Stream-copy a file from anywhere on disk into <userData>/files/<bucketId>/<fileId>.<ext>.
+   *  Computes SHA-256 during the copy. Does NOT touch the database — caller follows
+   *  up with POST /files/items. */
+  importToBucket(args: FilesImportArgs): Promise<FilesImportResult>;
+  /** Duplicate a managed file's bytes to a new managed location. */
+  copyManaged(args: FilesCopyArgs): Promise<FilesImportResult>;
+  /** Unlink the bytes for a single managed file. Path is relative to <userData>/files. */
+  deleteManaged(relPath: string): Promise<void>;
+  /** Unlink bytes for many managed files at once. Used by Empty Trash. */
+  deleteManagedBatch(relPaths: string[]): Promise<void>;
+  /** Build a renderer-loadable URL (cerebro-files:// for managed; cerebro-workspace:// for workspace files). */
+  previewUrl(args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }): Promise<string>;
+  /** Reveal a managed (rel) or workspace (abs) file in Finder. */
+  reveal(args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }): Promise<void>;
+  /** Open a managed (rel) or workspace (abs) file with the OS default app. */
+  open(args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }): Promise<void>;
+  /** Copy to ~/Downloads. Returns the final dest path. */
+  download(args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }): Promise<string>;
+  /** Read a managed file as text (2 MB cap), used by the markdown/text preview. */
+  readManagedText(relPath: string): Promise<string>;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -301,6 +361,7 @@ export interface CerebroAPI {
   shell: ShellAPI;
   sandbox: SandboxAPI;
   telegram: TelegramAPI;
+  files: FilesAPI;
 }
 
 export interface ShellStatResult {
