@@ -6,7 +6,18 @@ teams (see `experts/seed.py::VERIFIED_TEAMS`). These tests pin that contract.
 
 from __future__ import annotations
 
+import pytest
+
 from experts.seed import seed_verified_teams
+
+
+@pytest.fixture()
+def client(seeded_client):
+    """Override the default `client` fixture in this module so tests here
+    receive a client backed by a DB that has been populated by the lifespan
+    seeders (builtin skills + verified experts + verified teams).
+    """
+    return seeded_client
 
 
 EXPECTED_TEAM_SLUGS = {
