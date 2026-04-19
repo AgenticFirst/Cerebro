@@ -52,6 +52,11 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     return Array.from(set).sort();
   }, [tasks]);
 
+  const assignedExpert = useMemo(
+    () => experts.find((e) => e.id === task?.expert_id) ?? null,
+    [experts, task?.expert_id],
+  );
+
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [isFullWidth, setIsFullWidth] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -60,7 +65,6 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   const [showHardReset, setShowHardReset] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const prevColumnRef = useRef<TaskColumn | null>(null);
 
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
@@ -71,24 +75,14 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
 
   useEffect(() => {
     if (!task) return;
-    // When opening a task: default to Console if already running, otherwise Details
-    setActiveTab(task.column === 'in_progress' ? 'console' : 'details');
+    // Always land on Details when opening a task — the live-session badge in
+    // the header lets users jump to the console on demand. This keeps the
+    // entry point friendly for non-coders who don't want to see a terminal.
+    setActiveTab('details');
     setIsFullWidth(false);
     setIsEditingTitle(false);
     setShowHardReset(false);
-    prevColumnRef.current = task.column;
   }, [task?.id]);
-
-  // Auto-switch to Console when a task first transitions to in_progress
-  useEffect(() => {
-    if (!task) return;
-    if (prevColumnRef.current !== task.column) {
-      if (task.column === 'in_progress') {
-        setActiveTab('console');
-      }
-      prevColumnRef.current = task.column;
-    }
-  }, [task?.column]);
 
   useEffect(() => {
     if (!task) return;
@@ -440,6 +434,28 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
           />
         </div>
       </div>
+
+      {isRunning && !isFullWidth && (
+        <button
+          type="button"
+          onClick={() => setActiveTab('console')}
+          className="group flex items-center gap-2.5 px-5 py-2 border-b border-cyan-500/20 bg-cyan-500/5 hover:bg-cyan-500/10 transition-colors cursor-pointer text-left w-full"
+          title={t('tasks.viewLiveConsoleTitle')}
+        >
+          <span className="relative flex h-2 w-2 flex-shrink-0">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75 animate-ping" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+          </span>
+          <span className="text-xs font-medium text-cyan-300 truncate">
+            {assignedExpert
+              ? t('tasks.expertWorking', { expert: assignedExpert.name })
+              : t('tasks.taskRunningLive')}
+          </span>
+          <span className="ml-auto text-[11px] font-medium text-cyan-400/80 group-hover:text-cyan-300 flex-shrink-0">
+            {t('tasks.viewLiveConsole')} →
+          </span>
+        </button>
+      )}
 
       <div className="flex items-start gap-2 px-5 py-2 border-b border-border-subtle">
         <span className="text-text-tertiary text-xs pt-1.5 flex-shrink-0">{t('tasks.drawerTags')}</span>
