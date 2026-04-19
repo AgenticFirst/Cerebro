@@ -5,10 +5,12 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ChevronDown, FileText, Plus, RefreshCw, Save, Sparkles, Trash2 } from 'lucide-react';
+import { ChevronDown, FileText, Maximize2, Plus, RefreshCw, Save, Sparkles, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Expert } from '../../context/ExpertContext';
 import { useMemory } from '../../context/MemoryContext';
+import { useMarkdownDocument } from '../../context/MarkdownDocumentContext';
+import { useTranslation } from 'react-i18next';
 
 interface ExpertMemoryTabProps {
   expert: Expert;
@@ -22,6 +24,8 @@ function formatSize(bytes: number): string {
 export default function ExpertMemoryTab({ expert }: ExpertMemoryTabProps) {
   const slug = expert.slug;
   const { files, loadFiles, readFile, writeFile, deleteFile } = useMemory();
+  const { open: openMarkdown } = useMarkdownDocument();
+  const { t } = useTranslation();
 
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -220,36 +224,72 @@ export default function ExpertMemoryTab({ expert }: ExpertMemoryTabProps) {
                 key={file.path}
                 className="rounded-lg border border-border-subtle overflow-hidden"
               >
-                <button
-                  onClick={() => handleExpand(file.path)}
+                <div
                   className={clsx(
-                    'w-full flex items-center gap-2 px-2.5 py-2 text-left transition-colors',
-                    isExpanded
-                      ? 'bg-bg-base'
-                      : 'bg-bg-surface hover:bg-bg-base',
+                    'w-full flex items-center transition-colors',
+                    isExpanded ? 'bg-bg-base' : 'bg-bg-surface hover:bg-bg-base',
                   )}
                 >
-                  <Icon
-                    size={12}
-                    className={isSoul ? 'text-accent' : 'text-text-tertiary'}
-                  />
-                  <span className="text-xs text-text-primary flex-1 truncate font-mono">
-                    {file.path}
-                  </span>
-                  {isExpanded && isDirty && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
-                  )}
-                  <span className="text-[10px] text-text-tertiary flex-shrink-0">
-                    {formatSize(file.size)}
-                  </span>
-                  <ChevronDown
-                    size={12}
-                    className={clsx(
-                      'text-text-tertiary transition-transform duration-150 flex-shrink-0',
-                      isExpanded ? 'rotate-0' : '-rotate-90',
+                  <button
+                    type="button"
+                    onClick={() => handleExpand(file.path)}
+                    className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2 text-left cursor-pointer"
+                  >
+                    <Icon
+                      size={12}
+                      className={isSoul ? 'text-accent' : 'text-text-tertiary'}
+                    />
+                    <span className="text-xs text-text-primary flex-1 truncate font-mono">
+                      {file.path}
+                    </span>
+                    {isExpanded && isDirty && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />
                     )}
-                  />
-                </button>
+                    <span className="text-[10px] text-text-tertiary flex-shrink-0">
+                      {formatSize(file.size)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Read fresh from disk so we don't show the buffered copy
+                      // of a different file the user previously expanded.
+                      readFile(slug, file.path).then((res) => {
+                        openMarkdown({
+                          title: file.path,
+                          subtitle: slug,
+                          content: res?.content ?? '',
+                          initialMode: 'split',
+                          onSave: async (md) => {
+                            await writeFile(slug, file.path, md);
+                            if (expandedFile === file.path) {
+                              setEditContent(md);
+                              setOriginalContent(md);
+                            }
+                          },
+                        });
+                      });
+                    }}
+                    className="p-2 text-text-tertiary hover:text-text-primary transition-colors flex-shrink-0"
+                    title={t('markdown.expand')}
+                  >
+                    <Maximize2 size={11} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExpand(file.path)}
+                    className="p-2 text-text-tertiary hover:text-text-primary transition-colors flex-shrink-0"
+                    aria-label={isExpanded ? 'Collapse' : 'Expand inline'}
+                  >
+                    <ChevronDown
+                      size={12}
+                      className={clsx(
+                        'transition-transform duration-150',
+                        isExpanded ? 'rotate-0' : '-rotate-90',
+                      )}
+                    />
+                  </button>
+                </div>
 
                 {isExpanded && (
                   <div className="border-t border-border-subtle">

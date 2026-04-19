@@ -226,6 +226,9 @@ const api: CerebroAPI = {
     downloadToDownloads(filePath: string): Promise<string> {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL_DOWNLOAD_TO_DOWNLOADS, filePath);
     },
+    readTextFile(filePath: string): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL_READ_TEXT_FILE, filePath);
+    },
   },
 
   sandbox: {

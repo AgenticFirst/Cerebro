@@ -219,6 +219,145 @@ body {
   text-decoration: underline;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Notion-style markdown document — used by MarkdownDocument overlay.
+   Wraps the existing `.prose` typography but scales it up for full-page
+   reading: wider line-height, larger headings, generous outer padding,
+   centered ~760px column. Editor textarea uses identical column geometry
+   so toggling between view/edit/split modes never reflows the layout.
+   ────────────────────────────────────────────────────────────────────── */
+.md-doc-shell {
+  background-color: var(--color-bg-base);
+}
+
+.md-doc-prose {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 4rem 5rem 6rem;
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--color-text-primary);
+}
+
+.md-doc-prose > :first-child {
+  margin-top: 0;
+}
+
+.md-doc-prose h1,
+.md-doc-prose h2,
+.md-doc-prose h3,
+.md-doc-prose h4 {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.md-doc-prose h1 { font-size: 2.25rem; line-height: 1.2;  margin: 2rem 0 0.75rem; }
+.md-doc-prose h2 { font-size: 1.5rem;  line-height: 1.3;  margin: 1.75rem 0 0.5rem; }
+.md-doc-prose h3 { font-size: 1.25rem; line-height: 1.4;  margin: 1.5rem 0 0.4rem; }
+.md-doc-prose h4 { font-size: 1.0625rem; line-height: 1.4; margin: 1.25rem 0 0.3rem; }
+
+.md-doc-prose p,
+.md-doc-prose ul,
+.md-doc-prose ol,
+.md-doc-prose blockquote {
+  margin: 0.6rem 0;
+}
+
+.md-doc-prose ul,
+.md-doc-prose ol {
+  padding-left: 1.6rem;
+}
+
+.md-doc-prose ul li::marker { color: var(--color-text-tertiary); }
+.md-doc-prose ol li::marker { color: var(--color-text-tertiary); }
+
+.md-doc-prose blockquote {
+  border-left: 3px solid var(--color-border-default);
+  padding-left: 1rem;
+  color: var(--color-text-secondary);
+  font-style: normal;
+}
+
+.md-doc-prose hr {
+  border: none;
+  border-top: 1px solid var(--color-border-subtle);
+  margin: 2rem 0;
+}
+
+.md-doc-prose pre {
+  border-radius: 1rem;
+  padding: 0.25rem 0;
+  border: 1px solid var(--color-border-subtle);
+}
+
+.md-doc-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.9375rem;
+}
+
+.md-doc-prose th,
+.md-doc-prose td {
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.md-doc-prose th {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.md-doc-prose img {
+  max-width: 100%;
+  border-radius: 0.5rem;
+}
+
+.md-doc-empty {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+/* Editor textarea matches the prose column so toggling modes feels seamless. */
+.md-doc-editor {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 4rem 5rem 6rem;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  width: 100%;
+  min-height: 100%;
+}
+
+.md-doc-editor::placeholder {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+/* Light-theme tweaks */
+html.light .md-doc-prose th {
+  background-color: rgba(0, 0, 0, 0.025);
+}
+
+/* Soft slide-up entrance for the overlay panel (vs the snappy fade-in modal). */
+@keyframes mdDocPanel {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+.animate-md-doc-panel {
+  animation: mdDocPanel 0.18s ease-out;
+}
+
 /* Thinking dots animation */
 @keyframes thinkingDots {
   0% { content: ''; }

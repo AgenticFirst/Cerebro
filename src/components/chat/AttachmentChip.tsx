@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { AttachmentInfo } from '../../types/attachments';
 import { useToast } from '../../context/ToastContext';
+import { useMarkdownDocument } from '../../context/MarkdownDocumentContext';
 
 const EXT_LABELS: Record<string, string> = {
   ts: 'TS', tsx: 'TX', js: 'JS', jsx: 'JX',
@@ -31,6 +32,7 @@ interface AttachmentChipProps {
 export default function AttachmentChip({ attachment, onRemove, source = 'user' }: AttachmentChipProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
+  const { open: openMarkdown } = useMarkdownDocument();
   const isAssistant = source === 'assistant';
 
   // Live-stat the path on mount so we can pick the right UI (file vs folder)
@@ -71,6 +73,30 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user' }
     // Opens the directory itself in Finder/Explorer.
     window.cerebro.shell.openPath(attachment.filePath).catch(() => undefined);
   };
+  const isMarkdown =
+    isAssistant &&
+    isDirectory === false &&
+    !missing &&
+    attachment.extension === 'md';
+
+  const handleOpenMarkdown = async () => {
+    try {
+      const content = await window.cerebro.shell.readTextFile(attachment.filePath);
+      openMarkdown({
+        title: attachment.fileName,
+        subtitle: attachment.filePath,
+        content,
+        readOnly: true,
+        filePath: attachment.filePath,
+      });
+    } catch (err) {
+      const message = err instanceof Error && err.message.includes('too large')
+        ? t('markdown.loadTooLarge')
+        : t('markdown.loadFailed');
+      addToast(message, 'error');
+    }
+  };
+
   const handleDownload = async () => {
     if (downloadState === 'running') return;
     setDownloadState('running');
@@ -114,17 +140,8 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user' }
   }
 
   // ── File chip — download primary, reveal secondary ───────────────
-  return (
-    <div
-      className={clsx(
-        'inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-md',
-        'bg-bg-elevated border border-border-subtle text-xs text-text-secondary',
-        'group transition-colors',
-        (onRemove || isAssistant) && !missing && 'hover:border-border-default',
-        missing && 'opacity-60',
-      )}
-      title={missing ? t('experts.attachmentMissing') : undefined}
-    >
+  const bodyContent = (
+    <>
       <span
         className={clsx(
           'w-5 h-5 rounded flex items-center justify-center flex-shrink-0',
@@ -136,6 +153,32 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user' }
       <span className="max-w-[140px] truncate">{attachment.fileName}</span>
       {fileSize > 0 && (
         <span className="text-text-tertiary text-[10px]">{formatSize(fileSize)}</span>
+      )}
+    </>
+  );
+
+  return (
+    <div
+      className={clsx(
+        'inline-flex items-center gap-1.5 pl-1 pr-1.5 py-0.5 rounded-md',
+        'bg-bg-elevated border border-border-subtle text-xs text-text-secondary',
+        'group transition-colors',
+        (onRemove || isAssistant) && !missing && 'hover:border-border-default',
+        missing && 'opacity-60',
+      )}
+      title={missing ? t('experts.attachmentMissing') : undefined}
+    >
+      {isMarkdown ? (
+        <button
+          type="button"
+          onClick={handleOpenMarkdown}
+          className="flex items-center gap-1.5 cursor-pointer hover:text-text-primary transition-colors"
+          title={t('markdown.expand')}
+        >
+          {bodyContent}
+        </button>
+      ) : (
+        bodyContent
       )}
       {isAssistant && !missing && (
         <>

@@ -1036,6 +1036,45 @@ const en = {
   alert: {
     defaultAction: 'Got it',
   },
+
+  // ── Markdown document overlay ───────────────────────────────
+  markdown: {
+    untitled: 'Untitled',
+    view: 'View',
+    edit: 'Edit',
+    split: 'Split',
+    save: 'Save',
+    saved: 'Saved',
+    saving: 'Saving\u2026',
+    unsaved: 'Unsaved changes',
+    close: 'Close',
+    expand: 'Open in editor',
+    revealInFinder: 'Reveal in Finder',
+    wordCount_one: '{{count}} word',
+    wordCount_other: '{{count}} words',
+    placeholder:
+      'Write markdown\u2026  Heading: # H1, ## H2  ·  List: - item  ·  Code: ```  ·  Bold: **text**',
+    emptyPreview: 'Nothing to preview yet \u2014 start writing in the editor.',
+    closeConfirmTitle: 'Discard changes?',
+    closeConfirmMessage: 'You have unsaved edits. Closing will lose them.',
+    closeConfirmDiscard: 'Discard',
+    closeConfirmKeepEditing: 'Keep editing',
+    loadFailed: 'Could not open file',
+    loadTooLarge: 'File is too large to preview in the app.',
+    shortcutsHint: '\u2318E modes  \u00b7  \u2318S save  \u00b7  Esc close',
+    formatBold: 'Bold',
+    formatItalic: 'Italic',
+    formatCode: 'Inline code',
+    formatLink: 'Link',
+    formatH1: 'Heading 1',
+    formatH2: 'Heading 2',
+    formatH3: 'Heading 3',
+    formatQuote: 'Quote',
+    formatBulletList: 'Bullet list',
+    formatNumberList: 'Numbered list',
+    formatChecklist: 'Checklist',
+    formatHr: 'Divider',
+  },
 } as const;
 
 export type TranslationKeys = typeof en;

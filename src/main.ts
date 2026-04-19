@@ -887,6 +887,19 @@ function registerIpcHandlers(): void {
     },
   );
 
+  // 2 MB limit keeps the renderer responsive — anything bigger should be
+  // opened externally via SHELL_OPEN_PATH instead.
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_READ_TEXT_FILE,
+    async (_event, filePath: string) => {
+      const content = await fs.promises.readFile(filePath, 'utf8');
+      if (content.length > 2 * 1024 * 1024) {
+        throw new Error('File too large to preview (>2 MB)');
+      }
+      return content;
+    },
+  );
+
   // Copy a file emitted by an expert into the user's OS Downloads folder,
   // auto-deduping the destination name on collision. Returns the final path.
   ipcMain.handle(

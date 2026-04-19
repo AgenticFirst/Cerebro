@@ -75,6 +75,7 @@ export const IPC_CHANNELS = {
   SHELL_REVEAL_PATH: 'shell:reveal-path',
   SHELL_STAT_PATH: 'shell:stat-path',
   SHELL_DOWNLOAD_TO_DOWNLOADS: 'shell:download-to-downloads',
+  SHELL_READ_TEXT_FILE: 'shell:read-text-file',
 
   // Telegram bridge
   TELEGRAM_VERIFY: 'telegram:verify',
@@ -315,6 +316,9 @@ export interface ShellAPI {
   /** Copy a regular file to the user's OS Downloads folder, deduping on collision.
    *  Returns the final destination path. Throws if source is missing or a directory. */
   downloadToDownloads(filePath: string): Promise<string>;
+  /** Read a UTF-8 text file from disk. Refuses files larger than the main-process
+   *  size guard (currently 2 MB) so the renderer can surface a friendly toast. */
+  readTextFile(filePath: string): Promise<string>;
 }
 
 export interface TaskTerminalAPI {

@@ -1028,6 +1028,45 @@ const es: TranslationKeys = {
   alert: {
     defaultAction: 'Entendido',
   },
+
+  // ── Editor de documentos Markdown ───────────────────────────
+  markdown: {
+    untitled: 'Sin t\u00edtulo',
+    view: 'Ver',
+    edit: 'Editar',
+    split: 'Dividir',
+    save: 'Guardar',
+    saved: 'Guardado',
+    saving: 'Guardando\u2026',
+    unsaved: 'Cambios sin guardar',
+    close: 'Cerrar',
+    expand: 'Abrir en el editor',
+    revealInFinder: 'Mostrar en el Finder',
+    wordCount_one: '{{count}} palabra',
+    wordCount_other: '{{count}} palabras',
+    placeholder:
+      'Escribe markdown\u2026  T\u00edtulo: # H1, ## H2  \u00b7  Lista: - elemento  \u00b7  C\u00f3digo: ```  \u00b7  Negrita: **texto**',
+    emptyPreview: 'Nada que previsualizar todav\u00eda \u2014 empieza a escribir en el editor.',
+    closeConfirmTitle: '\u00bfDescartar cambios?',
+    closeConfirmMessage: 'Tienes ediciones sin guardar. Si cierras se perder\u00e1n.',
+    closeConfirmDiscard: 'Descartar',
+    closeConfirmKeepEditing: 'Seguir editando',
+    loadFailed: 'No se pudo abrir el archivo',
+    loadTooLarge: 'El archivo es demasiado grande para previsualizarlo en la app.',
+    shortcutsHint: '\u2318E modos  \u00b7  \u2318S guardar  \u00b7  Esc cerrar',
+    formatBold: 'Negrita',
+    formatItalic: 'Cursiva',
+    formatCode: 'C\u00f3digo en l\u00ednea',
+    formatLink: 'Enlace',
+    formatH1: 'Encabezado 1',
+    formatH2: 'Encabezado 2',
+    formatH3: 'Encabezado 3',
+    formatQuote: 'Cita',
+    formatBulletList: 'Lista con vi\u00f1etas',
+    formatNumberList: 'Lista numerada',
+    formatChecklist: 'Lista de verificaci\u00f3n',
+    formatHr: 'Divisor',
+  },
 } as const;
 
 export default es;

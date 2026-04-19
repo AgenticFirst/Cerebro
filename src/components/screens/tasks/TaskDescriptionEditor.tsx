@@ -1,12 +1,13 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Eye } from 'lucide-react';
+import { Pencil, Eye, Maximize2 } from 'lucide-react';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import { useExperts } from '../../../context/ExpertContext';
 import { normalizeToTokens } from '../../../lib/mentions';
 import { mentionMarkdownComponents } from './MentionBadge';
 import MentionTextarea from './MentionTextarea';
+import { useMarkdownDocument } from '../../../context/MarkdownDocumentContext';
 
 interface TaskDescriptionEditorProps {
   taskId: string;
@@ -17,6 +18,7 @@ interface TaskDescriptionEditorProps {
 export default function TaskDescriptionEditor({ taskId, value, onSave }: TaskDescriptionEditorProps) {
   const { t } = useTranslation();
   const { experts } = useExperts();
+  const { open: openMarkdown } = useMarkdownDocument();
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -24,6 +26,22 @@ export default function TaskDescriptionEditor({ taskId, value, onSave }: TaskDes
     () => experts.filter((e) => e.type === 'expert' && e.isEnabled),
     [experts],
   );
+
+  const handleExpand = useCallback(() => {
+    // Close inline edit mode (if open) so we don't have two editors fighting
+    // over the same string.
+    if (isEditing) {
+      if (draft !== value) onSave(draft);
+      setIsEditing(false);
+    }
+    openMarkdown({
+      title: t('tasks.drawerDescription'),
+      subtitle: taskId,
+      content: value,
+      onSave: (md) => onSave(md),
+      initialMode: 'split',
+    });
+  }, [isEditing, draft, value, onSave, openMarkdown, t, taskId]);
 
   const handleEdit = useCallback(() => {
     setDraft(value);
@@ -48,13 +66,22 @@ export default function TaskDescriptionEditor({ taskId, value, onSave }: TaskDes
         <span className="text-xs font-medium text-text-secondary uppercase tracking-wide">
           {t('tasks.drawerDescription')}
         </span>
-        <button
-          onClick={isEditing ? handleBlur : handleEdit}
-          className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
-          title={isEditing ? t('tasks.drawerPreview') : t('tasks.drawerEdit')}
-        >
-          {isEditing ? <Eye size={14} /> : <Pencil size={14} />}
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={handleExpand}
+            className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
+            title={t('markdown.expand')}
+          >
+            <Maximize2 size={13} />
+          </button>
+          <button
+            onClick={isEditing ? handleBlur : handleEdit}
+            className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
+            title={isEditing ? t('tasks.drawerPreview') : t('tasks.drawerEdit')}
+          >
+            {isEditing ? <Eye size={14} /> : <Pencil size={14} />}
+          </button>
+        </div>
       </div>
 
       {isEditing ? (

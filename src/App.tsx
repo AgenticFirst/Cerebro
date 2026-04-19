@@ -13,6 +13,7 @@ import { SandboxProvider } from './context/SandboxContext';
 import { FeatureFlagsProvider } from './context/FeatureFlagsContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { UIPreferencesProvider } from './context/UIPreferencesContext';
+import { MarkdownDocumentProvider } from './context/MarkdownDocumentContext';
 import AppLayout from './components/layout/AppLayout';
 import ToastContainer from './components/ui/Toast';
 
@@ -32,7 +33,9 @@ function App() {
                     <TaskProvider>
                       <ChatProvider>
                         <VoiceProvider>
-                          <AppLayout />
+                          <MarkdownDocumentProvider>
+                            <AppLayout />
+                          </MarkdownDocumentProvider>
                         </VoiceProvider>
                       </ChatProvider>
                     </TaskProvider>

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileText, FolderOpen, Plus, Save, Trash2 } from 'lucide-react';
+import { FileText, FolderOpen, Maximize2, Plus, Save, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useMemory } from '../../../context/MemoryContext';
+import { useMarkdownDocument } from '../../../context/MarkdownDocumentContext';
 import { timeAgo } from '../activity/helpers';
 import type { AgentMemoryFileContent } from '../../../types/memory';
 
@@ -10,6 +11,7 @@ export default function MemorySection() {
   const { t } = useTranslation();
   const { directories, files, loadDirectories, loadFiles, readFile, writeFile, deleteFile } =
     useMemory();
+  const { open: openMarkdown } = useMarkdownDocument();
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [content, setContent] = useState<string>('');
@@ -206,6 +208,27 @@ export default function MemorySection() {
                   <span className="text-text-primary font-mono">{selectedFile}</span>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (!selectedSlug || !selectedFile) return;
+                      openMarkdown({
+                        title: selectedFile,
+                        subtitle: selectedSlug,
+                        content,
+                        initialMode: 'split',
+                        onSave: async (md) => {
+                          await writeFile(selectedSlug, selectedFile, md);
+                          setContent(md);
+                          setOriginal(md);
+                        },
+                      });
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-text-tertiary hover:text-text-primary hover:bg-white/[0.04] transition-colors cursor-pointer"
+                    title={t('markdown.expand')}
+                  >
+                    <Maximize2 size={11} />
+                    {t('markdown.expand')}
+                  </button>
                   <button
                     onClick={handleDelete}
                     className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-text-tertiary hover:text-red-400 hover:bg-white/[0.04] transition-colors cursor-pointer"
