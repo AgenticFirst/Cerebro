@@ -40,8 +40,8 @@ const NAV_PRIMARY: NavItemDef[] = [
   { id: 'chat', icon: MessageSquare },
   { id: 'experts', icon: Users },
   { id: 'tasks', icon: Target },
-  { id: 'files', icon: FolderOpen },
   { id: 'routines', icon: Zap },
+  { id: 'files', icon: FolderOpen },
 ];
 
 // Oversight — monitoring & control (badge injected dynamically in Sidebar)

@@ -87,8 +87,9 @@ export default function FilesSidebar({ onCreateBucket, onBucketContextMenu }: Fi
   );
 
   return (
-    <div className="w-[220px] flex-shrink-0 border-r border-border-subtle bg-bg-surface/50 flex flex-col min-h-0 overflow-y-auto py-1.5">
-      <div className="px-2.5">
+    <div className="w-[220px] flex-shrink-0 border-r border-border-subtle flex flex-col min-h-0 overflow-y-auto">
+      <div className="app-drag-region h-11 flex-shrink-0" />
+      <div className="px-2.5 pt-[14px]">
         <SidebarRow
           active={activeFilter.kind === 'recent'}
           icon={<Clock size={14} />}

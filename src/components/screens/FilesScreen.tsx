@@ -199,8 +199,10 @@ export default function FilesScreen() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {!isWorkspaces && <div className="app-drag-region h-11 flex-shrink-0" />}
         {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-5 pt-3 pb-2 flex-shrink-0">
+        {!isWorkspaces && (
+        <div className="flex items-center justify-between gap-3 px-5 h-[60px] flex-shrink-0 border-b border-border-subtle">
           <div className="flex items-baseline gap-3 min-w-0">
             <h1 className="text-base font-semibold text-text-primary truncate">{headerLabel}</h1>
             {selectedItems.length > 0 && (
@@ -311,13 +313,14 @@ export default function FilesScreen() {
             )}
           </div>
         </div>
+        )}
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 min-h-0 flex flex-col">
           {isWorkspaces ? (
             <WorkspaceFilesView />
           ) : items.length === 0 ? (
-            <div className="h-full min-h-[300px] flex flex-col items-center justify-center gap-3 text-text-tertiary">
+            <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 text-text-tertiary">
               {isTrash ? (
                 <>
                   <Trash2 size={36} className="opacity-30" />
@@ -339,21 +342,25 @@ export default function FilesScreen() {
               )}
             </div>
           ) : viewMode === 'grid' ? (
-            <FileGrid
-              items={items}
-              selectedItemIds={selectedItemIds}
-              onSelect={handleSelect}
-              onOpen={handleOpen}
-              onContextMenu={handleContextMenu}
-            />
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <FileGrid
+                items={items}
+                selectedItemIds={selectedItemIds}
+                onSelect={handleSelect}
+                onOpen={handleOpen}
+                onContextMenu={handleContextMenu}
+              />
+            </div>
           ) : (
-            <FileList
-              items={items}
-              selectedItemIds={selectedItemIds}
-              onSelect={handleSelect}
-              onOpen={handleOpen}
-              onContextMenu={handleContextMenu}
-            />
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <FileList
+                items={items}
+                selectedItemIds={selectedItemIds}
+                onSelect={handleSelect}
+                onOpen={handleOpen}
+                onContextMenu={handleContextMenu}
+              />
+            </div>
           )}
         </div>
 

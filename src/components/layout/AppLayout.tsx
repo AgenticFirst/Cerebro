@@ -92,7 +92,7 @@ export default function AppLayout() {
     <div className="flex h-full">
       <Sidebar />
       <main className="flex-1 flex flex-col min-h-0">
-        <div className="app-drag-region h-11 flex-shrink-0" />
+        {activeScreen !== 'files' && <div className="app-drag-region h-11 flex-shrink-0" />}
         {renderContent()}
       </main>
 

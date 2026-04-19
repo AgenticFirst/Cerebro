@@ -92,8 +92,16 @@ export default function WorkspaceFilesView() {
     <div className="flex-1 flex min-h-0">
       {/* Task list */}
       <div className="w-[300px] flex-shrink-0 border-r border-border-subtle flex flex-col min-h-0 overflow-hidden">
-        <div className="px-4 py-3 text-[10px] uppercase tracking-wider text-text-tertiary font-semibold border-b border-border-subtle flex-shrink-0">
-          {t('files.sourceWorkspaces')}
+        <div className="app-drag-region h-11 flex-shrink-0" />
+        <div className="flex items-center px-4 border-b border-border-subtle flex-shrink-0 h-[60px]">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-text-primary truncate">
+              {t('files.sourceWorkspaces')}
+            </div>
+            <div className="text-[10px] text-text-tertiary truncate">
+              {t('files.workspacesTaskCount', { count: tasksWithWorkspace.length, defaultValue: '{{count}} task workspaces' })}
+            </div>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {tasksWithWorkspace.length === 0 ? (
@@ -133,14 +141,18 @@ export default function WorkspaceFilesView() {
 
       {/* Detail panel */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="app-drag-region h-11 flex-shrink-0" />
         {!selectedTask ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-tertiary p-6">
-            <FolderOpen size={36} className="opacity-30" />
-            <p className="text-sm">{t('files.workspacesPickTask')}</p>
-          </div>
+          <>
+            <div className="flex items-center px-4 border-b border-border-subtle flex-shrink-0 h-[60px]" />
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-text-tertiary p-6">
+              <FolderOpen size={36} className="opacity-30" />
+              <p className="text-sm">{t('files.workspacesPickTask')}</p>
+            </div>
+          </>
         ) : (
           <>
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-border-subtle flex-shrink-0">
+            <div className="flex items-center gap-2 px-4 border-b border-border-subtle flex-shrink-0 h-[60px]">
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-text-primary truncate">{selectedTask.title}</div>
                 <div className="text-[10px] text-text-tertiary truncate font-mono">{workspacePath}</div>
