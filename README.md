@@ -7,7 +7,7 @@
 <p align="center">
   <strong>Your team of AI experts.</strong>
   <br />
-  Open-source, local-first AI platform with multi-agent orchestration,<br />persistent memory, and workflow automation for your desktop.
+  Cerebro is an open-source platform for building your own team of AI experts to help run work and life.
 </p>
 
 <p align="center">
@@ -64,10 +64,6 @@ Approval gates pause execution before sensitive actions (sending emails, editing
 ### Long-Term Memory
 
 Three-tier scoped memory that grows with you: **context files** (your profile, communication style, project notes), **learned facts** (auto-extracted from conversations), and **knowledge entries** (structured domain records like workouts, expenses, meetings). Memory is scoped per user, per expert, and per routine — fully viewable and editable in Settings.
-
-### Local-First and Private
-
-Runs entirely on your machine. SQLite database, local file system, OS keychain for credentials. Run local GGUF models for complete offline operation, or connect cloud providers (Anthropic, OpenAI, Google) when you want them. Your data never leaves your device unless you choose to.
 
 ### Voice Interface
 
