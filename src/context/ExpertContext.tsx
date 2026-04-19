@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { BackendResponse } from '../types/ipc';
+import { useFeatureFlags } from './FeatureFlagsContext';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -31,6 +32,8 @@ export interface Expert {
   requiredConnections: string[] | null;
   recommendedRoutines: string[] | null;
   teamMembers: Array<{ expertId: string; role: string; order: number }> | null;
+  strategy: string | null;
+  coordinatorPrompt: string | null;
   avatarUrl: string | null;
   maxTurns: number;
   tokenBudget: number;
@@ -73,6 +76,8 @@ interface ApiExpert {
   required_connections: string[] | null;
   recommended_routines: string[] | null;
   team_members: Array<{ expert_id: string; role: string; order: number }> | null;
+  strategy: string | null;
+  coordinator_prompt: string | null;
   avatar_url: string | null;
   max_turns: number;
   token_budget: number;
@@ -104,6 +109,8 @@ function toExpert(api: ApiExpert): Expert {
       role: m.role,
       order: m.order,
     })) ?? null,
+    strategy: api.strategy,
+    coordinatorPrompt: api.coordinator_prompt,
     avatarUrl: api.avatar_url,
     maxTurns: api.max_turns ?? 10,
     tokenBudget: api.token_budget ?? 25000,
@@ -167,11 +174,20 @@ interface ExpertContextValue {
 const ExpertContext = createContext<ExpertContextValue | null>(null);
 
 export function ExpertProvider({ children }: { children: ReactNode }) {
-  const [experts, setExperts] = useState<Expert[]>([]);
+  const [allExperts, setAllExperts] = useState<Expert[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [lastExpertsTab, setLastExpertsTab] = useState<ExpertsTab>('messages');
   const [pendingDetailExpertId, setPendingDetailExpertId] = useState<string | null>(null);
+  const { flags } = useFeatureFlags();
+
+  // Teams are beta-gated: when the flag is off, hide them from every UI
+  // consumer (Messages, Hierarchy, delegation selector, etc.). The backend
+  // still owns them; subagent files still get materialized.
+  const experts = useMemo(
+    () => (flags.teams ? allExperts : allExperts.filter((e) => e.type !== 'team')),
+    [allExperts, flags.teams],
+  );
 
   const openExpertInHierarchy = useCallback((expertId: string) => {
     setPendingDetailExpertId(expertId);
@@ -203,7 +219,7 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
           path: '/experts?limit=200',
         });
       if (res.ok) {
-        setExperts(res.data.experts.map(toExpert));
+        setAllExperts(res.data.experts.map(toExpert));
         setTotal(res.data.total);
       }
     } catch {
@@ -223,7 +239,7 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
         });
         if (res.ok) {
           const expert = toExpert(res.data);
-          setExperts((prev) => [...prev, expert]);
+          setAllExperts((prev) => [...prev, expert]);
           setTotal((prev) => prev + 1);
           // Materialize as a Claude Code subagent file (fire-and-forget)
           window.cerebro.installer.syncExpert(expert.id).catch(console.error);
@@ -247,7 +263,7 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
         });
         if (res.ok) {
           const updated = toExpert(res.data);
-          setExperts((prev) => prev.map((e) => (e.id === id ? updated : e)));
+          setAllExperts((prev) => prev.map((e) => (e.id === id ? updated : e)));
           // Re-materialize the agent file (handles renames + system prompt edits)
           window.cerebro.installer.syncExpert(updated.id).catch(console.error);
         }
@@ -265,7 +281,7 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
         path: `/experts/${id}`,
       });
       if (res.ok || res.status === 204) {
-        setExperts((prev) => prev.filter((e) => e.id !== id));
+        setAllExperts((prev) => prev.filter((e) => e.id !== id));
         setTotal((prev) => Math.max(0, prev - 1));
         // Remove the materialized agent file
         window.cerebro.installer.removeExpert(id).catch(console.error);

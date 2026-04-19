@@ -89,8 +89,17 @@ export default function ToolCallCard({ toolCall }: ToolCallCardProps) {
     ? String(toolCall.arguments.task)
     : null;
 
+  const subagentType =
+    toolCall.name === 'Agent' && typeof toolCall.arguments?.subagent_type === 'string'
+      ? (toolCall.arguments.subagent_type as string)
+      : undefined;
+
   return (
     <div
+      data-testid="tool-call-card"
+      data-tool-name={toolCall.name}
+      data-tool-status={toolCall.status}
+      data-subagent-type={subagentType}
       className={clsx(
         'animate-fade-in rounded-lg border overflow-hidden transition-colors duration-200',
         'border-border-default bg-bg-surface/50',

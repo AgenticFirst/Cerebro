@@ -13,13 +13,27 @@ export default function MessagesTab() {
     loadExperts();
   }, [loadExperts]);
 
-  // Default selection: the first starred expert, else the first enabled expert.
+  // Default selection priority: pinned team → pinned expert → first enabled
+  // team → first enabled expert. Teams jump the queue when the user has
+  // explicitly starred one because they're the highest-intent contact.
   useEffect(() => {
     if (selectedExpertId) return;
-    const enabled = experts.filter((e) => e.isEnabled && e.type === 'expert');
-    const starred = enabled.find((e) => e.isPinned);
-    const first = starred ?? enabled[0];
+    const enabledTeams = experts.filter((e) => e.isEnabled && e.type === 'team');
+    const enabledExperts = experts.filter((e) => e.isEnabled && e.type === 'expert');
+    const pinnedTeam = enabledTeams.find((e) => e.isPinned);
+    const pinnedExpert = enabledExperts.find((e) => e.isPinned);
+    const first =
+      pinnedTeam ?? pinnedExpert ?? enabledExperts[0] ?? enabledTeams[0];
     if (first) setSelectedExpertId(first.id);
+  }, [experts, selectedExpertId]);
+
+  // Reactive flag-flip safety: if the currently selected contact is filtered
+  // out (e.g. teams flag turned off while a team thread is open), reset so
+  // the default-selection effect can route to a still-visible contact.
+  useEffect(() => {
+    if (!selectedExpertId) return;
+    const stillVisible = experts.some((e) => e.id === selectedExpertId);
+    if (!stillVisible) setSelectedExpertId(null);
   }, [experts, selectedExpertId]);
 
   const selectedExpert = useMemo(
@@ -45,8 +59,10 @@ export default function MessagesTab() {
       />
       {profileExpert && (
         <ExpertProfileDrawer
+          key={profileExpert.id}
           expert={profileExpert}
           onClose={() => setProfileExpertId(null)}
+          onSelectMember={(id) => setProfileExpertId(id)}
         />
       )}
     </div>

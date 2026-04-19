@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { loadSetting, saveSetting } from '../lib/settings';
 
-export type BetaFeatureKey = never;
+export type BetaFeatureKey = 'teams';
 
 export interface BetaFeatureDef {
   key: BetaFeatureKey;
@@ -18,11 +18,17 @@ export interface BetaFeatureDef {
 }
 
 /** Registry of beta features. Add an entry here + extend BetaFeatureKey to ship a new gated feature. */
-export const BETA_FEATURES: BetaFeatureDef[] = [];
+export const BETA_FEATURES: BetaFeatureDef[] = [
+  {
+    key: 'teams',
+    labelKey: 'betaFeatures.teams.label',
+    descriptionKey: 'betaFeatures.teams.description',
+  },
+];
 
 type Flags = Record<BetaFeatureKey, boolean>;
 
-const DEFAULT_FLAGS: Flags = {} as Flags;
+const DEFAULT_FLAGS: Flags = { teams: false };
 
 interface FeatureFlagsContextValue {
   flags: Flags;

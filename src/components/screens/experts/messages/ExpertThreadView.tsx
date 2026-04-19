@@ -122,7 +122,12 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
 
       <div className="px-4 pb-4 pt-2 bg-bg-base">
         <div className="mx-auto max-w-3xl">
-          <ChatInput ref={chatInputRef} onSend={handleSend} isStreaming={isStreaming} />
+          <ChatInput
+            ref={chatInputRef}
+            onSend={handleSend}
+            isStreaming={isStreaming}
+            placeholder={expert.type === 'team' ? t('experts.teamMessageComposer') : undefined}
+          />
         </div>
       </div>
 

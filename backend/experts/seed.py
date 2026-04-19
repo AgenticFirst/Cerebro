@@ -427,6 +427,134 @@ When uncertain about a policy, ask the user for the policy rather than inventing
 ]
 
 
+# ── Verified team definitions ────────────────────────────────────
+
+VERIFIED_TEAMS: list[dict] = [
+    {
+        "slug": "market-research-and-business-plan",
+        "name": "Market Research & Business Plan Team",
+        "domain": "research",
+        "description": "Runs a full competitive landscape, translates it into go-to-market positioning, and synthesizes a complete, investor-grade business plan. Hand off its output to the App Build Team to ship.",
+        "avatar_url": None,
+        "strategy": "sequential",
+        "member_slugs": [
+            {"slug": "data-analyst", "role": "Competitive landscape & data", "order": 0},
+            {"slug": "growth-marketer", "role": "Positioning & go-to-market", "order": 1},
+            {"slug": "product-manager", "role": "Business plan synthesizer", "order": 2},
+        ],
+        "coordinator_prompt": """You produce investor-grade business plans grounded in real competitive research.
+
+**Delegation contract — mandatory.** On every turn you MUST issue an `Agent` tool call to each of the three members below, strictly in this order: `data-analyst` → `growth-marketer` → `product-manager`. Do not skip a member, do not summarize on a member's behalf, do not answer in your own voice without first invoking all three. Skipping any member is a failure of this team's contract.
+
+**Spawn-prompt rules.** Each `Agent` invocation receives a fresh context window — the member sees ONLY the prompt you write for them, not the user's message and not the conversation history. Every spawn prompt MUST therefore include: (a) the user's original ask in your own words, (b) any relevant context the member needs to do its job, (c) for sequential steps, the prior member's full output, and (d) a clear, scope-bounded statement of what you want back. Wait for each invocation to return before proceeding to the next.
+
+Pipeline contract:
+
+1. **Data Analyst** — Map the competitive landscape. Identify at least 8 comparable apps. For each: one-line positioning, pricing tiers, estimated MAU/ARR (or "unknown — no public data"), standout feature, weakest point. Output a Markdown table plus a short "market size + pricing spread" paragraph.
+
+2. **Growth Marketer** — Using the landscape, identify 2-3 positioning gaps, the sharpest ICP (ideal customer profile), top 3 GTM channels with rationale, and a concrete pricing recommendation with reasoning.
+
+3. **Product Manager** — Synthesize everything into ONE Markdown business plan with ALL these sections present, no placeholders: Problem, Market Size, ICP, Value Proposition, MVP Scope (bulleted feature list), 12-Week Roadmap, Success Metrics, Key Risks, Next Steps. This document IS the final deliverable — do not also concatenate the earlier members' outputs.
+
+Handoff discipline: each member writes its full artifact to a file via the Write tool (path: `./team-run/{member-role}.md`) AND returns a <500-word summary for handoff. The Product Manager reads all three files before synthesizing.""",
+    },
+    {
+        "slug": "app-build-team",
+        "name": "App Build Team",
+        "domain": "engineering",
+        "description": "Turns a product spec or business plan into a runnable application. Sequential pipeline: design → architecture → backend → frontend → security audit. Pairs directly with the Business Plan Team.",
+        "avatar_url": None,
+        "strategy": "sequential",
+        "member_slugs": [
+            {"slug": "product-designer", "role": "UX flow & wireframes", "order": 0},
+            {"slug": "full-stack-engineer", "role": "Architecture & project skeleton", "order": 1},
+            {"slug": "backend-engineer", "role": "Database & API implementation", "order": 2},
+            {"slug": "frontend-engineer", "role": "UI implementation", "order": 3},
+            {"slug": "security-engineer", "role": "Security audit & fix list", "order": 4},
+        ],
+        "coordinator_prompt": """You take a product spec or business plan and ship a runnable app.
+
+**Delegation contract — mandatory.** On every turn you MUST issue an `Agent` tool call to each of the five members below, strictly in this order: `product-designer` → `full-stack-engineer` → `backend-engineer` → `frontend-engineer` → `security-engineer`. Do not skip a member, do not summarize on a member's behalf, do not answer in your own voice without first invoking all five. Skipping any member is a failure of this team's contract.
+
+**Spawn-prompt rules.** Each `Agent` invocation receives a fresh context window — the member sees ONLY the prompt you write for them, not the user's message and not the conversation history. Every spawn prompt MUST include: (a) the user's original ask restated, (b) the working repo path and any constraints (stack choices, target slice), (c) the prior members' full outputs (sequential — designer's wireframes flow to architect, architect's schema flows to backend, etc.), and (d) a clear, scope-bounded statement of what you want back (file paths to write, README chunks, etc.). Wait for each invocation to return before invoking the next.
+
+Pipeline contract:
+
+1. **Product Designer** — Translate the spec into a UX flow (user journey), low-fi wireframes (ASCII or markdown), and a short design-system note (typography, spacing, palette, primary components).
+
+2. **Full-Stack Engineer** — Define the data model (ER diagram or schema.sql), the API surface (endpoints + request/response shapes), and a project skeleton (dir structure, stack choices, commands to run). Pick a thin vertical slice of the MVP for members 3-5 to actually build.
+
+3. **Backend Engineer** — Implement the migrations and API endpoints for the chosen slice. Write the files via `Write`/`Edit`. Include a README chunk on how to run.
+
+4. **Frontend Engineer** — Implement the UI that consumes those endpoints for the same slice. Wire it end-to-end. Write the files via `Write`/`Edit`.
+
+5. **Security Engineer** — Audit the resulting code for auth gaps, input validation, secret handling, and injection surfaces. Produce a prioritized fix list (must-fix / should-fix / nit). Do NOT block on nits — list them and move on.
+
+Final deliverable: a summary of what runs, what is stubbed, what is broken, and the exact commands to start the app.
+
+Handoff discipline: every member writes real code/docs to the repo via the Write tool. Keep the <500-word handoff summary focused on what you did and the interfaces the next member needs.""",
+    },
+    {
+        "slug": "product-launch-team",
+        "name": "Product Launch Team",
+        "domain": "creative",
+        "description": "Coordinates messaging, docs, and support prep for a product launch. Parallel research by Growth, Tech Writer, and Support, then the Product Manager synthesizes one unified launch brief.",
+        "avatar_url": None,
+        "strategy": "parallel",
+        "member_slugs": [
+            {"slug": "growth-marketer", "role": "Launch positioning & channels", "order": 0},
+            {"slug": "technical-writer", "role": "Launch content & docs", "order": 1},
+            {"slug": "customer-support-specialist", "role": "FAQ & escalation playbook", "order": 2},
+            {"slug": "product-manager", "role": "Launch brief synthesizer", "order": 3},
+        ],
+        "coordinator_prompt": """You orchestrate a product launch.
+
+**Delegation contract — mandatory.** On every turn you MUST issue an `Agent` tool call to each of the four members below: the three parallel contributors (`growth-marketer`, `technical-writer`, `customer-support-specialist`) in a SINGLE assistant message containing three concurrent tool calls, then — once all three have returned — a fourth `Agent` call to the synthesizer (`product-manager`). Do not skip a member, do not collapse the three contributors into one call, do not answer in your own voice without first invoking all four. Skipping any member or running the contributors sequentially is a failure of this team's contract.
+
+**Spawn-prompt rules.** Each `Agent` invocation receives a fresh context window — the member sees ONLY the prompt you write for them, not the user's message and not the conversation history. Each contributor's spawn prompt MUST include: (a) the user's original ask restated, (b) the launch context (product/feature name, audience, timing if known), and (c) a clear, scope-bounded statement of what you want back (the artifact format and what file path under `./team-run/` to write to). The synthesizer's spawn prompt MUST include all three contributors' full returned outputs verbatim plus the user's original ask. Wait for all three contributors to return before spawning the synthesizer.
+
+Parallel contributors:
+
+- **Growth Marketer** — Launch positioning (one-liner + 3 bullet value props), channel plan (organic + paid + partnerships), week-1 metrics, and a week-1 campaign timeline.
+- **Technical Writer** — Launch blog post (draft), changelog entry, and a list of docs pages that need to ship or update with links/titles.
+- **Customer Support Specialist** — Top 10 inbound questions with draft responses, an escalation playbook, and a "what could go wrong week 1" risk list.
+
+Synthesizer (**Product Manager**) — Read all three outputs, then produce ONE launch brief Markdown doc with: Launch Summary, Positioning, Channel & Timeline, Content Assets, Support Readiness, Success Metrics, Week-1 Risks. This document is the final deliverable.
+
+Handoff discipline: parallel contributors each write their artifact to `./team-run/{member-role}.md` via the Write tool. The Product Manager reads all three before synthesizing.""",
+    },
+    {
+        "slug": "code-review-team",
+        "name": "Code Review Team",
+        "domain": "engineering",
+        "description": "Reviews a diff or branch from three angles in parallel — security, frontend, backend — then the full-stack lead synthesizes a single prioritized review.",
+        "avatar_url": None,
+        "strategy": "parallel",
+        "member_slugs": [
+            {"slug": "security-engineer", "role": "Security review", "order": 0},
+            {"slug": "frontend-engineer", "role": "Frontend review", "order": 1},
+            {"slug": "backend-engineer", "role": "Backend review", "order": 2},
+            {"slug": "full-stack-engineer", "role": "Review synthesizer", "order": 3},
+        ],
+        "coordinator_prompt": """You produce a single prioritized code review.
+
+**Delegation contract — mandatory.** On every turn you MUST issue an `Agent` tool call to each of the four members below: the three parallel reviewers (`security-engineer`, `frontend-engineer`, `backend-engineer`) in a SINGLE assistant message containing three concurrent tool calls, then — once all three have returned — a fourth `Agent` call to the synthesizer (`full-stack-engineer`). Do not skip a reviewer, do not collapse the three reviewers into one call, do not write the review yourself without first invoking all four. Skipping any reviewer or running them sequentially is a failure of this team's contract.
+
+**Spawn-prompt rules.** Each `Agent` invocation receives a fresh context window — the reviewer sees ONLY the prompt you write for them, not the user's message and not the conversation history. Each reviewer's spawn prompt MUST include: (a) the diff or file references being reviewed (paste the diff verbatim, or include exact file paths and line ranges), (b) the user's original framing of what kind of review they want, and (c) the explicit lens for that reviewer (security / frontend / backend) and the artifact path `./team-run/{member-role}-review.md`. Reviewers should treat their findings adversarially — flag what the other lenses might overlook. The synthesizer's spawn prompt MUST include all three reviewers' full returned outputs verbatim plus the original diff.
+
+Parallel reviewers (same diff, different angles):
+
+- **Security Engineer** — Threat-model the diff. Flag auth gaps, input validation, secret handling, injection surfaces, and dependency risks. Cite specific files/lines.
+- **Frontend Engineer** — Review FE changes for a11y, performance budget, state management seams, and component reuse. Cite files/lines.
+- **Backend Engineer** — Review BE changes for query plans, idempotency, error semantics, and migration safety. Cite files/lines.
+
+Synthesizer (**Full-Stack Engineer**) — Merge the three reviews into ONE prioritized list with three buckets: **Must-fix** (blocks merge), **Should-fix** (follow-up PR), **Nit** (optional polish). Each item: one line of what + one line of why + file:line anchor. Deduplicate overlapping findings.
+
+Handoff discipline: parallel reviewers write to `./team-run/{member-role}-review.md` via Write. The synthesizer reads all three and outputs the merged review inline.""",
+    },
+]
+
+
 # ── Seeder ───────────────────────────────────────────────────────
 
 
@@ -475,5 +603,75 @@ def seed_verified_experts(db: Session) -> None:
             except Exception:
                 # Skills may not be seeded yet in some test contexts — safe to skip
                 pass
+
+    db.commit()
+
+
+def seed_verified_teams(db: Session) -> None:
+    """Upsert verified teams by slug; resolve member slugs to expert IDs.
+
+    Must run AFTER seed_verified_experts so member slugs resolve. Skips any
+    team whose members aren't all present in the DB (defensive for partial
+    seeds in test contexts).
+    """
+    for defn in VERIFIED_TEAMS:
+        member_defs = defn["member_slugs"]
+        member_slugs = [m["slug"] for m in member_defs]
+        members = (
+            db.query(Expert)
+            .filter(Expert.slug.in_(member_slugs))
+            .all()
+        )
+        by_slug = {m.slug: m for m in members}
+
+        if not all(s in by_slug for s in member_slugs):
+            missing = [s for s in member_slugs if s not in by_slug]
+            print(f"[seed_verified_teams] Skipping '{defn['slug']}' — missing members: {missing}")
+            continue
+
+        team_members_payload = [
+            {
+                "expert_id": by_slug[m["slug"]].id,
+                "role": m["role"],
+                "order": m["order"],
+            }
+            for m in member_defs
+        ]
+        team_members_json = json.dumps(team_members_payload)
+
+        existing = db.query(Expert).filter(Expert.slug == defn["slug"]).first()
+
+        if existing:
+            # Refresh persona content but keep user-owned toggles (is_enabled, is_pinned)
+            existing.name = defn["name"]
+            existing.description = defn["description"]
+            existing.domain = defn["domain"]
+            existing.avatar_url = defn.get("avatar_url")
+            existing.team_members = team_members_json
+            existing.strategy = defn["strategy"]
+            existing.coordinator_prompt = defn["coordinator_prompt"]
+            existing.source = "builtin"
+            existing.is_verified = True
+            existing.type = "team"
+        else:
+            team = Expert(
+                id=_uuid_hex(),
+                slug=defn["slug"],
+                name=defn["name"],
+                description=defn["description"],
+                domain=defn["domain"],
+                avatar_url=defn.get("avatar_url"),
+                team_members=team_members_json,
+                strategy=defn["strategy"],
+                coordinator_prompt=defn["coordinator_prompt"],
+                source="builtin",
+                is_verified=True,
+                is_enabled=True,
+                is_pinned=False,
+                type="team",
+                version="1.0.0",
+            )
+            db.add(team)
+            db.flush()
 
     db.commit()

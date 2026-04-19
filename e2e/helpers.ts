@@ -49,18 +49,24 @@ export async function connectToApp(): Promise<{ browser: Browser; page: Page }> 
   return { browser, page };
 }
 
-/** Dismiss any open modal (NewTaskDialog, AlertModal) or task detail drawer. */
+/** Dismiss any open modal (NewTaskDialog, AlertModal), task detail drawer,
+ *  or expert/team profile drawer. */
 export async function dismissModals(page: Page): Promise<void> {
   for (let i = 0; i < 6; i++) {
     const zIndex50 = page.locator('.fixed.inset-0.z-50');
     const drawerPanel = page.locator('div.fixed.inset-y-0.right-0.z-40');
+    // ExpertProfileDrawer (Messages tab) — absolute-positioned aside with the
+    // i18n'd "Profile" label. Without this, the backdrop intercepts later
+    // clicks on the rail and can wedge an entire test suite.
+    const profileDrawer = page.locator('aside[role="dialog"][aria-label="Profile"]');
     const modalOpen = (await zIndex50.count()) > 0;
     const drawerOpen = (await drawerPanel.count()) > 0;
-    if (!modalOpen && !drawerOpen) return;
+    const profileOpen = (await profileDrawer.count()) > 0;
+    if (!modalOpen && !drawerOpen && !profileOpen) return;
 
     // Click the explicit close button — far more reliable than Escape when
     // focus is stuck inside an input/textarea with its own Escape handler.
-    const root = modalOpen ? zIndex50 : drawerPanel;
+    const root = modalOpen ? zIndex50 : drawerOpen ? drawerPanel : profileDrawer;
     const closeBtn = root.locator('button[aria-label="Close"], button:has(svg.lucide-x)').first();
     if ((await closeBtn.count()) > 0) {
       await closeBtn.click({ force: true }).catch(() => {});
@@ -439,11 +445,15 @@ export async function selectExpertInMessagesTab(page: Page, expertName: string):
 }
 
 /** The ChatInput textarea scoped to the active `ExpertThreadView` (not the
- *  global Chat screen's composer). */
+ *  global Chat screen's composer). Matches both the expert placeholder
+ *  ("Send a message…") and the team placeholder ("Message the team…") so the
+ *  same helper works for direct-message threads and group threads alike. */
 export function expertThreadComposer(page: Page): Locator {
-  // ExpertThreadView wraps ChatInput in `<div className="mx-auto max-w-3xl">`.
-  // The textarea uses the i18n placeholder "Send a message...".
-  return page.locator('textarea[placeholder*="Send a message" i]').last();
+  // CSS attribute matchers don't support OR; use Playwright's `:is()` syntax
+  // via two locators OR'd by `.or()`.
+  const expertComposer = page.locator('textarea[placeholder*="Send a message" i]');
+  const teamComposer = page.locator('textarea[placeholder*="Message the team" i]');
+  return expertComposer.or(teamComposer).last();
 }
 
 /** Type `text` into the expert thread composer and send it. */
@@ -569,6 +579,213 @@ export async function clickChipReveal(chip: ChipHandle): Promise<void> {
 export async function clickFolderOpen(chip: ChipHandle): Promise<void> {
   if (!chip.isFolder) throw new Error('clickFolderOpen called on a file chip');
   await chip.locator.click();
+}
+
+// ─── Verified Teams (Beta) helpers ─────────────────────────────────────────
+
+export interface VerifiedTeamMeta {
+  /** Backend slug from `backend/experts/seed.py::VERIFIED_TEAMS`. */
+  slug: string;
+  /** Visible display name in `ExpertListRail` and `ThreadHeader`. */
+  name: string;
+  strategy: 'sequential' | 'parallel' | 'auto';
+  /** Member expert slugs in seed order. Cross-reference `VERIFIED_EXPERT_NAMES`
+   *  to map slug → display name → installed agent name prefix. */
+  memberSlugs: readonly string[];
+}
+
+/** Verified team roster — mirrored from backend/experts/seed.py. Order matches
+ *  the seed file. The U2 test asserts the rail displays exactly this set. */
+export const VERIFIED_TEAMS: readonly VerifiedTeamMeta[] = [
+  {
+    slug: 'market-research-and-business-plan',
+    name: 'Market Research & Business Plan',
+    strategy: 'sequential',
+    memberSlugs: ['data-analyst', 'growth-marketer', 'product-manager'],
+  },
+  {
+    slug: 'app-build-team',
+    name: 'App Build Team',
+    strategy: 'sequential',
+    memberSlugs: [
+      'product-designer',
+      'full-stack-engineer',
+      'backend-engineer',
+      'frontend-engineer',
+      'security-engineer',
+    ],
+  },
+  {
+    slug: 'product-launch-team',
+    name: 'Product Launch Team',
+    strategy: 'parallel',
+    memberSlugs: [
+      'growth-marketer',
+      'technical-writer',
+      'customer-support-specialist',
+      'product-manager',
+    ],
+  },
+  {
+    slug: 'code-review-team',
+    name: 'Code Review Team',
+    strategy: 'parallel',
+    memberSlugs: [
+      'security-engineer',
+      'frontend-engineer',
+      'backend-engineer',
+      'full-stack-engineer',
+    ],
+  },
+];
+
+/** PUT a setting via the renderer's IPC. Mirrors `lib/settings.ts::saveSetting`
+ *  — values are JSON-stringified into `{ value: ... }`. */
+export async function setSetting(page: Page, key: string, value: unknown): Promise<void> {
+  await page.evaluate(
+    async (input: { key: string; valueJson: string }) => {
+      const invoke = (window as unknown as {
+        cerebro: { invoke: (req: { method: string; path: string; body?: unknown }) => Promise<{ ok: boolean }> };
+      }).cerebro.invoke;
+      await invoke({
+        method: 'PUT',
+        path: `/settings/${input.key}`,
+        body: { value: input.valueJson },
+      });
+    },
+    { key, valueJson: JSON.stringify(value) },
+  );
+}
+
+/** GET a setting via renderer IPC, parsed from JSON. Returns null when unset. */
+export async function getSetting<T>(page: Page, key: string): Promise<T | null> {
+  return page.evaluate(async (k: string): Promise<T | null> => {
+    const invoke = (window as unknown as {
+      cerebro: { invoke: (req: { method: string; path: string }) => Promise<{ ok: boolean; data: { value: string } }> };
+    }).cerebro.invoke;
+    const res = await invoke({ method: 'GET', path: `/settings/${k}` });
+    if (!res.ok) return null;
+    try {
+      return JSON.parse(res.data.value) as T;
+    } catch {
+      return null;
+    }
+  }, key);
+}
+
+/** Enable the `beta:teams` flag and reload the renderer so FeatureFlagsContext
+ *  rehydrates. Reload (not in-app toggle) is intentional — `beforeAll` should
+ *  not depend on Settings UI being reachable / non-broken. */
+export async function enableTeamsFlag(page: Page): Promise<void> {
+  await setSetting(page, 'beta:teams', true);
+  await page.reload();
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForSelector('nav', { timeout: 15_000 });
+}
+
+/** Disable the `beta:teams` flag and reload. */
+export async function disableTeamsFlag(page: Page): Promise<void> {
+  await setSetting(page, 'beta:teams', false);
+  await page.reload();
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForSelector('nav', { timeout: 15_000 });
+}
+
+/** Locator for the row in `ExpertListRail` whose visible name matches `teamName`.
+ *  Identical to `expertRow` (TeamRow and Row both render as buttons in the same
+ *  scrollable container) but exists as its own export for call-site clarity. */
+export function teamRow(page: Page, teamName: string): Locator {
+  return expertRow(page, teamName);
+}
+
+/** Click the row for `teamName`, then click the Info ("Profile") button in
+ *  the `ThreadHeader`. Returns the drawer locator. The header button's title
+ *  attribute is the i18n string `experts.openProfile` ("Profile" in en). */
+export async function openTeamProfileDrawer(page: Page, teamName: string): Promise<Locator> {
+  await selectExpertInMessagesTab(page, teamName);
+  // ThreadHeader renders two profile-opening targets (the avatar + the Info
+  // icon button); both have title="Profile". The last one in DOM order is the
+  // Info icon — using `.last()` picks it unambiguously.
+  const infoBtn = page.locator('button[title="Profile"]').last();
+  await expect(infoBtn).toBeVisible({ timeout: 5_000 });
+  await infoBtn.click();
+  // ExpertProfileDrawer renders as <aside role="dialog" aria-label="Profile">.
+  const drawer = page.locator('aside[role="dialog"][aria-label="Profile"]').first();
+  await expect(drawer).toBeVisible({ timeout: 3_000 });
+  return drawer;
+}
+
+/** A single ToolCall as scraped from the rendered DOM. */
+export interface ToolCallSnapshot {
+  /** Tool name from `data-tool-name` (e.g., 'Agent', 'Read', 'Bash'). */
+  name: string;
+  /** Status from `data-tool-status` (running/success/error/pending). */
+  status: string;
+  /** When `name === 'Agent'`, the `subagent_type` argument. */
+  subagentType: string | null;
+}
+
+/** Read every tool call rendered on the last assistant message bubble.
+ *  Reads from `[data-testid="tool-call-card"]` nodes which carry stable
+ *  `data-tool-name`, `data-tool-status`, and `data-subagent-type` attributes
+ *  (set by `src/components/chat/ToolCallCard.tsx`). */
+export async function readLastMessageToolCalls(page: Page): Promise<ToolCallSnapshot[]> {
+  const msg = lastAssistantMessage(page);
+  return msg.locator('[data-testid="tool-call-card"]').evaluateAll((nodes: Element[]) =>
+    nodes.map((n) => ({
+      name: n.getAttribute('data-tool-name') || '',
+      status: n.getAttribute('data-tool-status') || '',
+      subagentType: n.getAttribute('data-subagent-type'),
+    })),
+  );
+}
+
+/** Map a verified-expert slug to the agent-name prefix the installer writes
+ *  into `.claude/agents/<name>.md` (lowercase slugified display name). The
+ *  installer suffixes a 6-char hash, so callers must match by `startsWith`. */
+export function expertSlugToAgentNamePrefix(slug: string): string | null {
+  const meta = VERIFIED_EXPERT_NAMES.find((e) => e.slug === slug);
+  if (!meta) return null;
+  // Mirror `slugify` in src/claude-code/installer.ts:51.
+  return meta.name
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
+
+/** Assert that `toolCalls` includes an `Agent` invocation for every member in
+ *  `expectedMemberSlugs`. Each slug is mapped via `expertSlugToAgentNamePrefix`
+ *  and matched against `subagentType` by `startsWith` (the installer appends a
+ *  6-char hash). Throws with a diagnostic message on miss. */
+export function assertAgentInvocations(
+  toolCalls: ReadonlyArray<ToolCallSnapshot>,
+  expectedMemberSlugs: readonly string[],
+): void {
+  const agentSubagents = toolCalls
+    .filter((tc) => tc.name === 'Agent' && tc.subagentType)
+    .map((tc) => tc.subagentType as string);
+
+  const missing: string[] = [];
+  for (const slug of expectedMemberSlugs) {
+    const prefix = expertSlugToAgentNamePrefix(slug);
+    if (!prefix) {
+      missing.push(`${slug} (unknown — not in VERIFIED_EXPERT_NAMES)`);
+      continue;
+    }
+    if (!agentSubagents.some((s) => s.startsWith(prefix))) {
+      missing.push(`${slug} (expected prefix "${prefix}")`);
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Coordination check failed — missing Agent invocations for: ${missing.join(', ')}. ` +
+        `Saw subagents: [${agentSubagents.join(', ') || 'none'}]`,
+    );
+  }
 }
 
 /** Snapshot every current conversation ID. Used at the start of a test run

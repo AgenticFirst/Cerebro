@@ -9,6 +9,7 @@ import { generateId } from '../../context/chat-helpers';
 interface ChatInputProps {
   onSend: (content: string) => void;
   isStreaming?: boolean;
+  placeholder?: string;
 }
 
 export interface ChatInputHandle {
@@ -16,7 +17,7 @@ export interface ChatInputHandle {
 }
 
 const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
-  function ChatInput({ onSend, isStreaming = false }, ref) {
+  function ChatInput({ onSend, isStreaming = false, placeholder }, ref) {
     const { t } = useTranslation();
     const [value, setValue] = useState('');
     const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
@@ -127,7 +128,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={t('chat.sendPlaceholder')}
+            placeholder={placeholder ?? t('chat.sendPlaceholder')}
             rows={1}
             className={clsx(
               'flex-1 resize-none bg-transparent text-text-primary',

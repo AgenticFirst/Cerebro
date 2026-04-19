@@ -208,7 +208,13 @@ At the start of every conversation turn:
 ${memoryInstructions(memoryDir)}`;
 }
 
-function buildCerebroBody(memoryDir: string, skillsDir: string): string {
+function buildCerebroBody(memoryDir: string, skillsDir: string, teamsEnabled: boolean): string {
+  const teamsBlock = teamsEnabled
+    ? `
+
+Some subagents are **teams** — orchestrators that delegate to multiple member experts and synthesize their work into a single deliverable. Pick a team when the user's request spans multiple disciplines (e.g. "research and ship", "review across security/frontend/backend"). Teams take longer than a single expert but produce end-to-end artifacts. Their names usually end in "Team".`
+    : '';
+
   return `You are **Cerebro**, the user's personal AI assistant.
 
 ${turnProtocol(memoryDir)}
@@ -221,7 +227,7 @@ You have access to a roster of specialist experts as Claude Code subagents in th
 - The task is clearly the specialty of one of your experts (e.g. fitness coaching → fitness coach).
 - A task would benefit from a focused, dedicated context window.
 
-When delegating, give the subagent the relevant context — don't just forward the user's literal words. Pass the question, what you already know, and what you want back.
+When delegating, give the subagent the relevant context — don't just forward the user's literal words. Pass the question, what you already know, and what you want back.${teamsBlock}
 
 ## Skills
 
@@ -241,6 +247,79 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - A plain question or chat → answer directly or delegate to an existing expert via the \`Agent\` tool.
 
 If ambiguous, ask one short clarifier (e.g. "Do you want me to do this once now, or set it up to run every week?") before invoking any skill.
+`;
+}
+
+function buildTeamBody(
+  expert: ExpertData,
+  memoryDir: string,
+  agentNameById: Record<string, string>,
+  memberNamesById: Record<string, string>,
+): string {
+  const domainLine = expert.domain ? ` Domain: ${expert.domain}.` : '';
+  const strategy = (expert.strategy || 'sequential').toLowerCase();
+  const members = (expert.team_members || []).slice().sort((a, b) => a.order - b.order);
+
+  const memberLines = members.map((m, idx) => {
+    const agentName = agentNameById[m.expert_id];
+    const displayName = memberNamesById[m.expert_id] || m.role;
+    if (!agentName) {
+      return `${idx + 1}. **${displayName}** — _${m.role}_ — \`[unavailable — skip and note in your final reply]\``;
+    }
+    return `${idx + 1}. **${displayName}** — _${m.role}_ — invoke via Agent tool with subagent name \`${agentName}\``;
+  });
+  const memberBlock = memberLines.join('\n');
+
+  let strategyBlock: string;
+  if (strategy === 'parallel') {
+    strategyBlock = `## Strategy — Parallel
+
+Issue **multiple \`Agent\` tool calls in a single message** so members run concurrently. Wait for every contributor to return before invoking the synthesizer (the last member listed above). Pass each contributor the same task framing; pass the synthesizer **all** contributor outputs.`;
+  } else if (strategy === 'auto') {
+    strategyBlock = `## Strategy — Auto
+
+Pick sequential or parallel based on the task. If members' work depends on prior members' outputs, run sequentially. If they tackle independent angles of the same problem, fan out in parallel. Default to sequential when unsure.`;
+  } else {
+    strategyBlock = `## Strategy — Sequential
+
+Invoke members **strictly in the order listed above**, one Agent call per member. Pass each member the previous member's full output as context. Do not start a member's work until the prior member has returned.`;
+  }
+
+  const handoffBlock = `## Handoff Discipline
+
+- Members write their full artifacts (specs, code, reports) to disk via the \`Write\` tool at \`./team-run/{member-role}.md\` (or appropriate file paths for code).
+- Members return a **<500-word summary** for handoff — not the full artifact.
+- The synthesizer (final member) reads the on-disk artifacts via \`Read\` before producing the final deliverable.
+- Keep your own coordinator output focused on routing and synthesis — do **not** restate full member outputs in your own reply.`;
+
+  const coordinatorPrompt = (expert.coordinator_prompt || '').trim();
+  const coordinatorBlock = coordinatorPrompt ? `## Coordinator Instructions\n\n${coordinatorPrompt}` : '';
+
+  return `You are the **${expert.name}**, a Cerebro orchestrator team.${domainLine} You do not do the work yourself — you delegate to your member experts via the \`Agent\` tool and synthesize their outputs.
+
+## Mandatory Delegation Policy (read this before anything else)
+
+The user explicitly chose this team rather than a single expert. The value you provide IS the multi-perspective process — your own opinion alone is not the deliverable.
+
+**On every turn, regardless of how small or simple the user's request looks, you MUST:**
+
+1. Invoke every member listed in the **Members** section below via the \`Agent\` tool, following the **Strategy** block (sequential or parallel).
+2. Wait for each invocation's response before treating delegation as complete.
+3. Synthesize the members' returned outputs into your final reply.
+
+You may scope the work small for trivial requests — but you must still scope it small *for each member*, not skip them. A 1-paragraph user prompt becomes a 1-paragraph task per member, not a coordinator-only answer. **Skipping any member, on any turn, is a failure of this team's contract** — even if you believe you can produce a good answer alone.
+
+${turnProtocol(memoryDir)}
+
+## Members
+
+${memberBlock}
+
+${strategyBlock}
+
+${handoffBlock}
+
+${coordinatorBlock}
 `;
 }
 
@@ -713,6 +792,12 @@ If the output says **ERROR**, report the error to the user.
 
 // ── Backend fetch helper ─────────────────────────────────────────
 
+interface TeamMemberData {
+  expert_id: string;
+  role: string;
+  order: number;
+}
+
 interface ExpertData {
   id: string;
   name: string;
@@ -722,6 +807,10 @@ interface ExpertData {
   domain: string | null;
   policies: Record<string, unknown> | string[] | null;
   is_enabled: boolean;
+  type?: string;
+  team_members?: TeamMemberData[] | null;
+  strategy?: string | null;
+  coordinator_prompt?: string | null;
 }
 
 interface SkillData {
@@ -784,8 +873,11 @@ export async function installAll(options: InstallerOptions): Promise<void> {
 
   ensureSettings(paths);
 
+  // Read the teams beta flag once — drives the Cerebro main agent prompt.
+  const teamsEnabled = await fetchTeamsFlag(options.backendPort);
+
   // Cerebro main agent
-  installCerebroMainAgent(paths);
+  installCerebroMainAgent(paths, teamsEnabled);
 
   // Executable scripts (reliable — invoked via Bash tool)
   for (const script of builtinScripts()) {
@@ -802,17 +894,35 @@ export async function installAll(options: InstallerOptions): Promise<void> {
   const index = readIndex(paths.indexPath);
   const seen = new Set<string>();
 
-  // Fetch all expert skills in parallel
-  const expertSkillSets = await Promise.all(
-    experts.map((expert) => fetchExpertSkills(options.backendPort, expert.id)),
+  // Topological install: regular experts first so we can resolve member
+  // references when installing teams. Teams always materialize regardless of
+  // the beta flag — flipping it on shouldn't require a re-install.
+  const regulars = experts.filter((e) => (e.type ?? 'expert') !== 'team');
+  const teams = experts.filter((e) => e.type === 'team');
+
+  // Fetch skills only for regular experts (teams don't carry skills).
+  const regularSkillSets = await Promise.all(
+    regulars.map((expert) => fetchExpertSkills(options.backendPort, expert.id)),
   );
 
-  for (let i = 0; i < experts.length; i++) {
-    const expert = experts[i];
+  const agentNameById: Record<string, string> = {};
+  const memberNamesById: Record<string, string> = {};
+
+  for (let i = 0; i < regulars.length; i++) {
+    const expert = regulars[i];
     const agentName = expertAgentName(expert.id, expert.name);
     seen.add(agentName);
-    writeExpertAgent(paths, expert, agentName, expertSkillSets[i]);
+    writeExpertAgent(paths, expert, agentName, regularSkillSets[i]);
     index.experts[expert.id] = agentName;
+    agentNameById[expert.id] = agentName;
+    memberNamesById[expert.id] = expert.name;
+  }
+
+  for (const team of teams) {
+    const agentName = expertAgentName(team.id, team.name);
+    seen.add(agentName);
+    writeTeamAgent(paths, team, agentName, agentNameById, memberNamesById);
+    index.experts[team.id] = agentName;
   }
 
   // Cleanup: remove agent files whose expert is gone, and stale index entries.
@@ -858,8 +968,22 @@ export async function installExpert(options: InstallerOptions, expert: ExpertDat
     try { fs.unlinkSync(path.join(paths.agentsDir, `${previousName}.md`)); } catch { /* ignore */ }
   }
 
-  const skills = await fetchExpertSkills(options.backendPort, expert.id);
-  writeExpertAgent(paths, expert, agentName, skills);
+  if (expert.type === 'team') {
+    // Teams need member agent names resolved. Refetch the full expert list
+    // so member ids resolve regardless of index freshness.
+    const all = await fetchExperts(options.backendPort);
+    const agentNameById: Record<string, string> = {};
+    const memberNamesById: Record<string, string> = {};
+    for (const e of all) {
+      if ((e.type ?? 'expert') === 'team') continue;
+      agentNameById[e.id] = expertAgentName(e.id, e.name);
+      memberNamesById[e.id] = e.name;
+    }
+    writeTeamAgent(paths, expert, agentName, agentNameById, memberNamesById);
+  } else {
+    const skills = await fetchExpertSkills(options.backendPort, expert.id);
+    writeExpertAgent(paths, expert, agentName, skills);
+  }
   index.experts[expert.id] = agentName;
   writeIndex(paths.indexPath, index);
 }
@@ -1056,17 +1180,53 @@ export async function migrateLegacyContextFiles(options: InstallerOptions): Prom
 
 // ── Internal writers ─────────────────────────────────────────────
 
-function installCerebroMainAgent(paths: InstallerPaths): void {
+function installCerebroMainAgent(paths: InstallerPaths, teamsEnabled: boolean): void {
   const memoryDir = path.join(paths.memoryRoot, 'cerebro');
   fs.mkdirSync(memoryDir, { recursive: true });
   const file: AgentFile = {
     name: 'cerebro',
     description: "Cerebro: the user's personal AI assistant; coordinates with specialist experts.",
     tools: CEREBRO_TOOLS,
-    body: buildCerebroBody(memoryDir, paths.skillsDir),
+    body: buildCerebroBody(memoryDir, paths.skillsDir, teamsEnabled),
   };
   fs.writeFileSync(path.join(paths.agentsDir, 'cerebro.md'), renderAgentFile(file), 'utf-8');
   seedFileIfMissing(path.join(memoryDir, 'SOUL.md'), buildCerebroSoulFile());
+}
+
+async function fetchTeamsFlag(backendPort: number): Promise<boolean> {
+  const result = await fetchJson<{ key: string; value: string }>(backendPort, '/settings/beta:teams');
+  if (!result || typeof result.value !== 'string') return false;
+  try {
+    return JSON.parse(result.value) === true;
+  } catch {
+    return false;
+  }
+}
+
+function writeTeamAgent(
+  paths: InstallerPaths,
+  expert: ExpertData,
+  agentName: string,
+  agentNameById: Record<string, string>,
+  memberNamesById: Record<string, string>,
+): void {
+  const memoryDir = path.join(paths.memoryRoot, agentName);
+  fs.mkdirSync(memoryDir, { recursive: true });
+
+  const file: AgentFile = {
+    name: agentName,
+    description: expert.description || expert.name,
+    // Teams need the Agent tool to delegate to members, plus shared file tools
+    // for reading on-disk handoff artifacts produced by members.
+    tools: [...EXPERT_TOOLS, 'Agent'],
+    body: buildTeamBody(expert, memoryDir, agentNameById, memberNamesById),
+  };
+  fs.writeFileSync(
+    path.join(paths.agentsDir, `${agentName}.md`),
+    renderAgentFile(file),
+    'utf-8',
+  );
+  seedFileIfMissing(path.join(memoryDir, 'SOUL.md'), buildSoulFile(expert));
 }
 
 function writeExpertAgent(

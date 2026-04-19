@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, ZoomIn, ZoomOut, Maximize2, Loader2 } from 'lucide-react';
+import { Plus, ZoomIn, ZoomOut, Maximize2, Loader2, Users } from 'lucide-react';
 import clsx from 'clsx';
 import { useExperts, type Expert, type CreateExpertInput } from '../../../context/ExpertContext';
 import ExpertNode from './ExpertNode';
@@ -45,6 +45,8 @@ interface TeamGroupBox {
   width: number;
   height: number;
   domain: string | null;
+  isVerified: boolean;
+  memberIds: string[];
 }
 
 const TEAM_DOMAIN_COLORS: Record<string, { bg: string; border: string; label: string }> = {
@@ -134,12 +136,14 @@ function computeLayout(experts: Expert[]) {
         const rightMostX = membersStartX + (members.length - 1) * (NODE_W + H_GAP) + NODE_W / 2;
         teamGroups.push({
           teamId: item.id,
-          label: item.name.toUpperCase(),
+          label: item.name,
           x: leftMostX - TEAM_PAD_X,
           y: level2Y - TEAM_PAD_Y - TEAM_LABEL_H,
           width: rightMostX - leftMostX + TEAM_PAD_X * 2,
           height: EXPERT_TOTAL_H + TEAM_PAD_Y * 2 + TEAM_LABEL_H,
           domain: item.domain,
+          isVerified: item.isVerified,
+          memberIds: members.map((m) => m.id),
         });
       }
     }
@@ -174,6 +178,7 @@ export default function HierarchyView() {
   const [initialized, setInitialized] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ expert: Expert; position: { x: number; y: number } } | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'disabled' | 'pinned'>('all');
+  const [hoveredTeamId, setHoveredTeamId] = useState<string | null>(null);
 
   useEffect(() => {
     loadExperts();
@@ -206,6 +211,18 @@ export default function HierarchyView() {
   const disabledCount = useMemo(() => experts.filter((e) => !e.isEnabled).length, [experts]);
 
   const layout = useMemo(() => computeLayout(filteredExperts), [filteredExperts]);
+
+  // When a team group is hovered or selected, emphasize its members by dimming
+  // every other node so the grouping reads instantly.
+  const emphasizedTeamId = hoveredTeamId
+    ?? (selectedId && layout.teamGroups.find((g) => g.teamId === selectedId)?.teamId)
+    ?? null;
+  const memberKeepSet = useMemo(() => {
+    if (!emphasizedTeamId) return null;
+    const group = layout.teamGroups.find((g) => g.teamId === emphasizedTeamId);
+    if (!group) return null;
+    return new Set<string>([emphasizedTeamId, ...group.memberIds]);
+  }, [emphasizedTeamId, layout.teamGroups]);
 
   const selectedExpert =
     selectedId && selectedId !== 'cerebro'
@@ -351,49 +368,85 @@ export default function HierarchyView() {
 
           {layout.teamGroups.map((group) => {
             const colors = getTeamColor(group.domain);
+            const isHovered = hoveredTeamId === group.teamId;
+            const isSelected = selectedId === group.teamId;
+            const accentBorder = isHovered || isSelected;
             return (
               <div
                 key={group.teamId}
-                className="absolute rounded-xl"
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedId((prev) => (prev === group.teamId ? null : group.teamId));
+                }}
+                onMouseEnter={() => setHoveredTeamId(group.teamId)}
+                onMouseLeave={() => setHoveredTeamId((h) => (h === group.teamId ? null : h))}
+                className="expert-node absolute rounded-xl cursor-pointer transition-all duration-150"
                 style={{
                   left: group.x,
                   top: group.y,
                   width: group.width,
                   height: group.height,
-                  border: `1px dashed ${colors.border}`,
+                  border: accentBorder
+                    ? `1.5px solid ${colors.label}`
+                    : `1px dashed ${colors.border}`,
                   backgroundColor: colors.bg,
+                  boxShadow: accentBorder ? `0 0 0 4px ${colors.bg}` : 'none',
                 }}
+                title={group.label}
               >
                 <span
-                  className="absolute -top-3 left-5 text-[10px] font-semibold uppercase tracking-widest px-2"
+                  className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest px-2.5 py-0.5 rounded-full"
                   style={{
                     color: colors.label,
                     backgroundColor: 'var(--color-bg-base)',
+                    border: `1px solid ${colors.border}`,
                   }}
                 >
-                  {group.label}
+                  <Users size={10} strokeWidth={2.5} />
+                  <span className="truncate max-w-[220px]">{group.label}</span>
+                  <span
+                    className="px-1 rounded text-[9px] font-medium tracking-normal normal-case"
+                    style={{
+                      color: 'rgb(251, 191, 36)',
+                      backgroundColor: 'rgba(251, 191, 36, 0.12)',
+                    }}
+                  >
+                    {t('experts.groupBeta')}
+                  </span>
                 </span>
               </div>
             );
           })}
 
-          {layout.nodes.map((node) => (
-            <ExpertNode
-              key={node.id}
-              expert={node.expert}
-              isCerebro={node.isCerebro}
-              isSelected={selectedId === node.id}
-              x={node.x}
-              y={node.y}
-              index={node.index}
-              onClick={() => handleNodeClick(node.id)}
-              onContextMenu={
-                !node.isCerebro && node.expert
-                  ? (e) => handleContextMenu(node.expert!, e)
-                  : undefined
-              }
-            />
-          ))}
+          {layout.nodes.map((node) => {
+            const dim = memberKeepSet
+              ? !node.isCerebro && !memberKeepSet.has(node.id)
+              : false;
+            return (
+              <div
+                key={node.id}
+                className="transition-opacity duration-150"
+                style={{ opacity: dim ? 0.4 : 1 }}
+              >
+                <ExpertNode
+                  expert={node.expert}
+                  isCerebro={node.isCerebro}
+                  isSelected={selectedId === node.id}
+                  x={node.x}
+                  y={node.y}
+                  index={node.index}
+                  onClick={() => handleNodeClick(node.id)}
+                  onContextMenu={
+                    !node.isCerebro && node.expert
+                      ? (e) => handleContextMenu(node.expert!, e)
+                      : undefined
+                  }
+                />
+              </div>
+            );
+          })}
 
           {experts.length === 0 && (
             <div

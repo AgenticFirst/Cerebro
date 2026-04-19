@@ -4,6 +4,7 @@ import { BadgeCheck, Search, Star } from 'lucide-react';
 import clsx from 'clsx';
 import type { Expert } from '../../../../context/ExpertContext';
 import ExpertAvatar from './ExpertAvatar';
+import TeamAvatar from './TeamAvatar';
 
 interface ExpertListRailProps {
   experts: Expert[];
@@ -20,6 +21,57 @@ function filterExperts(experts: Expert[], query: string): Expert[] {
     if (e.description && e.description.toLowerCase().includes(q)) return true;
     return false;
   });
+}
+
+function TeamRow({
+  team,
+  members,
+  isActive,
+  onClick,
+}: {
+  team: Expert;
+  members: Expert[];
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const memberLine = members.map((m) => m.name).join(' · ');
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'group relative w-full flex items-center gap-3 px-3 py-2 rounded-md',
+        'text-left transition-all duration-150 cursor-pointer',
+        isActive
+          ? 'bg-bg-elevated text-text-primary'
+          : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.03]',
+      )}
+    >
+      {isActive && (
+        <span
+          className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-full bg-accent"
+          aria-hidden="true"
+        />
+      )}
+      <TeamAvatar team={team} members={members} size={32} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[13px] font-medium truncate">{team.name}</span>
+          {team.isVerified && (
+            <BadgeCheck size={11} className="text-accent flex-shrink-0" strokeWidth={2.25} />
+          )}
+          {team.isPinned && <Star size={10} className="text-accent flex-shrink-0" strokeWidth={2.5} />}
+        </div>
+        <div className="text-[11px] text-text-tertiary truncate">{memberLine}</div>
+      </div>
+      <span
+        className={clsx(
+          'w-1.5 h-1.5 rounded-full flex-shrink-0',
+          team.isEnabled ? 'bg-emerald-500' : 'bg-text-tertiary/40',
+        )}
+        title={team.isEnabled ? 'Active' : 'Disabled'}
+      />
+    </button>
+  );
 }
 
 function Row({
@@ -82,14 +134,26 @@ export default function ExpertListRail({
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
 
-  const { starred, direct } = useMemo(() => {
-    const enabled = experts.filter((e) => e.isEnabled && e.type === 'expert');
-    const filtered = filterExperts(enabled, query);
+  const { starred, direct, teams, expertsById } = useMemo(() => {
+    const enabledExperts = experts.filter((e) => e.isEnabled && e.type === 'expert');
+    const enabledTeams = experts.filter((e) => e.isEnabled && e.type === 'team');
+    const filteredExperts = filterExperts(enabledExperts, query);
+    const filteredTeams = filterExperts(enabledTeams, query);
+    const byId: Record<string, Expert> = {};
+    for (const e of experts) byId[e.id] = e;
     return {
-      starred: filtered.filter((e) => e.isPinned),
-      direct: filtered.filter((e) => !e.isPinned),
+      starred: filteredExperts.filter((e) => e.isPinned),
+      direct: filteredExperts.filter((e) => !e.isPinned),
+      teams: filteredTeams,
+      expertsById: byId,
     };
   }, [experts, query]);
+
+  const teamMembers = (team: Expert): Expert[] => {
+    const memberIds = (team.teamMembers ?? []).map((m) => m.expertId);
+    const resolved = memberIds.map((id) => expertsById[id]).filter((e): e is Expert => Boolean(e));
+    return resolved;
+  };
 
   return (
     <div className="w-[260px] flex-shrink-0 flex flex-col bg-bg-surface border-r border-border-subtle overflow-hidden">
@@ -114,6 +178,28 @@ export default function ExpertListRail({
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-3">
+        {teams.length > 0 && (
+          <div className="mb-2">
+            <div className="px-3 pt-2 pb-1 flex items-center gap-1.5 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.08em] select-none">
+              <span>{t('experts.groupsSection')}</span>
+              <span className="px-1.5 py-px rounded-full bg-bg-elevated text-[9px] tracking-normal normal-case font-medium text-text-secondary">
+                {teams.length}
+              </span>
+            </div>
+            <div className="space-y-px">
+              {teams.map((team) => (
+                <TeamRow
+                  key={team.id}
+                  team={team}
+                  members={teamMembers(team)}
+                  isActive={selectedExpertId === team.id}
+                  onClick={() => onSelectExpert(team.id)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {starred.length > 0 && (
           <div className="mb-2">
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.08em] select-none">
