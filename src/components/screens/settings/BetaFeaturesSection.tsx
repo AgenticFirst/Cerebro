@@ -17,7 +17,7 @@ function BetaLink({ href, children }: { href: string; children: React.ReactNode 
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-xs text-amber-100 hover:text-white inline-flex items-center gap-1 underline underline-offset-2 decoration-amber-300/40 hover:decoration-amber-100"
+      className="text-xs text-warning-text-strong hover:opacity-80 inline-flex items-center gap-1 underline underline-offset-2 decoration-warning/40 hover:decoration-warning-text-strong transition-opacity"
     >
       {children}
       <ExternalLink size={10} />
@@ -42,12 +42,12 @@ export default function BetaFeaturesSection() {
         {t('betaFeatures.description')}
       </p>
 
-      <div className="px-4 py-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-sm text-amber-200 mb-6">
+      <div className="px-4 py-3 rounded-lg border border-warning/30 bg-warning/10 text-sm text-warning-text mb-6">
         <div className="flex items-start gap-2">
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <div className="font-medium">{t('betaFeatures.warningTitle')}</div>
-            <div className="text-xs text-amber-200/80 mt-1">
+            <div className="text-xs text-warning-text/80 mt-1">
               {t('betaFeatures.warningBody')}
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2.5">

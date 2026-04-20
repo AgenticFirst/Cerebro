@@ -280,9 +280,18 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   ];
 
   // Shared header + metadata (used in both compact and focus modes)
+  // In focus mode the drawer spans the full window on macOS (`titleBarStyle: 'hiddenInset'`),
+  // so the header runs under the traffic-light controls at x≈16–70. Pad the left edge
+  // to clear them; compact mode is anchored right and unaffected.
+  const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.userAgent);
   const renderHeader = () => (
     <>
-      <div className="flex items-center gap-2 px-5 py-3 border-b border-border-subtle flex-shrink-0">
+      <div
+        className={clsx(
+          'flex items-center gap-2 py-3 pr-5 border-b border-border-subtle flex-shrink-0',
+          isFullWidth && isMac ? 'pl-[88px]' : 'pl-5',
+        )}
+      >
         <div className="flex-1 min-w-0 flex items-center gap-2">
           {isEditingTitle ? (
             <input

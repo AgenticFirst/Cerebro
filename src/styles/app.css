@@ -39,6 +39,13 @@
   --color-border-default: #27272a;
   --color-border-accent: rgba(6, 182, 212, 0.4);
 
+  /* Warning (amber) — tokens switch with html.light so warning banners stay legible in both themes.
+     Use: bg-warning/10, border-warning/30, text-warning-text, text-warning-text/80,
+     bg-warning/25 hover:bg-warning/35 text-warning-text-strong. */
+  --color-warning: #f59e0b;              /* amber-500 — base for bg/border alpha tints */
+  --color-warning-text: #fde68a;         /* amber-200 — primary banner text on dark */
+  --color-warning-text-strong: #fef3c7;  /* amber-100 — for banner buttons/links on dark */
+
   /* Fonts */
   --font-sans: 'Geist Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, monospace;
@@ -63,6 +70,11 @@ html.light {
   --color-border-subtle: #e7e3d4;
   --color-border-default: #d6d2c4;
   --color-border-accent: rgba(8, 145, 178, 0.4);
+
+  /* Warning tokens — darker amber so text stays readable on cream backgrounds. */
+  --color-warning: #b45309;              /* amber-700 — deeper tint on light bg */
+  --color-warning-text: #78350f;         /* amber-900 */
+  --color-warning-text-strong: #451a03;  /* amber-950 */
 }
 
 /* Global styles */

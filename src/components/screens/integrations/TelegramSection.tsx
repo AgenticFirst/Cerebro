@@ -139,7 +139,7 @@ export default function TelegramSection() {
       </p>
 
       {/* Warning banner */}
-      <div className="mt-5 flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-amber-500/30 bg-amber-500/5 text-xs text-amber-200">
+      <div className="mt-5 flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-warning/30 bg-warning/10 text-xs text-warning-text">
         <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
         <span className="leading-relaxed">{t('telegramSection.warningPlaintext')}</span>
       </div>

@@ -71,12 +71,12 @@ function LinkRow({
         <div className="text-xs text-text-tertiary font-mono truncate mt-0.5">{link.path}</div>
 
         {promoting && (
-          <div className="mt-2 p-2.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200">
+          <div className="mt-2 p-2.5 rounded-md bg-warning/10 border border-warning/30 text-xs text-warning-text">
             <div className="flex items-center gap-1.5 mb-1.5 font-medium">
               <AlertTriangle size={12} />
               {t('sandbox.confirmWriteTitle')}
             </div>
-            <div className="text-amber-200/70 mb-2">
+            <div className="text-warning-text/70 mb-2">
               {t('sandbox.confirmWriteDesc', { path: link.path })}
             </div>
             <div className="flex gap-2">
@@ -85,7 +85,7 @@ function LinkRow({
                   onToggle('write');
                   setPromoting(false);
                 }}
-                className="px-2.5 py-1 rounded text-[11px] font-medium bg-amber-500/25 text-amber-100 hover:bg-amber-500/35 cursor-pointer"
+                className="px-2.5 py-1 rounded text-[11px] font-medium bg-warning/25 text-warning-text-strong hover:bg-warning/35 cursor-pointer"
               >
                 {t('sandbox.yesAllowWrites')}
               </button>
@@ -228,12 +228,12 @@ export default function SandboxSection() {
       </div>
 
       {confirmDisable && (
-        <div className="px-4 py-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-sm text-amber-200">
+        <div className="px-4 py-3 rounded-lg border border-warning/30 bg-warning/10 text-sm text-warning-text">
           <div className="flex items-start gap-2">
             <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <div className="font-medium">{t('sandbox.disableConfirmTitle')}</div>
-              <div className="text-xs text-amber-200/80 mt-1">
+              <div className="text-xs text-warning-text/80 mt-1">
                 {t('sandbox.disableConfirmDesc')}
               </div>
               <div className="flex gap-2 mt-3">
@@ -242,7 +242,7 @@ export default function SandboxSection() {
                     setEnabled(false);
                     setConfirmDisable(false);
                   }}
-                  className="px-3 py-1.5 rounded-md text-xs font-medium bg-amber-500/25 text-amber-100 hover:bg-amber-500/35 cursor-pointer"
+                  className="px-3 py-1.5 rounded-md text-xs font-medium bg-warning/25 text-warning-text-strong hover:bg-warning/35 cursor-pointer"
                 >
                   {t('sandbox.yesDisable')}
                 </button>
