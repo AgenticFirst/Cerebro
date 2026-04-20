@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { loadSetting, saveSetting } from '../lib/settings';
 
-export type BetaFeatureKey = 'teams';
+export type BetaFeatureKey = 'teams' | 'voice-calls';
 
 export interface BetaFeatureDef {
   key: BetaFeatureKey;
@@ -24,11 +24,16 @@ export const BETA_FEATURES: BetaFeatureDef[] = [
     labelKey: 'betaFeatures.teams.label',
     descriptionKey: 'betaFeatures.teams.description',
   },
+  {
+    key: 'voice-calls',
+    labelKey: 'betaFeatures.voiceCalls.label',
+    descriptionKey: 'betaFeatures.voiceCalls.description',
+  },
 ];
 
 type Flags = Record<BetaFeatureKey, boolean>;
 
-const DEFAULT_FLAGS: Flags = { teams: false };
+const DEFAULT_FLAGS: Flags = { teams: false, 'voice-calls': false };
 
 interface FeatureFlagsContextValue {
   flags: Flags;

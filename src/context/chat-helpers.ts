@@ -12,6 +12,80 @@ export function titleFromContent(content: string): string {
   return trimmed.slice(0, 40) + '...';
 }
 
+/**
+ * English-only sentinel titles that different code paths (frontend default,
+ * backend default, legacy rows) have used to mean "no real title yet". We
+ * collapse all of them to the same "untitled" bucket at render time so the
+ * sidebar can show a locale-aware placeholder instead of stale English text.
+ */
+const UNTITLED_SENTINELS = new Set([
+  '',
+  'new conversation',
+  'new chat',
+  'untitled',
+]);
+
+export function isUntitledConversationTitle(title: string | null | undefined): boolean {
+  if (!title) return true;
+  return UNTITLED_SENTINELS.has(title.trim().toLowerCase());
+}
+
+/**
+ * Same-day comparison in the user's local timezone. UTC would bucket a 9pm
+ * PT conversation into "tomorrow", which is surprising.
+ */
+export function isSameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+export interface NewChatPlan {
+  /** Conversation ID to activate if an eligible empty chat from today exists. */
+  reuseId: string | null;
+  /** Stale empties (not from today) and duplicate today-empties to delete. */
+  purgeIds: string[];
+  /** True when no today-empty exists and a fresh conversation must be created. */
+  createNew: boolean;
+}
+
+/**
+ * Enforces the "at most one empty chat, from today" invariant when the user
+ * clicks New Chat. Caller must pass `conversations` newest-first (matches how
+ * ChatContext stores them — `createConversation` prepends to the array).
+ *
+ * Rules:
+ *  - Only empty (no-messages) conversations are touched. Non-empty chats are
+ *    never deleted — they belong to the user.
+ *  - If an empty chat created today exists, reuse the newest one.
+ *  - Any other empty chats (from earlier days, or duplicate today-empties) are
+ *    marked for deletion.
+ *  - If no today-empty exists, createNew=true and stale empties still get
+ *    purged so the final state is exactly one empty chat (the fresh one).
+ */
+export function resolveNewChatTarget(
+  conversations: Conversation[],
+  now: Date,
+): NewChatPlan {
+  const empties = conversations.filter((c) => c.messages.length === 0);
+  const todaysEmpties = empties.filter((c) => isSameLocalDay(c.createdAt, now));
+  const staleEmpties = empties.filter((c) => !isSameLocalDay(c.createdAt, now));
+
+  const survivor = todaysEmpties[0] ?? null;
+  const purgeIds = [
+    ...staleEmpties.map((c) => c.id),
+    ...todaysEmpties.slice(1).map((c) => c.id),
+  ];
+
+  return {
+    reuseId: survivor?.id ?? null,
+    purgeIds,
+    createNew: survivor === null,
+  };
+}
+
 // ── Backend API types (snake_case matching JSON) ─────────────────
 
 export interface ApiMessage {

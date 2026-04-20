@@ -19,6 +19,7 @@ from .schemas import (
     TaskCreate,
     TaskMove,
     TaskRead,
+    TaskReconcileRequest,
     TaskStats,
     TaskUpdate,
 )
@@ -378,6 +379,72 @@ def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(task)
     return {"ok": True}
+
+
+# ── Reconciler (live orphan recovery, polled from Electron main) ──
+
+@router.post("/reconcile")
+def reconcile_tasks(body: TaskReconcileRequest, db: Session = Depends(get_db)):
+    """Reconcile in_progress tasks whose run is no longer alive in the runtime.
+
+    The Electron AgentRuntime posts its set of currently-live run IDs on a
+    periodic tick. Any task still pinned to in_progress whose run is NOT in
+    that set is orphaned — the PTY exited but the renderer's run-event POST
+    (normally driven by the 'done'/'error' IPC listener in TaskContext) never
+    landed. We sync the task's column with its linked RunRecord status, or
+    mark the run as failed if the runtime dropped it without persisting a
+    terminal state.
+    """
+    live_run_ids = set(body.live_run_ids)
+    now = _utcnow()
+
+    orphans = (
+        db.query(Task)
+        .filter(Task.column == "in_progress")
+        .filter(Task.run_id.isnot(None))
+        .all()
+    )
+    candidate_run_ids = [t.run_id for t in orphans if t.run_id not in live_run_ids]
+    runs_by_id: dict[str, RunRecord] = {
+        r.id: r for r in db.query(RunRecord).filter(RunRecord.id.in_(candidate_run_ids)).all()
+    } if candidate_run_ids else {}
+
+    reconciled = 0
+    for task in orphans:
+        if task.run_id in live_run_ids:
+            continue
+
+        run = runs_by_id.get(task.run_id)
+        run_status = run.status if run else None
+
+        if run_status == "completed":
+            task.column = "to_review"
+            task.completed_at = now
+            _add_system_comment(db, task.id, "Reconciled — run completed but event was dropped.")
+        elif run_status in ("failed", "cancelled"):
+            task.column = "error"
+            task.last_error = (run.error if run and run.error else "Run ended without a final event.")
+            task.completed_at = now
+            _add_system_comment(db, task.id, f"Reconciled — run {run_status} but event was dropped.")
+        else:
+            # Runtime has dropped the run (not live) but the RunRecord still
+            # says running/paused/None. Mark as failed — there is no live
+            # subprocess to produce a deliverable.
+            task.column = "error"
+            task.last_error = "Reconciled — no live subprocess for this run."
+            task.completed_at = now
+            if run and run.status in ("running", "paused", None):
+                run.status = "failed"
+                run.error = "Orphaned — no live subprocess"
+                run.completed_at = now
+            _add_system_comment(db, task.id, "Reconciled — subprocess no longer alive.")
+
+        reconciled += 1
+
+    if reconciled:
+        db.commit()
+
+    return {"reconciled": reconciled}
 
 
 # ── Comments ──

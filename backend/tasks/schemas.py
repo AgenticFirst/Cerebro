@@ -32,6 +32,10 @@ class TaskMove(BaseModel):
     position: float | None = None
 
 
+class TaskReconcileRequest(BaseModel):
+    live_run_ids: list[str] = Field(default_factory=list)
+
+
 class TaskRead(BaseModel):
     id: str
     title: str

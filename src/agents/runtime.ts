@@ -545,6 +545,26 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       let resumeSettled = !request.resumeSessionId;
       let settleTimer: ReturnType<typeof setTimeout> | null = null;
 
+      // Bridge completion/error → renderer event + finalizeRun in one place so
+      // the force-kill path and the normal exit handler stay in lockstep on
+      // prose-wrapping, finalize status, and IPC payload shape.
+      const emitAndFinalize = (outcome: 'completed' | 'error', errorDetail?: string): void => {
+        if (outcome === 'completed') {
+          const messageContent = completionDetected
+            ? activeRun.accumulatedText
+            : wrapProseAsDeliverable(activeRun.accumulatedText);
+          if (!webContents.isDestroyed()) {
+            webContents.send(channel, { type: 'done', runId, messageContent } as RendererAgentEvent);
+          }
+          this.finalizeRun(runId, 'completed', messageContent);
+        } else {
+          if (!webContents.isDestroyed()) {
+            webContents.send(channel, { type: 'error', runId, error: errorDetail } as RendererAgentEvent);
+          }
+          this.finalizeRun(runId, 'error', activeRun.accumulatedText, errorDetail);
+        }
+      };
+
       // Shared two-phase shutdown: write `/exit` to TUI, then force-kill after
       // 5s if it hasn't exited. Used by both completion detection and idle timeout.
       const initiateGracefulExit = (outcome: 'completed' | 'error', detail?: string) => {
@@ -555,14 +575,15 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
           forceKillTimer = null;
           if (ptyRunner.isAborted()) return;
           ptyRunner.abort();
-          if (!webContents.isDestroyed()) {
-            if (outcome === 'completed') {
-              webContents.send(channel, { type: 'done', runId, messageContent: activeRun.accumulatedText } as RendererAgentEvent);
-            } else {
-              webContents.send(channel, { type: 'error', runId, error: detail } as RendererAgentEvent);
-            }
-          }
-          this.finalizeRun(runId, outcome, activeRun.accumulatedText, detail);
+
+          // The force-kill is a mechanism for terminating a stuck TUI, not a
+          // verdict — if the agent emitted substantive output before we had
+          // to kill it (common on idle-timeout/goodbye-line paths), accept
+          // the work instead of stranding a real deliverable in `error`.
+          const hasSubstantiveOutput = activeRun.accumulatedText.trim().length >= 120;
+          const effectiveOutcome: 'completed' | 'error' =
+            outcome === 'completed' || hasSubstantiveOutput ? 'completed' : 'error';
+          emitAndFinalize(effectiveOutcome, detail);
         }, 5000);
       };
 
@@ -705,39 +726,20 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         // even if the agent emitted prose instead of tags. The deliverable
         // block is the machine-readable *ideal*, not a hard contract — agents
         // don't emit it 100% of the time and failing to `to_review` for every
-        // agent compliance miss makes Tasks feel broken. When the block is
-        // absent we synthesize a minimal markdown deliverable from the tail
-        // of the transcript so the UI has something to display.
+        // agent compliance miss makes Tasks feel broken.
         const hasSubstantiveOutput = activeRun.accumulatedText.trim().length >= 120;
         const cleanExit = !realSignal && (code === 0 || code === null);
         const acceptAsCompleted = completionDetected || (cleanExit && hasSubstantiveOutput);
 
-        if (!acceptAsCompleted) {
+        if (acceptAsCompleted) {
+          emitAndFinalize('completed');
+        } else {
           const detail = realSignal
             ? `Agent was killed (${realSignal}) before producing output. Re-run to resume the session.`
             : code !== 0 && code !== null
               ? `Agent exited with code ${code} before producing output. Re-run to resume the session.`
               : 'Agent stopped without producing output. Re-run to resume the session.';
-          if (!webContents.isDestroyed()) {
-            webContents.send(channel, { type: 'error', runId, error: detail } as RendererAgentEvent);
-          }
-          this.finalizeRun(runId, 'error', activeRun.accumulatedText, detail);
-        } else {
-          // Synthesize a deliverable envelope if the agent emitted prose
-          // instead of a tagged block. Downstream consumers (deliverable
-          // parser, Task card) depend on the envelope being present.
-          let messageContent = activeRun.accumulatedText;
-          if (!completionDetected) {
-            messageContent = wrapProseAsDeliverable(activeRun.accumulatedText);
-          }
-          if (!webContents.isDestroyed()) {
-            webContents.send(channel, {
-              type: 'done',
-              runId,
-              messageContent,
-            } as RendererAgentEvent);
-          }
-          this.finalizeRun(runId, 'completed', messageContent);
+          emitAndFinalize('error', detail);
         }
         this.postRunSync(webContents);
       });
@@ -823,6 +825,15 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     }));
   }
 
+  /**
+   * Set of run IDs currently alive in this runtime. Consumed by the
+   * TaskReconciler to tell truly-orphaned in_progress tasks apart from
+   * ones whose PTY is still working.
+   */
+  getLiveRunIds(): string[] {
+    return Array.from(this.activeRuns.keys());
+  }
+
   // ── Internals ──────────────────────────────────────────────────
 
   /** Re-sync installer after every run so skill-created experts get materialized. */
@@ -851,10 +862,9 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     run.ptyRunner?.abort();
 
     const isTaskRun = run.isTaskRun;
+    const taskId = isTaskRun ? run.conversationId : null;
     this.activeRuns.delete(runId);
 
-    // For task runs the renderer handles finalization via POST /tasks/{id}/finalize.
-    // Only persist agent_runs for chat runs.
     if (!isTaskRun) {
       this.backendRequest('PATCH', `/agent-runs/${runId}`, {
         status,
@@ -862,6 +872,28 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         error: error || null,
         message_content: messageContent,
       }).catch(console.error);
+    } else if (taskId) {
+      // Backup finalization path: the renderer normally posts run-event from
+      // its IPC 'done'/'error' listener, but that path is fragile — a
+      // destroyed webContents, a crashed renderer, or an unfocused window
+      // can drop the event and leave the task pinned to in_progress. Post
+      // here as a safety net. The backend run-event handler is idempotent
+      // (stale-run_id and already_terminal guards), so the renderer's call
+      // and this one race harmlessly.
+      const eventType =
+        status === 'completed' ? 'run_completed'
+          : status === 'cancelled' ? 'run_cancelled'
+            : 'run_failed';
+      this.backendRequest('POST', `/tasks/${taskId}/run-event`, {
+        type: eventType,
+        run_id: runId,
+        ...(error ? { error } : {}),
+      }).catch((err: unknown) => {
+        // Best-effort: the renderer's POST and the TaskReconciler both cover
+        // this path, so don't surface to the user — but log so diagnostic
+        // logs show when the direct path is the one failing.
+        console.warn(`[AgentRuntime] backup run-event POST failed for run ${runId}:`, err);
+      });
     }
   }
 

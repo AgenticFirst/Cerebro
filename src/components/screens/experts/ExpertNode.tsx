@@ -152,7 +152,7 @@ export default function ExpertNode({
       </div>
 
       {/* Status dot + name */}
-      <div className="flex items-center gap-1.5 mt-2.5">
+      <div className="flex items-center gap-1.5 mt-2.5 max-w-[140px]">
         <div
           className="w-[7px] h-[7px] rounded-full flex-shrink-0"
           style={{
@@ -162,15 +162,20 @@ export default function ExpertNode({
         />
         <span
           className={clsx(
-            'inline-flex items-center gap-1 text-xs font-medium leading-tight',
+            'text-xs font-medium leading-tight truncate',
             isSelected ? 'text-text-primary' : 'text-text-secondary',
           )}
+          title={isCerebro ? 'Cerebro' : expert?.name}
         >
           {isCerebro ? 'Cerebro' : expert?.name}
-          {!isCerebro && expert?.isVerified && (
-            <BadgeCheck size={11} className="text-accent" strokeWidth={2.25} />
-          )}
         </span>
+        {!isCerebro && expert?.isVerified && (
+          <BadgeCheck
+            size={11}
+            className="text-accent flex-shrink-0"
+            strokeWidth={2.25}
+          />
+        )}
       </div>
 
       {/* Subtitle */}

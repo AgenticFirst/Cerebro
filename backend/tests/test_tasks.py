@@ -578,3 +578,100 @@ def test_subtask_filter_and_cascade_delete(client):
 
     client.delete(f"/tasks/{parent['id']}")
     assert client.get(f"/tasks/{child['id']}").status_code == 404
+
+
+# ── A8. Reconcile (live orphan recovery) ──────────────────────────
+
+def _set_run_status(run_id: str, status: str, error: str | None = None) -> None:
+    from database import SessionLocal
+    from models import RunRecord
+    assert SessionLocal is not None
+    db = SessionLocal()
+    try:
+        run = db.get(RunRecord, run_id)
+        assert run is not None
+        run.status = status
+        if error is not None:
+            run.error = error
+        db.commit()
+    finally:
+        db.close()
+
+
+def _get_run_status(run_id: str) -> str | None:
+    from database import SessionLocal
+    from models import RunRecord
+    assert SessionLocal is not None
+    db = SessionLocal()
+    try:
+        run = db.get(RunRecord, run_id)
+        return run.status if run else None
+    finally:
+        db.close()
+
+
+def test_reconcile_ignores_live_runs(client):
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+
+    r = client.post("/tasks/reconcile", json={"live_run_ids": [run_id]})
+    assert r.status_code == 200
+    assert r.json()["reconciled"] == 0
+
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "in_progress"
+
+
+def test_reconcile_syncs_completed_run_to_review(client):
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _set_run_status(run_id, "completed")
+
+    r = client.post("/tasks/reconcile", json={"live_run_ids": []})
+    assert r.status_code == 200
+    assert r.json()["reconciled"] == 1
+
+    got = client.get(f"/tasks/{task['id']}").json()
+    assert got["column"] == "to_review"
+    assert got["completed_at"] is not None
+
+
+def test_reconcile_syncs_failed_run_to_error(client):
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _set_run_status(run_id, "failed", error="boom")
+
+    r = client.post("/tasks/reconcile", json={"live_run_ids": []})
+    assert r.status_code == 200
+    assert r.json()["reconciled"] == 1
+
+    got = client.get(f"/tasks/{task['id']}").json()
+    assert got["column"] == "error"
+    assert got["last_error"] == "boom"
+
+
+def test_reconcile_marks_dropped_running_as_failed(client):
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+
+    # RunRecord still says running, but runtime has dropped the run
+    # (liveRunIds is empty) — classic orphan case.
+    r = client.post("/tasks/reconcile", json={"live_run_ids": []})
+    assert r.status_code == 200
+    assert r.json()["reconciled"] == 1
+
+    got = client.get(f"/tasks/{task['id']}").json()
+    assert got["column"] == "error"
+    assert "no live subprocess" in got["last_error"].lower()
+    assert _get_run_status(run_id) == "failed"
+
+
+def test_reconcile_respects_idempotent_terminal_tasks(client):
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _set_run_status(run_id, "completed")
+
+    # First tick reconciles.
+    client.post("/tasks/reconcile", json={"live_run_ids": []})
+    # Second tick finds nothing — task is already terminal, not in_progress.
+    r = client.post("/tasks/reconcile", json={"live_run_ids": []})
+    assert r.json()["reconciled"] == 0

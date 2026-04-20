@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { Components } from 'react-markdown';
+import { stripModelTags } from '../../lib/message-content';
 
 const components: Components = {
   code({ className, children, ...props }) {
@@ -42,23 +43,6 @@ const components: Components = {
     );
   },
 };
-
-/** Strip model-internal tags that shouldn't be shown to the user. */
-function stripModelTags(text: string): string {
-  return text
-    // <think>...</think> reasoning blocks (Qwen, etc.)
-    .replace(/<think>[\s\S]*?<\/think>\s*/g, '')
-    .replace(/<think>[\s\S]*$/g, '')
-    // Orphaned </think> without matching <think> (thinking was in a previous chunk)
-    .replace(/^[\s\S]*?<\/think>\s*/g, '')
-    // <tool_call>...</tool_call> raw tool invocations
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>\s*/g, '')
-    .replace(/<tool_call>[\s\S]*$/g, '')
-    // Orphaned closing tags
-    .replace(/<\/tool_call>\s*/g, '')
-    .replace(/<\/think>\s*/g, '')
-    .trimStart();
-}
 
 interface MarkdownContentProps {
   content: string;

@@ -38,6 +38,8 @@ const en = {
     expandSidebar: 'Expand sidebar',
     collapseSidebar: 'Collapse sidebar',
     deleteConversation: 'Delete conversation',
+    renameConversation: 'Rename conversation',
+    untitledConversation: 'New conversation',
     noConversationsYet: 'No conversations yet',
   },
 
@@ -64,6 +66,10 @@ const en = {
     welcomeCapMemoryDesc: 'Learns facts and context over time',
     welcomeHint: 'To message one specific expert directly, open Experts \u2192 Messages.',
     sendPlaceholder: 'Send a message...',
+    copyMessage: 'Copy message',
+    copied: 'Copied',
+    messageCopied: 'Message copied',
+    copyFailed: 'Couldn\u2019t copy to clipboard',
     attachFiles: 'Attach files',
     dropToAttach: 'Drop files to attach',
     thinking: 'Cerebro is thinking',
@@ -475,6 +481,9 @@ const en = {
     tabMessages: 'Messages',
     tabHierarchy: 'Hierarchy',
     searchPlaceholder: 'Search experts…',
+    departmentsTitle: 'Departments',
+    soloExpertsTitle: 'Independent Contributors',
+    noResults: 'No experts match the current filter.',
     starred: 'Starred',
     directMessages: 'Direct Messages',
     groupsSection: 'Groups',
@@ -973,6 +982,11 @@ const en = {
       label: 'Expert Teams',
       description:
         'Curated multi-expert groups that collaborate on complex tasks — research, launch, build, review. Turn on to see them in Messages and Hierarchy.',
+    },
+    voiceCalls: {
+      label: 'Voice Calls',
+      description:
+        'Talk to an expert hands-free with speech-to-text and voice synthesis. Still experimental — audio quality and latency depend on your local models.',
     },
   },
 

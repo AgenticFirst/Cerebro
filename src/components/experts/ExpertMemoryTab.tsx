@@ -11,6 +11,7 @@ import type { Expert } from '../../context/ExpertContext';
 import { useMemory } from '../../context/MemoryContext';
 import { useMarkdownDocument } from '../../context/MarkdownDocumentContext';
 import { useTranslation } from 'react-i18next';
+import { expertAgentName } from '../../shared/agent-name';
 
 interface ExpertMemoryTabProps {
   expert: Expert;
@@ -22,7 +23,11 @@ function formatSize(bytes: number): string {
 }
 
 export default function ExpertMemoryTab({ expert }: ExpertMemoryTabProps) {
-  const slug = expert.slug;
+  // The on-disk memory directory name is derived from id + current name via
+  // the same algorithm the installer uses. `expert.slug` is the DB-level
+  // user-facing slug (often null for user-created experts) and does not
+  // match the agent-memory directory name.
+  const slug = expertAgentName(expert.id, expert.name);
   const { files, loadFiles, readFile, writeFile, deleteFile } = useMemory();
   const { open: openMarkdown } = useMarkdownDocument();
   const { t } = useTranslation();
@@ -145,15 +150,6 @@ export default function ExpertMemoryTab({ expert }: ExpertMemoryTabProps) {
     },
     [isDirty, handleSave],
   );
-
-  // No slug — expert hasn't run yet
-  if (!slug) {
-    return (
-      <p className="text-xs text-text-tertiary leading-relaxed">
-        Memory will be created when this expert first runs.
-      </p>
-    );
-  }
 
   return (
     <div className="space-y-2">

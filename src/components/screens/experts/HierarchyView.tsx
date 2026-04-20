@@ -1,156 +1,15 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, ZoomIn, ZoomOut, Maximize2, Loader2, Users } from 'lucide-react';
+import { Plus, Brain, Loader2, Search, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useExperts, type Expert, type CreateExpertInput } from '../../../context/ExpertContext';
-import ExpertNode from './ExpertNode';
 import ExpertDetailPanel from './ExpertDetailPanel';
 import CreateExpertDialog from './CreateExpertDialog';
 import ExpertContextMenu from './ExpertContextMenu';
+import DepartmentCard from './DepartmentCard';
+import SoloExpertCard from './SoloExpertCard';
 
-// ── Layout Constants ───────────────────────────────────────────
-
-const NODE_W = 140;
-const CEREBRO_ICON = 80;
-const EXPERT_ICON = 64;
-const CEREBRO_TOTAL_H = CEREBRO_ICON + 40;
-const EXPERT_TOTAL_H = EXPERT_ICON + 36;
-const H_GAP = 80;
-const V_GAP = 100;
-const TEAM_PAD_X = 40;
-const TEAM_PAD_Y = 30;
-const TEAM_LABEL_H = 22;
-
-interface LayoutNode {
-  id: string;
-  expert?: Expert;
-  isCerebro?: boolean;
-  x: number;
-  y: number;
-  index: number;
-}
-
-interface Connector {
-  fromX: number;
-  fromY: number;
-  toX: number;
-  toY: number;
-}
-
-interface TeamGroupBox {
-  teamId: string;
-  label: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  domain: string | null;
-  isVerified: boolean;
-  memberIds: string[];
-}
-
-const TEAM_DOMAIN_COLORS: Record<string, { bg: string; border: string; label: string }> = {
-  productivity: { bg: 'rgba(59, 130, 246, 0.04)', border: 'rgba(59, 130, 246, 0.15)', label: 'rgba(59, 130, 246, 0.5)' },
-  health: { bg: 'rgba(16, 185, 129, 0.04)', border: 'rgba(16, 185, 129, 0.15)', label: 'rgba(16, 185, 129, 0.5)' },
-  finance: { bg: 'rgba(245, 158, 11, 0.04)', border: 'rgba(245, 158, 11, 0.15)', label: 'rgba(245, 158, 11, 0.5)' },
-  creative: { bg: 'rgba(168, 85, 247, 0.04)', border: 'rgba(168, 85, 247, 0.15)', label: 'rgba(168, 85, 247, 0.5)' },
-  engineering: { bg: 'rgba(249, 115, 22, 0.04)', border: 'rgba(249, 115, 22, 0.15)', label: 'rgba(249, 115, 22, 0.5)' },
-  research: { bg: 'rgba(99, 102, 241, 0.04)', border: 'rgba(99, 102, 241, 0.15)', label: 'rgba(99, 102, 241, 0.5)' },
-};
-
-const DEFAULT_TEAM_COLOR = {
-  bg: 'rgba(6, 182, 212, 0.03)',
-  border: 'rgba(6, 182, 212, 0.12)',
-  label: 'rgba(6, 182, 212, 0.45)',
-};
-
-function getTeamColor(domain: string | null) {
-  if (domain) return TEAM_DOMAIN_COLORS[domain.toLowerCase()] ?? DEFAULT_TEAM_COLOR;
-  return DEFAULT_TEAM_COLOR;
-}
-
-function computeLayout(experts: Expert[]) {
-  const nodes: LayoutNode[] = [];
-  const connectors: Connector[] = [];
-  const teamGroups: TeamGroupBox[] = [];
-  let nodeIndex = 0;
-
-  const teamMemberIds = new Set<string>();
-  const teams = experts.filter((e) => e.type === 'team');
-  teams.forEach((t) => t.teamMembers?.forEach((m) => teamMemberIds.add(m.expertId)));
-
-  const standalone = experts.filter(
-    (e) => e.type === 'expert' && !teamMemberIds.has(e.id),
-  );
-
-  nodes.push({ id: 'cerebro', isCerebro: true, x: 0, y: 0, index: nodeIndex++ });
-
-  const level1Items = [...teams, ...standalone];
-  if (level1Items.length === 0) return { nodes, connectors, teamGroups };
-
-  const level1Y = CEREBRO_TOTAL_H + V_GAP;
-  const totalLevel1W = level1Items.length * NODE_W + (level1Items.length - 1) * H_GAP;
-  const level1StartX = -(totalLevel1W - NODE_W) / 2;
-
-  level1Items.forEach((item, i) => {
-    const x = level1StartX + i * (NODE_W + H_GAP);
-    nodes.push({ id: item.id, expert: item, x, y: level1Y, index: nodeIndex++ });
-
-    connectors.push({
-      fromX: 0,
-      fromY: CEREBRO_ICON + 4,
-      toX: x,
-      toY: level1Y,
-    });
-
-    if (item.type === 'team' && item.teamMembers && item.teamMembers.length > 0) {
-      const members = item.teamMembers
-        .map((tm) => experts.find((e) => e.id === tm.expertId))
-        .filter(Boolean) as Expert[];
-
-      if (members.length > 0) {
-        const level2Y = level1Y + EXPERT_TOTAL_H + V_GAP;
-        const totalMembersW =
-          members.length * NODE_W + (members.length - 1) * H_GAP;
-        const membersStartX = x - (totalMembersW - NODE_W) / 2;
-
-        members.forEach((member, j) => {
-          const mx = membersStartX + j * (NODE_W + H_GAP);
-          nodes.push({
-            id: member.id,
-            expert: member,
-            x: mx,
-            y: level2Y,
-            index: nodeIndex++,
-          });
-
-          connectors.push({
-            fromX: x,
-            fromY: level1Y + EXPERT_ICON + 4,
-            toX: mx,
-            toY: level2Y,
-          });
-        });
-
-        const leftMostX = membersStartX - NODE_W / 2;
-        const rightMostX = membersStartX + (members.length - 1) * (NODE_W + H_GAP) + NODE_W / 2;
-        teamGroups.push({
-          teamId: item.id,
-          label: item.name,
-          x: leftMostX - TEAM_PAD_X,
-          y: level2Y - TEAM_PAD_Y - TEAM_LABEL_H,
-          width: rightMostX - leftMostX + TEAM_PAD_X * 2,
-          height: EXPERT_TOTAL_H + TEAM_PAD_Y * 2 + TEAM_LABEL_H,
-          domain: item.domain,
-          isVerified: item.isVerified,
-          memberIds: members.map((m) => m.id),
-        });
-      }
-    }
-  });
-
-  return { nodes, connectors, teamGroups };
-}
+type FilterKey = 'all' | 'active' | 'disabled' | 'pinned';
 
 export default function HierarchyView() {
   const { t } = useTranslation();
@@ -168,61 +27,72 @@ export default function HierarchyView() {
     consumePendingDetailExpertId,
   } = useExperts();
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [scale, setScale] = useState(1);
-  const [isPanning, setIsPanning] = useState(false);
-  const panStartRef = useRef({ x: 0, y: 0 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [initialized, setInitialized] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ expert: Expert; position: { x: number; y: number } } | null>(null);
-  const [filter, setFilter] = useState<'all' | 'active' | 'disabled' | 'pinned'>('all');
-  const [hoveredTeamId, setHoveredTeamId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    expert: Expert;
+    position: { x: number; y: number };
+  } | null>(null);
+  const [filter, setFilter] = useState<FilterKey>('all');
+  const [search, setSearch] = useState('');
+  const [scale, setScale] = useState(1);
 
   useEffect(() => {
     loadExperts();
   }, [loadExperts]);
 
   useEffect(() => {
-    if (!initialized && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      setOffset({ x: rect.width / 2, y: 80 });
-      setInitialized(true);
-    }
-  }, [initialized]);
-
-  // Cross-tab nav: if the user hit "Edit" in the Messages tab's profile
-  // drawer, pop open the detail panel for that expert here.
-  useEffect(() => {
     const pending = consumePendingDetailExpertId();
     if (pending) setSelectedId(pending);
   }, [consumePendingDetailExpertId]);
 
-  const filteredExperts = useMemo(() => {
-    switch (filter) {
-      case 'active': return experts.filter((e) => e.isEnabled);
-      case 'disabled': return experts.filter((e) => !e.isEnabled);
-      case 'pinned': return experts.filter((e) => e.isPinned);
-      default: return experts;
-    }
-  }, [experts, filter]);
+  const disabledCount = useMemo(
+    () => experts.filter((e) => !e.isEnabled).length,
+    [experts],
+  );
 
-  const disabledCount = useMemo(() => experts.filter((e) => !e.isEnabled).length, [experts]);
+  // Filter pipeline: visibility first, then free-text search.
+  const visibleExperts = useMemo(() => {
+    const byVisibility = (() => {
+      switch (filter) {
+        case 'active': return experts.filter((e) => e.isEnabled);
+        case 'disabled': return experts.filter((e) => !e.isEnabled);
+        case 'pinned': return experts.filter((e) => e.isPinned);
+        default: return experts;
+      }
+    })();
+    const q = search.trim().toLowerCase();
+    if (!q) return byVisibility;
+    return byVisibility.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q)
+        || (e.domain ?? '').toLowerCase().includes(q)
+        || (e.description ?? '').toLowerCase().includes(q),
+    );
+  }, [experts, filter, search]);
 
-  const layout = useMemo(() => computeLayout(filteredExperts), [filteredExperts]);
+  // Split into departments (teams with members) and solo experts.
+  const { departments, soloExperts } = useMemo(() => {
+    const byId = new Map(visibleExperts.map((e) => [e.id, e]));
+    const teams = visibleExperts.filter((e) => e.type === 'team');
+    const teamMemberIds = new Set<string>();
+    teams.forEach((t) => t.teamMembers?.forEach((m) => teamMemberIds.add(m.expertId)));
 
-  // When a team group is hovered or selected, emphasize its members by dimming
-  // every other node so the grouping reads instantly.
-  const emphasizedTeamId = hoveredTeamId
-    ?? (selectedId && layout.teamGroups.find((g) => g.teamId === selectedId)?.teamId)
-    ?? null;
-  const memberKeepSet = useMemo(() => {
-    if (!emphasizedTeamId) return null;
-    const group = layout.teamGroups.find((g) => g.teamId === emphasizedTeamId);
-    if (!group) return null;
-    return new Set<string>([emphasizedTeamId, ...group.memberIds]);
-  }, [emphasizedTeamId, layout.teamGroups]);
+    const depts = teams.map((team) => {
+      const members = (team.teamMembers ?? [])
+        .slice()
+        .sort((a, b) => a.order - b.order)
+        .map((m) => byId.get(m.expertId))
+        .filter(Boolean) as Expert[];
+      return { team, members };
+    });
+
+    const solos = visibleExperts.filter(
+      (e) => e.type === 'expert' && !teamMemberIds.has(e.id),
+    );
+
+    return { departments: depts, soloExperts: solos };
+  }, [visibleExperts]);
 
   const selectedExpert =
     selectedId && selectedId !== 'cerebro'
@@ -230,42 +100,7 @@ export default function HierarchyView() {
       : null;
   const isCerebroSelected = selectedId === 'cerebro';
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if ((e.target as HTMLElement).closest('.expert-node')) return;
-      if ((e.target as HTMLElement).closest('.canvas-toolbar')) return;
-      setIsPanning(true);
-      panStartRef.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
-    },
-    [offset],
-  );
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (!isPanning) return;
-      setOffset({
-        x: e.clientX - panStartRef.current.x,
-        y: e.clientY - panStartRef.current.y,
-      });
-    },
-    [isPanning],
-  );
-
-  const handleMouseUp = useCallback(() => setIsPanning(false), []);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const handler = (e: WheelEvent) => {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.06 : 0.06;
-      setScale((s) => Math.min(2, Math.max(0.25, s + delta)));
-    };
-    el.addEventListener('wheel', handler, { passive: false });
-    return () => el.removeEventListener('wheel', handler);
-  }, []);
-
-  const handleNodeClick = useCallback((id: string) => {
+  const handleSelectId = useCallback((id: string) => {
     setSelectedId((prev) => (prev === id ? null : id));
   }, []);
 
@@ -286,16 +121,6 @@ export default function HierarchyView() {
     [deleteExpert],
   );
 
-  const zoomIn = () => setScale((s) => Math.min(2, s + 0.2));
-  const zoomOut = () => setScale((s) => Math.max(0.25, s - 0.2));
-  const resetView = () => {
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      setOffset({ x: rect.width / 2, y: 80 });
-      setScale(1);
-    }
-  };
-
   const handleCreate = async (input: CreateExpertInput) => {
     await createExpert(input);
   };
@@ -309,6 +134,10 @@ export default function HierarchyView() {
     await deleteExpert(id);
   };
 
+  const zoomIn = () => setScale((s) => Math.min(1.5, +(s + 0.1).toFixed(2)));
+  const zoomOut = () => setScale((s) => Math.max(0.6, +(s - 0.1).toFixed(2)));
+  const resetZoom = () => setScale(1);
+
   if (isLoading && experts.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -317,206 +146,128 @@ export default function HierarchyView() {
     );
   }
 
+  const isEmpty = experts.length === 0;
+
   return (
-    <div className="relative flex-1 overflow-hidden">
-      <div
-        ref={containerRef}
-        className="absolute inset-0 canvas-grid"
-        style={{ cursor: isPanning ? 'grabbing' : 'grab' }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-      >
-        <div
-          style={{
-            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-            transformOrigin: '0 0',
-          }}
-        >
-          {layout.connectors.length > 0 && (
-            <svg
-              className="absolute pointer-events-none"
-              style={{ left: -3000, top: -3000, width: 6000, height: 6000 }}
+    <div className="relative flex-1 flex flex-col overflow-hidden">
+      <div className="canvas-toolbar flex items-center justify-between gap-3 px-4 py-3 border-b border-border-subtle bg-bg-base/60">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {([
+            { key: 'all' as const, labelKey: 'experts.filterAll', count: experts.length },
+            { key: 'active' as const, labelKey: 'experts.filterActive', count: activeCount },
+            { key: 'disabled' as const, labelKey: 'experts.filterDisabled', count: disabledCount },
+            { key: 'pinned' as const, labelKey: 'experts.filterPinned', count: pinnedCount },
+          ]).map((pill) => (
+            <button
+              key={pill.key}
+              onClick={() => setFilter(pill.key)}
+              className={clsx(
+                'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors duration-150',
+                filter === pill.key
+                  ? 'bg-accent/15 text-accent border border-accent/30'
+                  : 'bg-bg-surface/80 text-text-tertiary border border-transparent hover:text-text-secondary hover:bg-bg-hover',
+              )}
             >
-              <g transform="translate(3000, 3000)">
-                {layout.connectors.map((c, i) => {
-                  const midY = (c.fromY + c.toY) / 2;
-                  const d = `M ${c.fromX} ${c.fromY} C ${c.fromX} ${midY}, ${c.toX} ${midY}, ${c.toX} ${c.toY}`;
-                  return (
-                    <g key={i}>
-                      <path
-                        d={d}
-                        fill="none"
-                        stroke="rgba(6, 182, 212, 0.15)"
-                        strokeWidth={6}
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d={d}
-                        fill="none"
-                        stroke="rgba(6, 182, 212, 0.35)"
-                        strokeWidth={1.5}
-                        strokeLinecap="round"
-                      />
-                    </g>
-                  );
-                })}
-              </g>
-            </svg>
-          )}
+              {t(pill.labelKey)} ({pill.count})
+            </button>
+          ))}
+        </div>
 
-          {layout.teamGroups.map((group) => {
-            const colors = getTeamColor(group.domain);
-            const isHovered = hoveredTeamId === group.teamId;
-            const isSelected = selectedId === group.teamId;
-            const accentBorder = isHovered || isSelected;
-            return (
-              <div
-                key={group.teamId}
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedId((prev) => (prev === group.teamId ? null : group.teamId));
-                }}
-                onMouseEnter={() => setHoveredTeamId(group.teamId)}
-                onMouseLeave={() => setHoveredTeamId((h) => (h === group.teamId ? null : h))}
-                className="expert-node absolute rounded-xl cursor-pointer transition-all duration-150"
-                style={{
-                  left: group.x,
-                  top: group.y,
-                  width: group.width,
-                  height: group.height,
-                  border: accentBorder
-                    ? `1.5px solid ${colors.label}`
-                    : `1px dashed ${colors.border}`,
-                  backgroundColor: colors.bg,
-                  boxShadow: accentBorder ? `0 0 0 4px ${colors.bg}` : 'none',
-                }}
-                title={group.label}
-              >
-                <span
-                  className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest px-2.5 py-0.5 rounded-full"
-                  style={{
-                    color: colors.label,
-                    backgroundColor: 'var(--color-bg-base)',
-                    border: `1px solid ${colors.border}`,
-                  }}
-                >
-                  <Users size={10} strokeWidth={2.5} />
-                  <span className="truncate max-w-[220px]">{group.label}</span>
-                  <span
-                    className="px-1 rounded text-[9px] font-medium tracking-normal normal-case"
-                    style={{
-                      color: 'rgb(251, 191, 36)',
-                      backgroundColor: 'rgba(251, 191, 36, 0.12)',
-                    }}
-                  >
-                    {t('experts.groupBeta')}
-                  </span>
-                </span>
-              </div>
-            );
-          })}
-
-          {layout.nodes.map((node) => {
-            const dim = memberKeepSet
-              ? !node.isCerebro && !memberKeepSet.has(node.id)
-              : false;
-            return (
-              <div
-                key={node.id}
-                className="transition-opacity duration-150"
-                style={{ opacity: dim ? 0.4 : 1 }}
-              >
-                <ExpertNode
-                  expert={node.expert}
-                  isCerebro={node.isCerebro}
-                  isSelected={selectedId === node.id}
-                  x={node.x}
-                  y={node.y}
-                  index={node.index}
-                  onClick={() => handleNodeClick(node.id)}
-                  onContextMenu={
-                    !node.isCerebro && node.expert
-                      ? (e) => handleContextMenu(node.expert!, e)
-                      : undefined
-                  }
-                />
-              </div>
-            );
-          })}
-
-          {experts.length === 0 && (
-            <div
-              className="absolute flex flex-col items-center cursor-pointer group animate-node-in"
-              style={{
-                left: 0,
-                top: CEREBRO_TOTAL_H + V_GAP,
-                transform: 'translate(-50%, 0)',
-                animationDelay: '200ms',
-              }}
-              onClick={() => setShowCreate(true)}
-            >
-              <svg
-                className="absolute pointer-events-none"
-                style={{ top: -V_GAP, left: '50%', width: 2, height: V_GAP }}
-              >
-                <line
-                  x1={1}
-                  y1={0}
-                  x2={1}
-                  y2={V_GAP - 10}
-                  stroke="rgba(6, 182, 212, 0.2)"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 4"
-                />
-              </svg>
-              <div className="w-16 h-16 rounded-xl border-2 border-dashed border-border-default flex items-center justify-center group-hover:border-accent/40 transition-colors">
-                <Plus
-                  size={24}
-                  className="text-text-tertiary group-hover:text-accent transition-colors"
-                />
-              </div>
-              <span className="text-[11px] text-text-tertiary mt-2 group-hover:text-text-secondary transition-colors">
-                {t('experts.addExpert')}
-              </span>
-            </div>
-          )}
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search
+              size={12}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none"
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('experts.searchPlaceholder', 'Search experts…')}
+              className="w-56 pl-7 pr-2.5 py-1 bg-bg-surface border border-border-subtle rounded-full text-[11px] text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/40"
+            />
+          </div>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-bg-base bg-accent hover:bg-accent-hover rounded-lg transition-colors"
+          >
+            <Plus size={14} />
+            {t('experts.newExpert')}
+          </button>
         </div>
       </div>
 
-      <div className="canvas-toolbar absolute top-4 left-4 flex items-center gap-1.5">
-        {([
-          { key: 'all' as const, labelKey: 'experts.filterAll', count: experts.length },
-          { key: 'active' as const, labelKey: 'experts.filterActive', count: activeCount },
-          { key: 'disabled' as const, labelKey: 'experts.filterDisabled', count: disabledCount },
-          { key: 'pinned' as const, labelKey: 'experts.filterPinned', count: pinnedCount },
-        ]).map((pill) => (
-          <button
-            key={pill.key}
-            onClick={() => setFilter(pill.key)}
-            className={clsx(
-              'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors duration-150',
-              filter === pill.key
-                ? 'bg-accent/15 text-accent border border-accent/30'
-                : 'bg-bg-surface/80 text-text-tertiary border border-transparent hover:text-text-secondary hover:bg-bg-hover',
-            )}
-          >
-            {t(pill.labelKey)} ({pill.count})
-          </button>
-        ))}
-      </div>
-
-      <div className="canvas-toolbar absolute top-4 right-4 flex items-center gap-2">
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-bg-base bg-accent hover:bg-accent-hover rounded-lg transition-colors"
+      <div className="flex-1 overflow-auto canvas-grid">
+        <div
+          className="min-h-full flex flex-col items-center px-6 py-8"
+          style={{
+            transform: scale === 1 ? undefined : `scale(${scale})`,
+            transformOrigin: 'top center',
+          }}
         >
-          <Plus size={14} />
-          {t('experts.newExpert')}
-        </button>
+          <CerebroHeader
+            isSelected={isCerebroSelected}
+            onClick={() => handleSelectId('cerebro')}
+          />
+
+          <div className="w-px h-8 bg-gradient-to-b from-accent/30 to-transparent" />
+
+          {isEmpty ? (
+            <EmptyState onCreate={() => setShowCreate(true)} />
+          ) : (
+            <div className="w-full max-w-[1400px] space-y-10">
+              {departments.length > 0 && (
+                <section>
+                  <SectionHeader
+                    title={t('experts.departmentsTitle', 'Departments')}
+                    count={departments.length}
+                  />
+                  <div className="grid gap-4 items-start grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
+                    {departments.map(({ team, members }) => (
+                      <DepartmentCard
+                        key={team.id}
+                        team={team}
+                        members={members}
+                        isSelected={selectedId === team.id}
+                        selectedMemberId={selectedId}
+                        onSelectTeam={() => handleSelectId(team.id)}
+                        onSelectMember={(id) => handleSelectId(id)}
+                        onMemberContextMenu={handleContextMenu}
+                        onTeamContextMenu={handleContextMenu}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {soloExperts.length > 0 && (
+                <section>
+                  <SectionHeader
+                    title={t('experts.soloExpertsTitle', 'Independent Contributors')}
+                    count={soloExperts.length}
+                  />
+                  <div className="grid gap-3 items-start grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
+                    {soloExperts.map((expert) => (
+                      <SoloExpertCard
+                        key={expert.id}
+                        expert={expert}
+                        isSelected={selectedId === expert.id}
+                        onClick={() => handleSelectId(expert.id)}
+                        onContextMenu={(e) => handleContextMenu(expert, e)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {departments.length === 0 && soloExperts.length === 0 && (
+                <div className="text-center py-12 text-text-tertiary text-sm">
+                  {t('experts.noResults', 'No experts match the current filter.')}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="canvas-toolbar absolute bottom-4 right-4 flex items-center gap-0.5 bg-bg-surface/80 backdrop-blur-sm rounded-lg border border-border-subtle p-1">
@@ -539,7 +290,7 @@ export default function HierarchyView() {
         </button>
         <div className="w-px h-4 bg-border-subtle mx-0.5" />
         <button
-          onClick={resetView}
+          onClick={resetZoom}
           className="p-1.5 rounded hover:bg-bg-hover transition-colors text-text-tertiary hover:text-text-secondary"
           title={t('experts.resetView')}
         >
@@ -580,5 +331,80 @@ export default function HierarchyView() {
         />
       )}
     </div>
+  );
+}
+
+// ── Cerebro header node ──────────────────────────────────────────
+
+function CerebroHeader({
+  isSelected,
+  onClick,
+}: {
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="expert-node flex flex-col items-center gap-2 cursor-pointer group"
+    >
+      <div
+        className={clsx(
+          'relative w-20 h-20 rounded-2xl flex items-center justify-center transition-all duration-200',
+        )}
+        style={{
+          backgroundColor: 'rgba(13, 13, 16, 0.95)',
+          border: '2.5px solid rgba(245, 158, 11, 0.65)',
+          boxShadow: isSelected
+            ? '0 0 24px rgba(245, 158, 11, 0.55), 0 0 64px rgba(245, 158, 11, 0.18), 0 0 0 3px rgba(245, 158, 11, 0.4)'
+            : '0 0 20px rgba(245, 158, 11, 0.35), 0 0 56px rgba(245, 158, 11, 0.1)',
+        }}
+      >
+        <Brain size={38} style={{ color: '#f59e0b' }} />
+      </div>
+      <div className="flex flex-col items-center">
+        <span className="text-sm font-semibold text-text-primary">Cerebro</span>
+        <span className="text-[10px] uppercase tracking-widest text-text-tertiary mt-0.5">
+          Lead
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// ── Section header ───────────────────────────────────────────────
+
+function SectionHeader({ title, count }: { title: string; count: number }) {
+  return (
+    <div className="flex items-baseline gap-2 mb-3 px-1">
+      <h3 className="text-[11px] font-semibold uppercase tracking-widest text-text-secondary">
+        {title}
+      </h3>
+      <span className="text-[11px] text-text-tertiary">{count}</span>
+    </div>
+  );
+}
+
+// ── Empty state ──────────────────────────────────────────────────
+
+function EmptyState({ onCreate }: { onCreate: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      onClick={onCreate}
+      className="flex flex-col items-center gap-2 cursor-pointer group mt-4"
+    >
+      <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-border-default flex items-center justify-center group-hover:border-accent/40 transition-colors">
+        <Plus
+          size={28}
+          className="text-text-tertiary group-hover:text-accent transition-colors"
+        />
+      </div>
+      <span className="text-xs text-text-tertiary group-hover:text-text-secondary transition-colors">
+        {t('experts.addExpert')}
+      </span>
+    </button>
   );
 }

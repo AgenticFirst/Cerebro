@@ -15,6 +15,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import { expertAgentName } from '../shared/agent-name';
+
+export { expertAgentName } from '../shared/agent-name';
 
 // ── Path resolution ──────────────────────────────────────────────
 
@@ -43,33 +46,6 @@ export function resolvePaths(dataDir: string): InstallerPaths {
     runtimeInfoPath: path.join(claudeDir, 'cerebro-runtime.json'),
     indexPath: path.join(claudeDir, 'agents', '.cerebro-index.json'),
   };
-}
-
-// ── Slugification ────────────────────────────────────────────────
-
-/** Convert an arbitrary expert name into a safe filename slug. */
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '') // strip diacritics
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-}
-
-/** Deterministic 6-char hash suffix to avoid collisions across renamed experts. */
-function hashSuffix(expertId: string): string {
-  let h = 0;
-  for (let i = 0; i < expertId.length; i++) {
-    h = (h * 31 + expertId.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h).toString(36).slice(0, 6).padStart(6, '0');
-}
-
-export function expertAgentName(expertId: string, name: string): string {
-  const base = slugify(name) || 'expert';
-  return `${base}-${hashSuffix(expertId)}`;
 }
 
 // ── Sidecar index ────────────────────────────────────────────────

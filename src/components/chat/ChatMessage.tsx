@@ -1,5 +1,6 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Copy, Check } from 'lucide-react';
 import clsx from 'clsx';
 import type { Message } from '../../types/chat';
 import MarkdownContent from './MarkdownContent';
@@ -11,7 +12,12 @@ import ExpertProposalCard from './ExpertProposalCard';
 import TeamProposalCard from './TeamProposalCard';
 import TeamRunCard from './TeamRunCard';
 import AttachmentChip from './AttachmentChip';
-import type { AttachmentInfo } from '../../types/attachments';
+import {
+  parseFileRefs,
+  parseTrailingFileRefs,
+  getCopyableContent,
+} from '../../lib/message-content';
+import { useCopyMessage } from '../../hooks/useCopyMessage';
 
 interface ChatMessageProps {
   message: Message;
@@ -21,73 +27,39 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function parseFileRefs(content: string): { attachments: AttachmentInfo[]; text: string } {
-  const lines = content.split('\n');
-  const attachments: AttachmentInfo[] = [];
-  let i = 0;
-
-  for (; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (line.startsWith('@/') || line.startsWith('@~')) {
-      const filePath = line.slice(1);
-      const fileName = filePath.split('/').pop() || filePath;
-      const ext = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
-      attachments.push({ id: filePath, filePath, fileName, fileSize: 0, extension: ext });
-    } else if (line === '') {
-      continue;
-    } else {
-      break;
-    }
-  }
-
-  return { attachments, text: lines.slice(i).join('\n').trim() };
-}
-
-function parseTrailingFileRefs(content: string): { attachments: AttachmentInfo[]; text: string } {
-  const lines = content.split('\n');
-  const attachments: AttachmentInfo[] = [];
-  let cut = lines.length;
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (line.startsWith('@/') || line.startsWith('@~')) {
-      const filePath = line.slice(1);
-      const fileName = filePath.split('/').pop() || filePath;
-      const ext = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
-      attachments.unshift({ id: filePath, filePath, fileName, fileSize: 0, extension: ext });
-      cut = i;
-    } else if (line === '') {
-      continue;
-    } else {
-      break;
-    }
-  }
-
-  return { attachments, text: lines.slice(0, cut).join('\n').trimEnd() };
-}
-
 export default function ChatMessage({ message }: ChatMessageProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
 
-  const { attachments: userFileRefs, text: userText } = isUser
-    ? parseFileRefs(message.content)
-    : { attachments: [], text: '' };
-  const { attachments: assistantFileRefs, text: assistantText } = !isUser
-    ? parseTrailingFileRefs(message.content)
-    : { attachments: [], text: '' };
-  const fileRefs = isUser ? userFileRefs : assistantFileRefs;
-  const displayContent = isUser ? userText : assistantText;
+  // Parsing is O(N) per render and streaming re-renders this every chunk, so
+  // cache on the content string.
+  const { fileRefs, displayContent, copyableMarkdown } = useMemo(() => {
+    if (isUser) {
+      const { attachments, text } = parseFileRefs(message.content);
+      return { fileRefs: attachments, displayContent: text, copyableMarkdown: text };
+    }
+    const { attachments, text } = parseTrailingFileRefs(message.content);
+    return {
+      fileRefs: attachments,
+      displayContent: text,
+      copyableMarkdown: getCopyableContent({ role: 'assistant', content: message.content }),
+    };
+  }, [isUser, message.content]);
 
   const hasContent = displayContent.length > 0;
-  // Assistant is still producing its reply — keep a live indicator visible even
-  // when all tool calls have finished but no text has arrived yet.
   const assistantBusy =
     !isUser && (message.isThinking || message.isStreaming === true) && !hasContent;
 
+  const { copied, copy } = useCopyMessage();
+  const canCopy = copyableMarkdown.length > 0 && !message.isStreaming;
+
   return (
-    <div className="animate-fade-in" data-testid="chat-message" data-role={isUser ? 'user' : 'assistant'}>
+    <div
+      className="group animate-fade-in"
+      data-testid="chat-message"
+      data-role={isUser ? 'user' : 'assistant'}
+    >
       <div className="flex items-center gap-2 mb-1.5">
         <span
           className={clsx('text-xs font-medium', isUser ? 'text-accent' : 'text-text-secondary')}
@@ -202,6 +174,32 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         </div>
       )}
 
+      {/* Actions row — hover-reveal, mirrors bubble alignment. Copy is the only
+          action today; the row is structured so regenerate/thumbs can slot in
+          later without re-plumbing hover state. */}
+      {canCopy && (
+        <div
+          className={clsx(
+            'mt-1.5 flex items-center gap-0.5 opacity-0 transition-opacity duration-150',
+            'group-hover:opacity-100 focus-within:opacity-100',
+            isUser ? 'justify-start' : 'justify-end',
+          )}
+        >
+          <button
+            type="button"
+            onClick={() => copy(copyableMarkdown)}
+            className="flex items-center justify-center w-7 h-7 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+            title={copied ? t('chat.copied') : t('chat.copyMessage')}
+            aria-label={copied ? t('chat.copied') : t('chat.copyMessage')}
+          >
+            {copied ? (
+              <Check size={13} className="text-accent" strokeWidth={2.25} />
+            ) : (
+              <Copy size={13} strokeWidth={2} />
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

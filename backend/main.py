@@ -114,6 +114,10 @@ class ConversationCreate(BaseModel):
     expert_id: str | None = None
 
 
+class ConversationUpdate(BaseModel):
+    title: str | None = None
+
+
 class MessageCreate(BaseModel):
     id: str
     role: str
@@ -259,6 +263,22 @@ def patch_message(conv_id: str, msg_id: str, body: MessageUpdate, db=Depends(get
     db.commit()
     db.refresh(msg)
     return msg
+
+
+@app.patch("/conversations/{conv_id}", response_model=ConversationResponse)
+def patch_conversation(conv_id: str, body: ConversationUpdate, db=Depends(get_db)):
+    conv = db.get(Conversation, conv_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if body.title is not None:
+        title = body.title.strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="Title cannot be empty")
+        conv.title = title[:200]
+        conv.updated_at = models._utcnow()
+    db.commit()
+    db.refresh(conv)
+    return conv
 
 
 @app.delete("/conversations/{conv_id}", status_code=204)

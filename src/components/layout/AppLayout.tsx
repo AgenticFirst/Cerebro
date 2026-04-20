@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useChat } from '../../context/ChatContext';
 import { useTasks } from '../../context/TaskContext';
 import { useExperts } from '../../context/ExpertContext';
+import { useFeatureFlags } from '../../context/FeatureFlagsContext';
 import Sidebar from './Sidebar';
 import ChatView from '../chat/ChatView';
 import WelcomeView from '../chat/WelcomeView';
@@ -33,6 +34,7 @@ export default function AppLayout() {
     setActiveScreen,
   } = useChat();
   const { pendingFailurePrompts, confirmFailurePrompt, dismissFailurePrompt } = useTasks();
+  const { flags } = useFeatureFlags();
   const { experts } = useExperts();
 
   // Show one failure prompt at a time (FIFO).
@@ -82,7 +84,7 @@ export default function AppLayout() {
     if (activeScreen === 'marketplace') {
       return <SkillsLibraryScreen />;
     }
-    if (activeScreen === 'call') {
+    if (activeScreen === 'call' && flags['voice-calls']) {
       return <CallScreen />;
     }
     return <PlaceholderScreen screen={activeScreen} />;

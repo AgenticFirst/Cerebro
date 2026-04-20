@@ -39,6 +39,8 @@ const es: TranslationKeys = {
     expandSidebar: 'Expandir barra lateral',
     collapseSidebar: 'Contraer barra lateral',
     deleteConversation: 'Eliminar conversaci\u00f3n',
+    renameConversation: 'Renombrar conversaci\u00f3n',
+    untitledConversation: 'Nueva conversaci\u00f3n',
     noConversationsYet: 'A\u00fan no hay conversaciones',
   },
 
@@ -65,6 +67,10 @@ const es: TranslationKeys = {
     welcomeCapMemoryDesc: 'Aprende hechos y contexto con el tiempo',
     welcomeHint: 'Para hablar con un experto concreto en privado, abre Expertos \u2192 Mensajes.',
     sendPlaceholder: 'Escribe un mensaje...',
+    copyMessage: 'Copiar mensaje',
+    copied: 'Copiado',
+    messageCopied: 'Mensaje copiado',
+    copyFailed: 'No se pudo copiar al portapapeles',
     attachFiles: 'Adjuntar archivos',
     dropToAttach: 'Suelta archivos para adjuntar',
     thinking: 'Cerebro est\u00e1 pensando',
@@ -476,6 +482,9 @@ const es: TranslationKeys = {
     tabMessages: 'Mensajes',
     tabHierarchy: 'Jerarqu\u00eda',
     searchPlaceholder: 'Buscar expertos\u2026',
+    departmentsTitle: 'Departamentos',
+    soloExpertsTitle: 'Colaboradores Individuales',
+    noResults: 'Ning\u00fan experto coincide con el filtro actual.',
     starred: 'Destacados',
     directMessages: 'Mensajes directos',
     groupsSection: 'Grupos',
@@ -964,6 +973,11 @@ const es: TranslationKeys = {
       label: 'Equipos de expertos',
       description:
         'Grupos curados de varios expertos que colaboran en tareas complejas \u2014 investigaci\u00f3n, lanzamiento, construcci\u00f3n, revisi\u00f3n. Act\u00edvalos para verlos en Mensajes y Jerarqu\u00eda.',
+    },
+    voiceCalls: {
+      label: 'Llamadas de voz',
+      description:
+        'Habla con un experto manos libres usando reconocimiento y s\u00edntesis de voz. A\u00fan experimental \u2014 la calidad y latencia dependen de tus modelos locales.',
     },
   },
 

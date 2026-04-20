@@ -25,6 +25,7 @@ import type { AgentRunRequest } from './agents';
 import { ExecutionEngine } from './engine/engine';
 import type { EngineRunRequest } from './engine/dag/types';
 import { RoutineScheduler } from './scheduler/scheduler';
+import { TaskReconciler } from './scheduler/task-reconciler';
 import { detectClaudeCode, getCachedClaudeCodeInfo } from './claude-code/detector';
 import {
   installAll,
@@ -150,6 +151,7 @@ let executionEngine: ExecutionEngine | null = null;
 
 // Routine scheduler (initialized after execution engine)
 let routineScheduler: RoutineScheduler | null = null;
+let taskReconciler: TaskReconciler | null = null;
 
 // Shared event bus for cross-subsystem engine events (Telegram bridge subscribes).
 const engineEventBus = new EventEmitter();
@@ -291,6 +293,7 @@ async function startPythonBackend(): Promise<void> {
   agentRuntime = new AgentRuntime(port, dataDir);
   executionEngine = new ExecutionEngine(port, agentRuntime, engineEventBus);
   routineScheduler = new RoutineScheduler(executionEngine, port);
+  taskReconciler = new TaskReconciler(agentRuntime, port);
   voiceSession = new VoiceSessionManager(port, dataDir);
 
   // Telegram bridge — starts only if the user has configured + enabled it.
@@ -338,6 +341,11 @@ async function startPythonBackend(): Promise<void> {
     // Start periodic sync anyway so it can self-heal
     routineScheduler!.startPeriodicSync();
   });
+
+  // Start the live task reconciler: catches tasks stranded at in_progress
+  // when the renderer-mediated run-event POST is dropped (destroyed window,
+  // IPC hiccup, renderer crash).
+  taskReconciler.start();
 
   console.log(`[Cerebro] Python backend is ready on port ${port}`);
 }
@@ -1403,6 +1411,9 @@ app.on('before-quit', async () => {
   isIntentionalShutdown = true;
   if (routineScheduler) {
     routineScheduler.stopAll();
+  }
+  if (taskReconciler) {
+    taskReconciler.stop();
   }
   if (telegramBridge) {
     try { await telegramBridge.stop(); } catch { /* ignore */ }

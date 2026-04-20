@@ -1,6 +1,38 @@
 import { describe, it, expect } from 'vitest';
-import { generateId, titleFromContent, fromApiConversation, fromApiMessage, toApiProposal } from '../context/chat-helpers';
+import {
+  generateId,
+  titleFromContent,
+  fromApiConversation,
+  fromApiMessage,
+  toApiProposal,
+  resolveNewChatTarget,
+  isSameLocalDay,
+  isUntitledConversationTitle,
+} from '../context/chat-helpers';
 import type { ApiConversation, ApiMessage } from '../context/chat-helpers';
+import type { Conversation, Message } from '../types/chat';
+
+function makeConv(overrides: Partial<Conversation> = {}): Conversation {
+  return {
+    id: `c-${Math.random().toString(36).slice(2, 8)}`,
+    title: 'Untitled',
+    expertId: null,
+    createdAt: new Date('2026-04-20T10:00:00'),
+    updatedAt: new Date('2026-04-20T10:00:00'),
+    messages: [],
+    ...overrides,
+  };
+}
+
+function msg(): Message {
+  return {
+    id: generateId(),
+    conversationId: 'x',
+    role: 'user',
+    content: 'hi',
+    createdAt: new Date(),
+  };
+}
 
 describe('generateId', () => {
   it('returns a 32-char hex string with no dashes', () => {
@@ -196,5 +228,139 @@ describe('toApiProposal', () => {
       status: 'proposed',
     });
     expect(result.preview_run_id).toBeUndefined();
+  });
+});
+
+describe('isUntitledConversationTitle', () => {
+  it('treats null, undefined, and empty strings as untitled', () => {
+    expect(isUntitledConversationTitle(null)).toBe(true);
+    expect(isUntitledConversationTitle(undefined)).toBe(true);
+    expect(isUntitledConversationTitle('')).toBe(true);
+    expect(isUntitledConversationTitle('   ')).toBe(true);
+  });
+
+  it('treats historical English defaults as untitled (case-insensitive)', () => {
+    expect(isUntitledConversationTitle('New conversation')).toBe(true);
+    expect(isUntitledConversationTitle('new conversation')).toBe(true);
+    expect(isUntitledConversationTitle('New Chat')).toBe(true);
+    expect(isUntitledConversationTitle('Untitled')).toBe(true);
+  });
+
+  it('keeps user-chosen titles even when similar-looking', () => {
+    expect(isUntitledConversationTitle('New conversation ideas')).toBe(false);
+    expect(isUntitledConversationTitle('Release plan')).toBe(false);
+    expect(isUntitledConversationTitle('Chat with mom')).toBe(false);
+  });
+});
+
+describe('isSameLocalDay', () => {
+  it('treats two times on the same local date as equal', () => {
+    expect(
+      isSameLocalDay(
+        new Date('2026-04-20T00:05:00'),
+        new Date('2026-04-20T23:55:00'),
+      ),
+    ).toBe(true);
+  });
+
+  it('treats different local dates as distinct', () => {
+    expect(
+      isSameLocalDay(
+        new Date('2026-04-20T23:59:00'),
+        new Date('2026-04-21T00:01:00'),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('resolveNewChatTarget', () => {
+  const now = new Date('2026-04-20T15:00:00');
+  const today = (h = 10) => new Date(`2026-04-20T${String(h).padStart(2, '0')}:00:00`);
+  const lastWeek = new Date('2026-04-13T10:00:00');
+  const yesterday = new Date('2026-04-19T23:30:00');
+
+  it('creates fresh when there are no conversations', () => {
+    const plan = resolveNewChatTarget([], now);
+    expect(plan).toEqual({ reuseId: null, purgeIds: [], createNew: true });
+  });
+
+  it('creates fresh when all existing conversations have messages', () => {
+    const plan = resolveNewChatTarget(
+      [makeConv({ id: 'a', messages: [msg()] }), makeConv({ id: 'b', messages: [msg()] })],
+      now,
+    );
+    expect(plan).toEqual({ reuseId: null, purgeIds: [], createNew: true });
+  });
+
+  it('reuses the empty chat from today without creating a new one', () => {
+    const plan = resolveNewChatTarget(
+      [makeConv({ id: 'today-empty', createdAt: today(10) })],
+      now,
+    );
+    expect(plan.reuseId).toBe('today-empty');
+    expect(plan.createNew).toBe(false);
+    expect(plan.purgeIds).toEqual([]);
+  });
+
+  it('purges a week-old empty chat and creates a fresh one (the reported bug)', () => {
+    const plan = resolveNewChatTarget(
+      [makeConv({ id: 'stale', createdAt: lastWeek })],
+      now,
+    );
+    expect(plan.reuseId).toBe(null);
+    expect(plan.createNew).toBe(true);
+    expect(plan.purgeIds).toEqual(['stale']);
+  });
+
+  it('purges yesterday empty + keeps today non-empties + creates fresh', () => {
+    const plan = resolveNewChatTarget(
+      [
+        makeConv({ id: 'yday-empty', createdAt: yesterday }),
+        makeConv({ id: 'today-real', createdAt: today(9), messages: [msg()] }),
+      ],
+      now,
+    );
+    expect(plan.reuseId).toBe(null);
+    expect(plan.createNew).toBe(true);
+    expect(plan.purgeIds).toEqual(['yday-empty']);
+  });
+
+  it('reuses newest today-empty and purges older duplicate today-empties', () => {
+    // Conversations list is prepend-ordered (newest first).
+    const plan = resolveNewChatTarget(
+      [
+        makeConv({ id: 'newer', createdAt: today(14) }),
+        makeConv({ id: 'older-today', createdAt: today(9) }),
+      ],
+      now,
+    );
+    expect(plan.reuseId).toBe('newer');
+    expect(plan.createNew).toBe(false);
+    expect(plan.purgeIds).toEqual(['older-today']);
+  });
+
+  it('reuses today-empty and purges unrelated stale empties', () => {
+    const plan = resolveNewChatTarget(
+      [
+        makeConv({ id: 'today', createdAt: today(10) }),
+        makeConv({ id: 'last-week', createdAt: lastWeek }),
+      ],
+      now,
+    );
+    expect(plan.reuseId).toBe('today');
+    expect(plan.createNew).toBe(false);
+    expect(plan.purgeIds).toEqual(['last-week']);
+  });
+
+  it('never purges a conversation that has messages, no matter how old', () => {
+    const plan = resolveNewChatTarget(
+      [
+        makeConv({ id: 'ancient-real', createdAt: lastWeek, messages: [msg()] }),
+        makeConv({ id: 'stale-empty', createdAt: lastWeek }),
+      ],
+      now,
+    );
+    expect(plan.purgeIds).toEqual(['stale-empty']);
+    expect(plan.purgeIds).not.toContain('ancient-real');
   });
 });

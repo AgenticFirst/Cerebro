@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   MessageSquare,
   Target,
@@ -12,6 +12,7 @@ import {
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Trash2,
   FolderOpen,
   type LucideIcon,
@@ -21,6 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { useChat } from '../../context/ChatContext';
 import { useApprovals } from '../../context/ApprovalContext';
 import { useTasks } from '../../context/TaskContext';
+import { isUntitledConversationTitle } from '../../context/chat-helpers';
 import type { Conversation, Screen } from '../../types/chat';
 
 /* ── Nav structure: grouped by function ───────────────────────── */
@@ -206,16 +208,16 @@ export default function Sidebar() {
     activeConversationId,
     activeScreen,
     isLoading,
-    createConversation,
+    startNewChat,
     setActiveConversation,
     setActiveScreen,
     deleteConversation,
+    renameConversation,
   } = useChat();
   const { pendingCount } = useApprovals();
   const { stats } = useTasks();
 
   const [collapsed, setCollapsed] = useState(false);
-  const [hoveredConvId, setHoveredConvId] = useState<string | null>(null);
   const grouped = useMemo(() => groupByTime(generalConversations), [generalConversations]);
 
   /** Resolve a NavItemDef[] to NavItem[] with translated labels */
@@ -248,7 +250,7 @@ export default function Sidebar() {
 
   const handleNewChat = () => {
     setActiveScreen('chat');
-    createConversation();
+    startNewChat();
   };
 
   const handleNavClick = (screen: Screen) => {
@@ -368,46 +370,16 @@ export default function Sidebar() {
                   {t(`timeGroups.${group.label}`)}
                 </div>
                 <div className="space-y-px">
-                  {group.conversations.map((conv) => {
-                    const isActive = conv.id === activeConversationId;
-                    const isHovered = conv.id === hoveredConvId;
-                    return (
-                      <div
-                        key={conv.id}
-                        className="relative group/conv"
-                        onMouseEnter={() => setHoveredConvId(conv.id)}
-                        onMouseLeave={() => setHoveredConvId(null)}
-                      >
-                        <button
-                          onClick={() => setActiveConversation(conv.id)}
-                          className={clsx(
-                            'w-full text-left px-2.5 py-[6px] rounded-md text-[13px] truncate',
-                            'transition-all duration-150 cursor-pointer',
-                            isHovered ? 'pr-8' : '',
-                            isActive
-                              ? 'bg-white/[0.06] text-text-primary font-medium shadow-[inset_2px_0_0_0_var(--color-accent)]'
-                              : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.03]',
-                          )}
-                        >
-                          {conv.title}
-                        </button>
-                        {isHovered && (
-                          <button
-                            onClick={(e) => handleDelete(e, conv.id)}
-                            className={clsx(
-                              'absolute right-1 top-1/2 -translate-y-1/2',
-                              'p-1 rounded-md',
-                              'text-text-tertiary hover:text-red-400 hover:bg-red-400/10',
-                              'transition-colors duration-100 cursor-pointer',
-                            )}
-                            title={t('nav.deleteConversation')}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {group.conversations.map((conv) => (
+                    <ConversationRow
+                      key={conv.id}
+                      conv={conv}
+                      isActive={conv.id === activeConversationId}
+                      onSelect={() => setActiveConversation(conv.id)}
+                      onRename={renameConversation}
+                      onDelete={(e) => handleDelete(e, conv.id)}
+                    />
+                  ))}
                 </div>
               </div>
             ))}
@@ -426,6 +398,140 @@ export default function Sidebar() {
           onClick={() => handleNavClick('settings')}
         />
       </div>
+    </div>
+  );
+}
+
+interface ConversationRowProps {
+  conv: Conversation;
+  isActive: boolean;
+  onSelect: () => void;
+  onRename: (id: string, nextTitle: string) => void;
+  onDelete: (e: React.MouseEvent) => void;
+}
+
+function ConversationRow({
+  conv,
+  isActive,
+  onSelect,
+  onRename,
+  onDelete,
+}: ConversationRowProps) {
+  const { t } = useTranslation();
+  const [isHovered, setIsHovered] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const displayTitle = isUntitledConversationTitle(conv.title)
+    ? t('nav.untitledConversation')
+    : conv.title;
+
+  useEffect(() => {
+    if (draft !== null) {
+      const input = inputRef.current;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }
+  }, [draft]);
+
+  const beginRename = () => {
+    setDraft(isUntitledConversationTitle(conv.title) ? '' : conv.title);
+  };
+
+  const commitRename = () => {
+    if (draft === null) return;
+    const next = draft.trim();
+    if (next) onRename(conv.id, next);
+    setDraft(null);
+  };
+
+  if (draft !== null) {
+    return (
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitRename();
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              setDraft(null);
+            }
+          }}
+          maxLength={200}
+          className={clsx(
+            'w-full px-2.5 py-[6px] rounded-md text-[13px]',
+            'bg-white/[0.06] text-text-primary font-medium',
+            'border border-accent/40 outline-none',
+            'shadow-[inset_2px_0_0_0_var(--color-accent)]',
+          )}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="relative group/conv"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <button
+        onClick={onSelect}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          beginRename();
+        }}
+        className={clsx(
+          'w-full text-left px-2.5 py-[6px] rounded-md text-[13px] truncate',
+          'transition-all duration-150 cursor-pointer',
+          isHovered ? 'pr-[52px]' : '',
+          isActive
+            ? 'bg-white/[0.06] text-text-primary font-medium shadow-[inset_2px_0_0_0_var(--color-accent)]'
+            : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.03]',
+        )}
+        title={conv.title}
+      >
+        {displayTitle}
+      </button>
+      {isHovered && (
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              beginRename();
+            }}
+            className={clsx(
+              'p-1 rounded-md',
+              'text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]',
+              'transition-colors duration-100 cursor-pointer',
+            )}
+            title={t('nav.renameConversation')}
+            aria-label={t('nav.renameConversation')}
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            onClick={onDelete}
+            className={clsx(
+              'p-1 rounded-md',
+              'text-text-tertiary hover:text-red-400 hover:bg-red-400/10',
+              'transition-colors duration-100 cursor-pointer',
+            )}
+            title={t('nav.deleteConversation')}
+            aria-label={t('nav.deleteConversation')}
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,8 @@
-import { useRef, useEffect } from 'react';
+import { lazy, Suspense, useRef, useEffect } from 'react';
 import type { Message } from '../../types/chat';
 import ChatMessage from './ChatMessage';
+
+const ChatEmptyState = lazy(() => import('./ChatEmptyState'));
 
 interface MessageListProps {
   messages: Message[];
@@ -14,6 +16,18 @@ export default function MessageList({ messages, isThinking }: MessageListProps) 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, lastMsg?.content, isThinking]);
+
+  if (messages.length === 0) {
+    return (
+      <div className="flex-1 overflow-y-auto scrollbar-thin relative">
+        <div className="mx-auto flex min-h-full max-w-3xl items-center justify-center">
+          <Suspense fallback={null}>
+            <ChatEmptyState />
+          </Suspense>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-6">

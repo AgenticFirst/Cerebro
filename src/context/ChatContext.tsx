@@ -21,6 +21,7 @@ import {
   toApiProposal,
   toApiExpertProposal,
   toApiTeamProposal,
+  resolveNewChatTarget,
   type ApiConversationList,
 } from './chat-helpers';
 
@@ -47,6 +48,8 @@ interface CreateConversationOptions {
 
 interface ChatActions {
   createConversation: (firstMessage?: string, opts?: CreateConversationOptions) => string;
+  startNewChat: () => void;
+  renameConversation: (id: string, title: string) => void;
   setActiveConversation: (id: string | null) => void;
   addMessage: (conversationId: string, role: Message['role'], content: string, metadata?: Record<string, unknown>) => string;
   updateMessage: (conversationId: string, messageId: string, partial: Partial<Message>) => void;
@@ -97,6 +100,14 @@ function apiCreateMessage(
     method: 'POST',
     path: `/conversations/${convId}/messages`,
     body: msg,
+  });
+}
+
+function apiPatchConversation(id: string, fields: { title?: string }): Promise<unknown> {
+  return window.cerebro.invoke({
+    method: 'PATCH',
+    path: `/conversations/${id}`,
+    body: fields,
   });
 }
 
@@ -273,6 +284,50 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     writeChainRef.current.delete(id);
     apiDeleteConversation(id).catch(console.error);
   }, []);
+
+  const renameConversation = useCallback(
+    (id: string, nextTitle: string) => {
+      const trimmed = nextTitle.trim().slice(0, 200);
+      if (!trimmed) return;
+      setConversations((prev) => {
+        const target = prev.find((c) => c.id === id);
+        if (!target || target.title === trimmed) return prev;
+        return prev.map((c) =>
+          c.id === id ? { ...c, title: trimmed, updatedAt: new Date() } : c,
+        );
+      });
+      chainWrite(id, () => apiPatchConversation(id, { title: trimmed })).catch(
+        console.error,
+      );
+    },
+    [chainWrite],
+  );
+
+  const startNewChat = useCallback(() => {
+    const general = conversationsRef.current.filter((c) => !c.expertId);
+    const plan = resolveNewChatTarget(general, new Date());
+
+    // Activate first so that if the currently-active conversation is about to
+    // be purged, the purge step's functional updater sees the new active id
+    // and doesn't null it out.
+    if (plan.reuseId) {
+      setActiveConversationIdState(plan.reuseId);
+    } else {
+      createConversation();
+    }
+
+    if (plan.purgeIds.length > 0) {
+      const purgeSet = new Set(plan.purgeIds);
+      setConversations((prev) => prev.filter((c) => !purgeSet.has(c.id)));
+      setActiveConversationIdState((current) =>
+        current && purgeSet.has(current) ? null : current,
+      );
+      for (const staleId of plan.purgeIds) {
+        writeChainRef.current.delete(staleId);
+        apiDeleteConversation(staleId).catch(console.error);
+      }
+    }
+  }, [createConversation]);
 
   const sendMessage = useCallback(
     (content: string) => {
@@ -706,6 +761,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         chatError,
         activeConversation,
         createConversation,
+        startNewChat,
+        renameConversation,
         setActiveConversation,
         addMessage,
         updateMessage,

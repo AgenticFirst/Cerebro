@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Copy, Check, Trash2, UserPlus, XCircle, Users, Phone, BadgeCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { useVoice } from '../../../context/VoiceContext';
+import { useFeatureFlags } from '../../../context/FeatureFlagsContext';
 import type { Expert } from '../../../context/ExpertContext';
 import ExpertMemoryTab from '../../experts/ExpertMemoryTab';
 import ExpertSkillsSection from './ExpertSkillsSection';
@@ -83,6 +84,7 @@ export default function ExpertDetailPanel({
 }: ExpertDetailPanelProps) {
   const { t } = useTranslation();
   const { startCall } = useVoice();
+  const { flags } = useFeatureFlags();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [domain, setDomain] = useState('');
@@ -158,7 +160,7 @@ export default function ExpertDetailPanel({
           <h3 className="text-sm font-semibold text-text-primary tracking-wide">
             {t('experts.configuration')}
           </h3>
-          {!isCerebro && expert?.type === 'expert' && expert.isEnabled && (
+          {flags['voice-calls'] && !isCerebro && expert?.type === 'expert' && expert.isEnabled && (
             <button
               onClick={() => expert && startCall(expert.id)}
               className="p-1.5 rounded-lg text-accent hover:bg-accent/10 transition-colors"

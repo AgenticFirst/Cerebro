@@ -86,6 +86,51 @@ def test_delete_nonexistent_returns_404(client):
     assert r.status_code == 404
 
 
+# ── Rename conversation ───────────────────────────────────────────
+
+
+def test_patch_conversation_renames(client):
+    conv_id = _hex_id()
+    client.post("/conversations", json={"id": conv_id, "title": "Old title"})
+
+    r = client.patch(f"/conversations/{conv_id}", json={"title": "Launch plan Q2"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "Launch plan Q2"
+
+    convs = client.get("/conversations").json()["conversations"]
+    assert convs[0]["title"] == "Launch plan Q2"
+
+
+def test_patch_conversation_trims_and_caps_length(client):
+    conv_id = _hex_id()
+    client.post("/conversations", json={"id": conv_id, "title": "x"})
+
+    padded = "  Real title with surrounding space  "
+    r = client.patch(f"/conversations/{conv_id}", json={"title": padded})
+    assert r.status_code == 200
+    assert r.json()["title"] == "Real title with surrounding space"
+
+    huge = "a" * 500
+    r = client.patch(f"/conversations/{conv_id}", json={"title": huge})
+    assert r.status_code == 200
+    assert len(r.json()["title"]) == 200
+
+
+def test_patch_conversation_empty_title_rejected(client):
+    conv_id = _hex_id()
+    client.post("/conversations", json={"id": conv_id, "title": "Keep me"})
+
+    r = client.patch(f"/conversations/{conv_id}", json={"title": "   "})
+    assert r.status_code == 400
+
+    assert client.get("/conversations").json()["conversations"][0]["title"] == "Keep me"
+
+
+def test_patch_nonexistent_conversation_returns_404(client):
+    r = client.patch(f"/conversations/{_hex_id()}", json={"title": "Anything"})
+    assert r.status_code == 404
+
+
 # ── Metadata tests ────────────────────────────────────────────────
 
 

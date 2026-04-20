@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useChat } from './ChatContext';
+import { useFeatureFlags } from './FeatureFlagsContext';
 import type {
   VoiceSessionState,
   VoiceSessionEvent,
@@ -48,6 +49,7 @@ const VoiceContext = createContext<VoiceContextValue | null>(null);
 
 export function VoiceProvider({ children }: { children: ReactNode }) {
   const { setActiveScreen } = useChat();
+  const { flags } = useFeatureFlags();
 
   const [sessionState, setSessionState] = useState<VoiceSessionState>('idle');
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
@@ -75,6 +77,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   const startCall = useCallback(
     async (expertId: string) => {
+      if (!flags['voice-calls']) return;
       setActiveScreen('call');
       setCurrentTranscription('');
       setCurrentResponse('');
@@ -167,7 +170,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         setStatusMessage('');
       }
     },
-    [setActiveScreen],
+    [flags, setActiveScreen],
   );
 
   const endCall = useCallback(async () => {
