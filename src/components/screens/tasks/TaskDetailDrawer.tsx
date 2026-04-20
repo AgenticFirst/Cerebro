@@ -180,8 +180,20 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     if (!task) return;
     setShowHardReset(false);
     await cancelIfRunning();
-    handleStart();
-  }, [task, cancelIfRunning, handleStart]);
+    // Re-attach the TUI to the prior session without re-sending the task
+    // prompt. The session already has full context from the previous run;
+    // the user types whatever they want next.
+    setIsStarting(true);
+    setIsFullWidth(true);
+    try {
+      await startTask(task.id, { interactive: true });
+      setActiveTab('console');
+    } catch (err) {
+      console.error('[TaskDetailDrawer] Failed to resume task:', err);
+    } finally {
+      setIsStarting(false);
+    }
+  }, [task, cancelIfRunning, startTask]);
 
   const handleColumnChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {

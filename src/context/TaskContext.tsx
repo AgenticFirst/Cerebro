@@ -126,8 +126,14 @@ interface TaskContextValue {
   moveTask: (id: string, column: TaskColumn, position?: number) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   cancelTask: (id: string) => Promise<void>;
-  /** Start the Expert working on a task — spawns Claude Code, moves card to In Progress. */
-  startTask: (id: string) => Promise<void>;
+  /**
+   * Start the Expert working on a task — spawns Claude Code, moves card to In Progress.
+   *
+   * With `opts.interactive`, re-attaches the TUI to the prior session without
+   * sending any prompt. Used by the Resume button so the user can keep
+   * chatting with the agent in the existing session.
+   */
+  startTask: (id: string, opts?: { interactive?: boolean }) => Promise<void>;
   /**
    * Post an instruction comment. If the task is currently running, the
    * instruction is queued (drained when the run ends). Otherwise it triggers
@@ -429,7 +435,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     return lines.join('\n');
   }, []);
 
-  const startTask = useCallback(async (taskId: string) => {
+  const startTask = useCallback(async (taskId: string, opts?: { interactive?: boolean }) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new Error(`Task ${taskId} not found`);
 
@@ -444,10 +450,15 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       // the agent's file state and conversation so it can pick up where it
       // stopped (especially when a prior run exited without a deliverable).
       const resumeSessionId = task.run_id || undefined;
+      // Interactive resume only makes sense when there's a prior session to
+      // re-attach to.
+      const interactiveResume = !!opts?.interactive && !!resumeSessionId;
 
       // Clear stale terminal buffer from the previous run so the console
       // starts fresh when ExpertConsole re-mounts with the new runId.
-      if (resumeSessionId) {
+      // On interactive resume we keep the buffer so the user sees the prior
+      // console history immediately while the new TUI frame paints on top.
+      if (resumeSessionId && !interactiveResume) {
         window.cerebro.taskTerminal.removeBuffer(resumeSessionId).catch(() => {});
       }
 
@@ -460,6 +471,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         workspacePath,
         maxTurns: 30,
         resumeSessionId,
+        interactiveResume,
       });
 
       // Pin task.run_id to the original Claude Code session on retries so

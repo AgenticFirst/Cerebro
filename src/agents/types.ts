@@ -68,6 +68,13 @@ export interface AgentRunRequest {
   rows?: number;
   /** Resume a prior Claude Code session by its ID (equal to the original run_id). */
   resumeSessionId?: string;
+  /**
+   * Interactive resume: re-attach the TUI to the prior session without
+   * re-sending any prompt. Used by the Task drawer's "Resume" button so the
+   * user can type the next message themselves. Only meaningful when
+   * `resumeSessionId` is also set.
+   */
+  interactiveResume?: boolean;
   /** Origin of this run — used to route approvals/errors back to the right surface. */
   source?: AgentRunSource;
 }

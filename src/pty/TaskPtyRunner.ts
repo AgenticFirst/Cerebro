@@ -60,6 +60,12 @@ export interface TaskPtyRunOptions {
   sessionId?: string;
   /** Extra directories to expose via `--add-dir` (e.g. `.claude/` when cwd is external). */
   addDirs?: string[];
+  /**
+   * Interactive resume: spawn `claude --resume <session>` and hand the TUI
+   * straight to the user. No positional prompt, no auto-injection via stdin
+   * once the TUI renders. Only meaningful together with `resume: true`.
+   */
+  interactive?: boolean;
 }
 
 /**
@@ -129,6 +135,13 @@ export class TaskPtyRunner extends EventEmitter {
       `[TaskPtyRunner] spawn ${options.resume ? 'RESUME' : 'fresh'} session=${toUuidFormat(options.sessionId || options.runId)}`,
     );
 
+    // Default 120 cols matches the fixed cols the ExpertConsole uses for its
+    // xterm viewport. Keeping them identical is critical: Claude Code redraws
+    // frames via cursor-up (`\x1b[nA`) counting *logical* rows, so if xterm
+    // has fewer cols than the content the PTY wrote, lines wrap, the visible
+    // rows exceed what cursor-up targets, and old frames pile up in scrollback
+    // (the "stacked frames" artifact). Any change here must be mirrored in
+    // PTY_COLS inside ExpertConsole.tsx.
     this.ptyProcess = pty.spawn(wrapped.binary, wrapped.args, {
       name: 'xterm-256color',
       cols: options.cols ?? 120,
@@ -144,12 +157,15 @@ export class TaskPtyRunner extends EventEmitter {
     let strippedAccum = '';
 
     // On --resume, Claude Code loads the TUI with the prior session but does
-    // NOT auto-submit the positional prompt. Instead, we wait for the TUI to
-    // render its input box, then paste the prompt + Enter via stdin. The
-    // "> " input indicator is reliable across Claude Code versions; once it
-    // appears we inject the prompt after a short settle delay.
-    let resumePromptInjected = !options.resume;
-    let resumeInjectScheduled = !options.resume;
+    // NOT auto-submit the positional prompt. For driven resumes we wait for
+    // the TUI to render its input box, then paste the prompt + Enter via
+    // stdin. For INTERACTIVE resumes (user clicked "Resume" on a paused
+    // console), we skip all injection — the user is expected to type their
+    // own next message. Seeding both flags as "already injected/scheduled"
+    // disables the detection branch below.
+    const wantsInjection = !!options.resume && !options.interactive;
+    let resumePromptInjected = !wantsInjection;
+    let resumeInjectScheduled = !wantsInjection;
     let resumeStripped = '';
 
     const injectResumePrompt = () => {
@@ -169,8 +185,9 @@ export class TaskPtyRunner extends EventEmitter {
 
     // Safety net: if the TUI never shows the `> ` prompt indicator we detect
     // (e.g., Claude Code re-renders it differently), force-inject after 8s
-    // so the run doesn't sit forever at an unseen ready state.
-    const resumeFallbackTimer = options.resume
+    // so the run doesn't sit forever at an unseen ready state. Interactive
+    // resumes skip the timer since there's no prompt to inject.
+    const resumeFallbackTimer = wantsInjection
       ? setTimeout(() => {
           if (!resumePromptInjected) {
             console.log('[TaskPtyRunner] resume fallback timer fired — injecting anyway');

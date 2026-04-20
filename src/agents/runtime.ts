@@ -322,6 +322,12 @@ ${RUN_INFO_EXAMPLE}
 - NEVER spawn a long-running dev server or background process — use bounded commands only.
 - If the plan is genuinely impossible or needs info only the user has, skip remaining items and explain inside a \`<deliverable kind="markdown">\` block.
 </task_execute>`;
+    } else if (isTaskRun && request.taskPhase === 'direct' && request.resumeSessionId && request.interactiveResume) {
+      // Interactive resume: the user clicked Resume on a paused/stopped task
+      // and wants to drive the TUI themselves. No prompt is sent — the
+      // positional arg is already suppressed for resume, and TaskPtyRunner
+      // skips stdin injection when `interactive: true`.
+      fullPrompt = '';
     } else if (isTaskRun && request.taskPhase === 'direct' && request.resumeSessionId) {
       fullPrompt = `<task_resume>
 You previously started this task but did not finish with a \`<deliverable>\` block. Your file state and conversation context are preserved.
@@ -520,6 +526,12 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       const ptyRunner = new TaskPtyRunner();
       activeRun.ptyRunner = ptyRunner;
 
+      // Interactive resume: the user is driving the TUI manually. They may
+      // pause for minutes between messages and may /exit deliberately, so we
+      // suppress the idle killer and don't treat the "Resume this session
+      // with:" goodbye line as a failure.
+      const isInteractive = !!request.interactiveResume;
+
       // Buffer key — terminal output is persisted/replayed under the task's
       // *session* id (what `task.run_id` points at), not the Electron-minted
       // internal `runId`. For fresh runs they're identical; for resume/rerun
@@ -593,6 +605,9 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       const IDLE_TIMEOUT_MS = 2 * 60 * 1000;
       let idleTimer: ReturnType<typeof setTimeout> | null = null;
       const resetIdleTimer = () => {
+        // No idle killer for interactive resumes — the user may sit on the
+        // prompt for a long time between messages.
+        if (isInteractive) return;
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
           console.log(`[AgentRuntime] idle timeout fired for run ${runId} — sending /exit`);
@@ -641,8 +656,9 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
 
         // Claude Code's session-ended goodbye line. If we see it in a quiesced
         // state without a prior deliverable match, the agent ended without
-        // completing properly — finalize as error immediately.
-        if (scanWindow.includes('Resume this session with:')) {
+        // completing properly — finalize as error immediately. Interactive
+        // resumes skip this trigger because the user may /exit deliberately.
+        if (!isInteractive && scanWindow.includes('Resume this session with:')) {
           initiateGracefulExit(
             'error',
             'Agent ended the session without emitting a deliverable. Re-run to resume.',
@@ -680,8 +696,9 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         resetIdleTimer();
 
         // Inline check for just the goodbye line. Completion detection runs
-        // on the QUIESCE_MS timer above.
-        if (activeRun.accumulatedText.includes('Resume this session with:')) {
+        // on the QUIESCE_MS timer above. Interactive resumes skip this —
+        // the user /exit'ing is a normal end, not a failure.
+        if (!isInteractive && activeRun.accumulatedText.includes('Resume this session with:')) {
           initiateGracefulExit(
             'error',
             'Agent ended the session without emitting a deliverable. Re-run to resume.',
@@ -757,6 +774,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         resume: !!request.resumeSessionId,
         sessionId: request.resumeSessionId || runId,
         addDirs: isExternalWorkspace ? [path.join(this.dataDir, '.claude')] : undefined,
+        interactive: !!request.interactiveResume,
       });
 
       // Start idle timer immediately for fresh runs (resume runs start it
