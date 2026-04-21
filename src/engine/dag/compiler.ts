@@ -14,7 +14,7 @@ interface CompileOptions {
 
 /**
  * Compile a list of plain-english steps into a linear DAG where each step
- * depends on the previous one. Steps are mapped to `model_call` (no runner)
+ * depends on the previous one. Steps are mapped to `ask_ai` (no runner)
  * or `expert_step` (with runner).
  */
 export function compileLinearDAG(options: CompileOptions): DAGDefinition {
@@ -30,7 +30,7 @@ export function compileLinearDAG(options: CompileOptions): DAGDefinition {
       ? [{ sourceStepId: prevId, sourceField: 'response', targetField: 'previous_output' }]
       : [];
 
-    const actionType = defaultRunnerId ? 'expert_step' : 'model_call';
+    const actionType = defaultRunnerId ? 'expert_step' : 'ask_ai';
     const params: Record<string, unknown> =
       actionType === 'expert_step'
         ? {
@@ -41,8 +41,11 @@ export function compileLinearDAG(options: CompileOptions): DAGDefinition {
               : undefined,
           }
         : {
-            prompt: stepText,
-            systemPrompt: 'You are executing a step in a routine. Complete the task described.',
+            prompt: prevId
+              ? `${stepText}\n\nPrevious step output:\n{{previous_output}}`
+              : stepText,
+            system_prompt: 'You are executing a step in a routine. Complete the task described.',
+            agent: 'cerebro',
           };
 
     return {

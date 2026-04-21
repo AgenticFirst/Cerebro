@@ -14,7 +14,7 @@ import type { EngineRunRequest } from './dag/types';
 import type { EngineActiveRunInfo } from '../types/ipc';
 import type { StepPersistenceUpdate } from './dag/executor';
 import { ActionRegistry } from './actions/registry';
-import { modelCallAction } from './actions/model-call';
+import { askAiAction, modelCallAction } from './actions/model-call';
 import { transformerAction } from './actions/transformer';
 import { createExpertStepAction } from './actions/expert-step';
 import { approvalGateAction } from './actions/approval-gate';
@@ -407,7 +407,8 @@ export class ExecutionEngine {
     const registry = new ActionRegistry();
 
     // Core / legacy
-    registry.register(modelCallAction);
+    registry.register(askAiAction);
+    registry.register(modelCallAction); // legacy alias for old DAGs
     registry.register(transformerAction);
     registry.register(createExpertStepAction({
       agentRuntime: this.agentRuntime,

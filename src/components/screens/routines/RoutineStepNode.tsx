@@ -167,9 +167,14 @@ function RoutineStepNode({ data, selected }: NodeProps) {
         style={{
           borderLeftWidth: 4,
           borderLeftColor: categoryColor,
+          // Use longhand border-{side}-color instead of the `borderColor`
+          // shorthand so React doesn't warn about mixing shorthand with
+          // `borderLeftColor` when selection toggles.
           ...(selected
             ? {
-                borderColor: categoryColor,
+                borderTopColor: categoryColor,
+                borderRightColor: categoryColor,
+                borderBottomColor: categoryColor,
                 boxShadow: `0 0 12px ${categoryColor}40`,
               }
             : {}),

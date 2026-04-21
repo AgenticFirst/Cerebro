@@ -362,7 +362,7 @@ describe('RoutineScheduler', () => {
   });
 
   it('executeRoutine uses dag_json when available', async () => {
-    const dag = { steps: [{ id: 's1', name: 'Model', actionType: 'model_call', params: { prompt: 'test' } }] };
+    const dag = { steps: [{ id: 's1', name: 'Model', actionType: 'ask_ai', params: { prompt: 'test' } }] };
     const routines = [
       {
         id: 'r1',

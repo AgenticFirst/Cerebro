@@ -16,7 +16,7 @@ export type {
 export { ActionRegistry } from './registry';
 
 // Core / legacy actions
-export { modelCallAction } from './model-call';
+export { askAiAction, modelCallAction } from './model-call';
 export { transformerAction } from './transformer';
 export { createExpertStepAction } from './expert-step';
 export type { ExpertStepContext } from './expert-step';

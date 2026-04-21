@@ -490,7 +490,7 @@ export function getDefaultStepData(
     // AI
     case 'ask_ai':
     case 'model_call': // legacy
-      return { ...base, params: { prompt: '', system_prompt: '', temperature: 0.7, max_tokens: 2048 } };
+      return { ...base, params: { prompt: '', system_prompt: '', agent: 'cerebro' } };
     case 'run_expert':
     case 'expert_step': // legacy
       return { ...base, params: { expert_id: '', task: '', context: '', max_turns: 10 } };

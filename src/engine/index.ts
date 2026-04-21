@@ -14,6 +14,7 @@ export { extractByPath, parsePath } from './utils';
 // Actions
 export {
   ActionRegistry,
+  askAiAction,
   modelCallAction,
   transformerAction,
   createExpertStepAction,

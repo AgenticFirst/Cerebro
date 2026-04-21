@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { Node } from '@xyflow/react';
 import type { RoutineStepData } from '../../../utils/dag-flow-mapping';
 import { ACTION_META, resolveActionType } from '../../../utils/step-defaults';
+import { useExperts } from '../../../context/ExpertContext';
 import Toggle from '../../ui/Toggle';
 import Tooltip from '../../ui/Tooltip';
 
@@ -43,51 +44,176 @@ const textareaCls =
 const selectCls = inputCls;
 
 type P = { params: Record<string, unknown>; onChange: (p: Record<string, unknown>) => void };
+type PWithStep = P & { step?: RoutineStepData };
 
 // ── AI Param Forms ────────────────────────────────────────────
 
-function AskAiParams({ params, onChange }: P) {
+/**
+ * Chips listing the variables wired into this step from upstream edges.
+ * Clicking a chip drops its {{placeholder}} into the last-focused prompt/system
+ * textarea so users never have to guess the exact syntax.
+ */
+function VariableChips({
+  step,
+  onInsert,
+}: {
+  step?: RoutineStepData;
+  onInsert: (token: string) => void;
+}) {
+  const mappings = step?.inputMappings ?? [];
+  if (mappings.length === 0) {
+    return (
+      <p className="text-[11px] text-text-tertiary leading-relaxed">
+        No variables yet. Connect an edge from another step into this one, and
+        its output will show up here as a <code className="px-1 rounded bg-bg-base text-text-secondary">{'{{variable}}'}</code> you can paste into the prompt.
+      </p>
+    );
+  }
   return (
-    <div className="space-y-3">
+    <div className="space-y-1.5">
+      <p className="text-[11px] text-text-tertiary">
+        Click to insert. These come from steps connected into this one.
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {mappings.map((m, i) => {
+          const token = `{{${m.targetField}}}`;
+          return (
+            <button
+              key={`${m.sourceStepId}-${m.targetField}-${i}`}
+              type="button"
+              onClick={() => onInsert(token)}
+              title={`From ${m.sourceStepId}.${m.sourceField}`}
+              className="px-2 py-0.5 rounded-full text-[11px] font-mono border border-accent/30 bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
+            >
+              {token}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AskAiParams({ params, onChange, step }: PWithStep) {
+  const { experts } = useExperts();
+
+  // Local state for the text fields. The parent's `onChange` is debounced
+  // (150 ms) so the parent's `params.prompt` doesn't update keystroke-by-
+  // keystroke. If we bound the textarea directly to `params.prompt`, any
+  // unrelated re-render during typing (context value change, ReactFlow
+  // tick, dirty flag flip) would snap the controlled value back to the
+  // stale prop and eat characters. Keeping the working value locally
+  // makes typing resilient. We still propagate every change upward so
+  // the node preview + autosave pick it up after the debounce fires.
+  const [prompt, setPrompt] = useState((params.prompt as string) ?? '');
+  const [systemPrompt, setSystemPrompt] = useState(
+    (params.system_prompt as string) ?? '',
+  );
+  // `paramsRef` lets the keyword chip inserter read the latest `params`
+  // without re-creating `insertAtCursor` every render (which would pull
+  // a stale closure through the `onFocus` ref).
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const systemRef = useRef<HTMLTextAreaElement>(null);
+  const lastFocused = useRef<'prompt' | 'system'>('prompt');
+
+  const handlePromptChange = (v: string) => {
+    setPrompt(v);
+    onChange({ ...paramsRef.current, prompt: v });
+  };
+  const handleSystemChange = (v: string) => {
+    setSystemPrompt(v);
+    onChange({ ...paramsRef.current, system_prompt: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const field = lastFocused.current;
+    const el = field === 'prompt' ? promptRef.current : systemRef.current;
+    if (!el) return;
+    const current = field === 'prompt' ? prompt : systemPrompt;
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    if (field === 'prompt') handlePromptChange(next);
+    else handleSystemChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const agent = (params.agent as string) ?? 'cerebro';
+  const subagentChoices = [
+    { slug: 'cerebro', label: 'Cerebro (default)' },
+    ...experts
+      .filter((e) => e.slug && e.slug !== 'cerebro' && e.isEnabled)
+      .map((e) => ({ slug: e.slug as string, label: e.name })),
+  ];
+  const isCustom = !subagentChoices.some((c) => c.slug === agent);
+
+  return (
+    <div className="space-y-4">
       <div>
-        <FieldLabel text="Prompt" hint="stepPrompt" />
+        <FieldLabel text="What should the AI do?" hint="stepPrompt" />
         <textarea
-          value={(params.prompt as string) ?? ''}
-          onChange={(e) => onChange({ ...params, prompt: e.target.value })}
-          rows={4}
-          placeholder="Enter prompt... Use {{step_name.field}} for variables"
+          ref={promptRef}
+          value={prompt}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'prompt'; }}
+          rows={5}
+          placeholder="e.g. Summarize the email below in two sentences:&#10;&#10;{{previous_output}}"
           className={textareaCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Write the instruction in plain English. To reference data from a
+          connected step, wrap its name in double braces like <code className="px-1 rounded bg-bg-base text-text-secondary">{'{{previous_output}}'}</code>.
+        </p>
       </div>
+
       <div>
-        <FieldLabel text="System Prompt (optional)" hint="fieldSystemPrompt" />
+        <FieldLabel text="Available variables" />
+        <VariableChips step={step} onInsert={insertAtCursor} />
+      </div>
+
+      <div>
+        <FieldLabel text="Role / style (optional)" hint="fieldSystemPrompt" />
         <textarea
-          value={(params.system_prompt as string) ?? ''}
-          onChange={(e) => onChange({ ...params, system_prompt: e.target.value })}
+          ref={systemRef}
+          value={systemPrompt}
+          onChange={(e) => handleSystemChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'system'; }}
           rows={3}
-          placeholder="Optional system prompt..."
+          placeholder="e.g. You are a terse analyst. Reply with bullet points only."
           className={textareaCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Sets the AI&rsquo;s role or tone. Leave empty to use the subagent&rsquo;s
+          default behavior.
+        </p>
       </div>
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <FieldLabel text="Temperature" hint="fieldTemperature" />
-          <input
-            type="number" min={0} max={2} step={0.1}
-            value={(params.temperature as number) ?? 0.7}
-            onChange={(e) => onChange({ ...params, temperature: parseFloat(e.target.value) || 0.7 })}
-            className={inputCls}
-          />
-        </div>
-        <div className="flex-1">
-          <FieldLabel text="Max Tokens" hint="fieldMaxTokens" />
-          <input
-            type="number" min={1}
-            value={(params.max_tokens as number) ?? 2048}
-            onChange={(e) => onChange({ ...params, max_tokens: parseInt(e.target.value) || 2048 })}
-            className={inputCls}
-          />
-        </div>
+
+      <div>
+        <FieldLabel text="Run as" hint="fieldAgent" />
+        <select
+          value={isCustom ? '__custom__' : agent}
+          onChange={(e) => {
+            if (e.target.value === '__custom__') return;
+            onChange({ ...paramsRef.current, agent: e.target.value });
+          }}
+          className={selectCls}
+        >
+          {subagentChoices.map((c) => (
+            <option key={c.slug} value={c.slug}>{c.label}</option>
+          ))}
+          {isCustom && <option value="__custom__">{agent} (custom)</option>}
+        </select>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Which Claude Code subagent runs this step. &ldquo;Cerebro&rdquo; is the
+          default generalist; pick an expert to use its own system prompt and tools.
+        </p>
       </div>
     </div>
   );
@@ -885,38 +1011,102 @@ function SendMessageParams({ params, onChange }: P) {
   );
 }
 
-function NotificationParams({ params, onChange }: P) {
+function NotificationParams({ params, onChange, step }: PWithStep) {
+  // Local state mirrors the Ask AI pattern. Keeps typing smooth even when
+  // the parent's debounced onChange hasn't propagated the latest value
+  // into `params` yet — unrelated re-renders (context updates, ReactFlow
+  // ticks, dirty-flag flips) would otherwise snap the controlled value
+  // back to the stale prop and eat characters.
+  const [title, setTitle] = useState((params.title as string) ?? '');
+  const [body, setBody] = useState((params.body as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const titleRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const lastFocused = useRef<'title' | 'body'>('title');
+
+  const handleTitleChange = (v: string) => {
+    setTitle(v);
+    onChange({ ...paramsRef.current, title: v });
+  };
+  const handleBodyChange = (v: string) => {
+    setBody(v);
+    onChange({ ...paramsRef.current, body: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const field = lastFocused.current;
+    const el = field === 'title' ? titleRef.current : bodyRef.current;
+    if (!el) return;
+    const current = field === 'title' ? title : body;
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    if (field === 'title') handleTitleChange(next);
+    else handleBodyChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const urgency = (params.urgency as string) ?? 'normal';
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div>
-        <FieldLabel text="Title" hint="stepTitle" />
+        <FieldLabel text="Headline" hint="stepTitle" />
         <input
-          value={(params.title as string) ?? ''}
-          onChange={(e) => onChange({ ...params, title: e.target.value })}
-          placeholder="Notification title"
+          ref={titleRef}
+          value={title}
+          onChange={(e) => handleTitleChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'title'; }}
+          placeholder="e.g. Daily brief is ready"
           className={inputCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Short text shown at the top of the notification. Required.
+        </p>
       </div>
+
       <div>
-        <FieldLabel text="Body" hint="fieldNotifyBody" />
+        <FieldLabel text="Message (optional)" hint="fieldNotifyBody" />
         <textarea
-          value={(params.body as string) ?? ''}
-          onChange={(e) => onChange({ ...params, body: e.target.value })}
-          rows={3}
-          placeholder="Notification body... Use {{step_name.field}}"
+          ref={bodyRef}
+          value={body}
+          onChange={(e) => handleBodyChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'body'; }}
+          rows={4}
+          placeholder="e.g. Summary:&#10;&#10;{{previous_output}}"
           className={textareaCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Longer text shown under the headline. Use <code className="px-1 rounded bg-bg-base text-text-secondary">{'{{previous_output}}'}</code> to pull in data from a connected step.
+        </p>
       </div>
+
+      <div>
+        <FieldLabel text="Available variables" />
+        <VariableChips step={step} onInsert={insertAtCursor} />
+      </div>
+
       <div>
         <FieldLabel text="Urgency" hint="fieldNotifyUrgency" />
         <select
-          value={(params.urgency as string) ?? 'normal'}
-          onChange={(e) => onChange({ ...params, urgency: e.target.value })}
+          value={urgency}
+          onChange={(e) => onChange({ ...paramsRef.current, urgency: e.target.value })}
           className={selectCls}
         >
-          <option value="normal">Normal</option>
-          <option value="critical">Critical</option>
+          <option value="normal">Normal — standard banner</option>
+          <option value="critical">Critical — sticky / alert style</option>
         </select>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Critical notifications stay on screen until dismissed on platforms
+          that support it (Linux). On macOS and Windows, both show as
+          standard banners.
+        </p>
       </div>
     </div>
   );
@@ -934,12 +1124,17 @@ function StubParams({ name }: { name: string }) {
 
 // ── Param Form Router ─────────────────────────────────────────
 
-function ParamForm({ actionType, params, onChange }: { actionType: string } & P) {
+function ParamForm({
+  actionType,
+  params,
+  onChange,
+  step,
+}: { actionType: string; step?: RoutineStepData } & P) {
   const resolved = resolveActionType(actionType);
 
   switch (resolved) {
     // AI
-    case 'ask_ai': return <AskAiParams params={params} onChange={onChange} />;
+    case 'ask_ai': return <AskAiParams params={params} onChange={onChange} step={step} />;
     case 'run_expert': return <RunExpertParams params={params} onChange={onChange} />;
     case 'classify': return <ClassifyParams params={params} onChange={onChange} />;
     case 'extract': return <ExtractParams params={params} onChange={onChange} />;
@@ -965,7 +1160,7 @@ function ParamForm({ actionType, params, onChange }: { actionType: string } & P)
 
     // Output
     case 'send_message': return <SendMessageParams params={params} onChange={onChange} />;
-    case 'send_notification': return <NotificationParams params={params} onChange={onChange} />;
+    case 'send_notification': return <NotificationParams params={params} onChange={onChange} step={step} />;
 
     default:
       return <StubParams name={ACTION_META[actionType]?.name ?? actionType} />;
@@ -1069,7 +1264,16 @@ export default function StepConfigPanel({ node, onUpdate, onClose }: StepConfigP
 
         {/* Parameters */}
         <Section label="PARAMETERS">
-          <ParamForm actionType={d.actionType} params={d.params} onChange={handleParamsChange} />
+          {/* key={node.id} remounts the form (and its local text state)
+              when the user selects a different step, so drafts from one
+              step never leak into another. */}
+          <ParamForm
+            key={node.id}
+            actionType={d.actionType}
+            params={d.params}
+            onChange={handleParamsChange}
+            step={d}
+          />
         </Section>
 
         {/* Error Handling (hidden for approval gates) */}

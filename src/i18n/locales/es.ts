@@ -677,6 +677,7 @@ const es: TranslationKeys = {
     stepTitle: 'T\u00edtulo visible de este paso',
     stepItemsField: 'Campo a iterar en pasos de bucle',
     fieldSystemPrompt: 'Persona o instrucciones opcionales enviadas antes del prompt',
+    fieldAgent: 'Qué subagente de Claude Code ejecuta este paso — por defecto, el generalista Cerebro',
     fieldTemperature: 'Aleatoriedad del muestreo \u2014 0 es determinista, 1+ es m\u00e1s creativo',
     fieldMaxTokens: 'M\u00e1ximo de tokens que el modelo puede generar',
     fieldExpertId: 'ID del experto que ejecutar\u00e1 este paso',

@@ -34,11 +34,18 @@ describe('compileLinearDAG', () => {
 
   // ── Action type mapping ────────────────────────────────────────
 
-  it('uses model_call when no defaultRunnerId', () => {
+  it('uses ask_ai when no defaultRunnerId', () => {
     const dag = compileLinearDAG({ steps: ['Do something'] });
-    expect(dag.steps[0].actionType).toBe('model_call');
+    expect(dag.steps[0].actionType).toBe('ask_ai');
     expect(dag.steps[0].params).toHaveProperty('prompt', 'Do something');
-    expect(dag.steps[0].params).toHaveProperty('systemPrompt');
+    expect(dag.steps[0].params).toHaveProperty('system_prompt');
+    expect(dag.steps[0].params).toHaveProperty('agent', 'cerebro');
+  });
+
+  it('wires {{previous_output}} into ask_ai prompt for chained steps', () => {
+    const dag = compileLinearDAG({ steps: ['Fetch data', 'Transform it'] });
+    expect(dag.steps[1].actionType).toBe('ask_ai');
+    expect(dag.steps[1].params.prompt).toContain('{{previous_output}}');
   });
 
   it('uses expert_step when defaultRunnerId is set', () => {

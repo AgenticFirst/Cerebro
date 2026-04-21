@@ -683,6 +683,7 @@ const en = {
     stepItemsField: 'Field to iterate over for loop steps',
     // Per-action field hints
     fieldSystemPrompt: 'Optional persona/instructions sent before the user prompt',
+    fieldAgent: 'Which Claude Code subagent runs this step — defaults to the Cerebro generalist',
     fieldTemperature: 'Sampling randomness — 0 is deterministic, 1+ is more creative',
     fieldMaxTokens: 'Maximum tokens the model may generate',
     fieldExpertId: 'ID of the expert that should run this step',

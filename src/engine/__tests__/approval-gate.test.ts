@@ -364,7 +364,7 @@ describe('step defaults: approval_gate', () => {
 
     // Other types default to false
     expect(getDefaultStepData('transformer').requiresApproval).toBe(false);
-    expect(getDefaultStepData('model_call').requiresApproval).toBe(false);
+    expect(getDefaultStepData('ask_ai').requiresApproval).toBe(false);
   });
 
   it('ACTION_META has approval_gate entry', () => {
