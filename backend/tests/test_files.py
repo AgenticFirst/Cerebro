@@ -1230,3 +1230,169 @@ def test_list_managed_paths(client):
     paths = r.json()
     assert "/managed/path/managed.txt" in paths
     assert "/workspace/path/workspace.txt" not in paths
+
+
+# ── GET /buckets/{id}/contents ────────────────────────────────────────
+
+
+def test_bucket_contents_returns_empty_for_empty_bucket(client):
+    """GET /buckets/{id}/contents → [] when bucket has no files."""
+    from main import app
+
+    app.state.files_dir = "/tmp/test-files-root"
+    b = client.post("/files/buckets", json={"name": "Empty"}).json()
+
+    r = client.get(f"/files/buckets/{b['id']}/contents")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_bucket_contents_returns_404_for_unknown_bucket(client):
+    """GET /buckets/{bad_id}/contents → 404."""
+    r = client.get(f"/files/buckets/{uuid.uuid4().hex}/contents")
+    assert r.status_code == 404
+
+
+def test_bucket_contents_resolves_managed_paths_against_files_dir(client, tmp_path):
+    """Managed files are joined with files_dir into absolute paths."""
+    from main import app
+
+    files_root = str(tmp_path / "files")
+    import os
+    os.makedirs(files_root, exist_ok=True)
+    app.state.files_dir = files_root
+
+    b = client.post("/files/buckets", json={"name": "Docs"}).json()
+    client.post("/files/items", json={
+        "bucket_id": b["id"],
+        "name": "notes.md",
+        "storage_path": "managed/notes.md",
+        "source": "manual",
+        "storage_kind": "managed",
+        "ext": "md",
+        "mime": "text/markdown",
+        "size_bytes": 120,
+    })
+
+    r = client.get(f"/files/buckets/{b['id']}/contents")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    entry = body[0]
+    assert entry["name"] == "notes.md"
+    assert entry["ext"] == "md"
+    assert entry["mime"] == "text/markdown"
+    assert entry["size_bytes"] == 120
+    # Must be absolute and rooted inside files_dir.
+    assert entry["abs_path"].startswith(files_root)
+    assert entry["abs_path"].endswith("notes.md")
+
+
+def test_bucket_contents_passes_workspace_absolute_paths_through(client, tmp_path):
+    """Workspace files keep their original absolute storage_path."""
+    from main import app
+
+    app.state.files_dir = str(tmp_path / "files")
+    b = client.post("/files/buckets", json={"name": "External"}).json()
+    abs_path = str(tmp_path / "external" / "report.pdf")
+    client.post("/files/items", json={
+        "bucket_id": b["id"],
+        "name": "report.pdf",
+        "storage_path": abs_path,
+        "source": "workspace-save",
+        "storage_kind": "workspace",
+    })
+
+    r = client.get(f"/files/buckets/{b['id']}/contents")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["abs_path"] == abs_path
+
+
+def test_bucket_contents_skips_managed_paths_that_escape_files_root(client, tmp_path):
+    """Traversal attempts in storage_path are dropped, not leaked."""
+    from main import app
+
+    files_root = str(tmp_path / "files")
+    import os
+    os.makedirs(files_root, exist_ok=True)
+    app.state.files_dir = files_root
+
+    b = client.post("/files/buckets", json={"name": "Docs"}).json()
+    client.post("/files/items", json={
+        "bucket_id": b["id"],
+        "name": "sneaky.md",
+        "storage_path": "../../etc/passwd",
+        "source": "manual",
+        "storage_kind": "managed",
+    })
+    # A legitimate neighbor to confirm filtering is selective.
+    client.post("/files/items", json={
+        "bucket_id": b["id"],
+        "name": "legit.md",
+        "storage_path": "legit.md",
+        "source": "manual",
+        "storage_kind": "managed",
+    })
+
+    r = client.get(f"/files/buckets/{b['id']}/contents")
+    assert r.status_code == 200
+    names = [e["name"] for e in r.json()]
+    assert "sneaky.md" not in names
+    assert "legit.md" in names
+
+
+def test_bucket_contents_excludes_soft_deleted_items(client, tmp_path):
+    """Soft-deleted items do not appear in /contents."""
+    from main import app
+
+    app.state.files_dir = str(tmp_path / "files")
+    import os
+    os.makedirs(app.state.files_dir, exist_ok=True)
+
+    b = client.post("/files/buckets", json={"name": "Docs"}).json()
+    kept = client.post("/files/items", json={
+        "bucket_id": b["id"],
+        "name": "kept.md",
+        "storage_path": "kept.md",
+        "source": "manual",
+        "storage_kind": "managed",
+    }).json()
+    trashed = client.post("/files/items", json={
+        "bucket_id": b["id"],
+        "name": "trashed.md",
+        "storage_path": "trashed.md",
+        "source": "manual",
+        "storage_kind": "managed",
+    }).json()
+    client.delete(f"/files/items/{trashed['id']}")
+
+    r = client.get(f"/files/buckets/{b['id']}/contents")
+    assert r.status_code == 200
+    ids = [e["id"] for e in r.json()]
+    assert kept["id"] in ids
+    assert trashed["id"] not in ids
+
+
+def test_bucket_contents_honors_limit_param(client, tmp_path):
+    """?limit=N caps the number of returned rows."""
+    from main import app
+
+    app.state.files_dir = str(tmp_path / "files")
+    import os
+    os.makedirs(app.state.files_dir, exist_ok=True)
+
+    b = client.post("/files/buckets", json={"name": "Many"}).json()
+    for i in range(5):
+        client.post("/files/items", json={
+            "bucket_id": b["id"],
+            "name": f"f{i}.md",
+            "storage_path": f"f{i}.md",
+            "source": "manual",
+            "storage_kind": "managed",
+        })
+
+    r = client.get(f"/files/buckets/{b['id']}/contents", params={"limit": 2})
+    assert r.status_code == 200
+    assert len(r.json()) == 2

@@ -189,40 +189,40 @@ export const ACTION_META: Record<string, ActionMeta> = {
     icon: Search,
     color: 'indigo',
     colorHex: '#6366f1',
-    description: 'Query learned facts',
+    description: "Look things up in an expert's memory",
     category: 'knowledge',
     isAvailable: true,
-    keywords: ['memory', 'recall', 'facts', 'knowledge'],
+    keywords: ['memory', 'recall', 'facts', 'notes', 'expert'],
   },
   search_web: {
     name: 'Search Web',
     icon: Globe,
     color: 'indigo',
     colorHex: '#6366f1',
-    description: 'Tavily web search',
+    description: 'Web search via Claude Code',
     category: 'knowledge',
     isAvailable: true,
-    keywords: ['web', 'search', 'tavily', 'internet', 'google'],
+    keywords: ['web', 'search', 'internet', 'google', 'claude'],
   },
   search_documents: {
     name: 'Search Documents',
     icon: FileSearch,
     color: 'indigo',
     colorHex: '#6366f1',
-    description: 'RAG over uploaded docs',
+    description: 'Ask a question against a Files bucket',
     category: 'knowledge',
-    isAvailable: false,
-    keywords: ['rag', 'documents', 'files', 'vector', 'embeddings'],
+    isAvailable: true,
+    keywords: ['rag', 'documents', 'files', 'bucket', 'folder'],
   },
   save_to_memory: {
     name: 'Save to Memory',
     icon: Save,
     color: 'indigo',
     colorHex: '#6366f1',
-    description: 'Store facts for later',
+    description: 'Append to expert or global memory',
     category: 'knowledge',
     isAvailable: true,
-    keywords: ['save', 'store', 'remember', 'persist'],
+    keywords: ['save', 'store', 'remember', 'persist', 'memory'],
   },
 
   // ── Integrations ──────────────────────────────────────────
@@ -504,13 +504,46 @@ export function getDefaultStepData(
 
     // Knowledge
     case 'search_memory':
-      return { ...base, params: { query: '', scope: 'global', max_results: 5 } };
+      return {
+        ...base,
+        params: {
+          query: '',
+          agent: 'cerebro',
+          max_results: 5,
+          model: DEFAULT_CLAUDE_MODEL,
+        },
+      };
     case 'search_web':
-      return { ...base, params: { query: '', max_results: 5, include_ai_answer: false } };
+      return {
+        ...base,
+        params: {
+          query: '',
+          max_results: 5,
+          include_ai_answer: false,
+          model: 'claude-haiku-4-5',
+        },
+      };
     case 'search_documents':
-      return { ...base, params: { query: '', collection: '', top_k: 5, similarity_threshold: 0.7 } };
+      return {
+        ...base,
+        params: {
+          query: '',
+          bucket_id: '',
+          max_results: 5,
+          model: DEFAULT_CLAUDE_MODEL,
+        },
+      };
     case 'save_to_memory':
-      return { ...base, params: { content: '', scope: 'global', type: 'fact' } };
+      return {
+        ...base,
+        params: {
+          content: '',
+          agent: 'cerebro',
+          mode: 'write',
+          topic: '',
+          model: DEFAULT_CLAUDE_MODEL,
+        },
+      };
 
     // Integrations
     case 'http_request':

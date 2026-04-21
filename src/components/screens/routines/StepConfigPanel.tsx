@@ -11,6 +11,7 @@ import {
   uniqueVarName,
 } from '../../../utils/action-outputs';
 import { useExperts } from '../../../context/ExpertContext';
+import { useFiles } from '../../../context/FilesContext';
 import {
   CLAUDE_MODELS,
   DEFAULT_CLAUDE_MODEL,
@@ -1533,111 +1534,559 @@ function SummarizeParams({ params, onChange, step, sourceSteps }: PWithStep) {
 
 // ── Knowledge Param Forms ─────────────────────────────────────
 
-function SearchMemoryParams({ params, onChange }: P) {
-  return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel text="Query" hint="stepQuery" />
-        <textarea
-          value={(params.query as string) ?? ''}
-          onChange={(e) => onChange({ ...params, query: e.target.value })}
-          rows={2}
-          placeholder="What to search for... Use {{step_name.field}}"
-          className={textareaCls}
-        />
-      </div>
-      <div>
-        <FieldLabel text="Scope" hint="fieldScope" />
-        <select
-          value={(params.scope as string) ?? 'global'}
-          onChange={(e) => onChange({ ...params, scope: e.target.value })}
-          className={selectCls}
-        >
-          <option value="global">Global</option>
-          <option value="expert">Expert-specific</option>
-        </select>
-      </div>
-      <div>
-        <FieldLabel text="Max Results" hint="fieldMaxResults" />
-        <input
-          type="number" min={1} max={20}
-          value={(params.max_results as number) ?? 5}
-          onChange={(e) => onChange({ ...params, max_results: parseInt(e.target.value) || 5 })}
-          className={inputCls}
-        />
-      </div>
-    </div>
-  );
-}
+function SearchMemoryParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const { experts } = useExperts();
 
-function SearchWebParams({ params, onChange }: P) {
-  return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel text="Query" hint="stepQuery" />
-        <textarea
-          value={(params.query as string) ?? ''}
-          onChange={(e) => onChange({ ...params, query: e.target.value })}
-          rows={2}
-          placeholder="What to search for... Use {{step_name.field}}"
-          className={textareaCls}
-        />
-      </div>
-      <div>
-        <FieldLabel text="Max Results" hint="fieldMaxResults" />
-        <input
-          type="number" min={1} max={10}
-          value={(params.max_results as number) ?? 5}
-          onChange={(e) => onChange({ ...params, max_results: parseInt(e.target.value) || 5 })}
-          className={inputCls}
-        />
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-text-secondary">Include AI Answer</span>
-        <Toggle
-          checked={(params.include_ai_answer as boolean) ?? false}
-          onChange={() => onChange({ ...params, include_ai_answer: !params.include_ai_answer })}
-        />
-      </div>
-    </div>
-  );
-}
+  const [query, setQuery] = useState((params.query as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
 
-function SaveToMemoryParams({ params, onChange }: P) {
+  const queryRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleQueryChange = (v: string) => {
+    setQuery(v);
+    onChange({ ...paramsRef.current, query: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const el = queryRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? query.length;
+    const end = el.selectionEnd ?? query.length;
+    const next = query.slice(0, start) + token + query.slice(end);
+    handleQueryChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const agent = (params.agent as string) ?? 'cerebro';
+  const subagentChoices = [
+    { slug: 'cerebro', label: 'Cerebro (global)' },
+    ...experts
+      .filter((e) => e.slug && e.slug !== 'cerebro' && e.isEnabled)
+      .map((e) => ({ slug: e.slug as string, label: e.name })),
+  ];
+  const isCustom = !subagentChoices.some((c) => c.slug === agent);
+
+  const [queryTouched, setQueryTouched] = useState(false);
+  const queryEmpty = query.trim().length === 0;
+  const showQueryError = queryTouched && queryEmpty;
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Looks up notes saved in an expert&rsquo;s memory. Pick &ldquo;Cerebro&rdquo;
+          to search the global notebook, or an expert to search just their own
+          notes. Claude Code reads the markdown files and returns relevant
+          matches.
+        </p>
+      </div>
+
       <div>
-        <FieldLabel text="Content" hint="fieldContent" />
+        <FieldLabel text="What are you looking for?" hint="stepQuery" />
         <textarea
-          value={(params.content as string) ?? ''}
-          onChange={(e) => onChange({ ...params, content: e.target.value })}
+          ref={queryRef}
+          value={query}
+          onChange={(e) => handleQueryChange(e.target.value)}
+          onBlur={() => setQueryTouched(true)}
           rows={3}
-          placeholder="What to save... Use {{step_name.field}}"
-          className={textareaCls}
+          placeholder="e.g. What did I learn about our pricing tests?"
+          aria-invalid={showQueryError}
+          className={clsx(textareaCls, showQueryError && 'border-red-500/60 focus:border-red-500/60')}
         />
+        {showQueryError ? (
+          <FieldError text="Required — enter what you want to recall." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Plain English works best. Use chips below to weave in output from a
+            connected step.
+          </p>
+        )}
       </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
       <div>
-        <FieldLabel text="Scope" hint="fieldScope" />
+        <FieldLabel text="Whose memory" hint="fieldMemoryScope" />
         <select
-          value={(params.scope as string) ?? 'global'}
-          onChange={(e) => onChange({ ...params, scope: e.target.value })}
+          value={isCustom ? '__custom__' : agent}
+          onChange={(e) => {
+            if (e.target.value === '__custom__') return;
+            onChange({ ...paramsRef.current, agent: e.target.value });
+          }}
           className={selectCls}
         >
-          <option value="global">Global</option>
-          <option value="expert">Expert-specific</option>
+          {subagentChoices.map((c) => (
+            <option key={c.slug} value={c.slug}>{c.label}</option>
+          ))}
+          {isCustom && <option value="__custom__">{agent} (custom)</option>}
         </select>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          &ldquo;Cerebro&rdquo; searches your shared global notes. Pick an expert
+          to search only their own notebook.
+        </p>
       </div>
+
       <div>
-        <FieldLabel text="Type" hint="fieldMemoryType" />
+        <FieldLabel text="Max results" hint="fieldMaxResults" />
+        <input
+          type="number"
+          min={1}
+          max={20}
+          value={(params.max_results as number) ?? 5}
+          onChange={(e) =>
+            onChange({
+              ...paramsRef.current,
+              max_results: parseInt(e.target.value) || 5,
+            })
+          }
+          className={inputCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Caps how many matches are returned to the next step.
+        </p>
+      </div>
+
+      <ModelPicker
+        value={(params.model as string) ?? DEFAULT_CLAUDE_MODEL}
+        onChange={(id) => onChange({ ...paramsRef.current, model: id })}
+      />
+    </div>
+  );
+}
+
+function SearchWebParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const [query, setQuery] = useState((params.query as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const queryRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleQueryChange = (v: string) => {
+    setQuery(v);
+    onChange({ ...paramsRef.current, query: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const el = queryRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? query.length;
+    const end = el.selectionEnd ?? query.length;
+    const next = query.slice(0, start) + token + query.slice(end);
+    handleQueryChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const [queryTouched, setQueryTouched] = useState(false);
+  const queryEmpty = query.trim().length === 0;
+  const showQueryError = queryTouched && queryEmpty;
+
+  const includeAnswer = (params.include_ai_answer as boolean) ?? false;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Searches the web using Claude Code&rsquo;s built-in tools. Returns a
+          list of titles, URLs, and snippets — optionally with a 1-3 sentence
+          synthesized answer.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="What should we search for?" hint="stepQuery" />
+        <textarea
+          ref={queryRef}
+          value={query}
+          onChange={(e) => handleQueryChange(e.target.value)}
+          onBlur={() => setQueryTouched(true)}
+          rows={3}
+          placeholder="e.g. Latest CPI release for Q1 2026"
+          aria-invalid={showQueryError}
+          className={clsx(textareaCls, showQueryError && 'border-red-500/60 focus:border-red-500/60')}
+        />
+        {showQueryError ? (
+          <FieldError text="Required — web search needs a query." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Write the search exactly how you&rsquo;d type it into Google. Click
+            a variable chip below to splice in an upstream step&rsquo;s output.
+          </p>
+        )}
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
+      <div>
+        <FieldLabel text="Max results" hint="fieldMaxResults" />
+        <input
+          type="number"
+          min={1}
+          max={10}
+          value={(params.max_results as number) ?? 5}
+          onChange={(e) =>
+            onChange({
+              ...paramsRef.current,
+              max_results: parseInt(e.target.value) || 5,
+            })
+          }
+          className={inputCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          How many links to bring back. Keep this small — downstream steps
+          usually only need the top few.
+        </p>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between">
+          <FieldLabel text="Synthesize an answer" hint="fieldIncludeAiAnswer" />
+          <Toggle
+            checked={includeAnswer}
+            onChange={() =>
+              onChange({
+                ...paramsRef.current,
+                include_ai_answer: !includeAnswer,
+              })
+            }
+          />
+        </div>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          When on, Claude also returns a short synthesis of the top results
+          alongside the raw list.
+        </p>
+      </div>
+
+      <ModelPicker
+        value={(params.model as string) ?? 'claude-haiku-4-5'}
+        onChange={(id) => onChange({ ...paramsRef.current, model: id })}
+      />
+    </div>
+  );
+}
+
+function SearchDocumentsParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const { buckets } = useFiles();
+
+  const [query, setQuery] = useState((params.query as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const queryRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleQueryChange = (v: string) => {
+    setQuery(v);
+    onChange({ ...paramsRef.current, query: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const el = queryRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? query.length;
+    const end = el.selectionEnd ?? query.length;
+    const next = query.slice(0, start) + token + query.slice(end);
+    handleQueryChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const bucketId = (params.bucket_id as string) ?? '';
+  const [queryTouched, setQueryTouched] = useState(false);
+  const [bucketTouched, setBucketTouched] = useState(false);
+  const queryEmpty = query.trim().length === 0;
+  const bucketEmpty = bucketId.trim().length === 0;
+  const showQueryError = queryTouched && queryEmpty;
+  const showBucketError = bucketTouched && bucketEmpty;
+
+  const hasBuckets = buckets.length > 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Asks Claude Code to answer your query using files from a Files bucket.
+          Upload documents to a bucket on the Files screen, then pick it here —
+          Claude reads the files directly, no vector setup required.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="What should we find?" hint="stepQuery" />
+        <textarea
+          ref={queryRef}
+          value={query}
+          onChange={(e) => handleQueryChange(e.target.value)}
+          onBlur={() => setQueryTouched(true)}
+          rows={3}
+          placeholder="e.g. Summarize the termination clause across all contracts."
+          aria-invalid={showQueryError}
+          className={clsx(textareaCls, showQueryError && 'border-red-500/60 focus:border-red-500/60')}
+        />
+        {showQueryError ? (
+          <FieldError text="Required — describe what to pull from the documents." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Describe the question or the passage you want. Chips below let you
+            drop in output from an upstream step.
+          </p>
+        )}
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
+      <div>
+        <FieldLabel text="Bucket" hint="fieldBucket" />
+        {!hasBuckets ? (
+          <div className="rounded-lg border border-dashed border-border-subtle bg-bg-base/40 px-3 py-3 text-center">
+            <p className="text-[11px] text-text-tertiary">
+              No buckets yet. Head to the Files screen, create a bucket, and
+              upload the documents you want searched.
+            </p>
+          </div>
+        ) : (
+          <select
+            value={bucketId}
+            onChange={(e) => onChange({ ...paramsRef.current, bucket_id: e.target.value })}
+            onBlur={() => setBucketTouched(true)}
+            aria-invalid={showBucketError}
+            className={clsx(
+              selectCls,
+              showBucketError && 'border-red-500/60 focus:border-red-500/60',
+            )}
+          >
+            <option value="">Pick a bucket…</option>
+            {buckets.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        )}
+        {showBucketError ? (
+          <FieldError text="Required — choose which bucket to search." />
+        ) : hasBuckets ? (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            One bucket per step. Use separate Search Documents nodes to span
+            multiple buckets.
+          </p>
+        ) : null}
+      </div>
+
+      <div>
+        <FieldLabel text="Max results" hint="fieldMaxResults" />
+        <input
+          type="number"
+          min={1}
+          max={20}
+          value={(params.max_results as number) ?? 5}
+          onChange={(e) =>
+            onChange({
+              ...paramsRef.current,
+              max_results: parseInt(e.target.value) || 5,
+            })
+          }
+          className={inputCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          How many passages to return, each with a file path and snippet.
+        </p>
+      </div>
+
+      <ModelPicker
+        value={(params.model as string) ?? DEFAULT_CLAUDE_MODEL}
+        onChange={(id) => onChange({ ...paramsRef.current, model: id })}
+      />
+    </div>
+  );
+}
+
+const SAVE_MEMORY_MODES: { value: 'write' | 'extract'; label: string; hint: string }[] = [
+  { value: 'write', label: 'Write as-is', hint: 'Save content verbatim' },
+  { value: 'extract', label: 'Distill first', hint: 'Claude pulls out facts' },
+];
+
+function SaveToMemoryParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const { experts } = useExperts();
+
+  const [content, setContent] = useState((params.content as string) ?? '');
+  const [topic, setTopic] = useState((params.topic as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleContentChange = (v: string) => {
+    setContent(v);
+    onChange({ ...paramsRef.current, content: v });
+  };
+  const handleTopicChange = (v: string) => {
+    setTopic(v);
+    onChange({ ...paramsRef.current, topic: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const el = contentRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? content.length;
+    const end = el.selectionEnd ?? content.length;
+    const next = content.slice(0, start) + token + content.slice(end);
+    handleContentChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const agent = (params.agent as string) ?? 'cerebro';
+  const subagentChoices = [
+    { slug: 'cerebro', label: 'Cerebro (global)' },
+    ...experts
+      .filter((e) => e.slug && e.slug !== 'cerebro' && e.isEnabled)
+      .map((e) => ({ slug: e.slug as string, label: e.name })),
+  ];
+  const isCustom = !subagentChoices.some((c) => c.slug === agent);
+
+  const mode: 'write' | 'extract' = params.mode === 'extract' ? 'extract' : 'write';
+
+  const [contentTouched, setContentTouched] = useState(false);
+  const contentEmpty = content.trim().length === 0;
+  const showContentError = contentTouched && contentEmpty;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Appends an entry to an auto-dated markdown file in an expert&rsquo;s
+          memory. Pick &ldquo;Cerebro&rdquo; for shared global notes, or an
+          expert to write into their own notebook.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="What should we save?" hint="fieldContent" />
+        <textarea
+          ref={contentRef}
+          value={content}
+          onChange={(e) => handleContentChange(e.target.value)}
+          onBlur={() => setContentTouched(true)}
+          rows={4}
+          placeholder="e.g. {{ask_ai.response}} — or type the note yourself."
+          aria-invalid={showContentError}
+          className={clsx(textareaCls, showContentError && 'border-red-500/60 focus:border-red-500/60')}
+        />
+        {showContentError ? (
+          <FieldError text="Required — nothing to save without content." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Most often you&rsquo;ll click a chip below to reference an upstream
+            step&rsquo;s output. Plain text works too.
+          </p>
+        )}
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
+      <div>
+        <FieldLabel text="How should we save it?" hint="fieldSaveMode" />
+        <div className="grid grid-cols-2 gap-1.5">
+          {SAVE_MEMORY_MODES.map((opt) => {
+            const active = opt.value === mode;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onChange({ ...paramsRef.current, mode: opt.value })}
+                aria-pressed={active}
+                className={clsx(
+                  'rounded-lg border px-2 py-2 text-center transition-colors',
+                  active
+                    ? 'border-accent/50 bg-accent/10 text-accent'
+                    : 'border-border-subtle bg-bg-base text-text-secondary hover:border-accent/30',
+                )}
+              >
+                <div className="text-[11px] font-medium">{opt.label}</div>
+                <div className="text-[10px] text-text-tertiary">{opt.hint}</div>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          &ldquo;Distill first&rdquo; runs Claude to convert the content into a
+          bulleted fact list before saving — useful when the source is a long
+          passage.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="Topic (optional)" hint="fieldSaveTopic" />
+        <input
+          value={topic}
+          onChange={(e) => handleTopicChange(e.target.value)}
+          placeholder="e.g. Q1 pricing experiments"
+          className={inputCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Appears in the entry&rsquo;s header so you can skim dated files later.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="Whose memory" hint="fieldMemoryScope" />
         <select
-          value={(params.type as string) ?? 'fact'}
-          onChange={(e) => onChange({ ...params, type: e.target.value })}
+          value={isCustom ? '__custom__' : agent}
+          onChange={(e) => {
+            if (e.target.value === '__custom__') return;
+            onChange({ ...paramsRef.current, agent: e.target.value });
+          }}
           className={selectCls}
         >
-          <option value="fact">Fact</option>
-          <option value="knowledge_entry">Knowledge Entry</option>
+          {subagentChoices.map((c) => (
+            <option key={c.slug} value={c.slug}>{c.label}</option>
+          ))}
+          {isCustom && <option value="__custom__">{agent} (custom)</option>}
         </select>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Writes into <code className="text-text-secondary">routines/&lt;today&gt;.md</code>
+          {' '}under that agent&rsquo;s memory directory.
+        </p>
       </div>
+
+      {mode === 'extract' && (
+        <ModelPicker
+          value={(params.model as string) ?? DEFAULT_CLAUDE_MODEL}
+          onChange={(id) => onChange({ ...paramsRef.current, model: id })}
+        />
+      )}
     </div>
   );
 }
@@ -2245,9 +2694,10 @@ function ParamForm({
     case 'summarize': return <SummarizeParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} />;
 
     // Knowledge
-    case 'search_memory': return <SearchMemoryParams params={params} onChange={onChange} />;
-    case 'search_web': return <SearchWebParams params={params} onChange={onChange} />;
-    case 'save_to_memory': return <SaveToMemoryParams params={params} onChange={onChange} />;
+    case 'search_memory': return <SearchMemoryParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'search_web': return <SearchWebParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'search_documents': return <SearchDocumentsParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'save_to_memory': return <SaveToMemoryParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
 
     // Integrations
     case 'http_request': return <HttpRequestParams params={params} onChange={onChange} />;

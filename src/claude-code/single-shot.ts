@@ -48,6 +48,13 @@ export interface SingleShotOptions {
   cwd?: string;
   /** Override the model (e.g. "claude-sonnet-4-6"). Passed to `claude --model`. */
   model?: string;
+  /**
+   * Comma-separated tool list passed as `--allowedTools`. Used by routine
+   * Knowledge steps so `search_web` can enable WebSearch/WebFetch and
+   * `search_documents` can enable Read/Glob/Grep without broadening the
+   * default tool surface for everyone else.
+   */
+  allowedTools?: string;
 }
 
 export class ClaudeCodeUnavailableError extends Error {
@@ -87,6 +94,10 @@ export function singleShotClaudeCode(options: SingleShotOptions): Promise<string
 
   if (options.model) {
     args.push('--model', options.model);
+  }
+
+  if (options.allowedTools) {
+    args.push('--allowedTools', options.allowedTools);
   }
 
   // Strip CLAUDECODE so the child doesn't think it's running inside another
@@ -146,12 +157,14 @@ export function singleShotClaudeCode(options: SingleShotOptions): Promise<string
       if (aborted) return;
 
       if (code !== 0 && code !== null) {
-        const tail = stderr.trim().slice(-500);
-        reject(
-          new Error(
-            `Claude Code exited with code ${code}${tail ? `: ${tail}` : ''}`,
-          ),
-        );
+        const errTail = stderr.trim().slice(-500);
+        const outTail = stdout.trim().slice(-500);
+        const diag = errTail
+          ? errTail
+          : outTail
+            ? `(no stderr) stdout tail: ${outTail}`
+            : '(no stderr, no stdout)';
+        reject(new Error(`Claude Code exited with code ${code}: ${diag}`));
         return;
       }
 

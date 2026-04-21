@@ -39,6 +39,7 @@ export { summarizeAction } from './summarize';
 // Knowledge actions
 export { searchMemoryAction } from './search-memory';
 export { searchWebAction } from './search-web';
+export { searchDocumentsAction } from './search-documents';
 export { saveToMemoryAction } from './save-to-memory';
 
 // Integration actions

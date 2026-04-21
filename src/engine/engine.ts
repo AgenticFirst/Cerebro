@@ -26,6 +26,7 @@ import { extractAction } from './actions/extract';
 import { summarizeAction } from './actions/summarize';
 import { searchMemoryAction } from './actions/search-memory';
 import { searchWebAction } from './actions/search-web';
+import { searchDocumentsAction } from './actions/search-documents';
 import { saveToMemoryAction } from './actions/save-to-memory';
 import { httpRequestAction } from './actions/http-request';
 import { sendMessageAction } from './actions/send-message';
@@ -126,17 +127,9 @@ export class ExecutionEngine {
     };
     this.activeRuns.set(runId, activeRun);
 
-    // Persist run record (fire-and-forget)
-    this.backendRequest('POST', '/engine/runs', {
-      id: runId,
-      routine_id: request.routineId ?? null,
-      run_type: 'routine',
-      trigger: request.triggerSource ?? 'manual',
-      dag_json: JSON.stringify(request.dag),
-      total_steps: request.dag.steps.length,
-    }).catch(console.error);
-
-    // Batch-create step records and build stepId→stepRecordId map
+    // Persist run record, then batch-create step records. These must be
+    // chained — if the step POST races ahead of the run POST the backend
+    // returns 404 and step records (incl. output_json) are never persisted.
     const stepRecordIdMap = new Map<string, string>();
     const stepBodies = request.dag.steps.map((step, index) => {
       const stepRecordId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
@@ -150,7 +143,16 @@ export class ExecutionEngine {
         order_index: index,
       };
     });
-    this.backendRequest('POST', `/engine/runs/${runId}/steps`, stepBodies).catch(console.error);
+    const runPersisted: Promise<unknown> = this.backendRequest('POST', '/engine/runs', {
+      id: runId,
+      routine_id: request.routineId ?? null,
+      run_type: 'routine',
+      trigger: request.triggerSource ?? 'manual',
+      dag_json: JSON.stringify(request.dag),
+      total_steps: request.dag.steps.length,
+    })
+      .then(() => this.backendRequest('POST', `/engine/runs/${runId}/steps`, stepBodies));
+    runPersisted.catch(console.error);
 
     // Emit run_started
     emitter.emit({
@@ -166,7 +168,9 @@ export class ExecutionEngine {
       const stepRecordId = stepRecordIdMap.get(stepId);
       if (!stepRecordId) return;
       if (update.status === 'completed') completedStepCount++;
-      this.backendRequest('PATCH', `/engine/runs/${runId}/steps/${stepRecordId}`, update)
+      // Chain after run+step POSTs so PATCH can never 404 due to race.
+      runPersisted
+        .then(() => this.backendRequest('PATCH', `/engine/runs/${runId}/steps/${stepRecordId}`, update))
         .catch(console.error);
     };
 
@@ -449,6 +453,7 @@ export class ExecutionEngine {
     // Knowledge
     registry.register(searchMemoryAction);
     registry.register(searchWebAction);
+    registry.register(searchDocumentsAction);
     registry.register(saveToMemoryAction);
 
     // Integrations

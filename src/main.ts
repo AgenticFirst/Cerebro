@@ -257,6 +257,7 @@ async function startPythonBackend(): Promise<void> {
       '--db-path', dbPath,
       '--agent-memory-dir', agentMemoryDir,
       '--voice-models-dir', voiceModelsDir,
+      '--files-dir', getFilesRoot(),
     ],
     {
       stdio: ['ignore', 'pipe', 'pipe'],

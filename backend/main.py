@@ -305,10 +305,16 @@ if __name__ == "__main__":
         type=str,
         default=os.path.join(".", "voice-models"),
     )
+    parser.add_argument(
+        "--files-dir",
+        type=str,
+        default=os.path.join(".", "files"),
+    )
     args = parser.parse_args()
 
     app.state.db_path = os.path.abspath(args.db_path)
     app.state.agent_memory_dir = os.path.abspath(args.agent_memory_dir)
     app.state.voice_models_dir = os.path.abspath(args.voice_models_dir)
+    app.state.files_dir = os.path.abspath(args.files_dir)
 
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")

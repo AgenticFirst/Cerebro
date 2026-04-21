@@ -34,7 +34,18 @@ export const ACTION_OUTPUTS: Record<string, OutputField[]> = {
     { field: 'ai_answer', primary: true, label: 'AI answer' },
     { field: 'results', label: 'Results list' },
   ],
-  search_memory: [{ field: 'results', primary: true, label: 'Memory matches' }],
+  search_memory: [
+    { field: 'results', primary: true, label: 'Memory matches' },
+    { field: 'count', label: 'Match count' },
+  ],
+  search_documents: [
+    { field: 'results', primary: true, label: 'Document matches' },
+    { field: 'count', label: 'Match count' },
+  ],
+  save_to_memory: [
+    { field: 'item_id', primary: true, label: 'Saved item id' },
+    { field: 'saved', label: 'Saved?' },
+  ],
   run_command: [
     { field: 'stdout', primary: true, label: 'Output' },
     { field: 'stderr', label: 'Errors' },

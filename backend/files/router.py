@@ -1,6 +1,8 @@
+import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -102,6 +104,74 @@ def update_bucket(bucket_id: str, body: BucketUpdate, db: Session = Depends(get_
         .scalar()
     ) or 0
     return _bucket_to_read(bucket, file_count)
+
+
+class BucketFileContent(BaseModel):
+    id: str
+    name: str
+    ext: str
+    mime: str | None
+    size_bytes: int
+    abs_path: str
+
+
+@router.get("/buckets/{bucket_id}/contents", response_model=list[BucketFileContent])
+def list_bucket_contents(
+    bucket_id: str,
+    request: Request,
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """Return absolute paths for non-deleted files in a bucket.
+
+    Used by the ``search_documents`` routine action so Claude Code can read
+    the files directly via its ``Read`` tool. Workspace files keep their
+    absolute ``storage_path``; managed files are resolved against the
+    ``--files-dir`` root that was passed at startup.
+    """
+    bucket = db.get(Bucket, bucket_id)
+    if not bucket:
+        raise HTTPException(404, "Bucket not found")
+
+    files_root = getattr(request.app.state, "files_dir", None)
+    items = (
+        db.query(FileItem)
+        .filter(
+            FileItem.bucket_id == bucket_id,
+            FileItem.deleted_at.is_(None),
+        )
+        .order_by(FileItem.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    out: list[BucketFileContent] = []
+    for it in items:
+        if it.storage_kind == "managed":
+            if not files_root:
+                # Misconfigured backend — skip rather than leak a broken path.
+                continue
+            abs_path = os.path.abspath(os.path.join(files_root, it.storage_path))
+            # Refuse anything that escapes the files root.
+            if not (
+                abs_path == files_root
+                or abs_path.startswith(files_root + os.sep)
+            ):
+                continue
+        else:
+            # Workspace files are stored with an absolute path already.
+            abs_path = it.storage_path
+        out.append(
+            BucketFileContent(
+                id=it.id,
+                name=it.name,
+                ext=it.ext or "",
+                mime=it.mime,
+                size_bytes=it.size_bytes,
+                abs_path=abs_path,
+            )
+        )
+    return out
 
 
 @router.delete("/buckets/{bucket_id}", status_code=204)
