@@ -9,7 +9,13 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from .schemas import WebhookListenRequest, WebhookListenerResponse, WebhookStatusResponse
+from .schemas import (
+    WebhookListenRequest,
+    WebhookListenerResponse,
+    WebhookListenerSummary,
+    WebhookListListResponse,
+    WebhookStatusResponse,
+)
 
 router = APIRouter(tags=["webhooks"])
 
@@ -71,6 +77,26 @@ def register_listener(body: WebhookListenRequest, request: Request):
         match_path=body.match_path,
         timeout=body.timeout,
         created_at=listener.created_at.isoformat(),
+    )
+
+
+@router.get("/listen", response_model=WebhookListListResponse)
+def list_listeners():
+    """List active webhook listeners. Returns the current (non-expired) registry
+    so callers — including e2e tests and a future Ops panel — can discover
+    listener_ids without having to instrument registration."""
+    _cleanup_expired()
+    return WebhookListListResponse(
+        listeners=[
+            WebhookListenerSummary(
+                listener_id=l.listener_id,
+                match_path=l.match_path,
+                description=l.description,
+                received=l.received,
+                created_at=l.created_at.isoformat(),
+            )
+            for l in active_listeners.values()
+        ]
     )
 
 

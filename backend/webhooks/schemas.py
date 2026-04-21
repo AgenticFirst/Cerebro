@@ -25,3 +25,15 @@ class WebhookStatusResponse(BaseModel):
     payload: dict | None = None
     headers: dict | None = None
     received_at: str | None = None
+
+
+class WebhookListenerSummary(BaseModel):
+    listener_id: str
+    match_path: str
+    description: str
+    received: bool
+    created_at: str
+
+
+class WebhookListListResponse(BaseModel):
+    listeners: list[WebhookListenerSummary]

@@ -162,16 +162,22 @@ export class ExecutionEngine {
       timestamp: new Date().toISOString(),
     });
 
-    // Step persistence callback (tracks actual completions for the run record)
+    // Step persistence callback (tracks actual completions for the run record).
+    // We track every queued PATCH so the terminal (`run_completed`/`_failed`)
+    // event is only emitted after step records are durable — otherwise any
+    // consumer that fetches `/engine/runs/{id}` in response to that event
+    // sees a partially-updated view (steps still `pending`, output_json null).
     let completedStepCount = 0;
+    const stepPatchPromises: Promise<unknown>[] = [];
     const onStepUpdate = (stepId: string, update: StepPersistenceUpdate) => {
       const stepRecordId = stepRecordIdMap.get(stepId);
       if (!stepRecordId) return;
       if (update.status === 'completed') completedStepCount++;
       // Chain after run+step POSTs so PATCH can never 404 due to race.
-      runPersisted
+      const patch = runPersisted
         .then(() => this.backendRequest('PATCH', `/engine/runs/${runId}/steps/${stepRecordId}`, update))
         .catch(console.error);
+      stepPatchPromises.push(patch);
     };
 
     // Approval callback: pauses run and waits for user decision
@@ -179,13 +185,21 @@ export class ExecutionEngine {
       return new Promise<boolean>((resolvePromise) => {
         const approvalId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
 
+        // Prefer the user-authored summary (configured on the Approval Gate
+        // step) over the generic fallback — routine authors rely on it to
+        // explain *what* the reviewer is being asked to approve.
+        const authoredSummary =
+          typeof step.params?.summary === 'string' ? step.params.summary.trim() : '';
+        const approvalSummary =
+          authoredSummary || `Step "${step.name}" requires your approval before execution.`;
+
         // Persist approval request to backend
         this.backendRequest('POST', '/engine/approvals', {
           id: approvalId,
           run_id: runId,
           step_id: step.id,
           step_name: step.name,
-          summary: `Step "${step.name}" requires your approval before execution.`,
+          summary: approvalSummary,
           payload_json: JSON.stringify(step.params),
         }).catch(console.error);
 
@@ -209,7 +223,7 @@ export class ExecutionEngine {
           runId,
           stepId: step.id,
           approvalId,
-          summary: `Step "${step.name}" requires your approval before execution.`,
+          summary: approvalSummary,
           payload: step.params,
           timestamp: new Date().toISOString(),
         });
@@ -243,7 +257,10 @@ export class ExecutionEngine {
     const startTime = Date.now();
     executor
       .execute()
-      .then(() => {
+      .then(async () => {
+        // Flush queued step PATCHes before the terminal event fires so the
+        // run record is consistent with what the event announces.
+        await Promise.all(stepPatchPromises);
         const durationMs = Date.now() - startTime;
         emitter.emit({
           type: 'run_completed',
@@ -260,7 +277,9 @@ export class ExecutionEngine {
           duration_ms: durationMs,
         }).catch(console.error);
       })
-      .catch((err: Error) => {
+      .catch(async (err: Error) => {
+        // Same flush rationale as the success path.
+        await Promise.all(stepPatchPromises);
         const isCancelled = abortController.signal.aborted;
         const isDenied = err instanceof StepDeniedError;
 

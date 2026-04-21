@@ -78,13 +78,23 @@ def execute_script(body: ScriptExecuteRequest):
 
         duration_ms = int((time.time() - start) * 1000)
 
-        # Try to parse stdout as JSON for the result
+        # Try to parse stdout as a JSON object for the result. The response
+        # schema requires `result: dict | None`, so non-object JSON values
+        # (numbers, strings, arrays, booleans) are wrapped under `output`
+        # rather than returned bare — bare values would fail response
+        # validation and surface as 500 to the caller.
         parsed_result = None
-        if stdout.strip():
+        stripped = stdout.strip()
+        if stripped:
+            last_line = stripped.split("\n")[-1]
             try:
-                parsed_result = json.loads(stdout.strip().split("\n")[-1])
-            except (json.JSONDecodeError, IndexError):
-                parsed_result = {"output": stdout.strip()}
+                candidate = json.loads(last_line)
+            except json.JSONDecodeError:
+                candidate = None
+            if isinstance(candidate, dict):
+                parsed_result = candidate
+            else:
+                parsed_result = {"output": stripped}
 
         return ScriptExecuteResponse(
             result=parsed_result,

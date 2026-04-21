@@ -58,6 +58,24 @@ export const ACTION_OUTPUTS: Record<string, OutputField[]> = {
     { field: 'status', label: 'Status code' },
     { field: 'headers', label: 'Headers' },
   ],
+  condition: [
+    { field: 'branch', primary: true, label: 'Branch (true/false)' },
+    { field: 'passed', label: 'Passed?' },
+    { field: 'evaluated_value', label: 'Evaluated value' },
+  ],
+  loop: [
+    { field: 'items', primary: true, label: 'Items array' },
+    { field: 'count', label: 'Item count' },
+  ],
+  delay: [
+    { field: 'completed_at', primary: true, label: 'Completed at' },
+    { field: 'delayed_ms', label: 'Delay (ms)' },
+  ],
+  wait_for_webhook: [
+    { field: 'payload', primary: true, label: 'Webhook payload' },
+    { field: 'headers', label: 'Request headers' },
+    { field: 'received_at', label: 'Received at' },
+  ],
 };
 
 /** The pre-wired field for auto-connect. */

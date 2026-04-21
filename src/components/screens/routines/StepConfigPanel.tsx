@@ -2313,199 +2313,593 @@ function ClaudeCodeParams({ params, onChange }: P) {
   );
 }
 
-function WaitForWebhookParams({ params, onChange }: P) {
+const CONDITION_OPERATOR_OPTIONS: { value: string; label: string; needsValue: boolean }[] = [
+  { value: 'equals', label: 'equals', needsValue: true },
+  { value: 'not_equals', label: 'does not equal', needsValue: true },
+  { value: 'contains', label: 'contains', needsValue: true },
+  { value: 'not_contains', label: 'does not contain', needsValue: true },
+  { value: 'greater_than', label: 'is greater than', needsValue: true },
+  { value: 'less_than', label: 'is less than', needsValue: true },
+  { value: 'is_empty', label: 'is empty', needsValue: false },
+  { value: 'is_not_empty', label: 'is not empty', needsValue: false },
+  { value: 'matches_regex', label: 'matches regex', needsValue: true },
+];
+
+function operatorMeta(op: string) {
   return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel text="Match Path" hint="fieldMatchPath" />
-        <input
-          value={(params.match_path as string) ?? ''}
-          onChange={(e) => onChange({ ...params, match_path: e.target.value })}
-          placeholder="/my-webhook-path"
-          className={inputCls}
-        />
-      </div>
-      <div>
-        <FieldLabel text="Timeout (seconds)" hint="fieldTimeoutSeconds" />
-        <input
-          type="number" min={1}
-          value={(params.timeout as number) ?? 3600}
-          onChange={(e) => onChange({ ...params, timeout: parseInt(e.target.value) || 3600 })}
-          className={inputCls}
-        />
-      </div>
-      <div>
-        <FieldLabel text="Description" hint="fieldDescription" />
-        <textarea
-          value={(params.description as string) ?? ''}
-          onChange={(e) => onChange({ ...params, description: e.target.value })}
-          rows={2}
-          placeholder="What webhook are we waiting for?"
-          className={textareaCls}
-        />
-      </div>
-    </div>
+    CONDITION_OPERATOR_OPTIONS.find((o) => o.value === op) ?? CONDITION_OPERATOR_OPTIONS[0]
   );
 }
 
-function RunScriptParams({ params, onChange }: P) {
-  return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel text="Language" hint="fieldLanguage" />
-        <select
-          value={(params.language as string) ?? 'python'}
-          onChange={(e) => onChange({ ...params, language: e.target.value })}
-          className={selectCls}
-        >
-          <option value="python">Python</option>
-          <option value="javascript">JavaScript</option>
-        </select>
-      </div>
-      <div>
-        <FieldLabel text="Code" hint="fieldCode" />
-        <textarea
-          value={(params.code as string) ?? ''}
-          onChange={(e) => onChange({ ...params, code: e.target.value })}
-          rows={15}
-          placeholder={
-            (params.language as string) === 'javascript'
-              ? '// Access inputs via `input` object\n// Set results on `output` object\noutput.result = input.data;'
-              : '# Access inputs via `input` dict\n# Print JSON to stdout for result\nimport json\nprint(json.dumps({"result": input}))'
-          }
-          className={`${textareaCls} font-mono text-[11px] leading-relaxed`}
-        />
-      </div>
-      <div>
-        <FieldLabel text="Timeout (seconds)" hint="fieldTimeoutSeconds" />
-        <input
-          type="number" min={1}
-          value={(params.timeout as number) ?? 30}
-          onChange={(e) => onChange({ ...params, timeout: parseInt(e.target.value) || 30 })}
-          className={inputCls}
-        />
-      </div>
-    </div>
-  );
-}
+function ConditionParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const [field, setField] = useState((params.field as string) ?? '');
+  const [value, setValue] = useState((params.value as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
 
-// ── Logic Param Forms ─────────────────────────────────────────
+  const fieldRef = useRef<HTMLInputElement>(null);
+  const lastFocused = useRef<'field' | 'value'>('field');
 
-function ConditionParams({ params, onChange }: P) {
+  const handleFieldChange = (v: string) => {
+    setField(v);
+    onChange({ ...paramsRef.current, field: v });
+  };
+  const handleValueChange = (v: string) => {
+    setValue(v);
+    onChange({ ...paramsRef.current, value: v });
+  };
+
+  // Condition's `field` is a raw dot-path into wiredInputs (not Mustache-
+  // templated), so strip the `{{ }}` wrapping when a chip is clicked.
+  const insertChip = (token: string) => {
+    const bare = token.replace(/^\{\{/, '').replace(/\}\}$/, '');
+    const el = fieldRef.current;
+    if (!el || lastFocused.current !== 'field') {
+      handleFieldChange(field ? `${field}${bare}` : bare);
+      return;
+    }
+    const start = el.selectionStart ?? field.length;
+    const end = el.selectionEnd ?? field.length;
+    const next = field.slice(0, start) + bare + field.slice(end);
+    handleFieldChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + bare.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const operator = (params.operator as string) ?? 'equals';
+  const meta = operatorMeta(operator);
+
+  const [fieldTouched, setFieldTouched] = useState(false);
+  const fieldEmpty = field.trim().length === 0;
+  const showFieldError = fieldTouched && fieldEmpty;
+
   return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel text="If" hint="fieldConditionField" />
-        <input
-          value={(params.field as string) ?? ''}
-          onChange={(e) => onChange({ ...params, field: e.target.value })}
-          placeholder="{{step_name.field}}"
-          className={inputCls}
-        />
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Splits the routine into a true / false branch. Connect two downstream
+          steps and set one to run when true and the other when false — the
+          other branch is automatically skipped.
+        </p>
       </div>
+
+      <div>
+        <FieldLabel text="Check this field" hint="fieldConditionField" />
+        <input
+          ref={fieldRef}
+          value={field}
+          onChange={(e) => handleFieldChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'field'; }}
+          onBlur={() => setFieldTouched(true)}
+          placeholder="e.g. classify_category.category"
+          aria-invalid={showFieldError}
+          className={clsx(inputCls, showFieldError && 'border-red-500/60 focus:border-red-500/60')}
+        />
+        {showFieldError ? (
+          <FieldError text="Required — choose a field to evaluate." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Dot-path into the connected step&rsquo;s output (no&nbsp;
+            <code className="text-text-secondary">{'{{ }}'}</code>
+            &nbsp;here). Click a chip below to insert.
+          </p>
+        )}
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertChip}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
       <div>
         <FieldLabel text="Operator" hint="fieldConditionOperator" />
         <select
-          value={(params.operator as string) ?? 'equals'}
-          onChange={(e) => onChange({ ...params, operator: e.target.value })}
+          value={operator}
+          onChange={(e) => onChange({ ...paramsRef.current, operator: e.target.value })}
           className={selectCls}
         >
-          <option value="equals">equals</option>
-          <option value="not_equals">not equals</option>
-          <option value="contains">contains</option>
-          <option value="greater_than">greater than</option>
-          <option value="less_than">less than</option>
-          <option value="is_empty">is empty</option>
-          <option value="is_not_empty">is not empty</option>
-          <option value="matches_regex">matches regex</option>
+          {CONDITION_OPERATOR_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
         </select>
       </div>
-      <div>
-        <FieldLabel text="Value" hint="fieldConditionValue" />
-        <input
-          value={(params.value as string) ?? ''}
-          onChange={(e) => onChange({ ...params, value: e.target.value })}
-          placeholder="Comparison value"
-          className={inputCls}
-        />
-      </div>
-    </div>
-  );
-}
 
-function LoopParams({ params, onChange }: P) {
-  return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel text="Items Field" hint="stepItemsField" />
-        <input
-          value={(params.items_field as string) ?? ''}
-          onChange={(e) => onChange({ ...params, items_field: e.target.value })}
-          placeholder="{{step_name.results}} — array to iterate"
-          className={inputCls}
-        />
-      </div>
-      <div>
-        <FieldLabel text="Variable Name" hint="fieldVariableName" />
-        <input
-          value={(params.variable_name as string) ?? 'item'}
-          onChange={(e) => onChange({ ...params, variable_name: e.target.value })}
-          placeholder="item"
-          className={inputCls}
-        />
-        <p className="text-[10px] text-text-tertiary mt-1">
-          Access current item as {'{{'}variable_name{'}}'}
+      {meta.needsValue && (
+        <div>
+          <FieldLabel
+            text={operator === 'matches_regex' ? 'Regex pattern' : 'Compare against'}
+            hint="fieldConditionValue"
+          />
+          <input
+            value={value}
+            onChange={(e) => handleValueChange(e.target.value)}
+            onFocus={() => { lastFocused.current = 'value'; }}
+            placeholder={
+              operator === 'matches_regex'
+                ? 'e.g. ^urgent|critical$'
+                : operator === 'greater_than' || operator === 'less_than'
+                  ? 'e.g. 100'
+                  : 'e.g. urgent'
+            }
+            className={inputCls}
+          />
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            {operator === 'matches_regex'
+              ? 'JavaScript regex. Patterns over 200 chars are ignored for safety.'
+              : operator === 'greater_than' || operator === 'less_than'
+                ? 'Numeric comparison — non-numeric values evaluate to false.'
+                : 'Compared as strings. Leave empty to compare against the empty string.'}
+          </p>
+        </div>
+      )}
+
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-tertiary">
+          <span className="text-text-secondary">Tip:</span>{' '}
+          on the canvas, right-click the edge leaving this step to set whether
+          it runs on the <span className="text-accent">true</span> or{' '}
+          <span className="text-accent">false</span> branch.
         </p>
       </div>
     </div>
   );
 }
 
-function DelayParams({ params, onChange }: P) {
+const VALID_VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function LoopParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const [itemsField, setItemsField] = useState((params.items_field as string) ?? '');
+  const [variableName, setVariableName] = useState((params.variable_name as string) ?? 'item');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const itemsRef = useRef<HTMLInputElement>(null);
+
+  const handleItemsChange = (v: string) => {
+    setItemsField(v);
+    onChange({ ...paramsRef.current, items_field: v });
+  };
+  const handleVarChange = (v: string) => {
+    setVariableName(v);
+    onChange({ ...paramsRef.current, variable_name: v });
+  };
+
+  // items_field is a raw dot-path, not Mustache-templated.
+  const insertChip = (token: string) => {
+    const bare = token.replace(/^\{\{/, '').replace(/\}\}$/, '');
+    const el = itemsRef.current;
+    if (!el) {
+      handleItemsChange(itemsField ? `${itemsField}${bare}` : bare);
+      return;
+    }
+    const start = el.selectionStart ?? itemsField.length;
+    const end = el.selectionEnd ?? itemsField.length;
+    const next = itemsField.slice(0, start) + bare + itemsField.slice(end);
+    handleItemsChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + bare.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const [itemsTouched, setItemsTouched] = useState(false);
+  const itemsEmpty = itemsField.trim().length === 0;
+  const showItemsError = itemsTouched && itemsEmpty;
+  const varNameInvalid = variableName.length > 0 && !VALID_VAR_NAME.test(variableName);
+
   return (
-    <div className="flex gap-3">
-      <div className="flex-1">
-        <FieldLabel text="Duration" hint="fieldDuration" />
-        <input
-          type="number" min={1}
-          value={(params.duration as number) ?? 1}
-          onChange={(e) => onChange({ ...params, duration: parseInt(e.target.value) || 1 })}
-          className={inputCls}
-        />
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Extracts an array from an upstream step and passes it to the next
+          step. Use this when a downstream step can already handle a list
+          (e.g. Send Notification per item coming soon).
+        </p>
       </div>
-      <div className="flex-1">
-        <FieldLabel text="Unit" hint="fieldDurationUnit" />
-        <select
-          value={(params.unit as string) ?? 'seconds'}
-          onChange={(e) => onChange({ ...params, unit: e.target.value })}
-          className={selectCls}
-        >
-          <option value="seconds">Seconds</option>
-          <option value="minutes">Minutes</option>
-          <option value="hours">Hours</option>
-        </select>
+
+      <div>
+        <FieldLabel text="Array to iterate" hint="fieldLoopItemsField" />
+        <input
+          ref={itemsRef}
+          value={itemsField}
+          onChange={(e) => handleItemsChange(e.target.value)}
+          onBlur={() => setItemsTouched(true)}
+          placeholder="e.g. search_web.results"
+          aria-invalid={showItemsError}
+          className={clsx(inputCls, showItemsError && 'border-red-500/60 focus:border-red-500/60')}
+        />
+        {showItemsError ? (
+          <FieldError text="Required — pick an array field from a connected step." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Dot-path to the array (no&nbsp;
+            <code className="text-text-secondary">{'{{ }}'}</code>&nbsp;wrapping).
+            If the field isn&rsquo;t an array at runtime, the step fails with a
+            clear error.
+          </p>
+        )}
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertChip}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
+      <div>
+        <FieldLabel text="Item variable name" hint="fieldVariableName" />
+        <input
+          value={variableName}
+          onChange={(e) => handleVarChange(e.target.value)}
+          placeholder="item"
+          aria-invalid={varNameInvalid}
+          className={clsx(inputCls, varNameInvalid && 'border-red-500/60 focus:border-red-500/60')}
+        />
+        {varNameInvalid ? (
+          <FieldError text="Letters, digits, and underscore only; must start with a letter or underscore." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Name future iteration steps will use to reference the current item.
+            Stick to letters, digits, and underscores.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const DELAY_UNIT_OPTIONS: { value: 'seconds' | 'minutes' | 'hours'; label: string; toSeconds: number }[] = [
+  { value: 'seconds', label: 'Seconds', toSeconds: 1 },
+  { value: 'minutes', label: 'Minutes', toSeconds: 60 },
+  { value: 'hours', label: 'Hours', toSeconds: 3600 },
+];
+
+function humanizeSeconds(total: number): string {
+  if (total < 60) return `${total} s`;
+  if (total < 3600) {
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return s ? `${m} min ${s} s` : `${m} min`;
+  }
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
+function DelayParams({ params, onChange }: P) {
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const duration = Math.max(1, (params.duration as number) ?? 1);
+  const unit = ((params.unit as string) || 'seconds') as 'seconds' | 'minutes' | 'hours';
+  const unitMeta = DELAY_UNIT_OPTIONS.find((u) => u.value === unit) ?? DELAY_UNIT_OPTIONS[0];
+  const totalSeconds = duration * unitMeta.toSeconds;
+
+  const durationInvalid = !Number.isFinite(params.duration as number) || (params.duration as number) <= 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Pauses the routine for a fixed amount of time before continuing.
+          Useful for rate-limiting, staggered follow-ups, or giving an external
+          system time to catch up.
+        </p>
+      </div>
+
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <FieldLabel text="Wait for" hint="fieldDuration" />
+          <input
+            type="number"
+            min={1}
+            value={(params.duration as number) ?? 1}
+            onChange={(e) =>
+              onChange({
+                ...paramsRef.current,
+                duration: parseInt(e.target.value) || 1,
+              })
+            }
+            aria-invalid={durationInvalid}
+            className={clsx(inputCls, durationInvalid && 'border-red-500/60 focus:border-red-500/60')}
+          />
+        </div>
+        <div className="flex-1">
+          <FieldLabel text="Unit" hint="fieldDurationUnit" />
+          <select
+            value={unit}
+            onChange={(e) => onChange({ ...paramsRef.current, unit: e.target.value })}
+            className={selectCls}
+          >
+            {DELAY_UNIT_OPTIONS.map((u) => (
+              <option key={u.value} value={u.value}>{u.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2">
+        <p className="text-[11px] text-text-tertiary">
+          Total wait: <span className="text-text-secondary">{humanizeSeconds(totalSeconds)}</span>.
+          The delay is cancelled immediately if you stop the routine.
+        </p>
       </div>
     </div>
   );
 }
 
 function ApprovalGateParams({ params, onChange }: P) {
+  const [summary, setSummary] = useState((params.summary as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const handleSummaryChange = (v: string) => {
+    setSummary(v);
+    onChange({ ...paramsRef.current, summary: v });
+  };
+
+  const [touched, setTouched] = useState(false);
+  const isEmpty = summary.trim().length === 0;
+  const showError = touched && isEmpty;
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-amber-300">
+          Execution pauses here until you approve or deny the run on the
+          Approvals screen. Denied runs end with an &ldquo;Approval
+          denied&rdquo; error — nothing downstream runs.
+        </p>
+      </div>
+
       <div>
-        <FieldLabel text="Summary" hint="fieldApprovalSummary" />
+        <FieldLabel text="What should the reviewer check?" hint="fieldApprovalSummary" />
         <textarea
-          value={(params.summary as string) ?? ''}
-          onChange={(e) => onChange({ ...params, summary: e.target.value })}
-          rows={3}
-          placeholder="Describe what the reviewer should check..."
+          value={summary}
+          onChange={(e) => handleSummaryChange(e.target.value)}
+          onBlur={() => setTouched(true)}
+          rows={4}
+          placeholder="e.g. Confirm this draft looks good before sending."
+          aria-invalid={showError}
+          className={clsx(textareaCls, showError && 'border-red-500/60 focus:border-red-500/60')}
+        />
+        {showError ? (
+          <FieldError text="Required — give the reviewer enough context to decide." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            This text appears at the top of the approval request. Keep it
+            scannable — the reviewer decides in seconds.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WaitForWebhookParams({ params, onChange }: P) {
+  const [matchPath, setMatchPath] = useState((params.match_path as string) ?? '');
+  const [description, setDescription] = useState((params.description as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const handleMatchPath = (v: string) => {
+    setMatchPath(v);
+    onChange({ ...paramsRef.current, match_path: v });
+  };
+  const handleDescription = (v: string) => {
+    setDescription(v);
+    onChange({ ...paramsRef.current, description: v });
+  };
+
+  const timeout = (params.timeout as number) ?? 3600;
+  const timeoutInvalid = !Number.isFinite(timeout) || timeout <= 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Registers a temporary callback URL and pauses until an HTTP request
+          arrives. Useful for waiting on a third-party webhook, a human
+          clicking a link, or a long-running external job.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="Path hint (optional)" hint="fieldMatchPath" />
+        <input
+          value={matchPath}
+          onChange={(e) => handleMatchPath(e.target.value)}
+          placeholder="e.g. stripe-invoice"
+          className={inputCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Included in the generated callback URL so you can recognize it in
+          logs. Leave blank for an auto-generated path.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="Give up after" hint="fieldTimeoutSeconds" />
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            value={(params.timeout as number) ?? 3600}
+            onChange={(e) =>
+              onChange({
+                ...paramsRef.current,
+                timeout: parseInt(e.target.value) || 3600,
+              })
+            }
+            aria-invalid={timeoutInvalid}
+            className={clsx(inputCls, 'flex-1', timeoutInvalid && 'border-red-500/60 focus:border-red-500/60')}
+          />
+          <span className="text-[11px] text-text-tertiary">seconds</span>
+        </div>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Step fails with a timeout error if no callback arrives in this
+          window. Default is one hour.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="What is this callback for?" hint="fieldWebhookDescription" />
+        <textarea
+          value={description}
+          onChange={(e) => handleDescription(e.target.value)}
+          rows={2}
+          placeholder="e.g. Waiting for the Stripe invoice.paid event"
           className={textareaCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Shows up in the Activity log so you can recognize this step at a
+          glance.
+        </p>
       </div>
-      <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
-        <p className="text-[11px] text-amber-300 leading-relaxed">
-          Execution will pause at this node and wait for manual approval.
-          The run appears in the Approvals screen until a decision is made.
+    </div>
+  );
+}
+
+const SCRIPT_LANGUAGE_OPTIONS: { value: 'python' | 'javascript'; label: string; hint: string }[] = [
+  { value: 'python', label: 'Python', hint: 'Runs in the backend' },
+  { value: 'javascript', label: 'JavaScript', hint: 'Runs in a sandbox' },
+];
+
+const PYTHON_PLACEHOLDER =
+  '# Access inputs via the `input` dict.\n# Print JSON to stdout for the result.\nimport json\nprint(json.dumps({"result": input}))';
+const JS_PLACEHOLDER =
+  '// Access inputs via the `input` object.\n// Assign to `output` for the result.\noutput.result = input.data;';
+
+function RunScriptParams({ params, onChange }: P) {
+  const [code, setCode] = useState((params.code as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const handleCodeChange = (v: string) => {
+    setCode(v);
+    onChange({ ...paramsRef.current, code: v });
+  };
+
+  const language = ((params.language as string) || 'python') as 'python' | 'javascript';
+  const timeout = (params.timeout as number) ?? 30;
+  const timeoutInvalid = !Number.isFinite(timeout) || timeout <= 0;
+
+  const [codeTouched, setCodeTouched] = useState(false);
+  const codeEmpty = code.trim().length === 0;
+  const showCodeError = codeTouched && codeEmpty;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Runs a short Python or JavaScript snippet. Read upstream data from{' '}
+          <code className="text-text-secondary">input</code> and write results
+          to <code className="text-text-secondary">output</code> (JS) or{' '}
+          <code className="text-text-secondary">stdout</code> as JSON
+          (Python). Downstream steps receive whatever you emit.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="Language" hint="fieldLanguage" />
+        <div className="grid grid-cols-2 gap-1.5">
+          {SCRIPT_LANGUAGE_OPTIONS.map((opt) => {
+            const active = opt.value === language;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onChange({ ...paramsRef.current, language: opt.value })}
+                aria-pressed={active}
+                className={clsx(
+                  'rounded-lg border px-2 py-2 text-center transition-colors',
+                  active
+                    ? 'border-accent/50 bg-accent/10 text-accent'
+                    : 'border-border-subtle bg-bg-base text-text-secondary hover:border-accent/30',
+                )}
+              >
+                <div className="text-[11px] font-medium">{opt.label}</div>
+                <div className="text-[10px] text-text-tertiary">{opt.hint}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel text="Code" hint="fieldCode" />
+        <textarea
+          value={code}
+          onChange={(e) => handleCodeChange(e.target.value)}
+          onBlur={() => setCodeTouched(true)}
+          rows={14}
+          spellCheck={false}
+          placeholder={language === 'javascript' ? JS_PLACEHOLDER : PYTHON_PLACEHOLDER}
+          aria-invalid={showCodeError}
+          className={clsx(
+            textareaCls,
+            'font-mono text-[11px] leading-relaxed',
+            showCodeError && 'border-red-500/60 focus:border-red-500/60',
+          )}
+        />
+        {showCodeError ? (
+          <FieldError text="Required — the step can't run without code." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            {language === 'javascript'
+              ? 'Runs in a restricted Node sandbox — no require, no network.'
+              : 'Runs in the backend Python interpreter. Read stdin via the `input` dict.'}
+          </p>
+        )}
+      </div>
+
+      <div>
+        <FieldLabel text="Timeout" hint="fieldScriptTimeout" />
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            value={(params.timeout as number) ?? 30}
+            onChange={(e) =>
+              onChange({
+                ...paramsRef.current,
+                timeout: parseInt(e.target.value) || 30,
+              })
+            }
+            aria-invalid={timeoutInvalid}
+            className={clsx(inputCls, 'flex-1', timeoutInvalid && 'border-red-500/60 focus:border-red-500/60')}
+          />
+          <span className="text-[11px] text-text-tertiary">seconds</span>
+        </div>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Kills the script if it hasn&rsquo;t returned in this window.
         </p>
       </div>
     </div>

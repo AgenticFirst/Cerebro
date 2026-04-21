@@ -513,6 +513,116 @@ describe('engine integration: multiple concurrent runs', () => {
   }, 10_000);
 });
 
+// ── Approval summary regression ─────────────────────────────────
+//
+// Routine authors configure an `Approval Gate` step with a `params.summary`
+// string explaining *what* the reviewer is being asked to approve. The
+// engine must forward that string verbatim to:
+//   1. POST /engine/approvals  (so the Approvals screen surfaces it)
+//   2. the `approval_requested` event  (so toast + sidebar see it)
+//
+// If this breaks, reviewers get a generic "Step X requires approval" message
+// and have to open the DAG to figure out what they're approving — a real UX
+// regression we've shipped before.
+describe('engine integration: approval summary propagation', () => {
+  it('forwards user-authored params.summary to POST /engine/approvals body and approval_requested event', async () => {
+    resetCaptures();
+    const engine = new ExecutionEngine(serverPort, makeMockRuntime());
+    const webContents = makeMockWebContents();
+
+    const AUTHORED = 'Please review the $500 refund before we send it.';
+    const request: EngineRunRequest = {
+      dag: {
+        steps: [
+          makeStep({
+            id: 'gate',
+            actionType: 'approval_gate',
+            requiresApproval: true,
+            params: { summary: AUTHORED },
+          }),
+        ],
+      },
+    };
+
+    const runId = await engine.startRun(webContents, request);
+
+    // Wait for the approval POST to land.
+    await waitForRequests((reqs) =>
+      reqs.some((r) => r.method === 'POST' && r.path === '/engine/approvals'),
+    );
+
+    const approvalPost = capturedRequests.find(
+      (r) => r.method === 'POST' && r.path === '/engine/approvals',
+    );
+    expect(approvalPost).toBeDefined();
+    expect(approvalPost!.body.run_id).toBe(runId);
+    expect(approvalPost!.body.step_id).toBe('gate');
+    expect(approvalPost!.body.summary).toBe(AUTHORED);
+
+    // The approval_requested IPC event must also carry the authored summary.
+    const sendCalls = webContents.send.mock.calls;
+    const approvalEvent = sendCalls
+      .map((c: any) => c[1])
+      .find((e: any) => e?.type === 'approval_requested');
+    expect(approvalEvent).toBeDefined();
+    expect(approvalEvent.summary).toBe(AUTHORED);
+
+    // Clean up: resolve the pending approval as denied so the run finishes
+    // (otherwise it hangs and leaks into the next test).
+    const approvalId = approvalPost!.body.id;
+    engine.resolveApproval(approvalId, false, 'test teardown');
+    await waitForRequests((reqs) =>
+      reqs.some(
+        (r) =>
+          r.method === 'PATCH' &&
+          r.path === `/engine/runs/${runId}` &&
+          (r.body?.status === 'failed' || r.body?.status === 'cancelled'),
+      ),
+    );
+  }, 10_000);
+
+  it('falls back to a step-name message when params.summary is empty / whitespace', async () => {
+    resetCaptures();
+    const engine = new ExecutionEngine(serverPort, makeMockRuntime());
+    const webContents = makeMockWebContents();
+
+    const request: EngineRunRequest = {
+      dag: {
+        steps: [
+          makeStep({
+            id: 'gate2',
+            actionType: 'approval_gate',
+            requiresApproval: true,
+            params: { summary: '   ' }, // whitespace — must be trimmed out
+          }),
+        ],
+      },
+    };
+
+    const runId = await engine.startRun(webContents, request);
+
+    await waitForRequests((reqs) =>
+      reqs.some((r) => r.method === 'POST' && r.path === '/engine/approvals'),
+    );
+
+    const approvalPost = capturedRequests.find(
+      (r) => r.method === 'POST' && r.path === '/engine/approvals',
+    );
+    expect(approvalPost!.body.summary).toMatch(/gate2.*approval/i);
+    expect(approvalPost!.body.summary).not.toMatch(/^\s+$/);
+
+    engine.resolveApproval(approvalPost!.body.id, false, 'test teardown');
+    await waitForRequests((reqs) =>
+      reqs.some(
+        (r) =>
+          r.method === 'PATCH' &&
+          r.path === `/engine/runs/${runId}` &&
+          (r.body?.status === 'failed' || r.body?.status === 'cancelled'),
+      ),
+    );
+  }, 10_000);
+});
+
 describe('engine integration: IPC events forwarded to webContents', () => {
   it('webContents.send receives all events on correct channel', async () => {
     resetCaptures();
