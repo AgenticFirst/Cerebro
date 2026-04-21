@@ -17,12 +17,18 @@ import {
   type Edge,
   type Connection,
   type NodeChange,
+  type EdgeChange,
 } from '@xyflow/react';
 import type { Routine } from '../types/routines';
 import type { RoutineStepData, CanvasDefinition } from '../utils/dag-flow-mapping';
 import { dagToFlow, flowToDag, autoLayoutNodes, TRIGGER_NODE_ID } from '../utils/dag-flow-mapping';
 import { getDefaultStepData, ACTION_META, resolveActionType } from '../utils/step-defaults';
 import { getEdgeColor } from '../utils/handle-types';
+import {
+  computeAutoWireMapping,
+  sanitizeVarName,
+  uniqueVarName,
+} from '../utils/action-outputs';
 import { useRoutines } from '../context/RoutineContext';
 
 // ── Cycle detection (BFS from target to see if it reaches source) ──
@@ -74,6 +80,33 @@ function getNodeActionType(nodes: Node[], nodeId: string): string {
   if (node.type === 'triggerNode') return 'trigger';
   const d = node.data as RoutineStepData;
   return resolveActionType(d?.actionType ?? 'signal');
+}
+
+/**
+ * Drop any inputMapping on a target that referenced a source across every
+ * (source, target) pair in `removed`. Skips node re-creation when the mapping
+ * list would be unchanged so React doesn't see spurious reference changes.
+ */
+function stripMappingsForRemovedEdges(
+  nodes: Node[],
+  removed: { source: string; target: string }[],
+): Node[] {
+  if (removed.length === 0) return nodes;
+  const byTarget = new Map<string, Set<string>>();
+  for (const { source, target } of removed) {
+    const set = byTarget.get(target) ?? new Set<string>();
+    set.add(source);
+    byTarget.set(target, set);
+  }
+  return nodes.map((n) => {
+    const sources = byTarget.get(n.id);
+    if (!sources) return n;
+    const d = n.data as RoutineStepData;
+    const existing = d.inputMappings ?? [];
+    const filtered = existing.filter((m) => !sources.has(m.sourceStepId));
+    if (filtered.length === existing.length) return n;
+    return { ...n, data: { ...d, inputMappings: filtered } };
+  });
 }
 
 // ── Map routine trigger_type to canvas trigger action type ──
@@ -147,7 +180,7 @@ export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 export function useRoutineCanvas(routine: Routine) {
   const { updateRoutine } = useRoutines();
   const [nodes, setNodes, baseOnNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [edges, setEdges, baseOnEdgesChange] = useEdgesState([]);
   const [triggerNode, setTriggerNode] = useState<Node | null>(null);
   const [annotationNodes, setAnnotationNodes] = useState<Node[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -304,7 +337,13 @@ export function useRoutineCanvas(routine: Routine) {
       if (isAnnotation) {
         setAnnotationNodes((prev) => prev.filter((n) => n.id !== nodeId));
       } else {
-        setNodes((prev) => prev.filter((n) => n.id !== nodeId));
+        const removedPairs = edges
+          .filter((e) => e.source === nodeId || e.target === nodeId)
+          .map((e) => ({ source: e.source, target: e.target }));
+        setNodes((prev) => {
+          const without = prev.filter((n) => n.id !== nodeId);
+          return stripMappingsForRemovedEdges(without, removedPairs);
+        });
         setEdges((prev) =>
           prev.filter((e) => e.source !== nodeId && e.target !== nodeId),
         );
@@ -313,7 +352,7 @@ export function useRoutineCanvas(routine: Routine) {
       if (selectedNodeId === nodeId) setSelectedNodeId(null);
       setIsDirty(true);
     },
-    [setNodes, setEdges, selectedNodeId, annotationNodes],
+    [setNodes, setEdges, edges, selectedNodeId, annotationNodes],
   );
 
   // ── Update node data ──
@@ -342,14 +381,81 @@ export function useRoutineCanvas(routine: Routine) {
         return;
       }
 
-      // Step node
-      setNodes((prev) =>
-        prev.map((node) =>
-          node.id === nodeId
-            ? { ...node, data: { ...node.data, ...partial } }
-            : node,
-        ),
-      );
+      // Step node — apply the patch, then cascade if the name changed so
+      // downstream mappings and template refs stay in sync.
+      setNodes((prev) => {
+        const current = prev.find((n) => n.id === nodeId);
+        if (!current) return prev;
+        const currentData = current.data as RoutineStepData;
+
+        const nameIsChanging =
+          typeof partial.name === 'string' && partial.name !== currentData.name;
+        const oldVar = nameIsChanging ? sanitizeVarName(currentData.name) : '';
+        const newVarBase = nameIsChanging
+          ? sanitizeVarName(partial.name as string)
+          : '';
+
+        // Fast path: nothing to cascade — only the renamed/patched node changes.
+        if (!nameIsChanging || !oldVar) {
+          return prev.map((node) =>
+            node.id === nodeId
+              ? { ...node, data: { ...node.data, ...partial } }
+              : node,
+          );
+        }
+
+        const oldTemplate = new RegExp(`\\{\\{\\s*${oldVar}\\s*\\}\\}`, 'g');
+        return prev.map((node) => {
+          if (node.id === nodeId) {
+            return { ...node, data: { ...node.data, ...partial } };
+          }
+          const d = node.data as RoutineStepData;
+          const mappings = d.inputMappings ?? [];
+          const affected = mappings.some(
+            (m) => m.sourceStepId === nodeId && m.targetField === oldVar,
+          );
+          if (!affected) return node;
+
+          // Collision-safe new name against mappings that won't be rewritten.
+          const keptMappings = mappings.filter(
+            (m) => !(m.sourceStepId === nodeId && m.targetField === oldVar),
+          );
+          const newVar = uniqueVarName(newVarBase, keptMappings, nodeId);
+
+          const rewrittenMappings = mappings.map((m) =>
+            m.sourceStepId === nodeId && m.targetField === oldVar
+              ? { ...m, targetField: newVar }
+              : m,
+          );
+
+          // Rewrite {{oldVar}} → {{newVar}} inside string params. A single
+          // regex instance is reused (lastIndex is reset between calls because
+          // .test + .replace share the global flag).
+          oldTemplate.lastIndex = 0;
+          const rewrittenParams: Record<string, unknown> = {};
+          let paramsChanged = false;
+          for (const [k, v] of Object.entries(d.params ?? {})) {
+            if (typeof v === 'string') {
+              oldTemplate.lastIndex = 0;
+              if (oldTemplate.test(v)) {
+                rewrittenParams[k] = v.replace(oldTemplate, `{{${newVar}}}`);
+                paramsChanged = true;
+                continue;
+              }
+            }
+            rewrittenParams[k] = v;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...d,
+              inputMappings: rewrittenMappings,
+              params: paramsChanged ? rewrittenParams : d.params,
+            },
+          };
+        });
+      });
       setIsDirty(true);
     },
     [setNodes, annotationNodes],
@@ -384,21 +490,75 @@ export function useRoutineCanvas(routine: Routine) {
       const sourceType = getNodeActionType(allNodes, connection.source);
       const edgeProps = makeEdgeProps(sourceType);
 
+      let edgeAdded = false;
       setEdges((prev) => {
-        // Check for duplicate edge using latest state
         const exists = prev.some(
           (e) => e.source === connection.source && e.target === connection.target,
         );
         if (exists) return prev;
-
-        // Cycle detection using latest state
         if (wouldCreateCycle(prev, connection.source!, connection.target!)) return prev;
-
+        edgeAdded = true;
         return addEdge({ ...connection, ...edgeProps }, prev);
       });
+
+      if (edgeAdded) {
+        // Auto-wire the source's primary output so {{stepName}} resolves at
+        // runtime. Triggers, terminal actions, and duplicates return null from
+        // computeAutoWireMapping — in those cases we leave the target untouched
+        // (the edge still encodes run order).
+        const sourceNode = allNodes.find((n) => n.id === connection.source);
+        const targetNode = allNodes.find((n) => n.id === connection.target);
+        if (
+          sourceNode &&
+          targetNode &&
+          sourceNode.type === 'routineStep' &&
+          targetNode.type === 'routineStep'
+        ) {
+          const sourceData = sourceNode.data as RoutineStepData;
+          setNodes((prev) =>
+            prev.map((n) => {
+              if (n.id !== connection.target) return n;
+              const d = n.data as RoutineStepData;
+              const mapping = computeAutoWireMapping(
+                {
+                  id: sourceNode.id,
+                  name: sourceData.name,
+                  actionType: resolveActionType(sourceData.actionType),
+                },
+                d.inputMappings,
+              );
+              if (!mapping) return n;
+              return {
+                ...n,
+                data: { ...d, inputMappings: [...(d.inputMappings ?? []), mapping] },
+              };
+            }),
+          );
+        }
+      }
+
       setIsDirty(true);
     },
-    [setEdges, allNodes],
+    [setEdges, setNodes, allNodes],
+  );
+
+  // ── Edge changes (wraps ReactFlow's base handler to clean up mappings) ──
+
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      const removed: { source: string; target: string }[] = [];
+      for (const ch of changes) {
+        if (ch.type === 'remove') {
+          const edge = edges.find((e) => e.id === ch.id);
+          if (edge) removed.push({ source: edge.source, target: edge.target });
+        }
+      }
+      baseOnEdgesChange(changes);
+      if (removed.length > 0) {
+        setNodes((prev) => stripMappingsForRemovedEdges(prev, removed));
+      }
+    },
+    [baseOnEdgesChange, edges, setNodes],
   );
 
   // ── Delete selected elements ──
@@ -413,14 +573,26 @@ export function useRoutineCanvas(routine: Routine) {
 
     if (!hasSelectedNodes && !hasSelectedEdges) return;
 
+    // Skip mappings on targets that are being deleted — they're going away anyway.
+    const removedPairs = edges
+      .filter(
+        (e) =>
+          (selectedNodeIds.has(e.source) || selectedNodeIds.has(e.target) || e.selected) &&
+          !selectedNodeIds.has(e.target),
+      )
+      .map((e) => ({ source: e.source, target: e.target }));
+
     if (hasSelectedNodes) {
-      // Remove step nodes
-      setNodes((prev) => prev.filter((n) => !selectedNodeIds.has(n.id)));
-      // Remove annotation nodes
+      setNodes((prev) => {
+        const kept = prev.filter((n) => !selectedNodeIds.has(n.id));
+        return stripMappingsForRemovedEdges(kept, removedPairs);
+      });
       setAnnotationNodes((prev) => prev.filter((n) => !selectedNodeIds.has(n.id)));
       if (selectedNodeId && selectedNodeIds.has(selectedNodeId)) {
         setSelectedNodeId(null);
       }
+    } else if (removedPairs.length > 0) {
+      setNodes((prev) => stripMappingsForRemovedEdges(prev, removedPairs));
     }
 
     setEdges((prev) =>

@@ -165,6 +165,130 @@ describe('dagToFlow', () => {
     expect(triggerTargets).toEqual(['a']);
   });
 
+  // ── Backfill: existing routines without inputMappings get chips ──
+
+  it('backfills inputMappings for dependsOn entries that have no mapping (old routines)', () => {
+    const dag: CanvasDefinition = {
+      steps: [
+        {
+          id: 'a',
+          name: 'Summarize email',
+          actionType: 'ask_ai',
+          params: {},
+          dependsOn: [],
+          inputMappings: [],
+          requiresApproval: false,
+          onError: 'fail',
+        },
+        {
+          id: 'b',
+          name: 'Notify',
+          actionType: 'send_notification',
+          params: {},
+          dependsOn: ['a'],
+          inputMappings: [], // saved before auto-wire existed
+          requiresApproval: false,
+          onError: 'fail',
+        },
+      ],
+      trigger: { triggerType: 'trigger_manual', config: {} },
+    };
+
+    const { nodes } = dagToFlow(dag);
+    const dataB = nodes.find((n) => n.id === 'b')!.data as RoutineStepData;
+    expect(dataB.inputMappings).toEqual([
+      {
+        sourceStepId: 'a',
+        sourceField: 'response',
+        targetField: 'summarize_email',
+      },
+    ]);
+  });
+
+  it('preserves user-customized inputMappings and only fills gaps', () => {
+    const dag: CanvasDefinition = {
+      steps: [
+        {
+          id: 'a',
+          name: 'A',
+          actionType: 'ask_ai',
+          params: {},
+          dependsOn: [],
+          inputMappings: [],
+          requiresApproval: false,
+          onError: 'fail',
+        },
+        {
+          id: 'b',
+          name: 'B',
+          actionType: 'summarize',
+          params: {},
+          dependsOn: [],
+          inputMappings: [],
+          requiresApproval: false,
+          onError: 'fail',
+        },
+        {
+          id: 'c',
+          name: 'Combine',
+          actionType: 'ask_ai',
+          params: {},
+          dependsOn: ['a', 'b'],
+          // Only `a` already has a (renamed) mapping; `b` should backfill.
+          inputMappings: [
+            { sourceStepId: 'a', sourceField: 'response', targetField: 'my_custom_name' },
+          ],
+          requiresApproval: false,
+          onError: 'fail',
+        },
+      ],
+    };
+
+    const { nodes } = dagToFlow(dag);
+    const dataC = nodes.find((n) => n.id === 'c')!.data as RoutineStepData;
+    expect(dataC.inputMappings).toHaveLength(2);
+    expect(dataC.inputMappings).toContainEqual({
+      sourceStepId: 'a',
+      sourceField: 'response',
+      targetField: 'my_custom_name',
+    });
+    expect(dataC.inputMappings).toContainEqual({
+      sourceStepId: 'b',
+      sourceField: 'summary',
+      targetField: 'b',
+    });
+  });
+
+  it('does not backfill when source has no primary output (terminal action deps)', () => {
+    const dag: CanvasDefinition = {
+      steps: [
+        {
+          id: 'a',
+          name: 'Send',
+          actionType: 'send_notification',
+          params: {},
+          dependsOn: [],
+          inputMappings: [],
+          requiresApproval: false,
+          onError: 'fail',
+        },
+        {
+          id: 'b',
+          name: 'After',
+          actionType: 'ask_ai',
+          params: {},
+          dependsOn: ['a'],
+          inputMappings: [],
+          requiresApproval: false,
+          onError: 'fail',
+        },
+      ],
+    };
+    const { nodes } = dagToFlow(dag);
+    const dataB = nodes.find((n) => n.id === 'b')!.data as RoutineStepData;
+    expect(dataB.inputMappings).toEqual([]);
+  });
+
   it('sanitizes stale __trigger__ entries in dependsOn (migration path)', () => {
     const dag: CanvasDefinition = {
       steps: [

@@ -13,6 +13,7 @@ import { MarkerType, type Node, type Edge } from '@xyflow/react';
 import type { DAGDefinition, StepDefinition } from '../engine/dag/types';
 import { resolveActionType } from './step-defaults';
 import { getEdgeColor } from './handle-types';
+import { computeAutoWireMapping } from './action-outputs';
 
 // ── Constants ─────────────────────────────────────────────────
 
@@ -135,6 +136,24 @@ export function dagToFlow(dag: CanvasDefinition): {
       step.inputMappings = (step.inputMappings ?? []).filter((m) =>
         stepIds.has(m.sourceStepId),
       );
+    }
+
+    // Backfill auto-wire mappings for routines saved before onConnect
+    // auto-wired them (or for edges hand-edited into the JSON). Without this,
+    // an existing routine loads with edges but no chips in the config panel.
+    // Idempotent: computeAutoWireMapping skips sources with no primary
+    // output (triggers, terminal actions) and never creates duplicates.
+    const stepById = new Map(dag.steps.map((s) => [s.id, s]));
+    for (const step of dag.steps) {
+      for (const sourceId of step.dependsOn) {
+        const source = stepById.get(sourceId);
+        if (!source) continue;
+        const mapping = computeAutoWireMapping(
+          { id: source.id, name: source.name, actionType: resolveActionType(source.actionType) },
+          step.inputMappings,
+        );
+        if (mapping) step.inputMappings = [...step.inputMappings, mapping];
+      }
     }
 
     for (const step of dag.steps) {

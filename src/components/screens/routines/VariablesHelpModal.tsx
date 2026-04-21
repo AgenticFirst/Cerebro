@@ -125,7 +125,7 @@ export default function VariablesHelpModal({ onClose }: VariablesHelpModalProps)
                     label: t('variablesHelp.step1OutputLabel'),
                     value: (
                       <>
-                        <Chip>reply</Chip> ={' '}
+                        <Chip>summarize_email</Chip> ={' '}
                         <em>"{t('variablesHelp.step1OutputValue')}"</em>
                       </>
                     ),
@@ -143,7 +143,7 @@ export default function VariablesHelpModal({ onClose }: VariablesHelpModalProps)
                     value: (
                       <>
                         {t('variablesHelp.step2BodyPrefix')}{' '}
-                        <Chip>{'{{reply}}'}</Chip>
+                        <Chip>{'{{summarize_email}}'}</Chip>
                       </>
                     ),
                   },

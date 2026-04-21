@@ -1,14 +1,26 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Shield, Info, HelpCircle, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { X, Shield, Info, HelpCircle, AlertCircle, Plus } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Node } from '@xyflow/react';
 import type { RoutineStepData } from '../../../utils/dag-flow-mapping';
 import { ACTION_META, resolveActionType } from '../../../utils/step-defaults';
+import {
+  getAllOutputs,
+  sanitizeVarName,
+  uniqueVarName,
+} from '../../../utils/action-outputs';
 import { useExperts } from '../../../context/ExpertContext';
 import Toggle from '../../ui/Toggle';
 import Tooltip from '../../ui/Tooltip';
 import VariablesHelpModal from './VariablesHelpModal';
+
+/** Minimal step descriptor threaded from the editor for tooltip + secondary chip lookup. */
+interface SourceStepInfo {
+  id: string;
+  name: string;
+  actionType: string;
+}
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -46,28 +58,86 @@ const textareaCls =
 const selectCls = inputCls;
 
 type P = { params: Record<string, unknown>; onChange: (p: Record<string, unknown>) => void };
-type PWithStep = P & { step?: RoutineStepData };
+type PWithStep = P & {
+  step?: RoutineStepData;
+  sourceSteps?: SourceStepInfo[];
+  onAddMapping?: (mapping: {
+    sourceStepId: string;
+    sourceField: string;
+    targetField: string;
+  }) => void;
+};
 
 // ── AI Param Forms ────────────────────────────────────────────
 
 /**
  * Chips listing the variables wired into this step from upstream edges.
  * Clicking a chip drops its {{placeholder}} into the last-focused prompt/system
- * textarea so users never have to guess the exact syntax.
+ * textarea so users never have to guess the exact syntax. The `+` menu lets
+ * users pull in secondary output fields (confidence, stderr, etc.) that aren't
+ * auto-wired on connect.
  */
 function VariableChips({
   step,
   onInsert,
+  sourceSteps,
+  onAddMapping,
 }: {
   step?: RoutineStepData;
   onInsert: (token: string) => void;
+  sourceSteps?: SourceStepInfo[];
+  onAddMapping?: (mapping: {
+    sourceStepId: string;
+    sourceField: string;
+    targetField: string;
+  }) => void;
 }) {
   const mappings = step?.inputMappings ?? [];
+  const stepsById = useMemo(() => {
+    const m = new Map<string, SourceStepInfo>();
+    for (const s of sourceSteps ?? []) m.set(s.id, s);
+    return m;
+  }, [sourceSteps]);
+
+  // Build the set of upstream steps this node is already wired from and list
+  // any of their non-primary fields that could still be pulled in.
+  const secondaryCandidates = useMemo(() => {
+    const wiredSourceIds = new Set(mappings.map((m) => m.sourceStepId));
+    const candidates: { source: SourceStepInfo; field: string; label: string }[] = [];
+    for (const sourceId of wiredSourceIds) {
+      const source = stepsById.get(sourceId);
+      if (!source) continue;
+      const outputs = getAllOutputs(resolveActionType(source.actionType));
+      for (const out of outputs) {
+        if (out.primary) continue;
+        const already = mappings.some(
+          (m) => m.sourceStepId === sourceId && m.sourceField === out.field,
+        );
+        if (already) continue;
+        candidates.push({ source, field: out.field, label: out.label });
+      }
+    }
+    return candidates;
+  }, [mappings, stepsById]);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as HTMLElement)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [menuOpen]);
+
   if (mappings.length === 0) {
     return (
       <p className="text-[11px] text-text-tertiary leading-relaxed">
-        No variables yet. Connect an edge from another step into this one, and
-        its output will show up here as a <code className="px-1 rounded bg-bg-base text-text-secondary">{'{{variable}}'}</code> you can paste into the prompt.
+        Nothing connected yet. Drag a line from another step into this one and
+        its output will appear here as a chip you can click to insert.
       </p>
     );
   }
@@ -76,21 +146,70 @@ function VariableChips({
       <p className="text-[11px] text-text-tertiary">
         Click to insert. These come from steps connected into this one.
       </p>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         {mappings.map((m, i) => {
           const token = `{{${m.targetField}}}`;
+          const source = stepsById.get(m.sourceStepId);
+          const outputs = source
+            ? getAllOutputs(resolveActionType(source.actionType))
+            : [];
+          const fieldLabel =
+            outputs.find((o) => o.field === m.sourceField)?.label ?? m.sourceField;
+          const tip = source
+            ? `${source.name} → ${fieldLabel}`
+            : `From ${m.sourceStepId}.${m.sourceField}`;
           return (
             <button
               key={`${m.sourceStepId}-${m.targetField}-${i}`}
               type="button"
               onClick={() => onInsert(token)}
-              title={`From ${m.sourceStepId}.${m.sourceField}`}
+              title={tip}
               className="px-2 py-0.5 rounded-full text-[11px] font-mono border border-accent/30 bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
             >
               {token}
             </button>
           );
         })}
+        {secondaryCandidates.length > 0 && onAddMapping && (
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              title="Add another field from a connected step"
+              aria-label="Add another field"
+              className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-border-subtle text-text-tertiary hover:text-accent hover:border-accent/40 transition-colors"
+            >
+              <Plus size={11} />
+            </button>
+            {menuOpen && (
+              <div className="absolute z-10 top-full left-0 mt-1 min-w-[180px] max-w-[260px] rounded-md border border-border-subtle bg-bg-surface shadow-lg py-1">
+                {secondaryCandidates.map((c, i) => {
+                  const baseVar = `${sanitizeVarName(c.source.name)}_${sanitizeVarName(c.field) || 'field'}`;
+                  const targetField = uniqueVarName(baseVar, mappings, c.source.id);
+                  return (
+                    <button
+                      key={`${c.source.id}-${c.field}-${i}`}
+                      type="button"
+                      onClick={() => {
+                        onAddMapping({
+                          sourceStepId: c.source.id,
+                          sourceField: c.field,
+                          targetField,
+                        });
+                        setMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-[11px] text-text-secondary hover:bg-bg-hover transition-colors"
+                    >
+                      <span className="text-text-primary">{c.source.name}</span>
+                      <span className="text-text-tertiary"> → </span>
+                      <span>{c.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -104,9 +223,17 @@ function VariableChips({
 function AvailableVariablesSection({
   step,
   onInsert,
+  sourceSteps,
+  onAddMapping,
 }: {
   step?: RoutineStepData;
   onInsert: (token: string) => void;
+  sourceSteps?: SourceStepInfo[];
+  onAddMapping?: (mapping: {
+    sourceStepId: string;
+    sourceField: string;
+    targetField: string;
+  }) => void;
 }) {
   const { t } = useTranslation();
   const [showHelp, setShowHelp] = useState(false);
@@ -127,7 +254,12 @@ function AvailableVariablesSection({
           </button>
         </Tooltip>
       </div>
-      <VariableChips step={step} onInsert={onInsert} />
+      <VariableChips
+        step={step}
+        onInsert={onInsert}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
       {showHelp && <VariablesHelpModal onClose={() => setShowHelp(false)} />}
     </div>
   );
@@ -142,7 +274,7 @@ function FieldError({ text }: { text: string }) {
   );
 }
 
-function AskAiParams({ params, onChange, step }: PWithStep) {
+function AskAiParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
   const { experts } = useExperts();
 
   // Local state for the text fields. The parent's `onChange` is debounced
@@ -217,7 +349,7 @@ function AskAiParams({ params, onChange, step }: PWithStep) {
           onFocus={() => { lastFocused.current = 'prompt'; }}
           onBlur={() => setPromptTouched(true)}
           rows={5}
-          placeholder="e.g. Summarize the email below in two sentences:&#10;&#10;{{previous_output}}"
+          placeholder="e.g. Summarize the email below in two sentences."
           aria-invalid={showPromptError}
           className={clsx(textareaCls, showPromptError && 'border-red-500/60 focus:border-red-500/60')}
         />
@@ -225,13 +357,18 @@ function AskAiParams({ params, onChange, step }: PWithStep) {
           <FieldError text="Required — the step will fail without a prompt." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Write the instruction in plain English. To reference data from a
-            connected step, wrap its name in double braces like <code className="px-1 rounded bg-bg-base text-text-secondary">{'{{previous_output}}'}</code>.
+            Write the instruction in plain English. If you&rsquo;ve connected
+            another step, click its chip below to pull its output in.
           </p>
         )}
       </div>
 
-      <AvailableVariablesSection step={step} onInsert={insertAtCursor} />
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
 
       <div>
         <FieldLabel text="Role / style (optional)" hint="fieldSystemPrompt" />
@@ -1066,7 +1203,7 @@ function SendMessageParams({ params, onChange }: P) {
   );
 }
 
-function NotificationParams({ params, onChange, step }: PWithStep) {
+function NotificationParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
   // Local state mirrors the Ask AI pattern. Keeps typing smooth even when
   // the parent's debounced onChange hasn't propagated the latest value
   // into `params` yet — unrelated re-renders (context updates, ReactFlow
@@ -1143,15 +1280,21 @@ function NotificationParams({ params, onChange, step }: PWithStep) {
           onChange={(e) => handleBodyChange(e.target.value)}
           onFocus={() => { lastFocused.current = 'body'; }}
           rows={4}
-          placeholder="e.g. Summary:&#10;&#10;{{previous_output}}"
+          placeholder="e.g. Here's what the AI found."
           className={textareaCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Longer text shown under the headline. Use <code className="px-1 rounded bg-bg-base text-text-secondary">{'{{previous_output}}'}</code> to pull in data from a connected step.
+          Longer text shown under the headline. If you&rsquo;ve connected
+          another step, click its chip below to insert its output.
         </p>
       </div>
 
-      <AvailableVariablesSection step={step} onInsert={insertAtCursor} />
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
 
       <div>
         <FieldLabel text="Urgency" hint="fieldNotifyUrgency" />
@@ -1190,12 +1333,23 @@ function ParamForm({
   params,
   onChange,
   step,
-}: { actionType: string; step?: RoutineStepData } & P) {
+  sourceSteps,
+  onAddMapping,
+}: {
+  actionType: string;
+  step?: RoutineStepData;
+  sourceSteps?: SourceStepInfo[];
+  onAddMapping?: (mapping: {
+    sourceStepId: string;
+    sourceField: string;
+    targetField: string;
+  }) => void;
+} & P) {
   const resolved = resolveActionType(actionType);
 
   switch (resolved) {
     // AI
-    case 'ask_ai': return <AskAiParams params={params} onChange={onChange} step={step} />;
+    case 'ask_ai': return <AskAiParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
     case 'run_expert': return <RunExpertParams params={params} onChange={onChange} />;
     case 'classify': return <ClassifyParams params={params} onChange={onChange} />;
     case 'extract': return <ExtractParams params={params} onChange={onChange} />;
@@ -1221,7 +1375,7 @@ function ParamForm({
 
     // Output
     case 'send_message': return <SendMessageParams params={params} onChange={onChange} />;
-    case 'send_notification': return <NotificationParams params={params} onChange={onChange} step={step} />;
+    case 'send_notification': return <NotificationParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
 
     default:
       return <StubParams name={ACTION_META[actionType]?.name ?? actionType} />;
@@ -1232,15 +1386,49 @@ function ParamForm({
 
 interface StepConfigPanelProps {
   node: Node;
+  allNodes?: Node[];
   onUpdate: (nodeId: string, partial: Record<string, unknown>) => void;
   onClose: () => void;
 }
 
-export default function StepConfigPanel({ node, onUpdate, onClose }: StepConfigPanelProps) {
+export default function StepConfigPanel({ node, allNodes, onUpdate, onClose }: StepConfigPanelProps) {
   const { t } = useTranslation();
   const d = node.data as RoutineStepData;
   const resolved = resolveActionType(d.actionType);
   const meta = ACTION_META[resolved] ?? ACTION_META[d.actionType];
+
+  const sourceSteps = useMemo<SourceStepInfo[]>(() => {
+    if (!allNodes) return [];
+    return allNodes
+      .filter((n) => n.type === 'routineStep')
+      .map((n) => {
+        const nd = n.data as RoutineStepData;
+        return { id: n.id, name: nd.name, actionType: nd.actionType };
+      });
+  }, [allNodes]);
+
+  const stepsById = useMemo(() => {
+    const m = new Map<string, SourceStepInfo>();
+    for (const s of sourceSteps) m.set(s.id, s);
+    return m;
+  }, [sourceSteps]);
+
+  const handleAddMapping = useCallback(
+    (mapping: { sourceStepId: string; sourceField: string; targetField: string }) => {
+      const existing = d.inputMappings ?? [];
+      if (
+        existing.some(
+          (m) =>
+            m.sourceStepId === mapping.sourceStepId &&
+            m.sourceField === mapping.sourceField,
+        )
+      ) {
+        return;
+      }
+      onUpdate(node.id, { inputMappings: [...existing, mapping] });
+    },
+    [node.id, onUpdate, d.inputMappings],
+  );
 
   const [stepName, setStepName] = useState(d.name);
 
@@ -1334,6 +1522,8 @@ export default function StepConfigPanel({ node, onUpdate, onClose }: StepConfigP
             params={d.params}
             onChange={handleParamsChange}
             step={d}
+            sourceSteps={sourceSteps}
+            onAddMapping={handleAddMapping}
           />
         </Section>
 
@@ -1410,17 +1600,21 @@ export default function StepConfigPanel({ node, onUpdate, onClose }: StepConfigP
         {d.inputMappings && d.inputMappings.length > 0 && (
           <Section label="INPUT MAPPINGS">
             <div className="space-y-1.5">
-              {d.inputMappings.map((m, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2 text-[11px] text-text-tertiary font-mono bg-bg-base rounded px-2.5 py-1.5 border border-border-subtle"
-                >
-                  <span className="text-text-secondary">{m.sourceStepId}</span>
-                  <span>.{m.sourceField}</span>
-                  <span className="text-accent">&rarr;</span>
-                  <span className="text-text-secondary">{m.targetField}</span>
-                </div>
-              ))}
+              {d.inputMappings.map((m, i) => {
+                const source = stepsById.get(m.sourceStepId);
+                const sourceLabel = source?.name ?? m.sourceStepId;
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 text-[11px] text-text-tertiary font-mono bg-bg-base rounded px-2.5 py-1.5 border border-border-subtle"
+                  >
+                    <span className="text-text-secondary">{sourceLabel}</span>
+                    <span>.{m.sourceField || 'output'}</span>
+                    <span className="text-accent">&rarr;</span>
+                    <span className="text-text-secondary">{m.targetField}</span>
+                  </div>
+                );
+              })}
             </div>
           </Section>
         )}

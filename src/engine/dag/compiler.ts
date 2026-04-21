@@ -4,12 +4,22 @@
  */
 
 import type { DAGDefinition, StepDefinition, InputMapping } from './types';
+import { sanitizeVarName } from '../../utils/action-outputs';
 
 interface CompileOptions {
   steps: string[];
   defaultRunnerId?: string;
   approvalGates?: string[];
   onError?: 'fail' | 'skip' | 'retry';
+}
+
+/**
+ * Fall back for step names whose sanitized form is empty (e.g. a prompt
+ * that's all emoji/punctuation). Keeps the compiled variable name stable
+ * across compilations by pinning to the step index.
+ */
+function varNameForStep(name: string, index: number): string {
+  return sanitizeVarName(name) || `step_${index + 1}`;
 }
 
 /**
@@ -24,10 +34,11 @@ export function compileLinearDAG(options: CompileOptions): DAGDefinition {
   const dagSteps: StepDefinition[] = steps.map((stepText, i) => {
     const id = `step_${i + 1}`;
     const prevId = i > 0 ? `step_${i}` : undefined;
+    const prevVar = i > 0 ? varNameForStep(steps[i - 1], i - 1) : '';
 
     const dependsOn: string[] = prevId ? [prevId] : [];
     const inputMappings: InputMapping[] = prevId
-      ? [{ sourceStepId: prevId, sourceField: 'response', targetField: 'previous_output' }]
+      ? [{ sourceStepId: prevId, sourceField: 'response', targetField: prevVar }]
       : [];
 
     const actionType = defaultRunnerId ? 'expert_step' : 'ask_ai';
@@ -37,12 +48,12 @@ export function compileLinearDAG(options: CompileOptions): DAGDefinition {
             prompt: stepText,
             expertId: defaultRunnerId,
             additionalContext: prevId
-              ? 'Previous step output: {{previous_output}}'
+              ? `Previous step output: {{${prevVar}}}`
               : undefined,
           }
         : {
             prompt: prevId
-              ? `${stepText}\n\nPrevious step output:\n{{previous_output}}`
+              ? `${stepText}\n\nPrevious step output:\n{{${prevVar}}}`
               : stepText,
             system_prompt: 'You are executing a step in a routine. Complete the task described.',
             agent: 'cerebro',

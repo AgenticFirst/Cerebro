@@ -231,6 +231,7 @@ function CanvasInner({ routine }: { routine: Routine }) {
         {!sidebarOpen && isStepSelected && selectedNode && (
           <StepConfigPanel
             node={selectedNode}
+            allNodes={nodes}
             onUpdate={updateNodeData}
             onClose={() => setSelectedNodeId(null)}
           />

@@ -17,18 +17,18 @@ describe('compileLinearDAG', () => {
     expect(dag.steps[0].dependsOn).toEqual([]);
     expect(dag.steps[0].inputMappings).toEqual([]);
 
-    // Second step depends on first
+    // Second step depends on first — variable name is derived from step 1's name
     expect(dag.steps[1].id).toBe('step_2');
     expect(dag.steps[1].dependsOn).toEqual(['step_1']);
     expect(dag.steps[1].inputMappings).toEqual([
-      { sourceStepId: 'step_1', sourceField: 'response', targetField: 'previous_output' },
+      { sourceStepId: 'step_1', sourceField: 'response', targetField: 'fetch_data' },
     ]);
 
-    // Third step depends on second
+    // Third step depends on second — variable name is derived from step 2's name
     expect(dag.steps[2].id).toBe('step_3');
     expect(dag.steps[2].dependsOn).toEqual(['step_2']);
     expect(dag.steps[2].inputMappings).toEqual([
-      { sourceStepId: 'step_2', sourceField: 'response', targetField: 'previous_output' },
+      { sourceStepId: 'step_2', sourceField: 'response', targetField: 'transform_data' },
     ]);
   });
 
@@ -42,10 +42,10 @@ describe('compileLinearDAG', () => {
     expect(dag.steps[0].params).toHaveProperty('agent', 'cerebro');
   });
 
-  it('wires {{previous_output}} into ask_ai prompt for chained steps', () => {
+  it('wires the previous step name as a variable into ask_ai prompt for chained steps', () => {
     const dag = compileLinearDAG({ steps: ['Fetch data', 'Transform it'] });
     expect(dag.steps[1].actionType).toBe('ask_ai');
-    expect(dag.steps[1].params.prompt).toContain('{{previous_output}}');
+    expect(dag.steps[1].params.prompt).toContain('{{fetch_data}}');
   });
 
   it('uses expert_step when defaultRunnerId is set', () => {
@@ -65,9 +65,9 @@ describe('compileLinearDAG', () => {
     });
     // First step — no previous context
     expect(dag.steps[0].params.additionalContext).toBeUndefined();
-    // Second step — has previous output reference
+    // Second step — reference uses the sanitized previous step name
     expect(dag.steps[1].params.additionalContext).toBe(
-      'Previous step output: {{previous_output}}',
+      'Previous step output: {{step_a}}',
     );
   });
 
