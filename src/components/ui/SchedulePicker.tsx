@@ -30,17 +30,21 @@ export default function SchedulePicker({
   onDaysChange,
   onTimeChange,
 }: SchedulePickerProps) {
+  // Defensive: prop may arrive undefined from stale/half-initialized parents
+  // (e.g. after a routine switch) — never crash the editor on that.
+  const safeDays: DayOfWeek[] = Array.isArray(days) ? days : [];
+
   const toggleDay = (day: DayOfWeek) => {
-    if (days.includes(day)) {
-      onDaysChange(days.filter((d) => d !== day));
+    if (safeDays.includes(day)) {
+      onDaysChange(safeDays.filter((d) => d !== day));
     } else {
-      onDaysChange([...days, day]);
+      onDaysChange([...safeDays, day]);
     }
   };
 
   const isWeekdays =
-    WEEKDAYS.every((d) => days.includes(d)) && days.length === 5;
-  const isEveryDay = days.length === 7;
+    WEEKDAYS.every((d) => safeDays.includes(d)) && safeDays.length === 5;
+  const isEveryDay = safeDays.length === 7;
 
   const tzAbbr = useMemo(() => {
     const parts = Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
@@ -49,10 +53,10 @@ export default function SchedulePicker({
   }, []);
 
   const preview = useMemo(() => {
-    if (days.length === 0) return 'Select at least one day';
-    const desc = describeSchedule({ days, time });
+    if (safeDays.length === 0) return 'Select at least one day';
+    const desc = describeSchedule({ days: safeDays, time });
     return tzAbbr ? `${desc} (${tzAbbr})` : desc;
-  }, [days, time, tzAbbr]);
+  }, [safeDays, time, tzAbbr]);
 
   return (
     <div className="space-y-3">
@@ -87,7 +91,7 @@ export default function SchedulePicker({
       {/* Day pills */}
       <div className="flex gap-1.5">
         {DAY_LABELS.map(({ key, short }) => {
-          const active = days.includes(key);
+          const active = safeDays.includes(key);
           return (
             <button
               key={key}

@@ -73,9 +73,14 @@ function TriggerNode({ data, selected }: NodeProps) {
         style={{
           borderLeftWidth: 4,
           borderLeftColor: TEAL,
+          // Set the non-left borders via individual longhand properties to
+          // avoid mixing the `borderColor` shorthand with `borderLeftColor`
+          // (React warns about shorthand/non-shorthand conflicts on re-render).
           ...(selected
             ? {
-                borderColor: TEAL,
+                borderTopColor: TEAL,
+                borderRightColor: TEAL,
+                borderBottomColor: TEAL,
                 boxShadow: `0 0 12px ${TEAL}40`,
               }
             : {}),

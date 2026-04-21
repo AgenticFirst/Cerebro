@@ -247,9 +247,12 @@ interface RoutineEditorProps {
 }
 
 export default function RoutineEditor({ routine }: RoutineEditorProps) {
+  // key={routine.id} guarantees a full unmount/remount when the user switches
+  // to a different routine, so canvas state (trigger node, nodes, edges,
+  // stickies, dirty flags) never leaks from the previous routine.
   return (
     <ReactFlowProvider>
-      <CanvasInner routine={routine} />
+      <CanvasInner key={routine.id} routine={routine} />
     </ReactFlowProvider>
   );
 }

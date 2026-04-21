@@ -78,12 +78,66 @@ function getNodeActionType(nodes: Node[], nodeId: string): string {
 
 // ── Map routine trigger_type to canvas trigger action type ──
 
-function routineTriggerToActionType(triggerType: string): string {
+export function routineTriggerToActionType(triggerType: string): string {
   switch (triggerType) {
     case 'cron': return 'trigger_schedule';
     case 'webhook': return 'trigger_webhook';
     default: return 'trigger_manual';
   }
+}
+
+// ── Pure trigger-node reconciliation (exported for tests) ──
+
+/**
+ * Given the previous canvas trigger node (or null) and the current routine
+ * state, return the trigger node that should be rendered.
+ *
+ * Returns `prev` unchanged when already in sync, so callers can short-circuit
+ * state updates and avoid marking the canvas dirty unnecessarily.
+ *
+ * Behavior:
+ *   - Preserves the trigger node's position across type switches.
+ *   - On a real type switch, resets config (so stale webhook paths / cron
+ *     values don't leak across types) — seeding cron_expression if the routine
+ *     has one.
+ *   - Within the same type, preserves prev config but keeps cron_expression in
+ *     sync with the routine when the new type is schedule.
+ */
+export function reconcileTriggerNode(
+  prev: Node | null,
+  routine: Pick<Routine, 'triggerType' | 'cronExpression'>,
+): Node {
+  const desiredType = routineTriggerToActionType(routine.triggerType);
+  const basePosition = prev?.position ?? { x: 0, y: -120 };
+  const prevData = (prev?.data ?? {}) as {
+    triggerType?: string;
+    config?: Record<string, unknown>;
+  };
+  const typeChanged = prevData.triggerType !== desiredType;
+
+  const nextConfig: Record<string, unknown> = typeChanged
+    ? routine.cronExpression
+      ? { cron_expression: routine.cronExpression }
+      : {}
+    : {
+        ...(prevData.config ?? {}),
+        ...(desiredType === 'trigger_schedule'
+          ? { cron_expression: routine.cronExpression ?? '' }
+          : {}),
+      };
+
+  const sameType = prevData.triggerType === desiredType;
+  const sameConfig =
+    JSON.stringify(prevData.config ?? {}) === JSON.stringify(nextConfig);
+  if (prev && sameType && sameConfig) return prev;
+
+  return {
+    id: '__trigger__',
+    type: 'triggerNode',
+    position: basePosition,
+    data: { triggerType: desiredType, config: nextConfig },
+    deletable: false,
+  };
 }
 
 // ── Hook ──────────────────────────────────────────────────────
@@ -151,46 +205,15 @@ export function useRoutineCanvas(routine: Routine) {
   // initialization so it doesn't fight the DAG-restore path.
   useEffect(() => {
     if (!initializedRef.current) return;
-    const desiredType = routineTriggerToActionType(routine.triggerType);
     let changed = false;
     setTriggerNode((prev) => {
-      const basePosition = prev?.position ?? { x: 0, y: -120 };
-      const prevData = (prev?.data ?? {}) as {
-        triggerType?: string;
-        config?: Record<string, unknown>;
-      };
-      const typeChanged = prevData.triggerType !== desiredType;
-
-      // Reset config on a real type switch so stale webhook paths / cron don't
-      // leak. Within the same type, preserve user-edited config but keep
-      // cron_expression in sync when the routine's value changes.
-      const nextConfig: Record<string, unknown> = typeChanged
-        ? routine.cronExpression
-          ? { cron_expression: routine.cronExpression }
-          : {}
-        : {
-            ...(prevData.config ?? {}),
-            ...(desiredType === 'trigger_schedule'
-              ? { cron_expression: routine.cronExpression ?? '' }
-              : {}),
-          };
-
-      const sameType = prevData.triggerType === desiredType;
-      const sameConfig =
-        JSON.stringify(prevData.config ?? {}) === JSON.stringify(nextConfig);
-      if (prev && sameType && sameConfig) return prev;
-
+      const next = reconcileTriggerNode(prev, routine);
+      if (next === prev) return prev;
       changed = true;
-      return {
-        id: '__trigger__',
-        type: 'triggerNode',
-        position: basePosition,
-        data: { triggerType: desiredType, config: nextConfig },
-        deletable: false,
-      };
+      return next;
     });
     if (changed) setIsDirty(true);
-  }, [routine.triggerType, routine.cronExpression]);
+  }, [routine.triggerType, routine.cronExpression]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Combine all node types for ReactFlow rendering
   const allNodes = useMemo(() => {
