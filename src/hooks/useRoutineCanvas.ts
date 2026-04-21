@@ -146,6 +146,52 @@ export function useRoutineCanvas(routine: Routine) {
     }
   }, [routine.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reconcile trigger node when routine.trigger_type / cron_expression changes
+  // (e.g. user switches the trigger pill in EditorToolbar). Runs only after
+  // initialization so it doesn't fight the DAG-restore path.
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    const desiredType = routineTriggerToActionType(routine.triggerType);
+    let changed = false;
+    setTriggerNode((prev) => {
+      const basePosition = prev?.position ?? { x: 0, y: -120 };
+      const prevData = (prev?.data ?? {}) as {
+        triggerType?: string;
+        config?: Record<string, unknown>;
+      };
+      const typeChanged = prevData.triggerType !== desiredType;
+
+      // Reset config on a real type switch so stale webhook paths / cron don't
+      // leak. Within the same type, preserve user-edited config but keep
+      // cron_expression in sync when the routine's value changes.
+      const nextConfig: Record<string, unknown> = typeChanged
+        ? routine.cronExpression
+          ? { cron_expression: routine.cronExpression }
+          : {}
+        : {
+            ...(prevData.config ?? {}),
+            ...(desiredType === 'trigger_schedule'
+              ? { cron_expression: routine.cronExpression ?? '' }
+              : {}),
+          };
+
+      const sameType = prevData.triggerType === desiredType;
+      const sameConfig =
+        JSON.stringify(prevData.config ?? {}) === JSON.stringify(nextConfig);
+      if (prev && sameType && sameConfig) return prev;
+
+      changed = true;
+      return {
+        id: '__trigger__',
+        type: 'triggerNode',
+        position: basePosition,
+        data: { triggerType: desiredType, config: nextConfig },
+        deletable: false,
+      };
+    });
+    if (changed) setIsDirty(true);
+  }, [routine.triggerType, routine.cronExpression]);
+
   // Combine all node types for ReactFlow rendering
   const allNodes = useMemo(() => {
     const result: Node[] = [];
