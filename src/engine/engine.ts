@@ -87,6 +87,20 @@ export class ExecutionEngine {
     // Build registry with all built-in actions
     const registry = this.createRegistry(webContents);
 
+    // Sanitize the incoming DAG: drop dependsOn / inputMappings entries that
+    // reference non-step ids (the synthetic "__trigger__" node, or steps
+    // that were deleted after the mapping was saved). Without this pass,
+    // validation fails for routines whose dag_json was written by an older
+    // version of the canvas — the renderer's dagToFlow performs the same
+    // cleanup, but is only invoked when the editor is opened.
+    const stepIds = new Set(request.dag.steps.map((s) => s.id));
+    for (const step of request.dag.steps) {
+      step.dependsOn = step.dependsOn.filter((id) => stepIds.has(id));
+      step.inputMappings = (step.inputMappings ?? []).filter((m) =>
+        stepIds.has(m.sourceStepId),
+      );
+    }
+
     // Validate DAG before execution
     validateDAG(request.dag, registry);
 

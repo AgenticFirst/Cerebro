@@ -8,19 +8,13 @@
  * upstream step outputs — consistent with the Ask AI action.
  */
 
-import Mustache from 'mustache';
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
+import { renderTemplate } from './utils/template';
 
 interface NotificationParams {
   title: string;
   body?: string;
   urgency?: 'normal' | 'critical';
-}
-
-function renderTemplate(source: string, vars: Record<string, unknown>): string {
-  if (!source) return '';
-  // Prompts / notification bodies are plain text, not HTML — disable escaping.
-  return Mustache.render(source, vars, undefined, { escape: (v) => String(v) });
 }
 
 export const sendNotificationAction: ActionDefinition = {

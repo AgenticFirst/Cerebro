@@ -109,8 +109,13 @@ export function validateDAG(dag: DAGDefinition, registry: ActionRegistry): Valid
   }
 
   if (errors.length > 0) {
+    // Embed the full details in `.message` so they survive Electron IPC
+    // serialization — custom error fields (`.details`) are dropped across
+    // the ipcMain/ipcRenderer boundary, leaving the renderer with only
+    // `.name` and `.message` to show the user.
+    const bullets = errors.map((e) => `  • ${e}`).join('\n');
     throw new DAGValidationError(
-      `DAG validation failed with ${errors.length} error(s)`,
+      `DAG validation failed with ${errors.length} error(s):\n${bullets}`,
       errors,
     );
   }

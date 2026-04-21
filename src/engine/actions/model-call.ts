@@ -13,9 +13,9 @@
  * older DAGs in `dag_json` keep executing.
  */
 
-import Mustache from 'mustache';
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { singleShotClaudeCode } from '../../claude-code/single-shot';
+import { renderTemplate } from './utils/template';
 
 interface AskAiParams {
   prompt: string;
@@ -24,12 +24,6 @@ interface AskAiParams {
   agent?: string;
   /** Max conversation turns. Defaults to Claude Code's own default. */
   max_turns?: number;
-}
-
-function renderTemplate(source: string, vars: Record<string, unknown>): string {
-  if (!source) return '';
-  // Disable HTML escaping — prompts are sent to an LLM, not rendered in a browser.
-  return Mustache.render(source, vars, undefined, { escape: (v) => String(v) });
 }
 
 export const askAiAction: ActionDefinition = {

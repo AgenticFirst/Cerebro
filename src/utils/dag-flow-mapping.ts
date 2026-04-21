@@ -14,6 +14,11 @@ import type { DAGDefinition, StepDefinition } from '../engine/dag/types';
 import { resolveActionType } from './step-defaults';
 import { getEdgeColor } from './handle-types';
 
+// ── Constants ─────────────────────────────────────────────────
+
+/** Reserved id for the visual trigger node. Not a step — its payload lives in CanvasDefinition.trigger. */
+export const TRIGGER_NODE_ID = '__trigger__';
+
 // ── Types ─────────────────────────────────────────────────────
 
 export interface RoutineStepData extends Record<string, unknown> {
@@ -50,7 +55,7 @@ export interface CanvasDefinition extends DAGDefinition {
   canvasViewport?: { x: number; y: number; zoom: number };
 }
 
-// ── Constants ─────────────────────────────────────────────────
+// ── Layout constants ──────────────────────────────────────────
 
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 80;
@@ -119,6 +124,19 @@ export function dagToFlow(dag: CanvasDefinition): {
 
   // Step nodes (with action type migration)
   if (dag.steps && dag.steps.length > 0) {
+    // Migration: drop any dependsOn / inputMappings entries that don't
+    // reference a real step (e.g. legacy blobs that serialized the trigger
+    // node id, or mappings left dangling after a step was deleted). The
+    // next autosave will persist the cleaned form. Without this, the
+    // engine validator rejects the DAG at run time.
+    const stepIds = new Set(dag.steps.map((s) => s.id));
+    for (const step of dag.steps) {
+      step.dependsOn = step.dependsOn.filter((id) => stepIds.has(id));
+      step.inputMappings = (step.inputMappings ?? []).filter((m) =>
+        stepIds.has(m.sourceStepId),
+      );
+    }
+
     for (const step of dag.steps) {
       const resolved = resolveActionType(step.actionType);
       actionTypeMap.set(step.id, resolved);
@@ -154,13 +172,30 @@ export function dagToFlow(dag: CanvasDefinition): {
         });
       }
     }
+
+    // Auto-render trigger → root-step edges so the canvas reflects DAG
+    // semantics ("the trigger fires every root step"). Derivation is
+    // deterministic, so save → load → save is idempotent.
+    if (dag.trigger) {
+      for (const step of dag.steps) {
+        if (step.dependsOn.length === 0) {
+          edges.push({
+            id: `e-${TRIGGER_NODE_ID}-${step.id}`,
+            source: TRIGGER_NODE_ID,
+            target: step.id,
+            type: 'smoothstep',
+            ...makeEdgeStyle('trigger'),
+          });
+        }
+      }
+    }
   }
 
   // Trigger node
   let triggerNode: Node | null = null;
   if (dag.trigger) {
     triggerNode = {
-      id: '__trigger__',
+      id: TRIGGER_NODE_ID,
       type: 'triggerNode',
       position: dag.trigger.position ?? { x: 0, y: 0 },
       data: {
@@ -205,16 +240,25 @@ export function flowToDag(
   triggerNode?: Node | null,
   annotationNodes?: Node[],
 ): CanvasDefinition {
+  // Only serialize step nodes (filter out trigger/annotation/other types)
+  const stepNodes = nodes.filter((n) => n.type === 'routineStep');
+  const stepNodeIds = new Set(stepNodes.map((n) => n.id));
+
+  // Only step→step edges contribute to dependsOn / branch handles. Edges
+  // sourced at the trigger (or any future meta-node) are visual-only and must
+  // not leak into the DAG — the trigger's relationship is encoded in
+  // CanvasDefinition.trigger + each step's empty dependsOn (root == triggered).
+  const stepEdges = edges.filter(
+    (e) => stepNodeIds.has(e.source) && stepNodeIds.has(e.target),
+  );
+
   // Build a map of target node → list of source node ids
   const incomingMap = new Map<string, string[]>();
-  for (const edge of edges) {
+  for (const edge of stepEdges) {
     const deps = incomingMap.get(edge.target) ?? [];
     deps.push(edge.source);
     incomingMap.set(edge.target, deps);
   }
-
-  // Only serialize step nodes (filter out trigger/annotation/other types)
-  const stepNodes = nodes.filter((n) => n.type === 'routineStep');
 
   // Build a map of edge sourceHandle per source→target pair for branch conditions
   const edgeHandleMap = new Map<string, string | undefined>();
@@ -223,7 +267,7 @@ export function flowToDag(
     const d = node.data as RoutineStepData;
     nodeTypeMap.set(node.id, d.actionType);
   }
-  for (const edge of edges) {
+  for (const edge of stepEdges) {
     edgeHandleMap.set(`${edge.source}->${edge.target}`, edge.sourceHandle ?? undefined);
   }
 

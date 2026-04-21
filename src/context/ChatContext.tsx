@@ -40,6 +40,7 @@ interface ChatState {
   activeScreen: Screen;
   activeExpertId: string | null;
   chatError: ChatError | null;
+  pendingActivityRunId: string | null;
 }
 
 interface CreateConversationOptions {
@@ -60,6 +61,7 @@ interface ChatActions {
   dismissChatError: () => void;
   getConversationsForExpert: (expertId: string) => Conversation[];
   generalConversations: Conversation[];
+  consumePendingActivityRunId: () => void;
 }
 
 type ChatContextValue = ChatState &
@@ -129,6 +131,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [activeScreen, setActiveScreen] = useState<Screen>('chat');
   const [activeExpertId, setActiveExpertId] = useState<string | null>(null);
   const [chatError, setChatError] = useState<ChatError | null>(null);
+  const [pendingActivityRunId, setPendingActivityRunId] = useState<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
 
   // Keep ref in sync so async callbacks always see latest state
@@ -643,84 +646,44 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [activeConversationId, activeExpertId, createConversation, addMessage, updateMessage, chainWrite, waitForConversation],
   );
 
-  // ── Run routine in chat (triggered via UI "Run Now" button) ────
-  const runRoutineInChat = useCallback(
+  // ── Run routine from UI (triggered via "Run Now" button) ────────
+  // Navigates to Activity and opens the new run's detail panel. No chat
+  // conversation is created — those are reserved for LLM-driven runs.
+  const runRoutineFromUi = useCallback(
     (info: { id: string; name: string; dagJson: string }) => {
-      // Create or reuse conversation
-      let convId = activeConversationId;
-      if (!convId) {
-        convId = createConversation(`Run routine: ${info.name}`);
-      }
-      setActiveScreen('chat');
-
-      // Add assistant message placeholder
-      const msgId = generateId();
-      const msg: Message = {
-        id: msgId,
-        conversationId: convId,
-        role: 'assistant',
-        content: `Running routine **${info.name}**...`,
-        createdAt: new Date(),
-      };
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === convId
-            ? { ...c, messages: [...c.messages, msg], updatedAt: new Date() }
-            : c,
-        ),
-      );
-
-      // Parse DAG and start engine run
       let dag: DAGDefinition;
       try {
         dag = JSON.parse(info.dagJson);
-      } catch {
-        updateMessage(convId, msgId, { content: `Failed to parse DAG for routine **${info.name}**.` });
+      } catch (err) {
+        console.error(`Failed to parse DAG for routine "${info.name}":`, err);
         return;
       }
 
-      // Wait for the conversation row insert to commit before persisting the
-      // routine log message and triggering the engine run.
-      waitForConversation(convId!).then(() => {
-        window.cerebro.engine
-          .run({ dag, routineId: info.id, triggerSource: 'manual' })
-          .then((runId) => {
-            const content = `Running routine **${info.name}**...`;
-            updateMessage(convId!, msgId, { engineRunId: runId });
-            // Persist the run log message so it survives reload
-            chainWrite(convId!, () =>
-              apiCreateMessage(convId!, {
-                id: msgId,
-                role: 'assistant',
-                content,
-                metadata: { engine_run_id: runId },
-              }),
-            ).catch(console.error);
-            // Bump backend metadata (fire-and-forget)
-            window.cerebro
-              .invoke({ method: 'POST', path: `/routines/${info.id}/run` })
-              .catch(console.error);
-          })
-          .catch((err) => {
-            const errorContent = `Failed to run routine **${info.name}**: ${err instanceof Error ? err.message : String(err)}`;
-            updateMessage(convId!, msgId, { content: errorContent });
-            chainWrite(convId!, () =>
-              apiCreateMessage(convId!, {
-                id: msgId,
-                role: 'assistant',
-                content: errorContent,
-              }),
-            ).catch(console.error);
-          });
-      });
+      setActiveScreen('activity');
+
+      window.cerebro.engine
+        .run({ dag, routineId: info.id, triggerSource: 'manual' })
+        .then((runId) => {
+          setPendingActivityRunId(runId);
+          window.cerebro
+            .invoke({ method: 'POST', path: `/routines/${info.id}/run` })
+            .catch(console.error);
+        })
+        .catch((err) => {
+          console.error(`Failed to run routine "${info.name}":`, err);
+        });
     },
-    [activeConversationId, createConversation, updateMessage, chainWrite, waitForConversation],
+    [],
   );
 
-  // Register with RoutineContext so "Run Now" buttons trigger chat flow
+  const consumePendingActivityRunId = useCallback(() => {
+    setPendingActivityRunId(null);
+  }, []);
+
+  // Register with RoutineContext so "Run Now" buttons navigate to Activity
   useEffect(() => {
-    registerRunCallback(runRoutineInChat);
-  }, [registerRunCallback, runRoutineInChat]);
+    registerRunCallback(runRoutineFromUi);
+  }, [registerRunCallback, runRoutineFromUi]);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
 
@@ -759,6 +722,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         activeScreen,
         activeExpertId,
         chatError,
+        pendingActivityRunId,
         activeConversation,
         createConversation,
         startNewChat,
@@ -773,6 +737,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         dismissChatError,
         getConversationsForExpert,
         generalConversations,
+        consumePendingActivityRunId,
       }}
     >
       {children}

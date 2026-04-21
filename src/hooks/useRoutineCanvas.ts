@@ -20,7 +20,7 @@ import {
 } from '@xyflow/react';
 import type { Routine } from '../types/routines';
 import type { RoutineStepData, CanvasDefinition } from '../utils/dag-flow-mapping';
-import { dagToFlow, flowToDag, autoLayoutNodes } from '../utils/dag-flow-mapping';
+import { dagToFlow, flowToDag, autoLayoutNodes, TRIGGER_NODE_ID } from '../utils/dag-flow-mapping';
 import { getDefaultStepData, ACTION_META, resolveActionType } from '../utils/step-defaults';
 import { getEdgeColor } from '../utils/handle-types';
 import { useRoutines } from '../context/RoutineContext';
@@ -132,7 +132,7 @@ export function reconcileTriggerNode(
   if (prev && sameType && sameConfig) return prev;
 
   return {
-    id: '__trigger__',
+    id: TRIGGER_NODE_ID,
     type: 'triggerNode',
     position: basePosition,
     data: { triggerType: desiredType, config: nextConfig },
@@ -186,7 +186,7 @@ export function useRoutineCanvas(routine: Routine) {
     if (!foundTrigger) {
       const tt = routineTriggerToActionType(routine.triggerType);
       setTriggerNode({
-        id: '__trigger__',
+        id: TRIGGER_NODE_ID,
         type: 'triggerNode',
         position: { x: 0, y: -120 },
         data: {
@@ -241,7 +241,7 @@ export function useRoutineCanvas(routine: Routine) {
 
       for (const ch of changes) {
         const id = 'id' in ch ? ch.id : undefined;
-        if (id === '__trigger__') triggerChanges.push(ch);
+        if (id === TRIGGER_NODE_ID) triggerChanges.push(ch);
         else if (id && annotationIdsRef.current.has(id)) annotationChanges.push(ch);
         else stepChanges.push(ch);
       }
@@ -297,7 +297,7 @@ export function useRoutineCanvas(routine: Routine) {
   const deleteNode = useCallback(
     (nodeId: string) => {
       // Don't allow deleting trigger node
-      if (nodeId === '__trigger__') return;
+      if (nodeId === TRIGGER_NODE_ID) return;
 
       // Check if it's an annotation
       const isAnnotation = annotationNodes.some((n) => n.id === nodeId);
@@ -321,7 +321,7 @@ export function useRoutineCanvas(routine: Routine) {
   const updateNodeData = useCallback(
     (nodeId: string, partial: Record<string, unknown>) => {
       // Trigger node
-      if (nodeId === '__trigger__') {
+      if (nodeId === TRIGGER_NODE_ID) {
         setTriggerNode((prev) => {
           if (!prev) return prev;
           return { ...prev, data: { ...prev.data, ...partial } };
@@ -405,7 +405,7 @@ export function useRoutineCanvas(routine: Routine) {
 
   const deleteSelected = useCallback(() => {
     const selectedNodeIds = new Set(
-      allNodes.filter((n) => n.selected && n.id !== '__trigger__').map((n) => n.id),
+      allNodes.filter((n) => n.selected && n.id !== TRIGGER_NODE_ID).map((n) => n.id),
     );
 
     const hasSelectedNodes = selectedNodeIds.size > 0;
@@ -441,8 +441,8 @@ export function useRoutineCanvas(routine: Routine) {
     const stepAndTrigger = triggerNode ? [triggerNode, ...nodes] : [...nodes];
     const laid = autoLayoutNodes(stepAndTrigger, edges);
 
-    const newTrigger = laid.find((n) => n.id === '__trigger__');
-    const newStepNodes = laid.filter((n) => n.id !== '__trigger__');
+    const newTrigger = laid.find((n) => n.id === TRIGGER_NODE_ID);
+    const newStepNodes = laid.filter((n) => n.id !== TRIGGER_NODE_ID);
 
     if (newTrigger) setTriggerNode(newTrigger);
     setNodes(newStepNodes);

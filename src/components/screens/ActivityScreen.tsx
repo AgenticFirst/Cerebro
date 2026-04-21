@@ -28,7 +28,7 @@ const PAGE_SIZE = 30;
 export default function ActivityScreen() {
   const { t } = useTranslation();
   const { routines, loadRoutines } = useRoutines();
-  const { setActiveScreen } = useChat();
+  const { setActiveScreen, pendingActivityRunId, consumePendingActivityRunId } = useChat();
 
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -98,6 +98,21 @@ export default function ActivityScreen() {
     setSelectedRunId(null);
     fetchRuns(0, false).finally(() => setIsLoading(false));
   }, [fetchRuns]);
+
+  // Auto-open a run whose id was handed off from another screen (e.g.
+  // "Run Now" on a RoutineCard). Refetch first so the new row is in state,
+  // then select it and clear the handoff.
+  useEffect(() => {
+    if (!pendingActivityRunId) return;
+    let cancelled = false;
+    (async () => {
+      await fetchRuns(0, false);
+      if (cancelled) return;
+      setSelectedRunId(pendingActivityRunId);
+      consumePendingActivityRunId();
+    })();
+    return () => { cancelled = true; };
+  }, [pendingActivityRunId, fetchRuns, consumePendingActivityRunId]);
 
   // Load more
   const handleLoadMore = async () => {
