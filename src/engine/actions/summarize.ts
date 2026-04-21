@@ -14,6 +14,7 @@ interface SummarizeParams {
   max_length: 'short' | 'medium' | 'long';
   focus?: string;
   agent?: string;
+  model?: string;
 }
 
 const LENGTH_INSTRUCTIONS: Record<string, string> = {
@@ -74,6 +75,7 @@ ${text}`;
       prompt: fullPrompt,
       signal: context.signal,
       maxTurns: 3,
+      model: params.model?.trim() || undefined,
     });
 
     context.log(summary);

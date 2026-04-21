@@ -46,6 +46,8 @@ export interface SingleShotOptions {
   maxTurns?: number;
   /** Override the default cwd (otherwise uses `setClaudeCodeCwd` value). */
   cwd?: string;
+  /** Override the model (e.g. "claude-sonnet-4-6"). Passed to `claude --model`. */
+  model?: string;
 }
 
 export class ClaudeCodeUnavailableError extends Error {
@@ -82,6 +84,10 @@ export function singleShotClaudeCode(options: SingleShotOptions): Promise<string
     '--output-format', 'text',
     '--max-turns', String(options.maxTurns ?? 5),
   ];
+
+  if (options.model) {
+    args.push('--model', options.model);
+  }
 
   // Strip CLAUDECODE so the child doesn't think it's running inside another
   // Claude Code session (which would cause it to bail out).

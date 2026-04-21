@@ -40,6 +40,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { RoutineStepData } from './dag-flow-mapping';
+import { DEFAULT_CLAUDE_MODEL } from './claude-models';
 
 // ── Action Categories ─────────────────────────────────────────
 
@@ -490,16 +491,16 @@ export function getDefaultStepData(
     // AI
     case 'ask_ai':
     case 'model_call': // legacy
-      return { ...base, params: { prompt: '', system_prompt: '', agent: 'cerebro' } };
+      return { ...base, params: { prompt: '', system_prompt: '', agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL } };
     case 'run_expert':
     case 'expert_step': // legacy
-      return { ...base, params: { expertId: '', prompt: '', additionalContext: '', maxTurns: 10 } };
+      return { ...base, params: { expertId: '', prompt: '', additionalContext: '', maxTurns: 10, model: DEFAULT_CLAUDE_MODEL } };
     case 'classify':
-      return { ...base, params: { prompt: '', categories: [], agent: 'cerebro' } };
+      return { ...base, params: { prompt: '', categories: [], agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL } };
     case 'extract':
-      return { ...base, params: { prompt: '', schema: [], agent: 'cerebro' } };
+      return { ...base, params: { prompt: '', schema: [], agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL } };
     case 'summarize':
-      return { ...base, params: { input_field: '', max_length: 'medium', focus: '', agent: 'cerebro' } };
+      return { ...base, params: { input_field: '', max_length: 'medium', focus: '', agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL } };
 
     // Knowledge
     case 'search_memory':

@@ -12,6 +12,7 @@ interface ClassifyParams {
   prompt: string;
   categories: Array<{ label: string; description: string }>;
   agent?: string;
+  model?: string;
 }
 
 export const classifyAction: ActionDefinition = {
@@ -69,6 +70,7 @@ ${params.prompt}`;
       prompt: fullPrompt,
       signal: context.signal,
       maxTurns: 3,
+      model: params.model?.trim() || undefined,
     });
 
     let result: { category: string; confidence?: string; reasoning?: string };

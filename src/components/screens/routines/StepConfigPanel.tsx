@@ -11,6 +11,11 @@ import {
   uniqueVarName,
 } from '../../../utils/action-outputs';
 import { useExperts } from '../../../context/ExpertContext';
+import {
+  CLAUDE_MODELS,
+  DEFAULT_CLAUDE_MODEL,
+  findClaudeModel,
+} from '../../../utils/claude-models';
 import Toggle from '../../ui/Toggle';
 import Tooltip from '../../ui/Tooltip';
 import VariablesHelpModal from './VariablesHelpModal';
@@ -274,6 +279,52 @@ function FieldError({ text }: { text: string }) {
   );
 }
 
+/**
+ * Claude-model picker shared across every AI step. Reads its options from
+ * `CLAUDE_MODELS` so adding a new model is a one-file edit. Unknown saved
+ * model IDs (e.g. a model we've since removed from the list) stay selectable
+ * as a labeled "custom" entry so the step config doesn't silently flip to
+ * the default and lose what the user configured.
+ */
+function ModelPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const known = findClaudeModel(value);
+  const selected = known?.id ?? (value ? '__custom__' : DEFAULT_CLAUDE_MODEL);
+  const description =
+    known?.description ??
+    (value
+      ? 'Custom model — not in the built-in list.'
+      : 'Balanced speed and quality');
+  return (
+    <div>
+      <FieldLabel text="Model" hint="fieldModel" />
+      <select
+        value={selected}
+        onChange={(e) => {
+          if (e.target.value === '__custom__') return;
+          onChange(e.target.value);
+        }}
+        className={selectCls}
+      >
+        {CLAUDE_MODELS.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name} — {m.description}
+          </option>
+        ))}
+        {!known && value && (
+          <option value="__custom__">{value} (custom)</option>
+        )}
+      </select>
+      <p className="mt-1 text-[11px] text-text-tertiary">{description}</p>
+    </div>
+  );
+}
+
 function AskAiParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
   const { experts } = useExperts();
 
@@ -407,6 +458,11 @@ function AskAiParams({ params, onChange, step, sourceSteps, onAddMapping }: PWit
           default generalist; pick an expert to use its own system prompt and tools.
         </p>
       </div>
+
+      <ModelPicker
+        value={(params.model as string) ?? DEFAULT_CLAUDE_MODEL}
+        onChange={(id) => onChange({ ...paramsRef.current, model: id })}
+      />
     </div>
   );
 }
@@ -792,6 +848,11 @@ function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: 
           Higher is more thorough but slower and more expensive.
         </p>
       </div>
+
+      <ModelPicker
+        value={(params.model as string) ?? DEFAULT_CLAUDE_MODEL}
+        onChange={(id) => onChange({ ...paramsRef.current, model: id })}
+      />
     </div>
   );
 }
@@ -1032,6 +1093,11 @@ function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: P
           is the default; switch to an expert to use its own system prompt.
         </p>
       </div>
+
+      <ModelPicker
+        value={(params.model as string) ?? DEFAULT_CLAUDE_MODEL}
+        onChange={(id) => onChange({ ...paramsRef.current, model: id })}
+      />
     </div>
   );
 }
@@ -1288,6 +1354,11 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
           is the default; switch to an expert to use its own system prompt.
         </p>
       </div>
+
+      <ModelPicker
+        value={(params.model as string) ?? DEFAULT_CLAUDE_MODEL}
+        onChange={(id) => onChange({ ...paramsRef.current, model: id })}
+      />
     </div>
   );
 }
@@ -1451,6 +1522,11 @@ function SummarizeParams({ params, onChange, step, sourceSteps }: PWithStep) {
           is the default; switch to an expert to use its own system prompt.
         </p>
       </div>
+
+      <ModelPicker
+        value={(params.model as string) ?? DEFAULT_CLAUDE_MODEL}
+        onChange={(id) => onChange({ ...paramsRef.current, model: id })}
+      />
     </div>
   );
 }

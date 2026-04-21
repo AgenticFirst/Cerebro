@@ -19,6 +19,7 @@ interface ExpertStepParams {
   additionalContext?: string;
   maxTurns?: number;
   toolAccess?: string[];
+  model?: string;
 }
 
 // ── Extended ActionContext for expert_step ───────────────────────
@@ -87,6 +88,7 @@ export function createExpertStepAction(deps: ExpertStepContext): ActionDefinitio
         conversationId: `engine-run:${context.runId}`,
         content: fullPrompt,
         expertId: params.expertId ?? null,
+        model: params.model?.trim() || undefined,
       });
 
       // Collect results by listening to the agent event channel

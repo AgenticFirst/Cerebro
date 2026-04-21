@@ -12,6 +12,7 @@ interface ExtractParams {
   prompt: string;
   schema: Array<{ name: string; type: string; description: string }>;
   agent?: string;
+  model?: string;
 }
 
 export const extractAction: ActionDefinition = {
@@ -63,6 +64,7 @@ ${params.prompt}`;
       prompt: fullPrompt,
       signal: context.signal,
       maxTurns: 3,
+      model: params.model?.trim() || undefined,
     });
 
     let extracted: Record<string, unknown>;

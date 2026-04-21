@@ -24,6 +24,8 @@ interface AskAiParams {
   agent?: string;
   /** Max conversation turns. Defaults to Claude Code's own default. */
   max_turns?: number;
+  /** Claude model to run on (e.g. "claude-sonnet-4-6"). */
+  model?: string;
 }
 
 export const askAiAction: ActionDefinition = {
@@ -83,6 +85,7 @@ export const askAiAction: ActionDefinition = {
       prompt: fullPrompt,
       signal: context.signal,
       maxTurns: params.max_turns,
+      model: params.model?.trim() || undefined,
     });
 
     context.log(response);
