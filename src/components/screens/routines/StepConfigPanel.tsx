@@ -1292,38 +1292,164 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
   );
 }
 
-function SummarizeParams({ params, onChange }: P) {
+const SUMMARIZE_LENGTHS: Array<{ value: string; label: string; hint: string }> = [
+  { value: 'short', label: 'Short', hint: '1–2 sentences' },
+  { value: 'medium', label: 'Medium', hint: 'one paragraph' },
+  { value: 'long', label: 'Long', hint: 'detailed, multi-paragraph' },
+];
+
+function SummarizeParams({ params, onChange, step, sourceSteps }: PWithStep) {
+  const { experts } = useExperts();
+
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const mappings = step?.inputMappings ?? [];
+  const stepsById = useMemo(() => {
+    const m = new Map<string, SourceStepInfo>();
+    for (const s of sourceSteps ?? []) m.set(s.id, s);
+    return m;
+  }, [sourceSteps]);
+
+  const inputField = (params.input_field as string) ?? '';
+  const maxLength = (params.max_length as string) ?? 'medium';
+  const focus = (params.focus as string) ?? '';
+  const agent = (params.agent as string) ?? 'cerebro';
+
+  const subagentChoices = [
+    { slug: 'cerebro', label: 'Cerebro (default)' },
+    ...experts
+      .filter((e) => e.slug && e.slug !== 'cerebro' && e.isEnabled)
+      .map((e) => ({ slug: e.slug as string, label: e.name })),
+  ];
+  const isCustom = !subagentChoices.some((c) => c.slug === agent);
+
+  const [inputTouched, setInputTouched] = useState(false);
+  const hasMappings = mappings.length > 0;
+  const inputEmpty = inputField.trim().length === 0;
+  const showInputError = inputTouched && inputEmpty;
+
+  // When the user picks the only connected source, skip the "touched" gate —
+  // the error won't matter because the field is now filled.
+  const handleInputChange = (value: string) => {
+    onChange({ ...paramsRef.current, input_field: value });
+  };
+
   return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel text="Input Field" hint="fieldInputField" />
-        <input
-          value={(params.input_field as string) ?? ''}
-          onChange={(e) => onChange({ ...params, input_field: e.target.value })}
-          placeholder="{{step_name.field}} to summarize"
-          className={inputCls}
-        />
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Shortens text from a connected step. Pick which variable to read and
+          how long the summary should be.
+        </p>
       </div>
+
+      <div>
+        <FieldLabel text="What should we summarize?" hint="fieldInputField" />
+        {!hasMappings ? (
+          <div className="rounded-lg border border-dashed border-border-subtle bg-bg-base/40 px-3 py-3 text-center">
+            <p className="text-[11px] text-text-tertiary">
+              Connect another step into this one first. Its output will appear
+              here as a variable you can pick.
+            </p>
+          </div>
+        ) : (
+          <select
+            value={inputField}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onBlur={() => setInputTouched(true)}
+            aria-invalid={showInputError}
+            className={clsx(
+              selectCls,
+              showInputError && 'border-red-500/60 focus:border-red-500/60',
+            )}
+          >
+            <option value="">Pick a source…</option>
+            {mappings.map((m) => {
+              const source = stepsById.get(m.sourceStepId);
+              const outputs = source
+                ? getAllOutputs(resolveActionType(source.actionType))
+                : [];
+              const fieldLabel =
+                outputs.find((o) => o.field === m.sourceField)?.label ?? m.sourceField;
+              const suffix = source ? ` — from ${source.name} · ${fieldLabel}` : '';
+              return (
+                <option key={m.targetField} value={m.targetField}>
+                  {m.targetField}{suffix}
+                </option>
+              );
+            })}
+          </select>
+        )}
+        {showInputError ? (
+          <FieldError text="Required — pick which variable to summarize." />
+        ) : hasMappings ? (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Variables come from steps connected into this one. Each is the
+            output field that upstream step produced.
+          </p>
+        ) : null}
+      </div>
+
       <div>
         <FieldLabel text="Length" hint="fieldLength" />
-        <select
-          value={(params.max_length as string) ?? 'medium'}
-          onChange={(e) => onChange({ ...params, max_length: e.target.value })}
-          className={selectCls}
-        >
-          <option value="short">Short (1-2 sentences)</option>
-          <option value="medium">Medium (paragraph)</option>
-          <option value="long">Long (detailed)</option>
-        </select>
+        <div className="grid grid-cols-3 gap-1.5">
+          {SUMMARIZE_LENGTHS.map((opt) => {
+            const active = opt.value === maxLength;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onChange({ ...paramsRef.current, max_length: opt.value })}
+                aria-pressed={active}
+                className={clsx(
+                  'rounded-lg border px-2 py-2 text-center transition-colors',
+                  active
+                    ? 'border-accent/50 bg-accent/10 text-accent'
+                    : 'border-border-subtle bg-bg-base text-text-secondary hover:border-accent/30',
+                )}
+              >
+                <div className="text-[11px] font-medium">{opt.label}</div>
+                <div className="text-[10px] text-text-tertiary">{opt.hint}</div>
+              </button>
+            );
+          })}
+        </div>
       </div>
+
       <div>
         <FieldLabel text="Focus (optional)" hint="fieldFocus" />
         <input
-          value={(params.focus as string) ?? ''}
-          onChange={(e) => onChange({ ...params, focus: e.target.value })}
-          placeholder="What aspect to focus on"
+          value={focus}
+          onChange={(e) => onChange({ ...paramsRef.current, focus: e.target.value })}
+          placeholder="e.g. action items, customer concerns, key numbers"
           className={inputCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Nudges the AI to emphasize certain aspects. Leave empty for a
+          balanced overall summary.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="Run as" hint="fieldAgent" />
+        <select
+          value={isCustom ? '__custom__' : agent}
+          onChange={(e) => {
+            if (e.target.value === '__custom__') return;
+            onChange({ ...paramsRef.current, agent: e.target.value });
+          }}
+          className={selectCls}
+        >
+          {subagentChoices.map((c) => (
+            <option key={c.slug} value={c.slug}>{c.label}</option>
+          ))}
+          {isCustom && <option value="__custom__">{agent} (custom)</option>}
+        </select>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Which Claude Code subagent writes the summary. &ldquo;Cerebro&rdquo;
+          is the default; switch to an expert to use its own system prompt.
+        </p>
       </div>
     </div>
   );
@@ -2040,7 +2166,7 @@ function ParamForm({
     case 'run_expert': return <RunExpertParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
     case 'classify': return <ClassifyParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
     case 'extract': return <ExtractParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'summarize': return <SummarizeParams params={params} onChange={onChange} />;
+    case 'summarize': return <SummarizeParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} />;
 
     // Knowledge
     case 'search_memory': return <SearchMemoryParams params={params} onChange={onChange} />;

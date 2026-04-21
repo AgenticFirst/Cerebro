@@ -499,7 +499,7 @@ export function getDefaultStepData(
     case 'extract':
       return { ...base, params: { prompt: '', schema: [], agent: 'cerebro' } };
     case 'summarize':
-      return { ...base, params: { input_field: '', max_length: 'medium', focus: '', model: '' } };
+      return { ...base, params: { input_field: '', max_length: 'medium', focus: '', agent: 'cerebro' } };
 
     // Knowledge
     case 'search_memory':
