@@ -796,69 +796,241 @@ function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: 
   );
 }
 
-function ClassifyParams({ params, onChange }: P) {
-  const categories = (params.categories as { id: string; label: string; description: string }[]) ?? [];
+interface CategoryItem {
+  id: string;
+  label: string;
+  description: string;
+}
 
-  const updateCategory = (index: number, field: string, value: string) => {
-    const updated = [...categories];
-    updated[index] = { ...updated[index], [field]: value };
-    onChange({ ...params, categories: updated });
+function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const { experts } = useExperts();
+
+  // Local state for the prompt keeps typing resilient against the parent's
+  // debounced onChange (same pattern as AskAiParams / RunExpertParams).
+  const [prompt, setPrompt] = useState((params.prompt as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  const handlePromptChange = (v: string) => {
+    setPrompt(v);
+    onChange({ ...paramsRef.current, prompt: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const el = promptRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? prompt.length;
+    const end = el.selectionEnd ?? prompt.length;
+    const next = prompt.slice(0, start) + token + prompt.slice(end);
+    handlePromptChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  // Categories are persisted on params — no local state. Edits here aren't
+  // free-text typing so the debounce-eats-keystrokes risk doesn't apply.
+  const rawCategories =
+    (params.categories as Array<Partial<CategoryItem>> | undefined) ?? [];
+  const categories: CategoryItem[] = rawCategories.map((c, i) => ({
+    id: c.id ?? `cat-${i}`,
+    label: c.label ?? '',
+    description: c.description ?? '',
+  }));
+
+  const writeCategories = (next: CategoryItem[]) =>
+    onChange({ ...paramsRef.current, categories: next });
+
+  const updateCategory = (index: number, field: 'label' | 'description', value: string) => {
+    const updated = categories.map((c, i) => (i === index ? { ...c, [field]: value } : c));
+    writeCategories(updated);
   };
 
   const addCategory = () => {
-    onChange({ ...params, categories: [...categories, { id: crypto.randomUUID(), label: '', description: '' }] });
+    writeCategories([
+      ...categories,
+      { id: crypto.randomUUID(), label: '', description: '' },
+    ]);
   };
 
   const removeCategory = (index: number) => {
-    onChange({ ...params, categories: categories.filter((_, i) => i !== index) });
+    writeCategories(categories.filter((_, i) => i !== index));
   };
 
+  const agent = (params.agent as string) ?? 'cerebro';
+  const subagentChoices = [
+    { slug: 'cerebro', label: 'Cerebro (default)' },
+    ...experts
+      .filter((e) => e.slug && e.slug !== 'cerebro' && e.isEnabled)
+      .map((e) => ({ slug: e.slug as string, label: e.name })),
+  ];
+  const isCustom = !subagentChoices.some((c) => c.slug === agent);
+
+  const [promptTouched, setPromptTouched] = useState(false);
+  const promptEmpty = prompt.trim().length === 0;
+  const showPromptError = promptTouched && promptEmpty;
+
+  const [categoriesTouched, setCategoriesTouched] = useState(false);
+  const hasAnyCategory = categories.length > 0;
+  const hasBlankLabel = categories.some((c) => c.label.trim().length === 0);
+  const showCategoriesError =
+    categoriesTouched && (!hasAnyCategory || hasBlankLabel);
+
   return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel text="Input" hint="fieldInput" />
-        <textarea
-          value={(params.prompt as string) ?? ''}
-          onChange={(e) => onChange({ ...params, prompt: e.target.value })}
-          rows={2}
-          placeholder="What to classify... Use {{step_name.field}}"
-          className={textareaCls}
-        />
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Sorts text into one of the categories you define. The AI reads the
+          input, picks the best fit, and returns the category label along with
+          a confidence rating and short reasoning.
+        </p>
       </div>
+
+      <div>
+        <FieldLabel text="What should we classify?" hint="fieldInput" />
+        <textarea
+          ref={promptRef}
+          value={prompt}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          onBlur={() => setPromptTouched(true)}
+          rows={5}
+          placeholder="e.g. Sort this email by urgency:"
+          aria-invalid={showPromptError}
+          className={clsx(
+            textareaCls,
+            showPromptError && 'border-red-500/60 focus:border-red-500/60',
+          )}
+        />
+        {showPromptError ? (
+          <FieldError text="Required — the step needs some text to classify." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            The text the AI will classify. Usually a short instruction plus the
+            content from a connected step — click a chip below to insert it.
+          </p>
+        )}
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
       <div>
         <FieldLabel text="Categories" hint="stepCategories" />
-        <div className="space-y-2">
-          {categories.map((cat, i) => (
-            <div key={cat.id ?? i} className="flex gap-2 items-start">
-              <div className="flex-1 space-y-1">
-                <input
-                  value={cat.label}
-                  onChange={(e) => updateCategory(i, 'label', e.target.value)}
-                  placeholder="Label"
-                  className={inputCls}
-                />
-                <input
-                  value={cat.description}
-                  onChange={(e) => updateCategory(i, 'description', e.target.value)}
-                  placeholder="Description"
-                  className={inputCls}
-                />
-              </div>
-              <button
-                onClick={() => removeCategory(i)}
-                className="mt-1 p-1 text-text-tertiary hover:text-red-400 transition-colors"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-        <button
-          onClick={addCategory}
-          className="mt-2 text-[11px] text-accent hover:text-accent/80 transition-colors"
+        {categories.length === 0 ? (
+          <div
+            className={clsx(
+              'rounded-lg border border-dashed px-3 py-3 text-center',
+              showCategoriesError
+                ? 'border-red-500/60 bg-red-500/5'
+                : 'border-border-subtle bg-bg-base/40',
+            )}
+          >
+            <p className="text-[11px] text-text-tertiary mb-2">
+              Add at least one category the AI can choose from.
+            </p>
+            <button
+              type="button"
+              onClick={addCategory}
+              className="inline-flex items-center gap-1 rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1 text-[11px] text-accent hover:bg-accent/20 transition-colors"
+            >
+              <Plus size={11} /> Add first category
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {categories.map((cat, i) => {
+              const labelMissing =
+                categoriesTouched && cat.label.trim().length === 0;
+              return (
+                <div
+                  key={cat.id}
+                  className="rounded-lg border border-border-subtle bg-bg-base/40 p-2 space-y-1.5"
+                >
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 space-y-1.5">
+                      <input
+                        value={cat.label}
+                        onChange={(e) => updateCategory(i, 'label', e.target.value)}
+                        onBlur={() => setCategoriesTouched(true)}
+                        placeholder="Category name (e.g. urgent)"
+                        aria-invalid={labelMissing}
+                        className={clsx(
+                          inputCls,
+                          labelMissing && 'border-red-500/60 focus:border-red-500/60',
+                        )}
+                      />
+                      <input
+                        value={cat.description}
+                        onChange={(e) => updateCategory(i, 'description', e.target.value)}
+                        placeholder="When to pick this (optional but helps accuracy)"
+                        className={inputCls}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeCategory(i)}
+                      aria-label="Remove category"
+                      title="Remove category"
+                      className="mt-1 p-1 text-text-tertiary hover:text-red-400 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  {labelMissing && (
+                    <FieldError text="Each category needs a name." />
+                  )}
+                </div>
+              );
+            })}
+            <button
+              type="button"
+              onClick={addCategory}
+              className="inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent/80 transition-colors"
+            >
+              <Plus size={11} /> Add another category
+            </button>
+          </div>
+        )}
+        {showCategoriesError && !hasAnyCategory ? (
+          <FieldError text="Required — add at least one category." />
+        ) : (
+          categories.length > 0 && (
+            <p className="mt-1 text-[11px] text-text-tertiary">
+              The AI must pick exactly one. Clear, non-overlapping names work
+              best. Descriptions are optional but sharpen the choice when two
+              categories are close.
+            </p>
+          )
+        )}
+      </div>
+
+      <div>
+        <FieldLabel text="Run as" hint="fieldAgent" />
+        <select
+          value={isCustom ? '__custom__' : agent}
+          onChange={(e) => {
+            if (e.target.value === '__custom__') return;
+            onChange({ ...paramsRef.current, agent: e.target.value });
+          }}
+          className={selectCls}
         >
-          + Add Category
-        </button>
+          {subagentChoices.map((c) => (
+            <option key={c.slug} value={c.slug}>{c.label}</option>
+          ))}
+          {isCustom && <option value="__custom__">{agent} (custom)</option>}
+        </select>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Which Claude Code subagent does the classification. &ldquo;Cerebro&rdquo;
+          is the default; switch to an expert to use its own system prompt.
+        </p>
       </div>
     </div>
   );
@@ -1691,7 +1863,7 @@ function ParamForm({
     // AI
     case 'ask_ai': return <AskAiParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
     case 'run_expert': return <RunExpertParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'classify': return <ClassifyParams params={params} onChange={onChange} />;
+    case 'classify': return <ClassifyParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
     case 'extract': return <ExtractParams params={params} onChange={onChange} />;
     case 'summarize': return <SummarizeParams params={params} onChange={onChange} />;
 

@@ -495,7 +495,7 @@ export function getDefaultStepData(
     case 'expert_step': // legacy
       return { ...base, params: { expertId: '', prompt: '', additionalContext: '', maxTurns: 10 } };
     case 'classify':
-      return { ...base, params: { prompt: '', categories: [], model: '' } };
+      return { ...base, params: { prompt: '', categories: [], agent: 'cerebro' } };
     case 'extract':
       return { ...base, params: { prompt: '', schema: [], model: '' } };
     case 'summarize':
