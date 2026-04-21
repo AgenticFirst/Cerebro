@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Shield, Info } from 'lucide-react';
+import { X, Shield, Info, HelpCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Node } from '@xyflow/react';
 import type { RoutineStepData } from '../../../utils/dag-flow-mapping';
@@ -7,6 +7,7 @@ import { ACTION_META, resolveActionType } from '../../../utils/step-defaults';
 import { useExperts } from '../../../context/ExpertContext';
 import Toggle from '../../ui/Toggle';
 import Tooltip from '../../ui/Tooltip';
+import VariablesHelpModal from './VariablesHelpModal';
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -94,6 +95,43 @@ function VariableChips({
   );
 }
 
+/**
+ * Label + clickable help icon + chips + tutorial modal, bundled so every
+ * templated action shares the same UX (and we don't duplicate the modal-open
+ * state between AskAiParams and SendNotificationParams).
+ */
+function AvailableVariablesSection({
+  step,
+  onInsert,
+}: {
+  step?: RoutineStepData;
+  onInsert: (token: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [showHelp, setShowHelp] = useState(false);
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-1">
+        <label className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide">
+          {t('variablesHelp.fieldLabel')}
+        </label>
+        <Tooltip label={t('variablesHelp.helpButton')}>
+          <button
+            type="button"
+            onClick={() => setShowHelp(true)}
+            className="inline-flex items-center cursor-pointer text-text-tertiary/70 hover:text-accent transition-colors"
+            aria-label={t('variablesHelp.helpButton')}
+          >
+            <HelpCircle size={11} />
+          </button>
+        </Tooltip>
+      </div>
+      <VariableChips step={step} onInsert={onInsert} />
+      {showHelp && <VariablesHelpModal onClose={() => setShowHelp(false)} />}
+    </div>
+  );
+}
+
 function AskAiParams({ params, onChange, step }: PWithStep) {
   const { experts } = useExperts();
 
@@ -173,10 +211,7 @@ function AskAiParams({ params, onChange, step }: PWithStep) {
         </p>
       </div>
 
-      <div>
-        <FieldLabel text="Available variables" />
-        <VariableChips step={step} onInsert={insertAtCursor} />
-      </div>
+      <AvailableVariablesSection step={step} onInsert={insertAtCursor} />
 
       <div>
         <FieldLabel text="Role / style (optional)" hint="fieldSystemPrompt" />
@@ -1087,10 +1122,7 @@ function NotificationParams({ params, onChange, step }: PWithStep) {
         </p>
       </div>
 
-      <div>
-        <FieldLabel text="Available variables" />
-        <VariableChips step={step} onInsert={insertAtCursor} />
-      </div>
+      <AvailableVariablesSection step={step} onInsert={insertAtCursor} />
 
       <div>
         <FieldLabel text="Urgency" hint="fieldNotifyUrgency" />

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CheckCircle2, XCircle, Loader2, SkipForward, Clock, ChevronRight, ShieldCheck, ShieldX } from 'lucide-react';
 import clsx from 'clsx';
 import type { StepRecord, EventRecord } from './types';
@@ -84,12 +85,13 @@ interface StepTimelineProps {
 }
 
 export default function StepTimeline({ steps, events = [] }: StepTimelineProps) {
+  const { t } = useTranslation();
   const sorted = useMemo(() => [...steps].sort((a, b) => a.order_index - b.order_index), [steps]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const stepLogs = useMemo(() => buildStepLogs(events), [events]);
 
   if (sorted.length === 0) {
-    return <p className="text-xs text-text-tertiary">No steps recorded.</p>;
+    return <p className="text-xs text-text-tertiary">{t('activity.noStepsRecorded')}</p>;
   }
 
   return (
@@ -168,8 +170,8 @@ export default function StepTimeline({ steps, events = [] }: StepTimelineProps) 
 
                 {/* Timestamps */}
                 <div className="space-y-0.5 text-[11px] text-text-tertiary">
-                  <div>Started: <span className="text-text-secondary">{formatTimestamp(step.started_at)}</span></div>
-                  <div>Finished: <span className="text-text-secondary">{formatTimestamp(step.completed_at)}</span></div>
+                  <div>{t('activity.started')}: <span className="text-text-secondary">{formatTimestamp(step.started_at, t)}</span></div>
+                  <div>{t('activity.finished')}: <span className="text-text-secondary">{formatTimestamp(step.completed_at, t)}</span></div>
                 </div>
 
                 {/* Summary */}
