@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { X, Shield, Info, HelpCircle, AlertCircle, Plus } from 'lucide-react';
+import { X, Shield, Info, HelpCircle, AlertCircle, Plus, ChevronDown, Search, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Node } from '@xyflow/react';
@@ -411,46 +411,386 @@ function AskAiParams({ params, onChange, step, sourceSteps, onAddMapping }: PWit
   );
 }
 
-function RunExpertParams({ params, onChange }: P) {
+interface ExpertChoice {
+  id: string;
+  name: string;
+  domain: string | null;
+  isEnabled: boolean;
+  type: 'expert' | 'team';
+}
+
+/**
+ * Searchable expert dropdown. Native <select> doesn't expose a search field,
+ * so we roll a combobox: a button that opens a panel with a live-filtered
+ * input + option list. Keyboard: Arrow keys move the highlight, Enter picks,
+ * Escape closes.
+ */
+function ExpertPicker({
+  value,
+  choices,
+  invalid,
+  onChange,
+  onBlur,
+}: {
+  value: string;
+  choices: ExpertChoice[];
+  invalid?: boolean;
+  onChange: (id: string) => void;
+  onBlur?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [highlight, setHighlight] = useState(0);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const optionsRef = useRef<HTMLDivElement>(null);
+
+  const selected = choices.find((c) => c.id === value);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return choices;
+    return choices.filter((c) => {
+      const hay = `${c.name} ${c.domain ?? ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [choices, query]);
+
+  useEffect(() => {
+    setHighlight(0);
+  }, [query, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as HTMLElement)) {
+        setOpen(false);
+        onBlur?.();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, onBlur]);
+
+  useEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [open]);
+
+  const pick = (id: string) => {
+    onChange(id);
+    setOpen(false);
+    setQuery('');
+    onBlur?.();
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlight((h) => Math.min(h + 1, Math.max(filtered.length - 1, 0)));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = filtered[highlight];
+      if (target) pick(target.id);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+      onBlur?.();
+    }
+  };
+
+  const renderLabel = (c: ExpertChoice) => {
+    const tags = [
+      c.domain,
+      c.type === 'team' ? 'team' : null,
+      !c.isEnabled ? 'disabled' : null,
+    ].filter(Boolean);
+    return (
+      <>
+        <span className="text-text-primary">{c.name}</span>
+        {tags.length > 0 && (
+          <span className="text-text-tertiary"> — {tags.join(' · ')}</span>
+        )}
+      </>
+    );
+  };
+
   return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel text="Expert ID" hint="fieldExpertId" />
-        <input
-          value={(params.expert_id as string) ?? ''}
-          onChange={(e) => onChange({ ...params, expert_id: e.target.value })}
-          placeholder="Select an expert..."
-          className={inputCls}
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-invalid={invalid}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={clsx(
+          'w-full flex items-center justify-between gap-2 bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-left focus:outline-none focus:border-accent/30 transition-colors',
+          invalid && 'border-red-500/60 focus:border-red-500/60',
+        )}
+      >
+        <span className={clsx('truncate', !selected && 'text-text-tertiary')}>
+          {selected ? (
+            renderLabel(selected)
+          ) : choices.length === 0 ? (
+            'No experts yet — create one on the Experts screen'
+          ) : (
+            'Pick an expert…'
+          )}
+        </span>
+        <ChevronDown
+          size={14}
+          className={clsx(
+            'flex-shrink-0 text-text-tertiary transition-transform',
+            open && 'rotate-180',
+          )}
         />
-      </div>
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-1 left-0 right-0 rounded-lg border border-border-subtle bg-bg-surface shadow-lg overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-border-subtle px-2.5 py-1.5">
+            <Search size={12} className="text-text-tertiary flex-shrink-0" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Search experts…"
+              className="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-tertiary focus:outline-none"
+            />
+          </div>
+          <div
+            ref={optionsRef}
+            role="listbox"
+            className="max-h-[220px] overflow-y-auto scrollbar-thin py-1"
+          >
+            {filtered.length === 0 ? (
+              <div className="px-3 py-2 text-[11px] text-text-tertiary">
+                {choices.length === 0
+                  ? 'No experts available. Create one on the Experts screen.'
+                  : 'No matches.'}
+              </div>
+            ) : (
+              filtered.map((c, i) => {
+                const isSel = c.id === value;
+                const isHi = i === highlight;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isSel}
+                    onMouseEnter={() => setHighlight(i)}
+                    onClick={() => pick(c.id)}
+                    className={clsx(
+                      'w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors',
+                      isHi ? 'bg-bg-hover' : '',
+                    )}
+                  >
+                    <Check
+                      size={12}
+                      className={clsx(
+                        'flex-shrink-0',
+                        isSel ? 'text-accent' : 'text-transparent',
+                      )}
+                    />
+                    <span className="truncate">{renderLabel(c)}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const { experts } = useExperts();
+
+  // Local state mirrors the Ask AI pattern — keeps typing smooth against
+  // the parent's debounced onChange. Legacy routines may still have the old
+  // { task, context, expert_id, max_turns } keys; read them as fallbacks so
+  // saved configs don't appear blank after the param rename, but only write
+  // the new canonical keys back (matches what the engine action reads).
+  const [prompt, setPrompt] = useState(
+    (params.prompt as string) ?? (params.task as string) ?? '',
+  );
+  const [additionalContext, setAdditionalContext] = useState(
+    (params.additionalContext as string) ?? (params.context as string) ?? '',
+  );
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const contextRef = useRef<HTMLTextAreaElement>(null);
+  const lastFocused = useRef<'prompt' | 'context'>('prompt');
+
+  const handlePromptChange = (v: string) => {
+    setPrompt(v);
+    onChange({ ...paramsRef.current, prompt: v });
+  };
+  const handleContextChange = (v: string) => {
+    setAdditionalContext(v);
+    onChange({ ...paramsRef.current, additionalContext: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const field = lastFocused.current;
+    const el = field === 'prompt' ? promptRef.current : contextRef.current;
+    if (!el) return;
+    const current = field === 'prompt' ? prompt : additionalContext;
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    if (field === 'prompt') handlePromptChange(next);
+    else handleContextChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const expertId =
+    (params.expertId as string) ?? (params.expert_id as string) ?? '';
+  // Show every expert the context surfaces (ExpertContext already hides
+  // teams when the feature flag is off) so users never stare at an empty
+  // dropdown. Disabled experts stay visible with a tag — the user may be
+  // picking one they intend to re-enable.
+  const expertChoices = experts.map((e) => ({
+    id: e.id,
+    name: e.name,
+    domain: e.domain,
+    isEnabled: e.isEnabled,
+    type: e.type,
+  }));
+  const expertPresent = expertChoices.some((c) => c.id === expertId);
+
+  const maxTurns =
+    (params.maxTurns as number) ?? (params.max_turns as number) ?? 10;
+
+  const [promptTouched, setPromptTouched] = useState(false);
+  const promptEmpty = prompt.trim().length === 0;
+  const showPromptError = promptTouched && promptEmpty;
+
+  const [expertTouched, setExpertTouched] = useState(false);
+  const showExpertError = expertTouched && !expertId;
+
+  return (
+    <div className="space-y-4">
       <div>
-        <FieldLabel text="Task" hint="stepTask" />
+        <FieldLabel text="Which expert?" hint="fieldExpertId" />
+        <ExpertPicker
+          value={expertId}
+          choices={
+            expertId && !expertPresent
+              ? [
+                  ...expertChoices,
+                  {
+                    id: expertId,
+                    name: `${expertId} (unavailable)`,
+                    domain: null,
+                    isEnabled: false,
+                    type: 'expert' as const,
+                  },
+                ]
+              : expertChoices
+          }
+          invalid={showExpertError}
+          onChange={(id) =>
+            onChange({ ...paramsRef.current, expertId: id })
+          }
+          onBlur={() => setExpertTouched(true)}
+        />
+        {showExpertError ? (
+          <FieldError text="Required — pick an expert so this step knows who should run." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Type to search. Manage experts on the Experts screen.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <FieldLabel text="What should the expert do?" hint="stepTask" />
         <textarea
-          value={(params.task as string) ?? ''}
-          onChange={(e) => onChange({ ...params, task: e.target.value })}
-          rows={4}
-          placeholder="What should the expert do? Use {{step_name.field}} for variables"
+          ref={promptRef}
+          value={prompt}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          onFocus={() => {
+            lastFocused.current = 'prompt';
+          }}
+          onBlur={() => setPromptTouched(true)}
+          rows={5}
+          placeholder="e.g. Draft a reply to the email below, keeping the tone friendly."
+          aria-invalid={showPromptError}
+          className={clsx(
+            textareaCls,
+            showPromptError && 'border-red-500/60 focus:border-red-500/60',
+          )}
+        />
+        {showPromptError ? (
+          <FieldError text="Required — the expert needs a task description." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Describe the task in plain English. If you&rsquo;ve connected
+            another step, click its chip below to pull its output in.
+          </p>
+        )}
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
+      <div>
+        <FieldLabel text="Extra context (optional)" hint="fieldContext" />
+        <textarea
+          ref={contextRef}
+          value={additionalContext}
+          onChange={(e) => handleContextChange(e.target.value)}
+          onFocus={() => {
+            lastFocused.current = 'context';
+          }}
+          rows={3}
+          placeholder="e.g. Keep replies under 80 words and sign off with 'Thanks'."
           className={textareaCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Background prepended to the task. Good for tone, constraints, or
+          reference material the expert should keep in mind.
+        </p>
       </div>
+
       <div>
-        <FieldLabel text="Context (optional)" hint="fieldContext" />
-        <textarea
-          value={(params.context as string) ?? ''}
-          onChange={(e) => onChange({ ...params, context: e.target.value })}
-          rows={2}
-          placeholder="Additional context..."
-          className={textareaCls}
-        />
-      </div>
-      <div>
-        <FieldLabel text="Max Turns" hint="fieldMaxTurns" />
+        <FieldLabel text="Max turns" hint="fieldMaxTurns" />
         <input
-          type="number" min={1}
-          value={(params.max_turns as number) ?? 10}
-          onChange={(e) => onChange({ ...params, max_turns: parseInt(e.target.value) || 10 })}
+          type="number"
+          min={1}
+          max={100}
+          value={maxTurns}
+          onChange={(e) =>
+            onChange({
+              ...paramsRef.current,
+              maxTurns: parseInt(e.target.value) || 10,
+            })
+          }
           className={inputCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          How many reasoning + tool-use rounds the expert gets before stopping.
+          Higher is more thorough but slower and more expensive.
+        </p>
       </div>
     </div>
   );
@@ -1350,7 +1690,7 @@ function ParamForm({
   switch (resolved) {
     // AI
     case 'ask_ai': return <AskAiParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'run_expert': return <RunExpertParams params={params} onChange={onChange} />;
+    case 'run_expert': return <RunExpertParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
     case 'classify': return <ClassifyParams params={params} onChange={onChange} />;
     case 'extract': return <ExtractParams params={params} onChange={onChange} />;
     case 'summarize': return <SummarizeParams params={params} onChange={onChange} />;

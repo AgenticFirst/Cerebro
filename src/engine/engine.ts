@@ -424,10 +424,16 @@ export class ExecutionEngine {
     registry.register(askAiAction);
     registry.register(modelCallAction); // legacy alias for old DAGs
     registry.register(transformerAction);
-    registry.register(createExpertStepAction({
+    const expertStepAction = createExpertStepAction({
       agentRuntime: this.agentRuntime,
       webContents,
-    }));
+    });
+    registry.register(expertStepAction);
+    // UI-facing alias: the canvas serializes steps with actionType "run_expert"
+    // (see ACTION_META), but the engine's action identifier is "expert_step".
+    // Register the same definition under both keys so routines built in the
+    // UI execute without needing a separate migration pass.
+    registry.register({ ...expertStepAction, type: 'run_expert' });
     registry.register(approvalGateAction);
 
     // Logic

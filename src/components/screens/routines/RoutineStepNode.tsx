@@ -42,7 +42,7 @@ function RoutineStepNode({ data, selected }: NodeProps) {
       return prompt.length > 40 ? prompt.slice(0, 40) + '...' : prompt || t('routineEditor.noPromptSet');
     }
     if (resolved === 'run_expert') {
-      const task = (p.task as string) || (p.prompt as string) || '';
+      const task = (p.prompt as string) || (p.task as string) || '';
       return task.length > 40 ? task.slice(0, 40) + '...' : task || t('routineEditor.noTaskSet');
     }
     if (resolved === 'classify') {

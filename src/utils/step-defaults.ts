@@ -493,7 +493,7 @@ export function getDefaultStepData(
       return { ...base, params: { prompt: '', system_prompt: '', agent: 'cerebro' } };
     case 'run_expert':
     case 'expert_step': // legacy
-      return { ...base, params: { expert_id: '', task: '', context: '', max_turns: 10 } };
+      return { ...base, params: { expertId: '', prompt: '', additionalContext: '', maxTurns: 10 } };
     case 'classify':
       return { ...base, params: { prompt: '', categories: [], model: '' } };
     case 'extract':
