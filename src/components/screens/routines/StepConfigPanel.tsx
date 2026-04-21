@@ -1036,82 +1036,257 @@ function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: P
   );
 }
 
-function ExtractParams({ params, onChange }: P) {
-  const schema = (params.schema as { id: string; name: string; type: string; description: string }[]) ?? [];
+interface SchemaField {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+}
 
-  const updateField = (index: number, field: string, value: string) => {
-    const updated = [...schema];
-    updated[index] = { ...updated[index], [field]: value };
-    onChange({ ...params, schema: updated });
+const SCHEMA_FIELD_TYPES: Array<{ value: string; label: string; hint: string }> = [
+  { value: 'string', label: 'Text', hint: 'Any text — names, sentences, notes.' },
+  { value: 'number', label: 'Number', hint: 'Digits — counts, amounts, scores.' },
+  { value: 'boolean', label: 'Yes / No', hint: 'True or false.' },
+  { value: 'date', label: 'Date', hint: 'A calendar date or timestamp.' },
+  { value: 'array', label: 'List', hint: 'Multiple values (e.g. tags).' },
+];
+
+function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const { experts } = useExperts();
+
+  const [prompt, setPrompt] = useState((params.prompt as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  const handlePromptChange = (v: string) => {
+    setPrompt(v);
+    onChange({ ...paramsRef.current, prompt: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const el = promptRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? prompt.length;
+    const end = el.selectionEnd ?? prompt.length;
+    const next = prompt.slice(0, start) + token + prompt.slice(end);
+    handlePromptChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const rawSchema =
+    (params.schema as Array<Partial<SchemaField>> | undefined) ?? [];
+  const schema: SchemaField[] = rawSchema.map((f, i) => ({
+    id: f.id ?? `field-${i}`,
+    name: f.name ?? '',
+    type: f.type ?? 'string',
+    description: f.description ?? '',
+  }));
+
+  const writeSchema = (next: SchemaField[]) =>
+    onChange({ ...paramsRef.current, schema: next });
+
+  const updateField = (index: number, field: 'name' | 'type' | 'description', value: string) => {
+    const updated = schema.map((f, i) => (i === index ? { ...f, [field]: value } : f));
+    writeSchema(updated);
   };
 
   const addField = () => {
-    onChange({ ...params, schema: [...schema, { id: crypto.randomUUID(), name: '', type: 'string', description: '' }] });
+    writeSchema([
+      ...schema,
+      { id: crypto.randomUUID(), name: '', type: 'string', description: '' },
+    ]);
   };
 
   const removeField = (index: number) => {
-    onChange({ ...params, schema: schema.filter((_, i) => i !== index) });
+    writeSchema(schema.filter((_, i) => i !== index));
   };
 
+  const agent = (params.agent as string) ?? 'cerebro';
+  const subagentChoices = [
+    { slug: 'cerebro', label: 'Cerebro (default)' },
+    ...experts
+      .filter((e) => e.slug && e.slug !== 'cerebro' && e.isEnabled)
+      .map((e) => ({ slug: e.slug as string, label: e.name })),
+  ];
+  const isCustom = !subagentChoices.some((c) => c.slug === agent);
+
+  const [promptTouched, setPromptTouched] = useState(false);
+  const promptEmpty = prompt.trim().length === 0;
+  const showPromptError = promptTouched && promptEmpty;
+
+  const [schemaTouched, setSchemaTouched] = useState(false);
+  const hasAnyField = schema.length > 0;
+  const hasBlankName = schema.some((f) => f.name.trim().length === 0);
+  const showSchemaError = schemaTouched && (!hasAnyField || hasBlankName);
+
   return (
-    <div className="space-y-3">
-      <div>
-        <FieldLabel text="Input" hint="fieldInput" />
-        <textarea
-          value={(params.prompt as string) ?? ''}
-          onChange={(e) => onChange({ ...params, prompt: e.target.value })}
-          rows={2}
-          placeholder="What to extract from... Use {{step_name.field}}"
-          className={textareaCls}
-        />
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
+        <p className="text-[11px] leading-relaxed text-text-secondary">
+          Pulls structured fields out of messy text. You describe what to find;
+          the AI returns a tidy object with each field filled in (or null when
+          the text doesn&rsquo;t mention it).
+        </p>
       </div>
+
       <div>
-        <FieldLabel text="Schema" hint="stepSchema" />
-        <div className="space-y-2">
-          {schema.map((field, i) => (
-            <div key={field.id ?? i} className="flex gap-2 items-start">
-              <div className="flex-1 space-y-1">
-                <input
-                  value={field.name}
-                  onChange={(e) => updateField(i, 'name', e.target.value)}
-                  placeholder="Field name"
-                  className={inputCls}
-                />
-                <div className="flex gap-1">
-                  <select
-                    value={field.type}
-                    onChange={(e) => updateField(i, 'type', e.target.value)}
-                    className={`${selectCls} w-24`}
-                  >
-                    <option value="string">string</option>
-                    <option value="number">number</option>
-                    <option value="boolean">boolean</option>
-                    <option value="date">date</option>
-                    <option value="array">array</option>
-                  </select>
-                  <input
-                    value={field.description}
-                    onChange={(e) => updateField(i, 'description', e.target.value)}
-                    placeholder="Description"
-                    className={`${inputCls} flex-1`}
-                  />
+        <FieldLabel text="What should we extract from?" hint="fieldInput" />
+        <textarea
+          ref={promptRef}
+          value={prompt}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          onBlur={() => setPromptTouched(true)}
+          rows={5}
+          placeholder="e.g. Extract contact info from this email:"
+          aria-invalid={showPromptError}
+          className={clsx(
+            textareaCls,
+            showPromptError && 'border-red-500/60 focus:border-red-500/60',
+          )}
+        />
+        {showPromptError ? (
+          <FieldError text="Required — the step needs some text to pull fields from." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            The text to read. Usually a short instruction plus content from a
+            connected step — click a chip below to insert it.
+          </p>
+        )}
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
+      <div>
+        <FieldLabel text="Fields to extract" hint="stepSchema" />
+        {schema.length === 0 ? (
+          <div
+            className={clsx(
+              'rounded-lg border border-dashed px-3 py-3 text-center',
+              showSchemaError
+                ? 'border-red-500/60 bg-red-500/5'
+                : 'border-border-subtle bg-bg-base/40',
+            )}
+          >
+            <p className="text-[11px] text-text-tertiary mb-2">
+              Add at least one field the AI should pull out of the text.
+            </p>
+            <button
+              type="button"
+              onClick={addField}
+              className="inline-flex items-center gap-1 rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1 text-[11px] text-accent hover:bg-accent/20 transition-colors"
+            >
+              <Plus size={11} /> Add first field
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {schema.map((field, i) => {
+              const nameMissing =
+                schemaTouched && field.name.trim().length === 0;
+              return (
+                <div
+                  key={field.id}
+                  className="rounded-lg border border-border-subtle bg-bg-base/40 p-2 space-y-1.5"
+                >
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1 space-y-1.5">
+                      <div className="flex gap-1.5">
+                        <input
+                          value={field.name}
+                          onChange={(e) => updateField(i, 'name', e.target.value)}
+                          onBlur={() => setSchemaTouched(true)}
+                          placeholder="Field name (e.g. email_address)"
+                          aria-invalid={nameMissing}
+                          className={clsx(
+                            inputCls,
+                            'flex-1',
+                            nameMissing && 'border-red-500/60 focus:border-red-500/60',
+                          )}
+                        />
+                        <select
+                          value={field.type}
+                          onChange={(e) => updateField(i, 'type', e.target.value)}
+                          className={clsx(selectCls, 'w-28 flex-shrink-0')}
+                        >
+                          {SCHEMA_FIELD_TYPES.map((t) => (
+                            <option key={t.value} value={t.value}>{t.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <input
+                        value={field.description}
+                        onChange={(e) => updateField(i, 'description', e.target.value)}
+                        placeholder="What to look for (optional but improves accuracy)"
+                        className={inputCls}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeField(i)}
+                      aria-label="Remove field"
+                      title="Remove field"
+                      className="mt-1 p-1 text-text-tertiary hover:text-red-400 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  {nameMissing && (
+                    <FieldError text="Each field needs a name." />
+                  )}
                 </div>
-              </div>
-              <button
-                onClick={() => removeField(i)}
-                className="mt-1 p-1 text-text-tertiary hover:text-red-400 transition-colors"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-        <button
-          onClick={addField}
-          className="mt-2 text-[11px] text-accent hover:text-accent/80 transition-colors"
+              );
+            })}
+            <button
+              type="button"
+              onClick={addField}
+              className="inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent/80 transition-colors"
+            >
+              <Plus size={11} /> Add another field
+            </button>
+          </div>
+        )}
+        {showSchemaError && !hasAnyField ? (
+          <FieldError text="Required — add at least one field." />
+        ) : (
+          schema.length > 0 && (
+            <p className="mt-1 text-[11px] text-text-tertiary">
+              Use short snake_case names (e.g. <code>due_date</code>). Fields
+              the AI can&rsquo;t find come back as <code>null</code>.
+            </p>
+          )
+        )}
+      </div>
+
+      <div>
+        <FieldLabel text="Run as" hint="fieldAgent" />
+        <select
+          value={isCustom ? '__custom__' : agent}
+          onChange={(e) => {
+            if (e.target.value === '__custom__') return;
+            onChange({ ...paramsRef.current, agent: e.target.value });
+          }}
+          className={selectCls}
         >
-          + Add Field
-        </button>
+          {subagentChoices.map((c) => (
+            <option key={c.slug} value={c.slug}>{c.label}</option>
+          ))}
+          {isCustom && <option value="__custom__">{agent} (custom)</option>}
+        </select>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Which Claude Code subagent does the extraction. &ldquo;Cerebro&rdquo;
+          is the default; switch to an expert to use its own system prompt.
+        </p>
       </div>
     </div>
   );
@@ -1864,7 +2039,7 @@ function ParamForm({
     case 'ask_ai': return <AskAiParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
     case 'run_expert': return <RunExpertParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
     case 'classify': return <ClassifyParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'extract': return <ExtractParams params={params} onChange={onChange} />;
+    case 'extract': return <ExtractParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
     case 'summarize': return <SummarizeParams params={params} onChange={onChange} />;
 
     // Knowledge

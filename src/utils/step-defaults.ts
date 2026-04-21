@@ -497,7 +497,7 @@ export function getDefaultStepData(
     case 'classify':
       return { ...base, params: { prompt: '', categories: [], agent: 'cerebro' } };
     case 'extract':
-      return { ...base, params: { prompt: '', schema: [], model: '' } };
+      return { ...base, params: { prompt: '', schema: [], agent: 'cerebro' } };
     case 'summarize':
       return { ...base, params: { input_field: '', max_length: 'medium', focus: '', model: '' } };
 
