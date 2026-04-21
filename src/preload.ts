@@ -211,6 +211,12 @@ const api: CerebroAPI = {
     removeWorkspace(taskId: string): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_REMOVE, taskId);
     },
+    startShellSession(sessionKey: string, cwd: string, cols: number, rows: number): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL_SESSION_START, sessionKey, cwd, cols, rows);
+    },
+    stopShellSession(sessionKey: string): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL_SESSION_STOP, sessionKey);
+    },
   },
 
   shell: {

@@ -143,6 +143,10 @@ const MAX_RESTARTS = 3;
 // Active SSE streams (streamId → http.ClientRequest)
 const activeStreams = new Map<string, http.ClientRequest>();
 
+// Transient plain shell PTYs (Hard reset flow). Keyed by the renderer-minted
+// sessionKey — see the SHELL_SESSION_START handler.
+const shellSessions = new Map<string, import('node-pty').IPty>();
+
 // Agent runtime (initialized after backend is healthy)
 let agentRuntime: AgentRuntime | null = null;
 
@@ -630,6 +634,70 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.TASK_TERMINAL_REMOVE_BUFFER, async (_event, runId: string) => {
     if (!agentRuntime) return;
     agentRuntime.terminalBufferStore.remove(runId);
+  });
+
+  // --- Plain shell sessions (Hard reset) ---
+  //
+  // A plain login shell PTY spawned inside the task's workspace. It reuses the
+  // existing TASK_TERMINAL_DATA/INPUT/RESIZE channels so ExpertConsole can bind
+  // to it with its normal runId prop. No disk persistence — hard-reset shells
+  // are transient; closing the drawer or leaving the tab tears them down.
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_SESSION_START,
+    async (event, sessionKey: string, cwd: string, cols: number, rows: number) => {
+      if (!sessionKey || typeof sessionKey !== 'string') {
+        throw new Error('shell session: missing sessionKey');
+      }
+      if (shellSessions.has(sessionKey)) return;
+
+      const pty = await import('node-pty');
+      const shellBinary = process.env.SHELL || '/bin/zsh';
+      const env: Record<string, string> = { ...process.env } as Record<string, string>;
+      env.PWD = cwd;
+      // Keep the shell out of Claude Code's own env — this is a user shell, not
+      // a nested agent — so prompts/PS1 stay normal.
+      delete env.CLAUDECODE;
+
+      const proc = pty.spawn(shellBinary, ['-l'], {
+        name: 'xterm-256color',
+        cols: Math.max(20, cols || 120),
+        rows: Math.max(10, rows || 30),
+        cwd: fs.existsSync(cwd) ? cwd : app.getPath('home'),
+        env,
+      });
+
+      const sender = event.sender;
+      const inputHandler = (_e: Electron.IpcMainEvent, key: string, data: string) => {
+        if (key !== sessionKey) return;
+        try { proc.write(data); } catch { /* already dead */ }
+      };
+      const resizeHandler = (_e: Electron.IpcMainEvent, key: string, c: number, r: number) => {
+        if (key !== sessionKey) return;
+        try { proc.resize(Math.max(20, c), Math.max(10, r)); } catch { /* already dead */ }
+      };
+      ipcMain.on(IPC_CHANNELS.TASK_TERMINAL_INPUT, inputHandler);
+      ipcMain.on(IPC_CHANNELS.TASK_TERMINAL_RESIZE, resizeHandler);
+
+      const dataDisposable = proc.onData((data: string) => {
+        if (sender.isDestroyed()) return;
+        sender.send(IPC_CHANNELS.TASK_TERMINAL_DATA, sessionKey, data);
+      });
+      proc.onExit(() => {
+        shellSessions.delete(sessionKey);
+        try { dataDisposable.dispose(); } catch { /* noop */ }
+        ipcMain.removeListener(IPC_CHANNELS.TASK_TERMINAL_INPUT, inputHandler);
+        ipcMain.removeListener(IPC_CHANNELS.TASK_TERMINAL_RESIZE, resizeHandler);
+      });
+
+      shellSessions.set(sessionKey, proc);
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.SHELL_SESSION_STOP, async (_event, sessionKey: string) => {
+    const proc = shellSessions.get(sessionKey);
+    if (!proc) return;
+    try { proc.kill(); } catch { /* already dead */ }
+    shellSessions.delete(sessionKey);
   });
 
   // --- Task Workspace (per-task isolated directory) ---

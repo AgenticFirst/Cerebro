@@ -63,6 +63,8 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   const [editTitle, setEditTitle] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [showHardReset, setShowHardReset] = useState(false);
+  const [hardResetShellKey, setHardResetShellKey] = useState<string | null>(null);
+  const [copiedResumeCmd, setCopiedResumeCmd] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -83,6 +85,23 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     setIsEditingTitle(false);
     setShowHardReset(false);
   }, [task?.id]);
+
+  // Stop any hard-reset shell when the panel closes (showHardReset flipped off
+  // or the drawer is pointed at a different task). Keeps a stale shell from
+  // lingering in the main process after the user moved on.
+  useEffect(() => {
+    if (showHardReset || !hardResetShellKey) return;
+    const key = hardResetShellKey;
+    window.cerebro.taskTerminal.stopShellSession(key).catch(() => { /* noop */ });
+    setHardResetShellKey(null);
+  }, [showHardReset, hardResetShellKey]);
+  useEffect(() => {
+    return () => {
+      if (hardResetShellKey) {
+        window.cerebro.taskTerminal.stopShellSession(hardResetShellKey).catch(() => { /* noop */ });
+      }
+    };
+  }, [hardResetShellKey]);
 
   useEffect(() => {
     if (!task) return;
@@ -172,13 +191,40 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     if (!task?.run_id) return;
     await cancelIfRunning();
     window.cerebro.taskTerminal.removeBuffer(task.run_id).catch(() => {});
+
+    // Resolve a working directory for the shell: explicit project_path wins,
+    // otherwise fall back to the hidden per-task workspace (creating it if
+    // missing, same as startTask does).
+    let cwd = task.project_path?.trim() || '';
+    if (!cwd) {
+      try {
+        cwd = await window.cerebro.taskTerminal.createWorkspace(task.id);
+      } catch {
+        cwd = '';
+      }
+    }
+
+    const sessionKey = `shell-${task.id}-${Date.now().toString(36)}`;
+    try {
+      await window.cerebro.taskTerminal.startShellSession(sessionKey, cwd, 120, 30);
+    } catch (err) {
+      console.error('[TaskDetailDrawer] Failed to start hard-reset shell:', err);
+      return;
+    }
+
+    setHardResetShellKey(sessionKey);
+    setCopiedResumeCmd(false);
     setShowHardReset(true);
     setActiveTab('console');
   }, [task, cancelIfRunning]);
 
+  const handleExitHardReset = useCallback(() => {
+    setShowHardReset(false);
+  }, []);
+
   const handleResume = useCallback(async () => {
     if (!task) return;
-    setShowHardReset(false);
+    handleExitHardReset();
     await cancelIfRunning();
     // Re-attach the TUI to the prior session without re-sending the task
     // prompt. The session already has full context from the previous run;
@@ -193,7 +239,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     } finally {
       setIsStarting(false);
     }
-  }, [task, cancelIfRunning, startTask]);
+  }, [task, cancelIfRunning, startTask, handleExitHardReset]);
 
   const handleColumnChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -260,23 +306,34 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
           </button>
         </div>
       )}
-      <div className="flex-1 min-h-0">
-        {showHardReset && task.run_id ? (
-          <div className="w-full h-full bg-[#1a1a1a] flex flex-col items-center justify-center gap-4 p-8">
-            <Terminal size={32} className="text-zinc-500" />
-            <p className="text-sm text-zinc-400 text-center">{t('tasks.consoleHardResetTitle')}</p>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(`claude --resume ${task.run_id}`);
-              }}
-              className="group flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors cursor-pointer"
-            >
-              <code className="text-sm text-emerald-400 font-mono">
-                claude --resume {task.run_id}
-              </code>
-              <Copy size={14} className="text-zinc-500 group-hover:text-zinc-300 transition-colors" />
-            </button>
-          </div>
+      <div className="flex-1 min-h-0 flex flex-col">
+        {showHardReset && task.run_id && hardResetShellKey ? (
+          <>
+            <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border-subtle bg-bg-surface">
+              <Terminal size={13} className="text-text-tertiary" />
+              <span className="text-xs text-text-tertiary">{t('tasks.consoleHardResetTitle')}</span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`claude --resume ${task.run_id}`);
+                  setCopiedResumeCmd(true);
+                  setTimeout(() => setCopiedResumeCmd(false), 1500);
+                }}
+                className="group ml-auto flex items-center gap-2 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md transition-colors cursor-pointer"
+                title="Click to copy, then paste in the terminal below"
+              >
+                <code className="text-xs text-emerald-400 font-mono">
+                  claude --resume {task.run_id}
+                </code>
+                <Copy size={12} className="text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+                {copiedResumeCmd && (
+                  <span className="text-[10px] text-emerald-400 font-medium">Copied</span>
+                )}
+              </button>
+            </div>
+            <div className="flex-1 min-h-0">
+              <ExpertConsole runId={hardResetShellKey} />
+            </div>
+          </>
         ) : (
           <ExpertConsole runId={consoleRunId} />
         )}

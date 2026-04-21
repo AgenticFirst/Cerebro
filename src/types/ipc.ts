@@ -56,6 +56,10 @@ export const IPC_CHANNELS = {
   TASK_TERMINAL_READ_BUFFER: 'task-terminal:read-buffer',  // Renderer → main: load persisted buffer
   TASK_TERMINAL_REMOVE_BUFFER: 'task-terminal:remove-buffer',  // Renderer → main: delete persisted buffer on task deletion
   taskTerminalData: (runId: string) => `task-terminal:data:${runId}`,  // Legacy per-run
+  // Plain shell session (Hard reset → drop into a normal terminal in the task cwd,
+  // reusing the same TASK_TERMINAL_DATA/INPUT/RESIZE transport keyed by sessionKey).
+  SHELL_SESSION_START: 'shell-session:start',
+  SHELL_SESSION_STOP: 'shell-session:stop',
 
   // Task workspace (per-task isolated directory for agent builds)
   TASK_WORKSPACE_CREATE: 'task-workspace:create',       // Creates dir + .claude symlink, returns path
@@ -404,6 +408,16 @@ export interface TaskTerminalAPI {
   readFile(taskId: string, relativePath: string): Promise<string | null>;
   /** Remove the workspace directory when a task is deleted. */
   removeWorkspace(taskId: string): Promise<void>;
+
+  /**
+   * Spawn a plain login shell (zsh/bash) PTY that streams/accepts input on the
+   * shared TASK_TERMINAL_DATA/INPUT/RESIZE channels keyed by `sessionKey`.
+   * Used by the task drawer's "Hard reset" flow so the user lands in a real
+   * terminal inside the task's workspace and can paste `claude --resume <id>`.
+   */
+  startShellSession(sessionKey: string, cwd: string, cols: number, rows: number): Promise<void>;
+  /** Kill the shell session spawned by startShellSession. Safe to call if already stopped. */
+  stopShellSession(sessionKey: string): Promise<void>;
 }
 
 export interface WorkspaceFileNode {
