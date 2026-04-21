@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Shield, Info, HelpCircle } from 'lucide-react';
+import { X, Shield, Info, HelpCircle, AlertCircle } from 'lucide-react';
+import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Node } from '@xyflow/react';
 import type { RoutineStepData } from '../../../utils/dag-flow-mapping';
@@ -132,6 +133,15 @@ function AvailableVariablesSection({
   );
 }
 
+function FieldError({ text }: { text: string }) {
+  return (
+    <p className="mt-1 flex items-center gap-1 text-[11px] text-red-400">
+      <AlertCircle size={10} className="flex-shrink-0" />
+      <span>{text}</span>
+    </p>
+  );
+}
+
 function AskAiParams({ params, onChange, step }: PWithStep) {
   const { experts } = useExperts();
 
@@ -192,6 +202,10 @@ function AskAiParams({ params, onChange, step }: PWithStep) {
   ];
   const isCustom = !subagentChoices.some((c) => c.slug === agent);
 
+  const [promptTouched, setPromptTouched] = useState(false);
+  const promptEmpty = prompt.trim().length === 0;
+  const showPromptError = promptTouched && promptEmpty;
+
   return (
     <div className="space-y-4">
       <div>
@@ -201,14 +215,20 @@ function AskAiParams({ params, onChange, step }: PWithStep) {
           value={prompt}
           onChange={(e) => handlePromptChange(e.target.value)}
           onFocus={() => { lastFocused.current = 'prompt'; }}
+          onBlur={() => setPromptTouched(true)}
           rows={5}
           placeholder="e.g. Summarize the email below in two sentences:&#10;&#10;{{previous_output}}"
-          className={textareaCls}
+          aria-invalid={showPromptError}
+          className={clsx(textareaCls, showPromptError && 'border-red-500/60 focus:border-red-500/60')}
         />
-        <p className="mt-1 text-[11px] text-text-tertiary">
-          Write the instruction in plain English. To reference data from a
-          connected step, wrap its name in double braces like <code className="px-1 rounded bg-bg-base text-text-secondary">{'{{previous_output}}'}</code>.
-        </p>
+        {showPromptError ? (
+          <FieldError text="Required — the step will fail without a prompt." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Write the instruction in plain English. To reference data from a
+            connected step, wrap its name in double braces like <code className="px-1 rounded bg-bg-base text-text-secondary">{'{{previous_output}}'}</code>.
+          </p>
+        )}
       </div>
 
       <AvailableVariablesSection step={step} onInsert={insertAtCursor} />
@@ -1088,6 +1108,9 @@ function NotificationParams({ params, onChange, step }: PWithStep) {
   };
 
   const urgency = (params.urgency as string) ?? 'normal';
+  const [titleTouched, setTitleTouched] = useState(false);
+  const titleEmpty = title.trim().length === 0;
+  const showTitleError = titleTouched && titleEmpty;
 
   return (
     <div className="space-y-4">
@@ -1098,12 +1121,18 @@ function NotificationParams({ params, onChange, step }: PWithStep) {
           value={title}
           onChange={(e) => handleTitleChange(e.target.value)}
           onFocus={() => { lastFocused.current = 'title'; }}
+          onBlur={() => setTitleTouched(true)}
           placeholder="e.g. Daily brief is ready"
-          className={inputCls}
+          aria-invalid={showTitleError}
+          className={clsx(inputCls, showTitleError && 'border-red-500/60 focus:border-red-500/60')}
         />
-        <p className="mt-1 text-[11px] text-text-tertiary">
-          Short text shown at the top of the notification. Required.
-        </p>
+        {showTitleError ? (
+          <FieldError text="Required — the notification won't send without a headline." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Short text shown at the top of the notification. Required.
+          </p>
+        )}
       </div>
 
       <div>

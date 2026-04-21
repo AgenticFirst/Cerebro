@@ -9,7 +9,9 @@ import {
 } from 'react';
 import type { BackendResponse } from '../types/ipc';
 import type { Routine, ApiRoutine, CreateRoutineInput } from '../types/routines';
+import type { DAGDefinition } from '../engine/dag/types';
 import { toRoutine, toApiBody } from '../types/routines';
+import { validateDagParams } from '../utils/step-validation';
 import { useToast } from './ToastContext';
 
 // ── Context ────────────────────────────────────────────────────
@@ -162,12 +164,29 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
     const routine = routinesRef.current.find((r) => r.id === id);
     if (!routine?.dagJson) return;
 
+    let dag: DAGDefinition;
+    try {
+      dag = JSON.parse(routine.dagJson);
+    } catch {
+      addToast('Routine DAG is invalid JSON', 'error');
+      return;
+    }
+
+    const issues = validateDagParams(dag);
+    if (issues.length > 0) {
+      const summary = issues.length === 1
+        ? issues[0].message
+        : `${issues.length} steps need attention: ${issues.map((i) => i.stepName).join(', ')}`;
+      addToast(`Can't run "${routine.name}" — ${summary}`, 'error');
+      return;
+    }
+
     if (runCallbackRef.current) {
       runCallbackRef.current({ id: routine.id, name: routine.name, dagJson: routine.dagJson });
     } else {
       console.warn('runRoutine called but no run callback registered (ChatProvider may not be mounted)');
     }
-  }, []);
+  }, [addToast]);
 
   return (
     <RoutineContext.Provider
