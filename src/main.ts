@@ -46,6 +46,12 @@ import type { SandboxConfig } from './sandbox/types';
 // Voice session manager (initialized after backend is healthy)
 let voiceSession: VoiceSessionManager | null = null;
 
+// Override Electron's default app identity in dev mode so the menu bar,
+// notifications, and dock label all read "Cerebro" instead of "Electron".
+// Packaged builds get this from packagerConfig.name in forge.config.ts.
+app.setName('Cerebro');
+app.setAppUserModelId('com.cerebro.app');
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
