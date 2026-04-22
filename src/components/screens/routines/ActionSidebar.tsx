@@ -34,7 +34,7 @@ export default function ActionSidebar({ isOpen, onClose, onOpen }: ActionSidebar
     const query = search.toLowerCase().trim();
 
     return ACTION_CATEGORIES.map((category) => {
-      const actions = Object.entries(ACTION_META).filter(([, meta]) => {
+      const matches = Object.entries(ACTION_META).filter(([, meta]) => {
         if (meta.category !== category.id) return false;
         // Don't show triggers in sidebar — they're managed via toolbar
         if (meta.category === 'triggers') return false;
@@ -45,6 +45,10 @@ export default function ActionSidebar({ isOpen, onClose, onOpen }: ActionSidebar
           meta.keywords.some((kw) => kw.includes(query))
         );
       });
+      const actions = [
+        ...matches.filter(([, meta]) => meta.isAvailable),
+        ...matches.filter(([, meta]) => !meta.isAvailable),
+      ];
       return { category, actions } as { category: ActionCategory; actions: [string, ActionMeta][] };
     }).filter((group) => group.actions.length > 0);
   }, [search]);

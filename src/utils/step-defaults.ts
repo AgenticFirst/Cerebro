@@ -66,7 +66,7 @@ export const ACTION_CATEGORIES: ActionCategory[] = [
   { id: 'triggers',     name: 'Triggers',     icon: Zap,          color: 'teal',    colorHex: TRIGGER_TEAL },
   { id: 'ai',           name: 'AI',           icon: Brain,        color: 'violet',  colorHex: '#8b5cf6' },
   { id: 'knowledge',    name: 'Knowledge',    icon: BookOpen,     color: 'indigo',  colorHex: '#6366f1' },
-  { id: 'integrations', name: 'Integrations', icon: Plug2,        color: 'blue',    colorHex: '#3b82f6' },
+  { id: 'integrations', name: 'Integrations', icon: Plug2,        color: 'amber',   colorHex: '#f59e0b' },
   { id: 'logic',        name: 'Logic',        icon: GitBranch,    color: 'slate',   colorHex: '#64748b' },
   { id: 'output',       name: 'Output',       icon: ArrowUpRight, color: 'emerald', colorHex: '#10b981' },
 ];
@@ -229,8 +229,8 @@ export const ACTION_META: Record<string, ActionMeta> = {
   http_request: {
     name: 'HTTP Request',
     icon: Globe2,
-    color: 'blue',
-    colorHex: '#3b82f6',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Call any REST API',
     category: 'integrations',
     isAvailable: true,
@@ -239,8 +239,8 @@ export const ACTION_META: Record<string, ActionMeta> = {
   integration_google_calendar: {
     name: 'Google Calendar',
     icon: Calendar,
-    color: 'blue',
-    colorHex: '#3b82f6',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Get/create events',
     category: 'integrations',
     isAvailable: false,
@@ -249,8 +249,8 @@ export const ACTION_META: Record<string, ActionMeta> = {
   integration_gmail: {
     name: 'Gmail',
     icon: Mail,
-    color: 'blue',
-    colorHex: '#3b82f6',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Read/send emails',
     category: 'integrations',
     isAvailable: false,
@@ -259,8 +259,8 @@ export const ACTION_META: Record<string, ActionMeta> = {
   integration_slack: {
     name: 'Slack',
     icon: MessageCircle,
-    color: 'blue',
-    colorHex: '#3b82f6',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Send/read messages',
     category: 'integrations',
     isAvailable: false,
@@ -269,8 +269,8 @@ export const ACTION_META: Record<string, ActionMeta> = {
   integration_whatsapp: {
     name: 'WhatsApp',
     icon: MessageCircle,
-    color: 'blue',
-    colorHex: '#3b82f6',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Send messages',
     category: 'integrations',
     isAvailable: false,
@@ -279,8 +279,8 @@ export const ACTION_META: Record<string, ActionMeta> = {
   integration_strava: {
     name: 'Strava',
     icon: Activity,
-    color: 'blue',
-    colorHex: '#3b82f6',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Get activities/stats',
     category: 'integrations',
     isAvailable: false,
@@ -289,8 +289,8 @@ export const ACTION_META: Record<string, ActionMeta> = {
   integration_github: {
     name: 'GitHub',
     icon: Github,
-    color: 'blue',
-    colorHex: '#3b82f6',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Issues, PRs, repos',
     category: 'integrations',
     isAvailable: false,
@@ -299,8 +299,8 @@ export const ACTION_META: Record<string, ActionMeta> = {
   integration_notion: {
     name: 'Notion',
     icon: StickyNote,
-    color: 'blue',
-    colorHex: '#3b82f6',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Query/create pages',
     category: 'integrations',
     isAvailable: false,
@@ -309,8 +309,8 @@ export const ACTION_META: Record<string, ActionMeta> = {
   run_command: {
     name: 'Run Command',
     icon: Terminal,
-    color: 'blue',
-    colorHex: '#3b82f6',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Execute a shell command',
     category: 'integrations',
     isAvailable: true,
@@ -319,8 +319,8 @@ export const ACTION_META: Record<string, ActionMeta> = {
   run_claude_code: {
     name: 'Claude Code',
     icon: Bot,
-    color: 'blue',
-    colorHex: '#3b82f6',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Run Claude Code CLI',
     category: 'integrations',
     isAvailable: true,
@@ -371,20 +371,20 @@ export const ACTION_META: Record<string, ActionMeta> = {
   wait_for_webhook: {
     name: 'Wait for Webhook',
     icon: Webhook,
-    color: 'slate',
-    colorHex: '#64748b',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Pause until HTTP callback arrives',
-    category: 'logic',
+    category: 'integrations',
     isAvailable: true,
     keywords: ['webhook', 'wait', 'callback', 'external', 'http'],
   },
   run_script: {
     name: 'Run Script',
     icon: FileCode,
-    color: 'slate',
-    colorHex: '#64748b',
+    color: 'amber',
+    colorHex: '#f59e0b',
     description: 'Execute Python or JavaScript code',
-    category: 'logic',
+    category: 'integrations',
     isAvailable: true,
     keywords: ['script', 'python', 'javascript', 'code', 'eval'],
   },
@@ -464,12 +464,14 @@ export function resolveActionType(actionType: string): string {
 
 /** Get actions grouped by category. */
 export function getActionsByCategory(): { category: ActionCategory; actions: [string, ActionMeta][] }[] {
-  return ACTION_CATEGORIES.map((category) => ({
-    category,
-    actions: Object.entries(ACTION_META).filter(
+  return ACTION_CATEGORIES.map((category) => {
+    const entries = Object.entries(ACTION_META).filter(
       ([, meta]) => meta.category === category.id,
-    ),
-  }));
+    );
+    const available = entries.filter(([, meta]) => meta.isAvailable);
+    const comingSoon = entries.filter(([, meta]) => !meta.isAvailable);
+    return { category, actions: [...available, ...comingSoon] };
+  });
 }
 
 /** Check if an action type is a trigger. */
