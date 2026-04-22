@@ -361,9 +361,13 @@ describe('STM-I1: save_to_memory writes to /agent-memory via the backend', () =>
   }, 10_000);
 
   it('appends instead of overwriting when a prior entry exists for the same day', async () => {
-    // Seed the store with an existing entry.
-    const todayISO = new Date().toISOString().slice(0, 10);
-    const key = `cerebro:routines/${todayISO}.md`;
+    // Seed the store with an existing entry. Use the *local* calendar date
+    // (matching save_to_memory's formatDate) so the test works across
+    // timezones — using UTC here races with midnight in non-UTC zones.
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayLocal = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const key = `cerebro:routines/${todayLocal}.md`;
     memoryStore.set(key, '# Routine notes — earlier\n\n## 09:00\n\nEarlier entry.\n');
 
     const engine = new ExecutionEngine(serverPort, makeMockRuntime());
