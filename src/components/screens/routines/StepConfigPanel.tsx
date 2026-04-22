@@ -20,6 +20,7 @@ import {
 import Toggle from '../../ui/Toggle';
 import Tooltip from '../../ui/Tooltip';
 import VariablesHelpModal from './VariablesHelpModal';
+import { ALLOWED_COMMANDS as ALLOWED_RUN_COMMANDS } from '../../../engine/actions/run-command-allowlist';
 
 /** Minimal step descriptor threaded from the editor for tooltip + secondary chip lookup. */
 interface SourceStepInfo {
@@ -2093,31 +2094,151 @@ function SaveToMemoryParams({ params, onChange, step, sourceSteps, onAddMapping 
 
 // ── Integration Param Forms ───────────────────────────────────
 
-function HttpRequestParams({ params, onChange }: P) {
+const AUTH_TYPE_META: Record<string, { placeholder: string; description: string }> = {
+  none: {
+    placeholder: '',
+    description: 'No authentication header is added.',
+  },
+  bearer: {
+    placeholder: 'Token — variables allowed, e.g. {{creds.token}}',
+    description: 'Sent as "Authorization: Bearer <value>".',
+  },
+  basic: {
+    placeholder: 'username:password',
+    description: 'Encoded as "Authorization: Basic base64(user:pass)".',
+  },
+  api_key: {
+    placeholder: 'Key — variables allowed',
+    description: 'Sent as a custom header (default: X-API-Key).',
+  },
+};
+
+const CLAUDE_MODE_META: Record<string, { label: string; description: string }> = {
+  ask: {
+    label: 'Ask — read-only, no edits',
+    description: 'Answers questions about code. Can read files but will not modify anything.',
+  },
+  plan: {
+    label: 'Plan — design, no edits',
+    description: 'Produces an implementation plan without touching files. Good for scoping work.',
+  },
+  implement: {
+    label: 'Implement — full file access',
+    description: 'Writes and edits files. Use when you want the routine to actually change code.',
+  },
+  review: {
+    label: 'Review — git-aware critique',
+    description: 'Reviews current git diff / changes and reports issues. No edits.',
+  },
+};
+
+function HttpRequestParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const [url, setUrl] = useState((params.url as string) ?? '');
+  const [body, setBody] = useState((params.body as string) ?? '');
+  const [authValue, setAuthValue] = useState((params.auth_value as string) ?? '');
+  const [authHeader, setAuthHeader] = useState((params.auth_header as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const urlRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const headerRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const lastFocused = useRef<{ kind: 'url' | 'body' | 'header'; headerKey?: string }>({ kind: 'url' });
+
   const headers = (params.headers as { key: string; value: string }[]) ?? [];
+  const method = ((params.method as string) ?? 'GET').toUpperCase();
+  const authType = (params.auth_type as string) ?? 'none';
 
-  const updateHeader = (index: number, field: string, value: string) => {
-    const updated = [...headers];
-    updated[index] = { ...updated[index], [field]: value };
-    onChange({ ...params, headers: updated });
+  const handleUrlChange = (v: string) => {
+    setUrl(v);
+    onChange({ ...paramsRef.current, url: v });
+  };
+  const handleBodyChange = (v: string) => {
+    setBody(v);
+    onChange({ ...paramsRef.current, body: v });
+  };
+  const handleAuthValueChange = (v: string) => {
+    setAuthValue(v);
+    onChange({ ...paramsRef.current, auth_value: v });
+  };
+  const handleAuthHeaderChange = (v: string) => {
+    setAuthHeader(v);
+    onChange({ ...paramsRef.current, auth_header: v });
   };
 
+  const updateHeader = (index: number, field: 'key' | 'value', value: string) => {
+    const updated = headers.map((h, i) => (i === index ? { ...h, [field]: value } : h));
+    onChange({ ...paramsRef.current, headers: updated });
+  };
   const addHeader = () => {
-    onChange({ ...params, headers: [...headers, { key: '', value: '' }] });
+    onChange({ ...paramsRef.current, headers: [...headers, { key: '', value: '' }] });
+  };
+  const removeHeader = (index: number) => {
+    onChange({ ...paramsRef.current, headers: headers.filter((_, i) => i !== index) });
   };
 
-  const removeHeader = (index: number) => {
-    onChange({ ...params, headers: headers.filter((_, i) => i !== index) });
+  const insertAtCursor = (token: string) => {
+    const focus = lastFocused.current;
+    if (focus.kind === 'url' && urlRef.current) {
+      const el = urlRef.current;
+      const start = el.selectionStart ?? url.length;
+      const end = el.selectionEnd ?? url.length;
+      const next = url.slice(0, start) + token + url.slice(end);
+      handleUrlChange(next);
+      requestAnimationFrame(() => {
+        el.focus();
+        const pos = start + token.length;
+        el.setSelectionRange(pos, pos);
+      });
+    } else if (focus.kind === 'body' && bodyRef.current) {
+      const el = bodyRef.current;
+      const start = el.selectionStart ?? body.length;
+      const end = el.selectionEnd ?? body.length;
+      const next = body.slice(0, start) + token + body.slice(end);
+      handleBodyChange(next);
+      requestAnimationFrame(() => {
+        el.focus();
+        const pos = start + token.length;
+        el.setSelectionRange(pos, pos);
+      });
+    } else if (focus.kind === 'header' && focus.headerKey) {
+      const [kindStr, indexStr] = focus.headerKey.split(':');
+      const el = headerRefs.current[focus.headerKey];
+      const index = parseInt(indexStr, 10);
+      const row = headers[index];
+      if (!el || !row) return;
+      const field = kindStr as 'key' | 'value';
+      const current = row[field] ?? '';
+      const start = el.selectionStart ?? current.length;
+      const end = el.selectionEnd ?? current.length;
+      const next = current.slice(0, start) + token + current.slice(end);
+      updateHeader(index, field, next);
+      requestAnimationFrame(() => {
+        el.focus();
+        const pos = start + token.length;
+        el.setSelectionRange(pos, pos);
+      });
+    }
   };
+
+  const [urlTouched, setUrlTouched] = useState(false);
+  const urlEmpty = url.trim().length === 0;
+  const showUrlError = urlTouched && urlEmpty;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5 text-[11px] text-text-secondary leading-relaxed">
+        Call any REST API. Method, URL, headers, and body support{' '}
+        <span className="font-mono text-accent">{'{{variables}}'}</span> from
+        connected steps. Private/internal addresses are blocked for safety.
+      </div>
+
       <div className="flex gap-2">
-        <div className="w-24">
+        <div className="w-28">
           <FieldLabel text="Method" hint="fieldHttpMethod" />
           <select
-            value={(params.method as string) ?? 'GET'}
-            onChange={(e) => onChange({ ...params, method: e.target.value })}
+            value={method}
+            onChange={(e) => onChange({ ...paramsRef.current, method: e.target.value })}
             className={selectCls}
           >
             <option>GET</option>
@@ -2127,16 +2248,35 @@ function HttpRequestParams({ params, onChange }: P) {
             <option>DELETE</option>
           </select>
         </div>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <FieldLabel text="URL" hint="fieldHttpUrl" />
           <input
-            value={(params.url as string) ?? ''}
-            onChange={(e) => onChange({ ...params, url: e.target.value })}
-            placeholder="https://api.example.com/..."
-            className={inputCls}
+            ref={urlRef}
+            value={url}
+            onChange={(e) => handleUrlChange(e.target.value)}
+            onFocus={() => { lastFocused.current = { kind: 'url' }; }}
+            onBlur={() => setUrlTouched(true)}
+            placeholder="https://api.example.com/users/{{previous.id}}"
+            aria-invalid={showUrlError}
+            className={clsx(inputCls, showUrlError && 'border-red-500/60 focus:border-red-500/60')}
           />
         </div>
       </div>
+      {showUrlError ? (
+        <FieldError text="Required — the request needs a URL." />
+      ) : (
+        <p className="-mt-3 text-[11px] text-text-tertiary">
+          Full URL the request should target. Click a variable chip below to
+          drop it into the URL or body.
+        </p>
+      )}
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
 
       <div>
         <FieldLabel text="Headers" hint="fieldHttpHeaders" />
@@ -2144,20 +2284,32 @@ function HttpRequestParams({ params, onChange }: P) {
           {headers.map((h, i) => (
             <div key={i} className="flex gap-1.5 items-center">
               <input
-                value={h.key}
+                ref={(el) => {
+                  if (el) headerRefs.current[`key:${i}`] = el;
+                  else delete headerRefs.current[`key:${i}`];
+                }}
+                value={h.key ?? ''}
                 onChange={(e) => updateHeader(i, 'key', e.target.value)}
-                placeholder="Key"
+                onFocus={() => { lastFocused.current = { kind: 'header', headerKey: `key:${i}` }; }}
+                placeholder="Header name (e.g. Authorization)"
                 className={`${inputCls} flex-1`}
               />
               <input
-                value={h.value}
+                ref={(el) => {
+                  if (el) headerRefs.current[`value:${i}`] = el;
+                  else delete headerRefs.current[`value:${i}`];
+                }}
+                value={h.value ?? ''}
                 onChange={(e) => updateHeader(i, 'value', e.target.value)}
-                placeholder="Value"
+                onFocus={() => { lastFocused.current = { kind: 'header', headerKey: `value:${i}` }; }}
+                placeholder="Value (variables allowed)"
                 className={`${inputCls} flex-1`}
               />
               <button
+                type="button"
                 onClick={() => removeHeader(i)}
                 className="p-1 text-text-tertiary hover:text-red-400 transition-colors"
+                aria-label="Remove header"
               >
                 <X size={12} />
               </button>
@@ -2165,36 +2317,70 @@ function HttpRequestParams({ params, onChange }: P) {
           ))}
         </div>
         <button
+          type="button"
           onClick={addHeader}
           className="mt-1.5 text-[11px] text-accent hover:text-accent/80 transition-colors"
         >
-          + Add Header
+          + Add header
         </button>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Both name and value accept variables. Content-Type is set to JSON
+          automatically when a body is present on non-GET requests.
+        </p>
       </div>
 
-      <div>
-        <FieldLabel text="Body (JSON)" hint="fieldHttpBody" />
-        <textarea
-          value={(params.body as string) ?? ''}
-          onChange={(e) => onChange({ ...params, body: e.target.value })}
-          rows={4}
-          placeholder='{"key": "{{step_name.field}}"}'
-          className={`${textareaCls} font-mono`}
-        />
-      </div>
+      {method !== 'GET' && (
+        <div>
+          <FieldLabel text="Body (JSON)" hint="fieldHttpBody" />
+          <textarea
+            ref={bodyRef}
+            value={body}
+            onChange={(e) => handleBodyChange(e.target.value)}
+            onFocus={() => { lastFocused.current = { kind: 'body' }; }}
+            rows={4}
+            placeholder='{"user_id": "{{previous.id}}"}'
+            className={`${textareaCls} font-mono`}
+          />
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Sent as the request body. Leave blank for requests that take no body.
+          </p>
+        </div>
+      )}
 
       <div>
         <FieldLabel text="Authentication" hint="fieldAuth" />
         <select
-          value={(params.auth_type as string) ?? 'none'}
-          onChange={(e) => onChange({ ...params, auth_type: e.target.value })}
+          value={authType}
+          onChange={(e) => onChange({ ...paramsRef.current, auth_type: e.target.value })}
           className={selectCls}
         >
           <option value="none">None</option>
-          <option value="bearer">Bearer Token</option>
-          <option value="basic">Basic Auth</option>
-          <option value="api_key">API Key</option>
+          <option value="bearer">Bearer token</option>
+          <option value="basic">Basic auth (username:password)</option>
+          <option value="api_key">API key header</option>
         </select>
+        {authType !== 'none' && (
+          <div className="mt-2 space-y-2">
+            {authType === 'api_key' && (
+              <input
+                value={authHeader}
+                onChange={(e) => handleAuthHeaderChange(e.target.value)}
+                placeholder="Header name (defaults to X-API-Key)"
+                className={inputCls}
+              />
+            )}
+            <input
+              type="password"
+              value={authValue}
+              onChange={(e) => handleAuthValueChange(e.target.value)}
+              placeholder={AUTH_TYPE_META[authType]?.placeholder ?? ''}
+              className={inputCls}
+            />
+          </div>
+        )}
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          {AUTH_TYPE_META[authType]?.description ?? ''}
+        </p>
       </div>
 
       <div>
@@ -2202,111 +2388,298 @@ function HttpRequestParams({ params, onChange }: P) {
         <input
           type="number" min={1}
           value={(params.timeout as number) ?? 30}
-          onChange={(e) => onChange({ ...params, timeout: parseInt(e.target.value) || 30 })}
+          onChange={(e) => onChange({ ...paramsRef.current, timeout: parseInt(e.target.value) || 30 })}
           className={inputCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Abort the request if the server takes longer than this to respond.
+        </p>
       </div>
     </div>
   );
 }
 
-function RunCommandParams({ params, onChange }: P) {
+function RunCommandParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const [command, setCommand] = useState((params.command as string) ?? '');
+  const [args, setArgs] = useState((params.args as string) ?? '');
+  const [workingDir, setWorkingDir] = useState((params.working_directory as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const argsRef = useRef<HTMLTextAreaElement>(null);
+  const workingDirRef = useRef<HTMLInputElement>(null);
+  const lastFocused = useRef<'args' | 'workingDir'>('args');
+
+  const handleCommandChange = (v: string) => {
+    setCommand(v);
+    onChange({ ...paramsRef.current, command: v });
+  };
+  const handleArgsChange = (v: string) => {
+    setArgs(v);
+    onChange({ ...paramsRef.current, args: v });
+  };
+  const handleWorkingDirChange = (v: string) => {
+    setWorkingDir(v);
+    onChange({ ...paramsRef.current, working_directory: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const el = lastFocused.current === 'args' ? argsRef.current : workingDirRef.current;
+    if (!el) return;
+    const current = lastFocused.current === 'args' ? args : workingDir;
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    if (lastFocused.current === 'args') handleArgsChange(next);
+    else handleWorkingDirChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const [commandTouched, setCommandTouched] = useState(false);
+  const trimmedCommand = command.trim();
+  const commandEmpty = trimmedCommand.length === 0;
+  const isCustomCommand = !commandEmpty && !ALLOWED_RUN_COMMANDS.includes(trimmedCommand);
+  const showCommandError = commandTouched && (commandEmpty || isCustomCommand);
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5 text-[11px] text-text-secondary leading-relaxed">
+        Runs a shell command in the background. Only a curated list is allowed
+        — no arbitrary binaries, no shell injection. Arguments and working
+        directory support{' '}
+        <span className="font-mono text-accent">{'{{variables}}'}</span>.
+      </div>
+
       <div>
         <FieldLabel text="Command" hint="stepCommand" />
-        <input
-          value={(params.command as string) ?? ''}
-          onChange={(e) => onChange({ ...params, command: e.target.value })}
-          placeholder="git, npm, python, etc."
-          className={inputCls}
-        />
+        <select
+          value={isCustomCommand ? '__custom__' : command}
+          onChange={(e) => {
+            if (e.target.value === '__custom__') return;
+            handleCommandChange(e.target.value);
+            setCommandTouched(true);
+          }}
+          onBlur={() => setCommandTouched(true)}
+          aria-invalid={showCommandError}
+          className={clsx(selectCls, showCommandError && 'border-red-500/60 focus:border-red-500/60')}
+        >
+          <option value="">Pick a command…</option>
+          {ALLOWED_RUN_COMMANDS.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+          {isCustomCommand && <option value="__custom__">{command} (not allowed)</option>}
+        </select>
+        {showCommandError ? (
+          <FieldError
+            text={
+              commandEmpty
+                ? 'Required — pick a command to run.'
+                : `"${command}" is not in the allowed list.`
+            }
+          />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Allowed: {ALLOWED_RUN_COMMANDS.join(', ')}. Paths like{' '}
+            <span className="font-mono">/usr/bin/git</span> are rejected.
+          </p>
+        )}
       </div>
+
       <div>
         <FieldLabel text="Arguments" hint="fieldArguments" />
         <textarea
-          value={(params.args as string) ?? ''}
-          onChange={(e) => onChange({ ...params, args: e.target.value })}
+          ref={argsRef}
+          value={args}
+          onChange={(e) => handleArgsChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'args'; }}
           rows={2}
-          placeholder="Command arguments... Use {{step_name.field}}"
+          placeholder='e.g. status --short   •   clone {{prev.repo_url}} /tmp/out'
           className={`${textareaCls} font-mono`}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Space-separated. Use <span className="font-mono">"quotes"</span> for
+          arguments that contain spaces. Variables from connected steps
+          expand before running.
+        </p>
       </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
       <div>
-        <FieldLabel text="Working Directory" hint="fieldWorkingDir" />
+        <FieldLabel text="Working directory (optional)" hint="fieldWorkingDir" />
         <input
-          value={(params.working_directory as string) ?? ''}
-          onChange={(e) => onChange({ ...params, working_directory: e.target.value })}
-          placeholder="/path/to/project"
+          ref={workingDirRef}
+          value={workingDir}
+          onChange={(e) => handleWorkingDirChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'workingDir'; }}
+          placeholder="/Users/me/projects/my-repo"
           className={inputCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Absolute path the command runs from. Leave blank to use Cerebro&rsquo;s
+          working directory.
+        </p>
       </div>
+
       <div>
         <FieldLabel text="Timeout (seconds)" hint="fieldTimeoutSeconds" />
         <input
           type="number" min={1}
           value={(params.timeout as number) ?? 300}
-          onChange={(e) => onChange({ ...params, timeout: parseInt(e.target.value) || 300 })}
+          onChange={(e) => onChange({ ...paramsRef.current, timeout: parseInt(e.target.value) || 300 })}
           className={inputCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Abort the command if it runs longer than this.
+        </p>
       </div>
     </div>
   );
 }
 
-function ClaudeCodeParams({ params, onChange }: P) {
+function ClaudeCodeParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const [prompt, setPrompt] = useState((params.prompt as string) ?? '');
+  const [workingDir, setWorkingDir] = useState((params.working_directory as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const workingDirRef = useRef<HTMLInputElement>(null);
+  const lastFocused = useRef<'prompt' | 'workingDir'>('prompt');
+
+  const handlePromptChange = (v: string) => {
+    setPrompt(v);
+    onChange({ ...paramsRef.current, prompt: v });
+  };
+  const handleWorkingDirChange = (v: string) => {
+    setWorkingDir(v);
+    onChange({ ...paramsRef.current, working_directory: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const el = lastFocused.current === 'prompt' ? promptRef.current : workingDirRef.current;
+    if (!el) return;
+    const current = lastFocused.current === 'prompt' ? prompt : workingDir;
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    if (lastFocused.current === 'prompt') handlePromptChange(next);
+    else handleWorkingDirChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const mode = (params.mode as string) ?? 'ask';
+  const modeMeta = CLAUDE_MODE_META[mode] ?? CLAUDE_MODE_META.ask;
+
+  const [promptTouched, setPromptTouched] = useState(false);
+  const promptEmpty = prompt.trim().length === 0;
+  const showPromptError = promptTouched && promptEmpty;
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5 text-[11px] text-text-secondary leading-relaxed">
+        Spawns the Claude Code CLI as a subprocess. Pick the mode to restrict
+        what it can touch, then write the instruction in plain English.
+        Variables from connected steps expand inside the prompt.
+      </div>
+
       <div>
         <FieldLabel text="Mode" hint="fieldClaudeMode" />
         <select
-          value={(params.mode as string) ?? 'ask'}
-          onChange={(e) => onChange({ ...params, mode: e.target.value })}
+          value={mode}
+          onChange={(e) => onChange({ ...paramsRef.current, mode: e.target.value })}
           className={selectCls}
         >
-          <option value="ask">Ask (read-only)</option>
-          <option value="plan">Plan (analyze, no edits)</option>
-          <option value="implement">Implement (full access)</option>
-          <option value="review">Review (git-aware)</option>
+          {Object.entries(CLAUDE_MODE_META).map(([value, meta]) => (
+            <option key={value} value={value}>{meta.label}</option>
+          ))}
         </select>
+        <p className="mt-1 text-[11px] text-text-tertiary">{modeMeta.description}</p>
       </div>
+
       <div>
         <FieldLabel text="Prompt" hint="stepPrompt" />
         <textarea
-          value={(params.prompt as string) ?? ''}
-          onChange={(e) => onChange({ ...params, prompt: e.target.value })}
+          ref={promptRef}
+          value={prompt}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'prompt'; }}
+          onBlur={() => setPromptTouched(true)}
           rows={5}
-          placeholder="What should Claude Code do?"
-          className={textareaCls}
+          placeholder="e.g. Add a unit test for the parseArgs helper in utils/cli.ts."
+          aria-invalid={showPromptError}
+          className={clsx(textareaCls, showPromptError && 'border-red-500/60 focus:border-red-500/60')}
         />
+        {showPromptError ? (
+          <FieldError text="Required — the step will fail without a prompt." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Describe the task in plain English. Click a variable chip below to
+            pull connected step outputs into the prompt.
+          </p>
+        )}
       </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
       <div>
-        <FieldLabel text="Working Directory" hint="fieldWorkingDir" />
+        <FieldLabel text="Working directory (optional)" hint="fieldWorkingDir" />
         <input
-          value={(params.working_directory as string) ?? ''}
-          onChange={(e) => onChange({ ...params, working_directory: e.target.value })}
-          placeholder="/path/to/project"
+          ref={workingDirRef}
+          value={workingDir}
+          onChange={(e) => handleWorkingDirChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'workingDir'; }}
+          placeholder="/Users/me/projects/my-repo"
           className={inputCls}
         />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          The directory Claude Code operates in. Leave blank to use Cerebro&rsquo;s
+          working directory.
+        </p>
       </div>
+
       <div className="flex gap-3">
         <div className="flex-1">
-          <FieldLabel text="Max Turns" hint="fieldMaxTurns" />
+          <FieldLabel text="Max turns" hint="fieldMaxTurns" />
           <input
             type="number" min={1}
             value={(params.max_turns as number) ?? 50}
-            onChange={(e) => onChange({ ...params, max_turns: parseInt(e.target.value) || 50 })}
+            onChange={(e) => onChange({ ...paramsRef.current, max_turns: parseInt(e.target.value) || 50 })}
             className={inputCls}
           />
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            How many back-and-forth steps Claude may take.
+          </p>
         </div>
         <div className="flex-1">
           <FieldLabel text="Timeout (s)" hint="fieldTimeoutSeconds" />
           <input
             type="number" min={1}
             value={(params.timeout as number) ?? 600}
-            onChange={(e) => onChange({ ...params, timeout: parseInt(e.target.value) || 600 })}
+            onChange={(e) => onChange({ ...paramsRef.current, timeout: parseInt(e.target.value) || 600 })}
             className={inputCls}
           />
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Total time limit before the subprocess is killed.
+          </p>
         </div>
       </div>
     </div>
@@ -3094,9 +3467,9 @@ function ParamForm({
     case 'save_to_memory': return <SaveToMemoryParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
 
     // Integrations
-    case 'http_request': return <HttpRequestParams params={params} onChange={onChange} />;
-    case 'run_command': return <RunCommandParams params={params} onChange={onChange} />;
-    case 'run_claude_code': return <ClaudeCodeParams params={params} onChange={onChange} />;
+    case 'http_request': return <HttpRequestParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'run_command': return <RunCommandParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'run_claude_code': return <ClaudeCodeParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
 
     // Logic
     case 'wait_for_webhook': return <WaitForWebhookParams params={params} onChange={onChange} />;

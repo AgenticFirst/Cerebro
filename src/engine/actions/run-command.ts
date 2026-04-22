@@ -2,13 +2,16 @@
  * run_command action — executes allowed shell commands.
  *
  * Uses execFile (NOT exec) to prevent shell injection.
- * Only whitelisted commands are allowed.
+ * Only whitelisted commands are allowed. `command` is NOT templated
+ * so the ALLOWED_COMMANDS check can't be bypassed via upstream data.
  */
 
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { onAbort } from './utils/abort-helpers';
+import { renderTemplate } from './utils/template';
+import { ALLOWED_COMMANDS } from './run-command-allowlist';
 
 interface RunCommandParams {
   command: string;
@@ -18,11 +21,7 @@ interface RunCommandParams {
   env?: Record<string, string>;
 }
 
-const ALLOWED_COMMANDS = new Set([
-  'git', 'gh', 'npm', 'npx', 'pip',
-  'claude', 'bun', 'pnpm', 'yarn', 'cargo', 'make', 'docker',
-  'ls', 'cat', 'echo', 'curl', 'wget', 'jq',
-]);
+const ALLOWED_COMMANDS_SET = new Set(ALLOWED_COMMANDS);
 
 const BLOCKED_ENV_KEYS = new Set([
   'PATH', 'LD_PRELOAD', 'LD_LIBRARY_PATH', 'DYLD_INSERT_LIBRARIES',
@@ -93,39 +92,45 @@ export const runCommandAction: ActionDefinition = {
   execute: async (input: ActionInput): Promise<ActionOutput> => {
     const params = input.params as unknown as RunCommandParams;
     const { context } = input;
+    const vars = input.wiredInputs ?? {};
 
-    if (!params.command) {
+    const command = (params.command ?? '').trim();
+    if (!command) {
       throw new Error('Run command requires a command');
     }
 
-    // Reject path-based commands — force bare command names only
-    if (params.command.includes('/')) {
+    if (command.includes('/')) {
       throw new Error('Command must be a bare name (no paths). Use the command name directly.');
     }
 
-    // Validate against allowed list
-    if (!ALLOWED_COMMANDS.has(params.command)) {
+    if (!ALLOWED_COMMANDS_SET.has(command)) {
       throw new Error(
-        `Command "${params.command}" is not allowed. ` +
-        `Allowed commands: ${[...ALLOWED_COMMANDS].join(', ')}`
+        `Command "${command}" is not allowed. ` +
+        `Allowed commands: ${ALLOWED_COMMANDS.join(', ')}`
       );
     }
 
-    // Block dangerous env var overrides
+    let renderedEnv: Record<string, string> | undefined;
     if (params.env) {
-      for (const key of Object.keys(params.env)) {
+      renderedEnv = {};
+      for (const [key, value] of Object.entries(params.env)) {
         if (BLOCKED_ENV_KEYS.has(key.toUpperCase())) {
           throw new Error(`Cannot override environment variable: ${key}`);
         }
+        renderedEnv[key] = renderTemplate(value ?? '', vars);
       }
     }
 
-    // Validate working directory
-    if (params.working_directory && !existsSync(params.working_directory)) {
-      throw new Error(`Working directory does not exist: ${params.working_directory}`);
+    const renderedWorkingDir = params.working_directory
+      ? renderTemplate(params.working_directory, vars).trim()
+      : '';
+
+    if (renderedWorkingDir && !existsSync(renderedWorkingDir)) {
+      throw new Error(`Working directory does not exist: ${renderedWorkingDir}`);
     }
 
-    const args = params.args ? parseArgs(params.args) : [];
+    const renderedArgs = params.args ? renderTemplate(params.args, vars) : '';
+    const args = renderedArgs ? parseArgs(renderedArgs) : [];
     const timeoutMs = (params.timeout ?? 300) * 1000;
     const startTime = Date.now();
 
@@ -136,14 +141,14 @@ export const runCommandAction: ActionDefinition = {
       }
 
       const child = execFile(
-        params.command,
+        command,
         args,
         {
-          cwd: params.working_directory || undefined,
+          cwd: renderedWorkingDir || undefined,
           timeout: timeoutMs,
           maxBuffer: 10 * 1024 * 1024, // 10MB
-          env: params.env
-            ? { ...process.env, ...params.env }
+          env: renderedEnv
+            ? { ...process.env, ...renderedEnv }
             : process.env,
         },
         (error, stdout, stderr) => {
@@ -177,7 +182,7 @@ export const runCommandAction: ActionDefinition = {
               exit_code: exitCode,
               duration_ms: durationMs,
             },
-            summary: `${params.command} completed (${durationMs}ms)`,
+            summary: `${command} completed (${durationMs}ms)`,
           });
         },
       );

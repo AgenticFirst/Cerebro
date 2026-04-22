@@ -548,7 +548,7 @@ export function getDefaultStepData(
     // Integrations
     case 'http_request':
     case 'connector': // legacy
-      return { ...base, params: { method: 'GET', url: '', headers: [], body: '', auth_type: 'none', timeout: 30 } };
+      return { ...base, params: { method: 'GET', url: '', headers: [], body: '', auth_type: 'none', auth_value: '', auth_header: '', timeout: 30 } };
 
     // Integrations (process)
     case 'run_command':

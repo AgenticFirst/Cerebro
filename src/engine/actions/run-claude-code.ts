@@ -2,13 +2,15 @@
  * run_claude_code action — runs the Claude Code CLI as a subprocess.
  *
  * Supports modes: plan, implement, review, ask. Each mode restricts
- * the allowed tools accordingly.
+ * the allowed tools accordingly. Prompt and working_directory accept
+ * Mustache variables from wiredInputs.
  */
 
 import { spawn, execFile } from 'node:child_process';
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { onAbort } from './utils/abort-helpers';
 import { wrapClaudeSpawn } from '../../sandbox/wrap-spawn';
+import { renderTemplate } from './utils/template';
 
 interface ClaudeCodeParams {
   mode: 'plan' | 'implement' | 'review' | 'ask';
@@ -74,10 +76,16 @@ export const runClaudeCodeAction: ActionDefinition = {
   execute: async (input: ActionInput): Promise<ActionOutput> => {
     const params = input.params as unknown as ClaudeCodeParams;
     const { context } = input;
+    const vars = input.wiredInputs ?? {};
 
-    if (!params.prompt) {
+    const renderedPrompt = renderTemplate(params.prompt ?? '', vars).trim();
+    if (!renderedPrompt) {
       throw new Error('Claude Code requires a prompt');
     }
+
+    const renderedWorkingDir = params.working_directory
+      ? renderTemplate(params.working_directory, vars).trim()
+      : '';
 
     // Check if claude is available (async)
     const available = await isClaudeAvailable();
@@ -90,7 +98,7 @@ export const runClaudeCodeAction: ActionDefinition = {
     const mode = params.mode ?? 'ask';
     const allowedTools = MODE_TOOLS[mode] ?? MODE_TOOLS.ask;
     const prefix = MODE_PREFIXES[mode] ?? '';
-    const fullPrompt = prefix + params.prompt;
+    const fullPrompt = prefix + renderedPrompt;
 
     const args = [
       '--print',
@@ -125,7 +133,7 @@ export const runClaudeCodeAction: ActionDefinition = {
       const wrapped = wrapClaudeSpawn({ claudeBinary: 'claude', claudeArgs: args });
 
       const child = spawn(wrapped.binary, wrapped.args, {
-        cwd: params.working_directory || undefined,
+        cwd: renderedWorkingDir || undefined,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: safeEnv,
       });
