@@ -1,86 +1,135 @@
-import type { ComponentType } from 'react';
+import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { Mail } from 'lucide-react';
-import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { WhatsAppIcon } from '../../icons/BrandIcons';
+import { TelegramIcon, WhatsAppIcon } from '../../icons/BrandIcons';
+import IntegrationCard from './IntegrationCard';
 import TelegramSection from './TelegramSection';
+import TelegramConnectModal from './TelegramConnectModal';
+import type { TelegramStatusResponse } from '../../../types/ipc';
 
-interface Channel {
+interface ComingSoonChannel {
   id: string;
   nameKey: string;
   descKey: string;
   icon: ComponentType<{ size?: number; className?: string }>;
-  color: string;
-  textColor: string;
+  iconBg: string;
+  iconColor: string;
 }
 
-// Channels that are shipped live are rendered with their own section above.
-// Everything in this list is still "Coming Soon".
-const PENDING_CHANNELS: Channel[] = [
+const COMING_SOON_CHANNELS: ComingSoonChannel[] = [
   {
     id: 'whatsapp',
     nameKey: 'channelsSection.whatsapp',
     descKey: 'channelsSection.whatsappDesc',
     icon: WhatsAppIcon,
-    color: 'bg-emerald-500/15',
-    textColor: 'text-emerald-400',
+    iconBg: 'bg-emerald-500/15',
+    iconColor: 'text-emerald-400',
   },
   {
     id: 'email',
     nameKey: 'channelsSection.email',
     descKey: 'channelsSection.emailDesc',
     icon: Mail,
-    color: 'bg-amber-500/15',
-    textColor: 'text-amber-400',
+    iconBg: 'bg-amber-500/15',
+    iconColor: 'text-amber-400',
   },
 ];
 
-function ChannelCard({ channel }: { channel: Channel }) {
-  const { t } = useTranslation();
-  const Icon = channel.icon;
-
-  return (
-    <div className="flex items-center gap-3 px-4 py-3.5 bg-bg-surface border border-border-subtle rounded-lg">
-      <div
-        className={clsx(
-          'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
-          channel.color,
-          channel.textColor,
-        )}
-      >
-        <Icon size={16} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-text-primary">{t(channel.nameKey)}</div>
-        <div className="text-xs text-text-secondary">{t(channel.descKey)}</div>
-      </div>
-      <span className="text-[10px] font-medium text-text-tertiary bg-bg-elevated px-2 py-1 rounded-full border border-border-subtle flex-shrink-0">
-        {t('common.comingSoon')}
-      </span>
-    </div>
-  );
-}
-
 export default function ChannelsSection() {
   const { t } = useTranslation();
+  const [status, setStatus] = useState<TelegramStatusResponse | null>(null);
+  const [showConnectModal, setShowConnectModal] = useState(false);
+  // Bumping this remounts the TelegramSection so it reloads from settings
+  // after the onboarding modal persists changes.
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const refreshStatus = useCallback(async () => {
+    const s = await window.cerebro.telegram.status();
+    setStatus(s);
+  }, []);
+
+  useEffect(() => {
+    void refreshStatus();
+    const id = setInterval(refreshStatus, 5_000);
+    return () => clearInterval(id);
+  }, [refreshStatus]);
+
+  const tokenConfigured = Boolean(status?.hasToken);
+
+  const telegramStatusPill = (() => {
+    if (!status) return null;
+    if (status.running) {
+      return (
+        <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          {t('telegramSection.statusRunning')}
+        </span>
+      );
+    }
+    if (tokenConfigured) {
+      return (
+        <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-border-subtle bg-bg-elevated text-text-tertiary">
+          {t('channelsSection.statusConfigured')}
+        </span>
+      );
+    }
+    return null;
+  })();
+
+  const telegramDescription = (() => {
+    if (status?.botUsername && tokenConfigured) {
+      return t('channelsSection.telegramDescConnected', { username: status.botUsername });
+    }
+    return t('channelsSection.telegramDesc');
+  })();
+
   return (
-    <div>
+    <div className="pb-12">
       <h2 className="text-lg font-medium text-text-primary">{t('channelsSection.title')}</h2>
       <p className="text-sm text-text-secondary mt-1 leading-relaxed">
         {t('channelsSection.description')}
       </p>
 
-      {/* Telegram — live. */}
-      <div className="mt-6">
-        <TelegramSection />
-      </div>
+      <div className="mt-6 space-y-2">
+        <IntegrationCard
+          icon={TelegramIcon}
+          iconBg="bg-sky-500/15"
+          iconColor="text-sky-400"
+          name={t('channelsSection.telegram')}
+          description={telegramDescription}
+          status={telegramStatusPill}
+          primaryAction={{
+            label: tokenConfigured ? t('channelsSection.setupTour') : t('channelsSection.connect'),
+            onClick: () => setShowConnectModal(true),
+          }}
+        >
+          <TelegramSection key={reloadKey} />
+        </IntegrationCard>
 
-      {/* Other channels — still "Coming Soon". */}
-      <div className="mt-8 space-y-2">
-        {PENDING_CHANNELS.map((channel) => (
-          <ChannelCard key={channel.id} channel={channel} />
+        {COMING_SOON_CHANNELS.map((c) => (
+          <IntegrationCard
+            key={c.id}
+            icon={c.icon}
+            iconBg={c.iconBg}
+            iconColor={c.iconColor}
+            name={t(c.nameKey)}
+            description={t(c.descKey)}
+            comingSoon
+            status={
+              <span className="text-[10px] font-medium text-text-tertiary bg-bg-elevated px-2 py-1 rounded-full border border-border-subtle">
+                {t('common.comingSoon')}
+              </span>
+            }
+          />
         ))}
       </div>
+
+      {showConnectModal && (
+        <TelegramConnectModal
+          onClose={() => { setShowConnectModal(false); setReloadKey((k) => k + 1); void refreshStatus(); }}
+          onPersisted={() => { setReloadKey((k) => k + 1); void refreshStatus(); }}
+        />
+      )}
     </div>
   );
 }

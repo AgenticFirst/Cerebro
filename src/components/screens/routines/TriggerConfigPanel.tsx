@@ -145,6 +145,73 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
             </p>
           </div>
         )}
+
+        {/* Telegram Message config */}
+        {triggerType === 'trigger_telegram_message' && (
+          <>
+            <div>
+              <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
+                Chat ID
+              </label>
+              <input
+                type="text"
+                value={(config.chat_id as string) ?? ''}
+                onChange={(e) => updateConfig({ chat_id: e.target.value })}
+                placeholder="123456789  or  *"
+                className="w-full h-8 px-3 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+              />
+              <p className="mt-1 text-[10px] text-text-tertiary">
+                Numeric Telegram chat id, or <code>*</code> to match any chat in the bot's allowlist.
+              </p>
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
+                Filter
+              </label>
+              <select
+                value={(config.filter_type as string) ?? 'none'}
+                onChange={(e) => updateConfig({ filter_type: e.target.value })}
+                className="w-full h-8 px-2 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
+              >
+                <option value="none">No filter (any message)</option>
+                <option value="keyword">Contains keyword</option>
+                <option value="prefix">Starts with</option>
+                <option value="regex">Matches regex</option>
+              </select>
+            </div>
+            {((config.filter_type as string) ?? 'none') !== 'none' && (
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
+                  Filter Value
+                </label>
+                <input
+                  type="text"
+                  value={(config.filter_value as string) ?? ''}
+                  onChange={(e) => updateConfig({ filter_value: e.target.value })}
+                  placeholder={
+                    (config.filter_type as string) === 'regex'
+                      ? '^standup\\b'
+                      : (config.filter_type as string) === 'prefix'
+                        ? '/run '
+                        : 'standup'
+                  }
+                  className="w-full h-8 px-3 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 font-mono"
+                />
+                <p className="mt-1 text-[10px] text-text-tertiary">
+                  Matching messages are consumed by this routine — the AI agent will not also reply.
+                  Available variables in steps: <code>{'{{chat_id}}'}</code>, <code>{'{{message_text}}'}</code>,
+                  <code>{'{{sender_username}}'}</code>, <code>{'{{sender_id}}'}</code>.
+                </p>
+              </div>
+            )}
+            {((config.filter_type as string) ?? 'none') === 'none' && (
+              <p className="text-[10px] text-text-tertiary">
+                Available variables in steps: <code>{'{{chat_id}}'}</code>, <code>{'{{message_text}}'}</code>,
+                <code>{'{{sender_username}}'}</code>, <code>{'{{sender_id}}'}</code>.
+              </p>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

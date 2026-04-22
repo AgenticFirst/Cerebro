@@ -167,9 +167,11 @@ const en = {
     scheduled: 'Scheduled',
     webhook: 'Webhook',
     chat: 'Chat',
+    telegramMessage: 'Telegram Message',
     scheduleTrigger: 'Schedule Trigger',
     manualTrigger: 'Manual Trigger',
     webhookTrigger: 'Webhook Trigger',
+    telegramMessageTrigger: 'Telegram Message Trigger',
     appEventTrigger: 'App Event Trigger',
     trigger: 'Trigger',
     noScheduleSet: 'No schedule set',
@@ -594,6 +596,7 @@ const en = {
     triggerManualDesc: 'Run on demand',
     triggerScheduledDesc: 'Run on a schedule',
     triggerWebhookDesc: 'Run via webhook',
+    triggerTelegramDesc: 'Run when a Telegram message arrives',
     schedule: 'Schedule',
     createRoutine: 'Create Routine',
   },
@@ -643,6 +646,7 @@ const en = {
     triggerManual: 'Start this routine with a click',
     triggerScheduled: 'Run this routine on a time-based schedule',
     triggerWebhook: 'Start this routine from an external HTTP call',
+    triggerTelegram: 'Start this routine when an inbound Telegram message matches the filter',
     cancel: 'Cancel without creating',
     create: 'Create this routine and open the editor',
     // ActionSidebar / items
@@ -895,10 +899,71 @@ const en = {
       'Connect messaging platforms to interact with Cerebro remotely.',
     telegram: 'Telegram',
     telegramDesc: 'Message Cerebro via Telegram bot',
+    telegramDescConnected: 'Connected as @{{username}}',
     whatsapp: 'WhatsApp',
     whatsappDesc: 'Chat with Cerebro on WhatsApp',
     email: 'Email',
     emailDesc: 'Interact with Cerebro via email',
+    connect: 'Connect',
+    setupTour: 'Setup tour',
+    statusConfigured: 'Configured',
+  },
+
+  // ── Telegram connect modal (onboarding tour) ───────────────
+  telegramConnect: {
+    stepLabel: 'Step {{current}} of {{total}}',
+    back: 'Back',
+    continue: 'Continue',
+    skip: 'Skip',
+    enableAndFinish: 'Enable & finish',
+    enabling: 'Enabling…',
+    enableFailed: 'Could not start the bridge.',
+    verifiedAs: 'Verified as @{{username}}',
+    allowlistCount_one: '{{count}} user',
+    allowlistCount_other: '{{count}} users',
+    storageLabel: 'Storage',
+    storageKeychain: 'OS keychain',
+    storagePlaintext: 'Plaintext fallback',
+
+    step1Title: 'Create your bot',
+    step1Body:
+      'Telegram bots are created with @BotFather, the official bot for managing bots. It only takes a minute.',
+    step1Item1: 'Open Telegram and start a chat with @BotFather.',
+    step1Item2: 'Send /newbot and pick a display name.',
+    step1Item3: 'Pick a username ending in "bot" (e.g. cerebro_helper_bot).',
+    step1Item4: 'Copy the token BotFather replies with — it looks like 123456789:AA…',
+    openBotFather: 'Open @BotFather in Telegram',
+
+    step2Title: 'Paste your token',
+    step2Body:
+      'Paste the token from BotFather. Cerebro will verify it talks to Telegram and store it encrypted in your OS keychain.',
+    step2AlreadyConfiguredTitle: 'Bot already connected',
+    step2AlreadyConfiguredBody:
+      'A token is already saved for this bot — no need to paste it again. Continue to the next step, or replace the token if you’ve created a new bot.',
+
+    step3Title: 'Who can chat with the bot?',
+    step3Body:
+      'Only Telegram user IDs you list here can message Cerebro. This keeps strangers out even if your bot username leaks.',
+    step3HintTitle: 'How to find your Telegram user ID',
+    step3HintOption1Label: 'Quickest',
+    step3HintOption1:
+      'Open Telegram and start a chat with @userinfobot. It replies instantly with your numeric ID — copy and paste it above.',
+    step3HintOption2Label: 'Use your own bot',
+    step3HintOption2:
+      'Skip this step and finish setup. Cerebro will start the bot in discovery mode — message it from Telegram and it will reply with your numeric ID. Then come back here to add it.',
+    openUserInfoBot: 'Open @userinfobot',
+
+    step4Title: 'You’re ready',
+    step4Body:
+      'Enable the bridge and Cerebro will start listening for messages. You can change any of these settings later from the Telegram card.',
+    step4EmptyAllowlistTitle: 'Add a user ID before enabling',
+    step4EmptyAllowlistBody:
+      'The bridge can’t start without at least one allowed user ID. Save your token now and finish setup later from the Telegram card — or go back to add an ID and enable in one go.',
+    saveAndClose: 'Save & close',
+    step4DiscoveryTitle: 'Starting in discovery mode',
+    step4DiscoveryBody:
+      'No allowed IDs yet — that’s fine. The bot will only reply with the sender’s numeric ID and won’t respond to anything else. Message your bot from Telegram, copy the ID it sends back, then add it on the Telegram card to unlock real conversations.',
+    enableDiscoveryMode: 'Enable in discovery mode',
   },
 
   // ── Telegram section (within Channels) ──────────────────────
@@ -913,21 +978,32 @@ const en = {
     verified: 'Verified',
     allowlistLabel: 'Allowed user IDs',
     allowlistHelp: 'Only these Telegram user IDs can chat with the bot. Separate multiple IDs with commas.',
+    allowlistHintOption2:
+      'Enable the bridge below — even with no IDs it runs in discovery mode. Send any message to your bot from Telegram and it will reply with your numeric ID, which you can paste above.',
     allowlistPlaceholder: '123456789, 987654321',
     forwardAllLabel: 'Forward all approvals to Telegram',
     forwardAllHelp: 'Off by default: only approvals for runs started from Telegram are sent. Turn this on if you also want desktop-initiated approvals on your phone.',
     enableLabel: 'Enable bridge',
-    enableDisabledHint: 'Verify the token and add at least one user ID to enable.',
+    enableDisabledHint: 'Verify the token to enable the bridge.',
+    discoveryModeHint:
+      'No allowed IDs yet — the bot will run in discovery mode and only reply with sender IDs. Message it from Telegram to learn yours, then add it above.',
     statusRunning: 'Running',
     statusStopped: 'Stopped',
     lastPoll: 'Last contact',
     lastError: 'Last error',
+    botLabel: 'Bot',
     never: 'never',
     howToTitle: 'How to get your Telegram user ID',
     howToSteps:
       '1. Open Telegram and find your bot by its username.\n2. Tap Start and send any message.\n3. The bot replies with a message containing your numeric ID.\n4. Paste that number into the allowlist above.',
-    warningPlaintext:
-      'Tokens are stored locally in your database in plaintext. If your machine is compromised, revoke the token with @BotFather and create a new one.',
+    storageEncrypted:
+      'Bot token is encrypted at rest using your operating system’s keychain (Keychain on macOS, DPAPI on Windows, libsecret on Linux). Cerebro decrypts it only inside the main process when sending requests.',
+    storagePlaintextFallback:
+      'Your OS keychain isn’t available, so the bot token is stored in plaintext on disk. Install libsecret (Linux) or run as a normal user session to enable encrypted storage.',
+    tokenStored: 'Token stored securely',
+    replaceToken: 'Replace',
+    clearToken: 'Clear',
+    cancel: 'Cancel',
     save: 'Save',
     saved: 'Saved',
   },

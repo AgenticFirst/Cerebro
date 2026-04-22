@@ -23,6 +23,7 @@ function TriggerNode({ data, selected }: NodeProps) {
       case 'trigger_schedule': return t('triggers.scheduleTrigger');
       case 'trigger_manual': return t('triggers.manualTrigger');
       case 'trigger_webhook': return t('triggers.webhookTrigger');
+      case 'trigger_telegram_message': return t('triggers.telegramMessageTrigger');
       case 'trigger_app_event': return t('triggers.appEventTrigger');
       default: return t('triggers.trigger');
     }
@@ -39,6 +40,16 @@ function TriggerNode({ data, selected }: NodeProps) {
       case 'trigger_webhook': {
         const path = (d.config.path as string) || '/webhook/...';
         return `POST ${path}`;
+      }
+      case 'trigger_telegram_message': {
+        const chat = (d.config.chat_id as string) || '';
+        if (!chat) return t('triggers.notConfigured');
+        const filterType = (d.config.filter_type as string) || 'none';
+        const filterValue = ((d.config.filter_value as string) || '').trim();
+        const target = chat === '*' ? 'any allowlisted chat' : chat;
+        return filterType !== 'none' && filterValue
+          ? `${target} · ${filterType}: ${filterValue}`
+          : target;
       }
       case 'trigger_app_event': {
         const app = (d.config.app as string) || '';

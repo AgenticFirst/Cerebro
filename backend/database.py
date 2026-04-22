@@ -35,6 +35,8 @@ def _migrate(eng) -> None:
         ("task_comments", "queue_status", "VARCHAR(20)"),
         ("task_comments", "pending_expert_id", "VARCHAR(32) REFERENCES experts(id) ON DELETE SET NULL"),
         ("conversations", "expert_id", "VARCHAR(32) REFERENCES experts(id) ON DELETE SET NULL"),
+        ("conversations", "source", "VARCHAR(20) DEFAULT 'cerebro'"),
+        ("conversations", "external_chat_id", "VARCHAR(64)"),
     ]
     with eng.connect() as conn:
         for table, column, col_def in migrations:
@@ -52,6 +54,7 @@ def _migrate(eng) -> None:
             ("ix_agent_runs_parent_run_id", "agent_runs", "parent_run_id"),
             ("ix_task_comments_queue", "task_comments", "task_id, queue_status"),
             ("ix_conversations_expert_id", "conversations", "expert_id"),
+            ("ix_conversations_source_chat", "conversations", "source, external_chat_id"),
         ]
         for idx_name, table, column in index_migrations:
             try:

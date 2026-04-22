@@ -14,6 +14,7 @@ import type {
   EngineActiveRunInfo,
   TelegramVerifyResponse,
   TelegramStatusResponse,
+  TelegramConversationUpdatedEvent,
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
@@ -264,6 +265,26 @@ const api: CerebroAPI = {
     },
     status(): Promise<TelegramStatusResponse> {
       return ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_STATUS);
+    },
+    reload(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_RELOAD);
+    },
+    setToken(token: string): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_SET_TOKEN, token);
+    },
+    clearToken(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_CLEAR_TOKEN);
+    },
+    onConversationUpdated(
+      callback: (event: TelegramConversationUpdatedEvent) => void,
+    ): () => void {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: TelegramConversationUpdatedEvent,
+      ) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.TELEGRAM_CONVERSATION_UPDATED, listener);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.TELEGRAM_CONVERSATION_UPDATED, listener);
     },
   },
 

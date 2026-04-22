@@ -103,6 +103,8 @@ export interface ApiConversation {
   id: string;
   title: string;
   expert_id: string | null;
+  source?: string;
+  external_chat_id?: string | null;
   created_at: string;
   updated_at: string;
   messages: ApiMessage[];
@@ -224,6 +226,8 @@ export function fromApiConversation(c: ApiConversation): Conversation {
     id: c.id,
     title: c.title,
     expertId: c.expert_id ?? null,
+    source: c.source === 'telegram' ? 'telegram' : 'cerebro',
+    externalChatId: c.external_chat_id ?? null,
     createdAt: new Date(c.created_at),
     updatedAt: new Date(c.updated_at),
     messages: c.messages.map(fromApiMessage),

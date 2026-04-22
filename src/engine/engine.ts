@@ -36,6 +36,8 @@ import { runCommandAction } from './actions/run-command';
 import { runClaudeCodeAction } from './actions/run-claude-code';
 import { waitForWebhookAction } from './actions/wait-for-webhook';
 import { runScriptAction } from './actions/run-script';
+import { createSendTelegramAction } from './actions/send-telegram-message';
+import type { TelegramChannel } from './actions/telegram-channel';
 import { RunScratchpad } from './scratchpad';
 import { RunEventEmitter } from './events/emitter';
 import { validateDAG } from './dag/validator';
@@ -65,6 +67,7 @@ export class ExecutionEngine {
   private backendPort: number;
   private agentRuntime: AgentRuntime;
   private sharedBus?: EventEmitter;
+  private telegramChannel: TelegramChannel | null = null;
   private activeRuns = new Map<string, ActiveEngineRun>();
   /** Pending approval promises keyed by approvalId. */
   private pendingApprovals = new Map<string, PendingApproval>();
@@ -75,6 +78,12 @@ export class ExecutionEngine {
     this.backendPort = backendPort;
     this.agentRuntime = agentRuntime;
     this.sharedBus = sharedBus;
+  }
+
+  /** Late-bind the Telegram bridge so the send_telegram_message action can use it.
+   *  Set during main.ts wiring; safe to leave null in tests. */
+  setTelegramChannel(channel: TelegramChannel): void {
+    this.telegramChannel = channel;
   }
 
   /**
@@ -89,16 +98,15 @@ export class ExecutionEngine {
     const registry = this.createRegistry(webContents);
 
     // Sanitize the incoming DAG: drop dependsOn / inputMappings entries that
-    // reference non-step ids (the synthetic "__trigger__" node, or steps
-    // that were deleted after the mapping was saved). Without this pass,
-    // validation fails for routines whose dag_json was written by an older
-    // version of the canvas — the renderer's dagToFlow performs the same
-    // cleanup, but is only invoked when the editor is opened.
-    const stepIds = new Set(request.dag.steps.map((s) => s.id));
+    // reference non-step ids (steps that were deleted after the mapping was
+    // saved). The synthetic "__trigger__" node is allowed when triggerPayload
+    // is provided so steps can read its fields via inputMappings.
+    const validSourceIds = new Set(request.dag.steps.map((s) => s.id));
+    if (request.triggerPayload) validSourceIds.add('__trigger__');
     for (const step of request.dag.steps) {
-      step.dependsOn = step.dependsOn.filter((id) => stepIds.has(id));
+      step.dependsOn = step.dependsOn.filter((id) => validSourceIds.has(id));
       step.inputMappings = (step.inputMappings ?? []).filter((m) =>
-        stepIds.has(m.sourceStepId),
+        validSourceIds.has(m.sourceStepId),
       );
     }
 
@@ -250,6 +258,7 @@ export class ExecutionEngine {
         signal: abortController.signal,
         onStepUpdate,
         onApprovalRequired,
+        triggerPayload: request.triggerPayload,
       },
     );
 
@@ -484,6 +493,10 @@ export class ExecutionEngine {
     registry.register(sendMessageAction);
     registry.register(sendNotificationAction);
     registry.register(channelAction);
+    // Resolve the channel lazily (via getter) so calling setTelegramChannel
+    // after registry construction still works, and so each run picks up the
+    // currently-bound bridge instance.
+    registry.register(createSendTelegramAction({ getChannel: () => this.telegramChannel }));
 
     // Complex (depend on backend infrastructure)
     registry.register(waitForWebhookAction);

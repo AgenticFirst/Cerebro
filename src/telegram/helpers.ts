@@ -87,3 +87,123 @@ export function parseApprovalCallback(data: string): { action: 'approve' | 'deny
   if (!m) return null;
   return { action: m[1] as 'approve' | 'deny', approvalId: m[2] };
 }
+
+// ── Telegram trigger routing ─────────────────────────────────────
+
+import type { DAGDefinition } from '../engine/dag/types';
+
+/** Subset of the CanvasDefinition we need at routine-trigger parse time. */
+interface CanvasDagJson extends DAGDefinition {
+  trigger?: {
+    triggerType?: string;
+    config?: Record<string, unknown>;
+  };
+}
+
+export type TelegramFilterType = 'none' | 'keyword' | 'prefix' | 'regex';
+
+export interface TelegramTriggerConfig {
+  /** Telegram chat id to match — '*' matches any allowlisted chat. */
+  chat_id: string;
+  filter_type?: TelegramFilterType;
+  filter_value?: string;
+}
+
+export interface TelegramTriggerRoutine {
+  id: string;
+  name: string;
+  dag: DAGDefinition;
+  trigger: TelegramTriggerConfig;
+}
+
+/** A loose backend Routine row — only the fields we care about for triggers. */
+export interface BackendRoutineRecord {
+  id: string;
+  name: string;
+  is_enabled: boolean;
+  trigger_type: string;
+  dag_json: string | null;
+}
+
+/**
+ * Pull the trigger config out of a routine's dag_json. The Telegram trigger
+ * lives on `CanvasDefinition.trigger` (the visual trigger node), not in
+ * `steps`, so that's where we read it from. Returns null if the routine
+ * doesn't have a usable telegram trigger.
+ */
+export function parseTelegramTriggerRoutine(record: BackendRoutineRecord): TelegramTriggerRoutine | null {
+  if (!record.dag_json) return null;
+  let dag: CanvasDagJson;
+  try {
+    dag = JSON.parse(record.dag_json) as CanvasDagJson;
+  } catch {
+    return null;
+  }
+  if (dag.trigger?.triggerType !== 'trigger_telegram_message') return null;
+  const cfg = dag.trigger?.config ?? {};
+  const chat_id = typeof cfg.chat_id === 'string' ? cfg.chat_id.trim() : '';
+  if (!chat_id) return null;
+  const rawFilterType = typeof cfg.filter_type === 'string' ? cfg.filter_type : 'none';
+  const filter_type: TelegramFilterType = (
+    rawFilterType === 'keyword' || rawFilterType === 'prefix' || rawFilterType === 'regex'
+      ? rawFilterType : 'none'
+  );
+  const filter_value = typeof cfg.filter_value === 'string' ? cfg.filter_value : '';
+  // The trigger lives on `dag.trigger`, never as a step, so the runtime DAG
+  // is just `dag.steps` — no need to filter anything out.
+  const runtimeDag: DAGDefinition = { steps: dag.steps ?? [] };
+  return {
+    id: record.id,
+    name: record.name,
+    dag: runtimeDag,
+    trigger: { chat_id, filter_type, filter_value },
+  };
+}
+
+/** True if `text` satisfies a routine's filter. Empty filter_value with a
+ *  non-'none' type means "match anything" (consistent with form ergonomics). */
+export function matchesTelegramFilter(
+  text: string,
+  filterType: TelegramFilterType | undefined,
+  filterValue: string | undefined,
+): boolean {
+  const type = filterType ?? 'none';
+  const value = (filterValue ?? '').trim();
+  if (type === 'none' || value === '') return true;
+  const haystack = text ?? '';
+  if (type === 'keyword') {
+    return new RegExp(`\\b${escapeRegExp(value)}\\b`, 'i').test(haystack);
+  }
+  if (type === 'prefix') {
+    return haystack.toLowerCase().startsWith(value.toLowerCase());
+  }
+  if (type === 'regex') {
+    try {
+      return new RegExp(value, 'i').test(haystack);
+    } catch {
+      return false; // bad pattern → no match (don't crash the bridge)
+    }
+  }
+  return false;
+}
+
+/** Filter a list of pre-parsed telegram-trigger routines against an inbound message. */
+export function matchRoutineTriggers(
+  routines: TelegramTriggerRoutine[],
+  chatId: string,
+  text: string,
+): TelegramTriggerRoutine[] {
+  const matched: TelegramTriggerRoutine[] = [];
+  for (const r of routines) {
+    const target = r.trigger.chat_id;
+    const chatMatches = target === '*' || target === chatId;
+    if (!chatMatches) continue;
+    if (!matchesTelegramFilter(text, r.trigger.filter_type, r.trigger.filter_value)) continue;
+    matched.push(r);
+  }
+  return matched;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

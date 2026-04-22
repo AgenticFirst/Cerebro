@@ -131,6 +131,60 @@ def test_patch_nonexistent_conversation_returns_404(client):
     assert r.status_code == 404
 
 
+# ── Telegram source fields ────────────────────────────────────────
+
+
+def test_create_conversation_defaults_to_cerebro_source(client):
+    conv_id = _hex_id()
+    r = client.post("/conversations", json={"id": conv_id, "title": "Default"})
+    body = r.json()
+    assert body["source"] == "cerebro"
+    assert body["external_chat_id"] is None
+
+
+def test_patch_conversation_sets_telegram_source(client):
+    """The bridge backfills existing rows with source=telegram + external_chat_id
+    on startup; this exercises the same PATCH path."""
+    conv_id = _hex_id()
+    client.post("/conversations", json={"id": conv_id, "title": "From Telegram"})
+
+    r = client.patch(f"/conversations/{conv_id}", json={
+        "source": "telegram",
+        "external_chat_id": "5551234567",
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["source"] == "telegram"
+    assert body["external_chat_id"] == "5551234567"
+
+    # Round-trip via list endpoint so the chat sidebar can render the badge.
+    convs = client.get("/conversations").json()["conversations"]
+    found = next(c for c in convs if c["id"] == conv_id)
+    assert found["source"] == "telegram"
+    assert found["external_chat_id"] == "5551234567"
+
+
+def test_patch_conversation_rejects_unknown_source(client):
+    conv_id = _hex_id()
+    client.post("/conversations", json={"id": conv_id, "title": "x"})
+    r = client.patch(f"/conversations/{conv_id}", json={"source": "discord"})
+    assert r.status_code == 400
+
+
+def test_create_conversation_with_telegram_source(client):
+    conv_id = _hex_id()
+    r = client.post("/conversations", json={
+        "id": conv_id,
+        "title": "Telegram chat",
+        "source": "telegram",
+        "external_chat_id": "999",
+    })
+    assert r.status_code == 201
+    body = r.json()
+    assert body["source"] == "telegram"
+    assert body["external_chat_id"] == "999"
+
+
 # ── Metadata tests ────────────────────────────────────────────────
 
 

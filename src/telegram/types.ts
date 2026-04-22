@@ -114,6 +114,7 @@ export interface TelegramSettings {
   forwardAllApprovals: boolean;
   chatMap: Record<string, string>; // chatId → conversationId
   chatExpertMap: Record<string, string>; // chatId → expertId
+  chatUsernames: Record<string, string>; // chatId → @username (best effort, refreshed on each inbound message)
   lastUpdateId: number;
 }
 
@@ -124,6 +125,7 @@ export const TELEGRAM_SETTING_KEYS = {
   forwardAllApprovals: 'telegram_forward_all_approvals',
   chatMap: 'telegram_chat_map',
   chatExpertMap: 'telegram_chat_expert_map',
+  chatUsernames: 'telegram_chat_username_map',
   lastUpdateId: 'telegram_last_update_id',
 } as const;
 

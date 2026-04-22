@@ -39,8 +39,13 @@ import {
   FileCode,
   type LucideIcon,
 } from 'lucide-react';
+import { TelegramIcon as TelegramBrandIcon } from '../components/icons/BrandIcons';
 import type { RoutineStepData } from './dag-flow-mapping';
 import { DEFAULT_CLAUDE_MODEL } from './claude-models';
+
+// lucide-react icons are functional components with the same shape as our
+// brand SVGs. Cast once so ACTION_META can mix them without per-entry casts.
+const TelegramIcon = TelegramBrandIcon as unknown as LucideIcon;
 
 // ── Action Categories ─────────────────────────────────────────
 
@@ -119,6 +124,16 @@ export const ACTION_META: Record<string, ActionMeta> = {
     category: 'triggers',
     isAvailable: true,
     keywords: ['http', 'post', 'api', 'endpoint'],
+  },
+  trigger_telegram_message: {
+    name: 'Telegram Message',
+    icon: TelegramIcon,
+    color: 'teal',
+    colorHex: TRIGGER_TEAL,
+    description: 'Run when a Telegram message arrives',
+    category: 'triggers',
+    isAvailable: true,
+    keywords: ['telegram', 'chat', 'message', 'inbound', 'trigger'],
   },
   trigger_app_event: {
     name: 'App Event',
@@ -420,6 +435,16 @@ export const ACTION_META: Record<string, ActionMeta> = {
     isAvailable: true,
     keywords: ['notification', 'alert', 'desktop', 'push'],
   },
+  send_telegram_message: {
+    name: 'Send Telegram Message',
+    icon: TelegramIcon,
+    color: 'emerald',
+    colorHex: '#10b981',
+    description: 'Reply via the Telegram bot',
+    category: 'output',
+    isAvailable: true,
+    keywords: ['telegram', 'chat', 'message', 'bot', 'reply', 'send'],
+  },
   send_email: {
     name: 'Send Email',
     icon: Mail,
@@ -580,6 +605,9 @@ export function getDefaultStepData(
       return { ...base, params: { message: '', target: 'cerebro_chat' } };
     case 'send_notification':
       return { ...base, params: { title: '', body: '', urgency: 'normal' } };
+    case 'send_telegram_message':
+      return { ...base, params: { chat_id: '', message: '', parse_mode: 'none' } };
+
     case 'send_email':
       return { ...base, params: { to: '', subject: '', body: '', provider: '' } };
     case 'webhook_response':

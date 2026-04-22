@@ -16,11 +16,29 @@ import EventEmitter from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import type { WebContents } from 'electron';
 import type { AgentRuntime, AgentEventSink, AgentRunRequest, RendererAgentEvent } from '../agents';
 import type { ExecutionEvent } from '../engine/events/types';
 import { ENGINE_EVENT, type EngineEventContext } from '../engine/events/emitter';
+import type { ExecutionEngine } from '../engine/engine';
+import type { TelegramChannel } from '../engine/actions/telegram-channel';
+import { IPC_CHANNELS } from '../types/ipc';
 import { TelegramApi, TelegramApiError, approvalKeyboard, scrubTokenish } from './api';
-import { chunkText, SlidingWindowLimiter, redactForChat, parseApprovalCallback } from './helpers';
+import {
+  encryptForStorage,
+  decryptFromStorage,
+  isStoredPlaintext,
+  backend as secureTokenBackend,
+} from '../secure-token';
+import {
+  chunkText,
+  SlidingWindowLimiter,
+  redactForChat,
+  parseApprovalCallback,
+  matchRoutineTriggers,
+  parseTelegramTriggerRoutine,
+} from './helpers';
+import type { TelegramTriggerRoutine, BackendRoutineRecord } from './helpers';
 import {
   TELEGRAM_SETTING_KEYS,
   type TelegramSettings,
@@ -45,6 +63,13 @@ const AUTHORIZED_RATE_LIMIT_PER_MIN = 20;
 const PROACTIVE_RATE_LIMIT_PER_HOUR = 30;
 const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
 const ATTACHMENT_TTL_MS = 30 * 60 * 1000;
+const ORPHAN_SWEEP_AGE_MS = 24 * 60 * 60 * 1000; // delete temp files older than 24h on startup
+const ROUTINE_CACHE_TTL_MS = 30_000;
+// If an agent run produces no events for this long, assume the underlying
+// Claude Code subprocess hung or died silently and reclaim the slot so the
+// user isn't permanently blocked behind a "still working" message.
+const RUN_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
+const RUN_WATCHDOG_INTERVAL_MS = 30_000;
 
 const ALLOWED_MIME = new Set([
   'image/png',
@@ -181,6 +206,7 @@ class TelegramStreamSink implements AgentEventSink {
   private lastEditAt = 0;
   private destroyed = false;
   private onDoneCb: (finalText: string, err?: string) => void;
+  private onActivityCb: (() => void) | null;
   private api: TelegramApi;
   private chatId: number;
   private replyToMessageId?: number;
@@ -191,11 +217,13 @@ class TelegramStreamSink implements AgentEventSink {
     chatId: number,
     replyToMessageId: number | undefined,
     onDone: (finalText: string, err?: string) => void,
+    onActivity?: () => void,
   ) {
     this.api = api;
     this.chatId = chatId;
     this.replyToMessageId = replyToMessageId;
     this.onDoneCb = onDone;
+    this.onActivityCb = onActivity ?? null;
     this.typingTimer = setInterval(() => {
       if (!this.destroyed) {
         this.api.sendChatAction(this.chatId, 'typing').catch(() => { /* non-fatal */ });
@@ -208,6 +236,8 @@ class TelegramStreamSink implements AgentEventSink {
   send(_channel: string, ...args: unknown[]): void {
     const event = args[0] as RendererAgentEvent;
     if (!event || typeof event !== 'object') return;
+
+    this.onActivityCb?.();
 
     if (event.type === 'run_start' && 'runId' in event) {
       this.runId = event.runId;
@@ -386,6 +416,10 @@ interface ActiveTelegramRun {
   conversationId: string;
   sink: TelegramStreamSink;
   userContent: string;
+  startedAt: number;
+  /** Updated every time the sink observes an event (including text deltas).
+   *  The watchdog uses this to distinguish "long but alive" from "stuck". */
+  lastActivityAt: number;
 }
 
 // ── TelegramBridge ────────────────────────────────────────────────
@@ -395,9 +429,11 @@ export interface TelegramBridgeDeps {
   agentRuntime: AgentRuntime;
   dataDir: string;
   engineEventBus: EventEmitter;
+  /** Optional engine ref so inbound messages can dispatch routine triggers. */
+  executionEngine?: ExecutionEngine;
 }
 
-export class TelegramBridge {
+export class TelegramBridge implements TelegramChannel {
   private deps: TelegramBridgeDeps;
   private api: TelegramApi | null = null;
   private settings: TelegramSettings = emptySettings();
@@ -406,19 +442,40 @@ export class TelegramBridge {
   private backoffMs = BACKOFF_MIN_MS;
   private lastPollAt: number | null = null;
   private lastError: string | null = null;
+  private botUsername: string | null = null;
 
   private unknownUserLastReply = new Map<string, number>();
   private authorizedRateLimiter = new SlidingWindowLimiter(AUTHORIZED_RATE_LIMIT_PER_MIN, 60_000);
   private proactiveRateLimiter = new SlidingWindowLimiter(PROACTIVE_RATE_LIMIT_PER_HOUR, 60 * 60 * 1_000);
 
   private activeRuns = new Map<number, ActiveTelegramRun>(); // chatId → run
+  private runWatchdogTimer: NodeJS.Timeout | null = null;
   private approvalChatMap = new Map<string, number>(); // approvalId → chatId
   private tempFiles = new Map<string, NodeJS.Timeout>();
 
   private engineListener: ((event: ExecutionEvent, ctx: EngineEventContext) => void) | null = null;
 
+  /** Routines with trigger_type='telegram_message', cached briefly to keep the hot path off the backend. */
+  private routineCache: { fetchedAt: number; routines: TelegramTriggerRoutine[] } | null = null;
+
+  /** Main window WebContents — populated lazily after the window opens.
+   *  Required for routine dispatch (the engine forwards step events here). */
+  private webContents: WebContents | null = null;
+
   constructor(deps: TelegramBridgeDeps) {
     this.deps = deps;
+  }
+
+  /** Late-bind the engine for routine dispatch. The engine is constructed before
+   *  the bridge in main.ts; calling this during wiring lets either order work. */
+  setExecutionEngine(engine: ExecutionEngine): void {
+    this.deps.executionEngine = engine;
+  }
+
+  /** Late-bind the main window WebContents — required so routine dispatch
+   *  can forward engine events to the renderer. Mirrors RoutineScheduler. */
+  setWebContents(wc: WebContents): void {
+    this.webContents = wc;
   }
 
   // ── Public API ──────────────────────────────────────────────────
@@ -432,18 +489,33 @@ export class TelegramBridge {
     if (this.polling) return;
     await this.loadSettings();
 
-    if (!this.settings.enabled || !this.settings.token || this.settings.allowlist.length === 0) {
-      log('bridge not started: disabled / missing token / empty allowlist');
+    if (!this.settings.enabled || !this.settings.token) {
+      const reason = !this.settings.token
+        ? 'No bot token configured.'
+        : 'Telegram bridge is disabled.';
+      this.lastError = reason;
+      log(`bridge not started: ${reason}`);
       return;
+    }
+
+    // Discovery mode: bridge runs with no allowlist so users can message the
+    // bot to learn their own numeric ID (handleMessage replies with it,
+    // rate-limited via shouldReplyUnknown). No conversations are created and
+    // no AI processing happens until at least one ID is added.
+    if (this.settings.allowlist.length === 0) {
+      log('bridge starting in discovery mode (allowlist is empty — bot will only reply with sender IDs)');
     }
 
     // Only create the temp dir when we actually need it.
     fs.mkdirSync(this.tempDir(), { recursive: true });
+    // Sweep orphaned attachments left behind by a prior crash/quit.
+    this.sweepOrphanAttachments();
 
     this.api = new TelegramApi(this.settings.token);
 
     try {
       const me = await this.api.getMe();
+      this.botUsername = me.username ?? null;
       log(`bridge started as @${me.username} (id=${me.id})`);
     } catch (err) {
       this.lastError = err instanceof Error ? err.message : String(err);
@@ -452,9 +524,15 @@ export class TelegramBridge {
       return;
     }
 
+    // Backfill the conversations table so existing Telegram conversations
+    // get the source/external_chat_id columns the sidebar uses for the badge.
+    void this.backfillConversationSources();
+
+    this.routineCache = null;
     this.polling = true;
     this.pollAbort = new AbortController();
     this.subscribeToEngineEvents();
+    this.startRunWatchdog();
     void this.pollLoop();
   }
 
@@ -463,10 +541,17 @@ export class TelegramBridge {
     this.pollAbort?.abort();
     this.api?.abortPending();
     this.api = null;
+    this.botUsername = null;
+    this.routineCache = null;
 
     if (this.engineListener) {
       this.deps.engineEventBus.off(ENGINE_EVENT, this.engineListener);
       this.engineListener = null;
+    }
+
+    if (this.runWatchdogTimer) {
+      clearInterval(this.runWatchdogTimer);
+      this.runWatchdogTimer = null;
     }
 
     // Clean up temp files.
@@ -483,6 +568,29 @@ export class TelegramBridge {
     this.activeRuns.clear();
 
     log('bridge stopped');
+  }
+
+  /**
+   * Re-read settings (allowlist, forwardAllApprovals, chatExpertMap) without
+   * bouncing the long-poll loop. Returns whether the bridge was running.
+   * The token is not hot-swappable — token changes still require disable→enable.
+   */
+  async reloadSettings(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const previousToken = this.settings.token;
+      await this.loadSettings();
+      this.routineCache = null;
+      if (this.settings.token !== previousToken && this.polling) {
+        // Token changed mid-flight. Easier to make the caller restart explicitly.
+        return { ok: false, error: 'Token changed — disable and re-enable Telegram to apply.' };
+      }
+      log('settings reloaded');
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError('reloadSettings failed', msg);
+      return { ok: false, error: msg };
+    }
   }
 
   /** Called from IPC: try a token and return whether it looks valid. */
@@ -503,7 +611,68 @@ export class TelegramBridge {
       lastPollAt: this.lastPollAt,
       lastError: this.lastError,
       unknownLastAttempt: Object.fromEntries(this.unknownUserLastReply),
+      botUsername: this.botUsername,
+      hasToken: this.hasToken(),
+      tokenBackend: secureTokenBackend(),
     };
+  }
+
+  // ── TelegramChannel implementation (consumed by send_telegram_message) ──
+
+  /** Allowlist gate — exposed so the engine action can reject before sending. */
+  isAllowlisted(chatId: string): boolean {
+    return this.settings.allowlist.includes(String(chatId).trim());
+  }
+
+  /** Lookup a previously-seen username for a chat. Used by the chat header strip. */
+  usernameForChat(chatId: string): string | null {
+    return this.settings.chatUsernames[String(chatId).trim()] ?? null;
+  }
+
+  /** The bot's own @username (set after getMe), or null if not running. */
+  getBotUsername(): string | null {
+    return this.botUsername;
+  }
+
+  /**
+   * Send a single message from a routine action. Mirrors sendProactive's
+   * redaction + rate-limit checks but returns the message_id so a downstream
+   * step can quote/edit it.
+   */
+  async sendActionMessage(
+    chatId: string,
+    text: string,
+    parseMode?: 'HTML' | 'MarkdownV2' | 'none',
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    if (!this.api || !this.polling) {
+      return { messageId: null, error: 'Telegram bridge not running' };
+    }
+    const recipient = String(chatId).trim();
+    if (!this.isAllowlisted(recipient)) {
+      return { messageId: null, error: `chat_id ${recipient} not in allowlist` };
+    }
+    if (!this.proactiveRateLimiter.allow(recipient)) {
+      return { messageId: null, error: `chat_id ${recipient} rate-limited` };
+    }
+    const numericChatId = Number(recipient);
+    if (!Number.isFinite(numericChatId)) {
+      return { messageId: null, error: `chat_id ${recipient} is not a numeric Telegram id` };
+    }
+    const safeText = this.redactForChat(text);
+    const chunks = chunkText(safeText, MAX_MESSAGE_CHARS);
+    let firstMessageId: number | null = null;
+    try {
+      for (let i = 0; i < chunks.length; i++) {
+        const sent = await this.api.sendMessage(numericChatId, chunks[i], {
+          parse_mode: parseMode && parseMode !== 'none' ? parseMode : undefined,
+        });
+        if (i === 0) firstMessageId = sent.message_id;
+      }
+      return { messageId: firstMessageId, error: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { messageId: firstMessageId, error: scrubTokenish(msg) };
+    }
   }
 
   /**
@@ -634,25 +803,73 @@ export class TelegramBridge {
 
   private async loadSettings(): Promise<void> {
     const port = this.deps.backendPort;
-    const [token, allowlist, enabled, forwardAll, chatMap, chatExpertMap, lastUpdate] = await Promise.all([
+    const [storedToken, allowlist, enabled, forwardAll, chatMap, chatExpertMap, chatUsernames, lastUpdate] = await Promise.all([
       backendGetSetting<string>(port, TELEGRAM_SETTING_KEYS.token),
       backendGetSetting<string[]>(port, TELEGRAM_SETTING_KEYS.allowlist),
       backendGetSetting<boolean>(port, TELEGRAM_SETTING_KEYS.enabled),
       backendGetSetting<boolean>(port, TELEGRAM_SETTING_KEYS.forwardAllApprovals),
       backendGetSetting<Record<string, string>>(port, TELEGRAM_SETTING_KEYS.chatMap),
       backendGetSetting<Record<string, string>>(port, TELEGRAM_SETTING_KEYS.chatExpertMap),
+      backendGetSetting<Record<string, string>>(port, TELEGRAM_SETTING_KEYS.chatUsernames),
       backendGetSetting<number>(port, TELEGRAM_SETTING_KEYS.lastUpdateId),
     ]);
 
+    const token = decryptFromStorage(storedToken);
+    // Transparent migration: if the value on disk wasn't encrypted (legacy plaintext
+    // from before the secure-token module existed) and we have a working keychain,
+    // re-save it under encryption so the next read decrypts cleanly.
+    if (token && isStoredPlaintext(storedToken) && secureTokenBackend() === 'os-keychain') {
+      const reEncrypted = encryptForStorage(token);
+      await backendPutSetting(port, TELEGRAM_SETTING_KEYS.token, reEncrypted)
+        .then(() => log('migrated legacy plaintext token to OS keychain'))
+        .catch(() => { /* non-fatal — try again next load */ });
+    }
+
     this.settings = {
-      token: token ?? null,
+      token,
       allowlist: Array.isArray(allowlist) ? allowlist : [],
       enabled: enabled ?? false,
       forwardAllApprovals: forwardAll ?? false,
       chatMap: chatMap ?? {},
       chatExpertMap: chatExpertMap ?? {},
+      chatUsernames: chatUsernames ?? {},
       lastUpdateId: typeof lastUpdate === 'number' ? lastUpdate : 0,
     };
+  }
+
+  /**
+   * Persist a new bot token (or clear it). Encrypts before writing — the
+   * renderer never holds the plaintext after this returns. When the bridge
+   * is currently polling we restart it so the new token actually takes
+   * effect on the wire (the existing `api` instance is bound to the old
+   * token and would silently keep using it).
+   */
+  async setToken(plaintext: string | null): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const value = plaintext ? encryptForStorage(plaintext) : '';
+      await backendPutSetting(this.deps.backendPort, TELEGRAM_SETTING_KEYS.token, value);
+      const wasRunning = this.polling;
+      this.settings.token = plaintext;
+      if (wasRunning) {
+        await this.stop();
+        if (plaintext) {
+          await this.start();
+          if (!this.polling) {
+            return { ok: false, error: this.lastError ?? 'Failed to restart with new token' };
+          }
+        }
+      }
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError('setToken failed', msg);
+      return { ok: false, error: msg };
+    }
+  }
+
+  /** True if a token is configured (without revealing the value). */
+  hasToken(): boolean {
+    return Boolean(this.settings.token);
   }
 
   private async persistLastUpdateId(id: number): Promise<void> {
@@ -666,6 +883,19 @@ export class TelegramBridge {
 
   private async persistChatExpertMap(): Promise<void> {
     await backendPutSetting(this.deps.backendPort, TELEGRAM_SETTING_KEYS.chatExpertMap, this.settings.chatExpertMap);
+  }
+
+  private async persistChatUsernames(): Promise<void> {
+    await backendPutSetting(this.deps.backendPort, TELEGRAM_SETTING_KEYS.chatUsernames, this.settings.chatUsernames);
+  }
+
+  /** Remember the @username of an inbound message so the chat header can show it. */
+  private async rememberUsername(chatId: number, username: string | undefined): Promise<void> {
+    if (!username) return;
+    const key = String(chatId);
+    if (this.settings.chatUsernames[key] === username) return;
+    this.settings.chatUsernames[key] = username;
+    await this.persistChatUsernames();
   }
 
   private async pollLoop(): Promise<void> {
@@ -737,6 +967,9 @@ export class TelegramBridge {
       return;
     }
 
+    // Best-effort: remember the @username for the chat header strip.
+    await this.rememberUsername(msg.chat.id, msg.from?.username);
+
     // Commands
     const textOrCaption = (msg.text ?? msg.caption ?? '').trim();
     if (textOrCaption.startsWith('/')) {
@@ -744,8 +977,38 @@ export class TelegramBridge {
       return;
     }
 
-    // Ensure conversation exists
-    const conversationId = await this.ensureConversation(msg.chat.id);
+    const isFirstContact = !this.settings.chatMap[String(msg.chat.id)];
+
+    let conversationId = await this.ensureConversation(msg.chat.id);
+
+    if (isFirstContact) {
+      try { await this.api.sendMessage(msg.chat.id, this.welcomeMessage()); } catch { /* ignore */ }
+    }
+
+    conversationId = await this.postUserMessageWithRecovery(
+      conversationId,
+      msg,
+      textOrCaption,
+    );
+    this.emitConversationUpdated(conversationId, 'message');
+
+    // Routine trigger dispatch — if any telegram_message routine matches,
+    // it consumes the message and we skip the AI agent reply entirely.
+    const matchedRoutines = await this.matchTelegramTriggers(String(msg.chat.id), textOrCaption);
+    if (matchedRoutines.length > 0) {
+      for (const routine of matchedRoutines) {
+        await this.dispatchRoutine(routine, {
+          chat_id: String(msg.chat.id),
+          sender_id: fromIdStr,
+          sender_username: msg.from?.username ?? null,
+          message_text: textOrCaption,
+          message_id: msg.message_id,
+          received_at: new Date(msg.date * 1000).toISOString(),
+          conversation_id: conversationId,
+        });
+      }
+      return;
+    }
 
     // Gather attachments (if any) and produce a prompt
     const { prompt, attachmentNote } = await this.buildPromptFromMessage(msg, textOrCaption);
@@ -759,34 +1022,47 @@ export class TelegramBridge {
     }
 
     // Concurrency: one run per chat
-    if (this.activeRuns.has(msg.chat.id)) {
-      await this.api.sendMessage(msg.chat.id, '⏳ Still working on the previous message — try again when it finishes.');
+    const existing = this.activeRuns.get(msg.chat.id);
+    if (existing) {
+      const elapsedSec = Math.round((Date.now() - existing.startedAt) / 1000);
+      const elapsedLabel = elapsedSec < 60
+        ? `${elapsedSec}s`
+        : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+      await this.api.sendMessage(
+        msg.chat.id,
+        `⏳ Still working on the previous message (${elapsedLabel} so far).\n`
+        + `Send /cancel to abort it and try a different request.`,
+      );
       return;
     }
 
-    // Persist user message
-    await backendRequest(this.deps.backendPort, 'POST', `/conversations/${conversationId}/messages`, {
-      id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
-      role: 'user',
-      content: textOrCaption || '(attachment)',
-      metadata: { source: 'telegram', telegram_chat_id: msg.chat.id, telegram_message_id: msg.message_id },
-    });
-
     // Spawn the run
-    const sink = new TelegramStreamSink(this.api, msg.chat.id, msg.message_id, async (finalText, err) => {
-      try {
-        if (!err) {
-          await backendRequest(this.deps.backendPort, 'POST', `/conversations/${conversationId}/messages`, {
-            id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
-            role: 'assistant',
-            content: finalText,
-            metadata: { source: 'telegram', telegram_chat_id: msg.chat.id },
-          });
+    const chatIdForRun = msg.chat.id;
+    const bumpActivity = () => {
+      const r = this.activeRuns.get(chatIdForRun);
+      if (r) r.lastActivityAt = Date.now();
+    };
+    const sink = new TelegramStreamSink(
+      this.api,
+      msg.chat.id,
+      msg.message_id,
+      async (finalText, err) => {
+        try {
+          if (!err) {
+            await backendRequest(this.deps.backendPort, 'POST', `/conversations/${conversationId}/messages`, {
+              id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+              role: 'assistant',
+              content: finalText,
+              metadata: { source: 'telegram', telegram_chat_id: msg.chat.id },
+            });
+            this.emitConversationUpdated(conversationId, 'message');
+          }
+        } finally {
+          this.activeRuns.delete(msg.chat.id);
         }
-      } finally {
-        this.activeRuns.delete(msg.chat.id);
-      }
-    });
+      },
+      bumpActivity,
+    );
 
     const expertId = this.settings.chatExpertMap[String(msg.chat.id)] || null;
 
@@ -799,11 +1075,14 @@ export class TelegramBridge {
 
     try {
       const runId = await this.deps.agentRuntime.startRun(sink, runRequest);
+      const now = Date.now();
       this.activeRuns.set(msg.chat.id, {
         runId,
         conversationId,
         sink,
         userContent: prompt,
+        startedAt: now,
+        lastActivityAt: now,
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -814,6 +1093,86 @@ export class TelegramBridge {
     }
   }
 
+  private welcomeMessage(): string {
+    return (
+      '👋 Hi — I am Cerebro.\n\n'
+      + 'Just send me a message to start chatting. I can plan, research, run routines, and delegate to your experts.\n\n'
+      + 'Commands:\n'
+      + '/help — show commands\n'
+      + '/expert list — show available experts\n'
+      + '/expert <slug> — route this chat to a specific expert\n'
+      + '/expert clear — go back to the default\n'
+      + '/cancel — abort the message I am currently working on\n'
+      + '/reset — start a fresh conversation\n\n'
+      + 'You can also send photos, voice notes, and documents.'
+    );
+  }
+
+  private async postUserMessageWithRecovery(
+    conversationId: string,
+    msg: TelegramMessage,
+    textOrCaption: string,
+  ): Promise<string> {
+    const body = {
+      id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+      role: 'user' as const,
+      content: textOrCaption || '(attachment)',
+      metadata: {
+        source: 'telegram',
+        telegram_chat_id: msg.chat.id,
+        telegram_message_id: msg.message_id,
+      },
+    };
+    const res = await backendRequest(
+      this.deps.backendPort,
+      'POST',
+      `/conversations/${conversationId}/messages`,
+      body,
+    );
+    if (res.status !== 404) return conversationId;
+
+    log(`chatMap entry for chat ${msg.chat.id} → ${conversationId} is stale (404); recreating`);
+    delete this.settings.chatMap[String(msg.chat.id)];
+    const fresh = await this.createConversation(msg.chat.id);
+    await backendRequest(
+      this.deps.backendPort,
+      'POST',
+      `/conversations/${fresh}/messages`,
+      { ...body, id: crypto.randomUUID().replace(/-/g, '').slice(0, 32) },
+    );
+    return fresh;
+  }
+
+  private async cleanupActiveRun(chatId: number, message: string): Promise<void> {
+    const run = this.activeRuns.get(chatId);
+    if (run) {
+      try { this.deps.agentRuntime.cancelRun(run.runId); } catch { /* ignore */ }
+      this.activeRuns.delete(chatId);
+    }
+    if (this.api) {
+      await this.api.sendMessage(chatId, message).catch(() => { /* ignore */ });
+    }
+  }
+
+  private startRunWatchdog(): void {
+    if (this.runWatchdogTimer) return;
+    this.runWatchdogTimer = setInterval(() => {
+      const now = Date.now();
+      for (const [chatId, run] of this.activeRuns) {
+        if (now - run.lastActivityAt < RUN_IDLE_TIMEOUT_MS) continue;
+        log(`watchdog: reclaiming stuck run ${run.runId} for chat ${chatId}`);
+        void this.cleanupActiveRun(
+          chatId,
+          '⚠️ The previous request stopped responding and was cancelled.\n'
+          + 'You can send a new message now.',
+        );
+      }
+    }, RUN_WATCHDOG_INTERVAL_MS);
+    if (typeof this.runWatchdogTimer.unref === 'function') {
+      this.runWatchdogTimer.unref();
+    }
+  }
+
   private async handleCommand(msg: TelegramMessage, text: string): Promise<void> {
     if (!this.api) return;
     const chatId = msg.chat.id;
@@ -821,27 +1180,12 @@ export class TelegramBridge {
     const cmd = rawCmd.split('@')[0].toLowerCase();
 
     if (cmd === '/start') {
-      await this.api.sendMessage(
-        chatId,
-        'Hi — I am Cerebro.\n\n'
-          + 'Commands:\n'
-          + '/help — show this list\n'
-          + '/expert list — show available experts\n'
-          + '/expert <slug> — switch expert for this chat\n'
-          + '/expert clear — reset to default\n'
-          + '/reset — start a fresh conversation\n\n'
-          + 'Send text, photos, voice notes, or documents.',
-      );
+      await this.api.sendMessage(chatId, this.welcomeMessage());
       return;
     }
 
     if (cmd === '/help') {
-      await this.api.sendMessage(
-        chatId,
-        'Commands:\n'
-          + '/expert list | /expert <slug> | /expert clear\n'
-          + '/reset — start a fresh conversation',
-      );
+      await this.api.sendMessage(chatId, this.welcomeMessage());
       return;
     }
 
@@ -849,6 +1193,18 @@ export class TelegramBridge {
       delete this.settings.chatMap[String(chatId)];
       await this.persistChatMap();
       await this.api.sendMessage(chatId, '🧹 Fresh conversation. Your next message starts a new thread.');
+      return;
+    }
+
+    if (cmd === '/cancel' || cmd === '/stop') {
+      if (!this.activeRuns.has(chatId)) {
+        await this.api.sendMessage(chatId, 'Nothing to cancel — I am not working on anything right now.');
+        return;
+      }
+      await this.cleanupActiveRun(
+        chatId,
+        '🛑 Cancelled. Send your next message whenever you are ready.',
+      );
       return;
     }
 
@@ -938,16 +1294,144 @@ export class TelegramBridge {
 
   private async ensureConversation(chatId: number): Promise<string> {
     const key = String(chatId);
-    const existing = this.settings.chatMap[key];
-    if (existing) return existing;
+    const cached = this.settings.chatMap[key];
+    if (cached) return cached;
+    return this.createConversation(chatId);
+  }
+
+  private async createConversation(chatId: number): Promise<string> {
+    const key = String(chatId);
     const id = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
     await backendRequest(this.deps.backendPort, 'POST', '/conversations', {
       id,
       title: `Telegram (${chatId})`,
+      source: 'telegram',
+      external_chat_id: key,
     });
     this.settings.chatMap[key] = id;
     await this.persistChatMap();
+    this.emitConversationUpdated(id, 'created');
     return id;
+  }
+
+  private emitConversationUpdated(conversationId: string, kind: 'created' | 'message'): void {
+    if (!this.webContents || this.webContents.isDestroyed()) return;
+    try {
+      this.webContents.send(IPC_CHANNELS.TELEGRAM_CONVERSATION_UPDATED, { conversationId, kind });
+    } catch { /* ignore */ }
+  }
+
+  /**
+   * One-shot backfill on bridge start: any conversation in chatMap that doesn't
+   * yet have source='telegram' (older row, pre-migration) gets PATCHed.
+   * Idempotent and fire-and-forget — failures are logged but don't block startup.
+   */
+  private async backfillConversationSources(): Promise<void> {
+    const entries = Object.entries(this.settings.chatMap);
+    if (entries.length === 0) return;
+    let pruned = 0;
+    for (const [chatId, conversationId] of entries) {
+      try {
+        const res = await backendRequest(
+          this.deps.backendPort,
+          'PATCH',
+          `/conversations/${conversationId}`,
+          { source: 'telegram', external_chat_id: chatId },
+        );
+        if (res.status === 404) {
+          delete this.settings.chatMap[chatId];
+          pruned++;
+        }
+      } catch (err) {
+        log('backfill skipped for', conversationId, err instanceof Error ? err.message : String(err));
+      }
+    }
+    if (pruned > 0) {
+      log(`pruned ${pruned} stale chatMap entr${pruned === 1 ? 'y' : 'ies'}`);
+      await this.persistChatMap();
+    }
+  }
+
+  /** Delete files in telegram-tmp older than 24h. Best-effort, sync. */
+  private sweepOrphanAttachments(): void {
+    const dir = this.tempDir();
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      return;
+    }
+    const cutoff = Date.now() - ORPHAN_SWEEP_AGE_MS;
+    let removed = 0;
+    for (const name of entries) {
+      const full = path.join(dir, name);
+      try {
+        const stat = fs.statSync(full);
+        if (stat.isFile() && stat.mtimeMs < cutoff) {
+          fs.unlinkSync(full);
+          removed++;
+        }
+      } catch {
+        // file vanished or is not statable — ignore
+      }
+    }
+    if (removed > 0) log(`swept ${removed} orphan attachment(s) from telegram-tmp/`);
+  }
+
+  // ── Routine trigger dispatch ─────────────────────────────────────
+
+  /**
+   * Fetch (with a short cache) all enabled routines whose trigger_type is
+   * 'telegram_message', then run their per-routine match logic. Returns the
+   * routines whose chat-id + filter both match the inbound message.
+   */
+  private async matchTelegramTriggers(
+    chatId: string,
+    text: string,
+  ): Promise<TelegramTriggerRoutine[]> {
+    if (!this.deps.executionEngine) return [];
+    const now = Date.now();
+    if (!this.routineCache || now - this.routineCache.fetchedAt > ROUTINE_CACHE_TTL_MS) {
+      const res = await backendRequest<{ routines: BackendRoutineRecord[] }>(
+        this.deps.backendPort,
+        'GET',
+        '/routines?trigger_type=telegram_message',
+      );
+      const list = (res.data?.routines ?? [])
+        .filter((r) => r.is_enabled && r.dag_json)
+        .map(parseTelegramTriggerRoutine)
+        .filter((r): r is TelegramTriggerRoutine => r !== null);
+      this.routineCache = { fetchedAt: now, routines: list };
+    }
+    return matchRoutineTriggers(this.routineCache.routines, chatId, text);
+  }
+
+  /** Spawn a routine run with the trigger payload available as a synthetic
+   *  `__trigger__` step output (steps wire it via inputMappings). */
+  private async dispatchRoutine(
+    routine: TelegramTriggerRoutine,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const engine = this.deps.executionEngine;
+    if (!engine) return;
+    if (!this.webContents || this.webContents.isDestroyed()) {
+      logError(`routine "${routine.name}" not dispatched: main window not available`);
+      return;
+    }
+    try {
+      // Bump backend run metadata so the routine's "last run" timestamps update.
+      backendRequest(this.deps.backendPort, 'POST', `/routines/${routine.id}/run`).catch(() => {/* ignore */});
+
+      const runId = await engine.startRun(this.webContents, {
+        dag: routine.dag,
+        routineId: routine.id,
+        triggerSource: 'telegram_message',
+        triggerPayload: payload,
+      });
+      log(`dispatched routine "${routine.name}" (${routine.id}) from chat ${payload.chat_id} → run ${runId}`);
+    } catch (err) {
+      logError('dispatchRoutine failed', err instanceof Error ? err.message : String(err));
+    }
   }
 
   private async buildPromptFromMessage(
@@ -1113,6 +1597,7 @@ function emptySettings(): TelegramSettings {
     forwardAllApprovals: false,
     chatMap: {},
     chatExpertMap: {},
+    chatUsernames: {},
     lastUpdateId: 0,
   };
 }

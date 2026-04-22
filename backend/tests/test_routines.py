@@ -265,6 +265,37 @@ def test_filter_by_trigger_type(client):
     assert body["routines"][0]["name"] == "Cron"
 
 
+def test_create_routine_with_telegram_message_trigger(client):
+    """trigger_type='telegram_message' is accepted, persisted, and round-trips
+    via GET so the bridge's poll for matching routines can find it."""
+    dag = {
+        "trigger": {
+            "triggerType": "trigger_telegram_message",
+            "config": {"chat_id": "*", "filter_type": "keyword", "filter_value": "standup"},
+        },
+        "steps": [],
+    }
+    r = client.post("/routines", json={
+        "name": "Telegram standup",
+        "trigger_type": "telegram_message",
+        "dag_json": json.dumps(dag),
+    })
+    assert r.status_code in (200, 201), r.text
+    routine_id = r.json()["id"]
+
+    r = client.get(f"/routines/{routine_id}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["trigger_type"] == "telegram_message"
+    assert json.loads(body["dag_json"])["trigger"]["triggerType"] == "trigger_telegram_message"
+
+    r = client.get("/routines", params={"trigger_type": "telegram_message"})
+    assert r.status_code == 200
+    found = r.json()
+    assert found["total"] == 1
+    assert found["routines"][0]["id"] == routine_id
+
+
 def test_filter_by_is_enabled(client):
     client.post("/routines", json={"name": "Enabled"})
     r = client.post("/routines", json={"name": "Disabled"})

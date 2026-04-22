@@ -209,6 +209,45 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const activeScreenRef = useRef(activeScreen);
+  activeScreenRef.current = activeScreen;
+  const isStreamingRef = useRef(isStreaming);
+  isStreamingRef.current = isStreaming;
+
+  useEffect(() => {
+    const unsub = window.cerebro.telegram.onConversationUpdated(async (event) => {
+      try {
+        const loaded = await apiLoadConversations();
+        setConversations((prev) => {
+          const loadedById = new Map(loaded.map((c) => [c.id, c]));
+          const inFlight = prev.filter((c) => !loadedById.has(c.id));
+          const merged = loaded.map((fresh) => {
+            const local = prev.find((p) => p.id === fresh.id);
+            // Preserve the local copy while a reply is mid-stream — replacing
+            // it with server state would discard accumulated deltas.
+            if (
+              local
+              && local.messages.some((m) => m.isThinking || m.isStreaming)
+            ) {
+              return local;
+            }
+            return fresh;
+          });
+          return [...inFlight, ...merged];
+        });
+
+        if (event.kind === 'created'
+            && activeScreenRef.current === 'chat'
+            && !isStreamingRef.current) {
+          setActiveConversationIdState(event.conversationId);
+        }
+      } catch (err) {
+        console.error('Telegram conversation refresh failed:', err);
+      }
+    });
+    return unsub;
+  }, []);
+
   const createConversation = useCallback(
     (firstMessage?: string, opts?: CreateConversationOptions) => {
       const id = generateId();

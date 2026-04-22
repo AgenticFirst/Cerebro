@@ -115,6 +115,7 @@ export function routineTriggerToActionType(triggerType: string): string {
   switch (triggerType) {
     case 'cron': return 'trigger_schedule';
     case 'webhook': return 'trigger_webhook';
+    case 'telegram_message': return 'trigger_telegram_message';
     default: return 'trigger_manual';
   }
 }

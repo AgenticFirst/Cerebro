@@ -24,6 +24,7 @@ import { useApprovals } from '../../context/ApprovalContext';
 import { useTasks } from '../../context/TaskContext';
 import { isUntitledConversationTitle } from '../../context/chat-helpers';
 import type { Conversation, Screen } from '../../types/chat';
+import { TelegramIcon } from '../icons/BrandIcons';
 
 /* ── Nav structure: grouped by function ───────────────────────── */
 
@@ -357,7 +358,7 @@ export default function Sidebar() {
       {/* ── Conversation history (Chat screen, expanded only) ── */}
       {activeScreen === 'chat' && !collapsed ? (
         <>
-          <GhostSeparator collapsed={collapsed} />
+          <div className="mx-3 my-2 border-t border-border-subtle" />
           <div className="flex-1 overflow-y-auto scrollbar-thin px-2.5 pb-2">
             {grouped.length === 0 && (
               <div className="px-3 py-6 text-[11px] text-text-tertiary text-center">
@@ -497,9 +498,18 @@ function ConversationRow({
             ? 'bg-white/[0.06] text-text-primary font-medium shadow-[inset_2px_0_0_0_var(--color-accent)]'
             : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.03]',
         )}
-        title={conv.title}
+        title={conv.source === 'telegram' ? `Telegram · ${conv.title}` : conv.title}
       >
-        {displayTitle}
+        <span className="flex items-center gap-1.5 truncate">
+          {conv.source === 'telegram' && (
+            <TelegramIcon
+              size={12}
+              className="shrink-0 text-sky-400/80"
+              aria-label="Telegram conversation"
+            />
+          )}
+          <span className="truncate">{displayTitle}</span>
+        </span>
       </button>
       {isHovered && (
         <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">

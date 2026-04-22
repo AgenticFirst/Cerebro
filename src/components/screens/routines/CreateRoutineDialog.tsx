@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Hand, Clock, Webhook } from 'lucide-react';
+import { TelegramIcon } from '../../icons/BrandIcons';
 import clsx from 'clsx';
 import type { CreateRoutineInput, TriggerType } from '../../../types/routines';
 import type { DayOfWeek } from '../../../utils/cron-helpers';
@@ -70,6 +71,7 @@ export default function CreateRoutineDialog({
     { type: 'manual', icon: Hand, label: t('triggers.manual'), desc: t('createRoutine.triggerManualDesc'), tipKey: 'routineTooltips.triggerManual' },
     { type: 'cron', icon: Clock, label: t('triggers.scheduled'), desc: t('createRoutine.triggerScheduledDesc'), tipKey: 'routineTooltips.triggerScheduled' },
     { type: 'webhook', icon: Webhook, label: t('triggers.webhook'), desc: t('createRoutine.triggerWebhookDesc'), tipKey: 'routineTooltips.triggerWebhook' },
+    { type: 'telegram_message', icon: TelegramIcon as unknown as typeof Hand, label: t('triggers.telegramMessage'), desc: t('createRoutine.triggerTelegramDesc'), tipKey: 'routineTooltips.triggerTelegram' },
   ];
 
   return (

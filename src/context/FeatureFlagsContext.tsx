@@ -1,4 +1,4 @@
-import {
+import React, {
   createContext,
   useCallback,
   useContext,
@@ -41,7 +41,15 @@ interface FeatureFlagsContextValue {
   setFlag: (key: BetaFeatureKey, enabled: boolean) => void;
 }
 
-const FeatureFlagsContext = createContext<FeatureFlagsContextValue | null>(null);
+// Stash the Context on globalThis so HMR-driven re-evaluations of this module
+// don't create a new Context object that consumers in not-yet-reloaded modules
+// would fail to find a provider for.
+const GLOBAL_KEY = '__cerebro_feature_flags_context__';
+const FeatureFlagsContext: React.Context<FeatureFlagsContextValue | null> =
+  (globalThis as Record<string, unknown>)[GLOBAL_KEY] as
+    React.Context<FeatureFlagsContextValue | null> | undefined
+  ?? createContext<FeatureFlagsContextValue | null>(null);
+(globalThis as Record<string, unknown>)[GLOBAL_KEY] = FeatureFlagsContext;
 
 function settingKey(key: BetaFeatureKey): string {
   return `beta:${key}`;

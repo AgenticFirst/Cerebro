@@ -5,6 +5,10 @@ import {
   redactForChat,
   SlidingWindowLimiter,
   parseApprovalCallback,
+  parseTelegramTriggerRoutine,
+  matchesTelegramFilter,
+  matchRoutineTriggers,
+  type TelegramTriggerRoutine,
 } from '../helpers';
 
 describe('chunkText', () => {
@@ -138,5 +142,169 @@ describe('parseApprovalCallback', () => {
       action: 'approve',
       approvalId: 'abc:123',
     });
+  });
+});
+
+// ── Telegram trigger routing ─────────────────────────────────────
+
+function makeRoutineRecord(overrides: {
+  id?: string;
+  name?: string;
+  trigger?: { triggerType?: string; config?: Record<string, unknown> } | undefined;
+  steps?: unknown[];
+  dag_json?: string | null;
+}) {
+  const dag = overrides.dag_json !== undefined
+    ? overrides.dag_json
+    : JSON.stringify({
+        trigger: overrides.trigger,
+        steps: overrides.steps ?? [],
+      });
+  return {
+    id: overrides.id ?? 'r1',
+    name: overrides.name ?? 'Test routine',
+    is_enabled: true,
+    trigger_type: 'telegram_message',
+    dag_json: dag,
+  };
+}
+
+describe('parseTelegramTriggerRoutine', () => {
+  it('returns null when dag_json is missing', () => {
+    expect(parseTelegramTriggerRoutine(makeRoutineRecord({ dag_json: null }))).toBeNull();
+  });
+
+  it('returns null when dag_json is malformed', () => {
+    expect(parseTelegramTriggerRoutine(makeRoutineRecord({ dag_json: 'not-json' }))).toBeNull();
+  });
+
+  it('returns null when triggerType is not telegram', () => {
+    const r = makeRoutineRecord({
+      trigger: { triggerType: 'trigger_schedule', config: { chat_id: '123' } },
+    });
+    expect(parseTelegramTriggerRoutine(r)).toBeNull();
+  });
+
+  it('returns null when chat_id is missing', () => {
+    const r = makeRoutineRecord({
+      trigger: { triggerType: 'trigger_telegram_message', config: {} },
+    });
+    expect(parseTelegramTriggerRoutine(r)).toBeNull();
+  });
+
+  it('parses a minimal telegram trigger', () => {
+    const r = makeRoutineRecord({
+      trigger: { triggerType: 'trigger_telegram_message', config: { chat_id: '42' } },
+    });
+    const parsed = parseTelegramTriggerRoutine(r);
+    expect(parsed?.trigger.chat_id).toBe('42');
+    expect(parsed?.trigger.filter_type).toBe('none');
+    expect(parsed?.trigger.filter_value).toBe('');
+  });
+
+  it('parses a full filter spec', () => {
+    const r = makeRoutineRecord({
+      trigger: {
+        triggerType: 'trigger_telegram_message',
+        config: { chat_id: '*', filter_type: 'keyword', filter_value: 'standup' },
+      },
+    });
+    const parsed = parseTelegramTriggerRoutine(r);
+    expect(parsed?.trigger).toEqual({
+      chat_id: '*',
+      filter_type: 'keyword',
+      filter_value: 'standup',
+    });
+  });
+
+  it('coerces unknown filter_type to none', () => {
+    const r = makeRoutineRecord({
+      trigger: {
+        triggerType: 'trigger_telegram_message',
+        config: { chat_id: '7', filter_type: 'bogus', filter_value: 'x' },
+      },
+    });
+    expect(parseTelegramTriggerRoutine(r)?.trigger.filter_type).toBe('none');
+  });
+
+  it('passes runtime steps through unchanged', () => {
+    const steps = [{ id: 's1', name: 'Step 1', actionType: 'ask_ai' }];
+    const r = makeRoutineRecord({
+      trigger: { triggerType: 'trigger_telegram_message', config: { chat_id: '1' } },
+      steps,
+    });
+    expect(parseTelegramTriggerRoutine(r)?.dag.steps).toEqual(steps);
+  });
+});
+
+describe('matchesTelegramFilter', () => {
+  it('returns true for filter_type=none', () => {
+    expect(matchesTelegramFilter('anything', 'none', '')).toBe(true);
+    expect(matchesTelegramFilter('anything', 'none', 'ignored')).toBe(true);
+  });
+
+  it('returns true when filter_value is empty regardless of type', () => {
+    expect(matchesTelegramFilter('hello', 'keyword', '')).toBe(true);
+    expect(matchesTelegramFilter('hello', 'regex', '   ')).toBe(true);
+  });
+
+  it('matches keyword on word boundaries, case-insensitive', () => {
+    expect(matchesTelegramFilter('Time for STANDUP today', 'keyword', 'standup')).toBe(true);
+    expect(matchesTelegramFilter('standuptime', 'keyword', 'standup')).toBe(false);
+  });
+
+  it('matches prefix case-insensitively', () => {
+    expect(matchesTelegramFilter('HELLO world', 'prefix', 'hello')).toBe(true);
+    expect(matchesTelegramFilter('say hello', 'prefix', 'hello')).toBe(false);
+  });
+
+  it('matches regex case-insensitively', () => {
+    expect(matchesTelegramFilter('order #42 placed', 'regex', '#\\d+')).toBe(true);
+    expect(matchesTelegramFilter('no number', 'regex', '#\\d+')).toBe(false);
+  });
+
+  it('returns false for invalid regex without throwing', () => {
+    expect(matchesTelegramFilter('anything', 'regex', '[bad')).toBe(false);
+  });
+});
+
+describe('matchRoutineTriggers', () => {
+  const baseDag = { steps: [] };
+  const exact: TelegramTriggerRoutine = {
+    id: 'r-exact', name: 'exact', dag: baseDag,
+    trigger: { chat_id: '111', filter_type: 'none' },
+  };
+  const wildcard: TelegramTriggerRoutine = {
+    id: 'r-any', name: 'any', dag: baseDag,
+    trigger: { chat_id: '*', filter_type: 'none' },
+  };
+  const standup: TelegramTriggerRoutine = {
+    id: 'r-standup', name: 'standup', dag: baseDag,
+    trigger: { chat_id: '*', filter_type: 'keyword', filter_value: 'standup' },
+  };
+
+  it('matches exact chat_id', () => {
+    const matched = matchRoutineTriggers([exact, wildcard], '111', 'hi');
+    expect(matched.map((r) => r.id).sort()).toEqual(['r-any', 'r-exact']);
+  });
+
+  it('does not match non-matching exact chat_id', () => {
+    const matched = matchRoutineTriggers([exact], '999', 'hi');
+    expect(matched).toEqual([]);
+  });
+
+  it('wildcard matches any chat', () => {
+    const matched = matchRoutineTriggers([wildcard], '999', 'hi');
+    expect(matched).toEqual([wildcard]);
+  });
+
+  it('combines chat_id + filter', () => {
+    expect(matchRoutineTriggers([standup], '999', 'standup time')).toEqual([standup]);
+    expect(matchRoutineTriggers([standup], '999', 'no match here')).toEqual([]);
+  });
+
+  it('returns multiple matches', () => {
+    const matched = matchRoutineTriggers([wildcard, standup], '111', 'standup');
+    expect(matched.map((r) => r.id)).toEqual(['r-any', 'r-standup']);
   });
 });

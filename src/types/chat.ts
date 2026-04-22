@@ -109,6 +109,8 @@ export interface Message {
   teamRun?: TeamRun;
 }
 
+export type ConversationSource = 'cerebro' | 'telegram';
+
 export interface Conversation {
   id: string;
   title: string;
@@ -116,4 +118,9 @@ export interface Conversation {
   createdAt: Date;
   updatedAt: Date;
   messages: Message[];
+  /** Origin channel — 'telegram' shows the Telegram badge in the sidebar
+   *  and a header strip in ChatView. Defaults to 'cerebro'. */
+  source?: ConversationSource;
+  /** Numeric Telegram chat id (as string), populated when source='telegram'. */
+  externalChatId?: string | null;
 }

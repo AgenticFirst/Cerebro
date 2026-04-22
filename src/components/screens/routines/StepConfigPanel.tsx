@@ -3421,6 +3421,122 @@ function NotificationParams({ params, onChange, step, sourceSteps, onAddMapping 
   );
 }
 
+function SendTelegramParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const [chatId, setChatId] = useState((params.chat_id as string) ?? '');
+  const [message, setMessage] = useState((params.message as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const chatRef = useRef<HTMLInputElement>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const lastFocused = useRef<'chat_id' | 'message'>('message');
+
+  const handleChatChange = (v: string) => {
+    setChatId(v);
+    onChange({ ...paramsRef.current, chat_id: v });
+  };
+  const handleMessageChange = (v: string) => {
+    setMessage(v);
+    onChange({ ...paramsRef.current, message: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const field = lastFocused.current;
+    const el = field === 'chat_id' ? chatRef.current : messageRef.current;
+    if (!el) return;
+    const current = field === 'chat_id' ? chatId : message;
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    if (field === 'chat_id') handleChatChange(next);
+    else handleMessageChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const parseMode = (params.parse_mode as string) ?? 'none';
+  const [chatTouched, setChatTouched] = useState(false);
+  const [messageTouched, setMessageTouched] = useState(false);
+  const chatEmpty = chatId.trim().length === 0;
+  const messageEmpty = message.trim().length === 0;
+  const showChatError = chatTouched && chatEmpty;
+  const showMessageError = messageTouched && messageEmpty;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <FieldLabel text="Chat ID" />
+        <input
+          ref={chatRef}
+          value={chatId}
+          onChange={(e) => handleChatChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'chat_id'; }}
+          onBlur={() => setChatTouched(true)}
+          placeholder="123456789  or  {{chat_id}}"
+          aria-invalid={showChatError}
+          className={clsx(inputCls, showChatError && 'border-red-500/60 focus:border-red-500/60')}
+        />
+        {showChatError ? (
+          <FieldError text="Required — must be in the bot's allowlist." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Numeric Telegram chat id. Use <code>{'{{chat_id}}'}</code> when replying to the trigger sender.
+            Must be in the bot's allowlist.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <FieldLabel text="Message" />
+        <textarea
+          ref={messageRef}
+          value={message}
+          onChange={(e) => handleMessageChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'message'; }}
+          onBlur={() => setMessageTouched(true)}
+          rows={4}
+          placeholder="Hello {{sender_username}}! Standup at 10am."
+          aria-invalid={showMessageError}
+          className={clsx(textareaCls, showMessageError && 'border-red-500/60 focus:border-red-500/60')}
+        />
+        {showMessageError ? (
+          <FieldError text="Required — empty messages aren't sent." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Use <code>{'{{step_name.field}}'}</code> to insert outputs from earlier steps.
+          </p>
+        )}
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+
+      <div>
+        <FieldLabel text="Format" />
+        <select
+          value={parseMode}
+          onChange={(e) => onChange({ ...paramsRef.current, parse_mode: e.target.value })}
+          className={selectCls}
+        >
+          <option value="none">Plain text</option>
+          <option value="HTML">HTML — &lt;b&gt;bold&lt;/b&gt;, &lt;i&gt;italic&lt;/i&gt;, &lt;a&gt;</option>
+          <option value="MarkdownV2">MarkdownV2 — *bold*, _italic_, [link](url)</option>
+        </select>
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Telegram applies formatting markup. Special characters in MarkdownV2 must be escaped.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function StubParams({ name }: { name: string }) {
   return (
     <div className="rounded-lg bg-bg-base border border-border-subtle p-3">
@@ -3482,6 +3598,7 @@ function ParamForm({
     // Output
     case 'send_message': return <SendMessageParams params={params} onChange={onChange} />;
     case 'send_notification': return <NotificationParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'send_telegram_message': return <SendTelegramParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
 
     default:
       return <StubParams name={ACTION_META[actionType]?.name ?? actionType} />;

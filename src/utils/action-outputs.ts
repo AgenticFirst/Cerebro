@@ -76,6 +76,24 @@ export const ACTION_OUTPUTS: Record<string, OutputField[]> = {
     { field: 'headers', label: 'Request headers' },
     { field: 'received_at', label: 'Received at' },
   ],
+  send_telegram_message: [
+    { field: 'message_id', primary: true, label: 'Sent message id' },
+    { field: 'sent', label: 'Sent?' },
+    { field: 'chat_id', label: 'Chat id' },
+    { field: 'error', label: 'Error (if any)' },
+  ],
+  // Triggers — surfaced so the chip menu shows their payload fields when a
+  // step depends on `__trigger__`. The trigger node itself never executes;
+  // the bridge seeds these fields into the synthetic trigger step state.
+  trigger_telegram_message: [
+    { field: 'message_text', primary: true, label: 'Message text' },
+    { field: 'chat_id', label: 'Chat id' },
+    { field: 'sender_username', label: 'Sender @username' },
+    { field: 'sender_id', label: 'Sender user id' },
+    { field: 'attachment_paths', label: 'Attachment paths' },
+    { field: 'received_at', label: 'Received at' },
+    { field: 'conversation_id', label: 'Conversation id' },
+  ],
 };
 
 /** The pre-wired field for auto-connect. */
@@ -108,7 +126,7 @@ export function sanitizeVarName(name: string): string {
 export function uniqueVarName(
   base: string,
   existing: RoutineStepData['inputMappings'],
-  stepIdForFallback: string = '',
+  stepIdForFallback = '',
 ): string {
   const mappings = existing ?? [];
   let candidate = base;

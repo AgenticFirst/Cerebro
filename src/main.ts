@@ -313,8 +313,11 @@ async function startPythonBackend(): Promise<void> {
     agentRuntime,
     dataDir,
     engineEventBus,
+    executionEngine,
   });
   registerChannelSender('telegram', telegramBridge);
+  // Make the bridge available to the send_telegram_message engine action.
+  executionEngine.setTelegramChannel(telegramBridge);
   telegramBridge.start().catch((err) => {
     console.error('[Cerebro] Telegram bridge start failed:', err);
   });
@@ -342,6 +345,7 @@ async function startPythonBackend(): Promise<void> {
   if (windows.length > 0) {
     routineScheduler.setWebContents(windows[0].webContents);
     voiceSession.setWebContents(windows[0].webContents);
+    telegramBridge?.setWebContents(windows[0].webContents);
   }
 
   // Initial scheduler sync + start periodic re-sync
@@ -1286,9 +1290,35 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.TELEGRAM_STATUS, async () => {
     if (!telegramBridge) {
-      return { running: false, lastPollAt: null, lastError: 'Bridge not initialized', unknownLastAttempt: {} };
+      return {
+        running: false,
+        lastPollAt: null,
+        lastError: 'Bridge not initialized',
+        unknownLastAttempt: {},
+        botUsername: null,
+        hasToken: false,
+        tokenBackend: 'plaintext-fallback' as const,
+      };
     }
     return telegramBridge.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TELEGRAM_RELOAD, async () => {
+    if (!telegramBridge) return { ok: false, error: 'Bridge not initialized' };
+    return telegramBridge.reloadSettings();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TELEGRAM_SET_TOKEN, async (_event, token: string) => {
+    if (!telegramBridge) return { ok: false, error: 'Bridge not initialized' };
+    if (typeof token !== 'string' || !token.trim()) {
+      return { ok: false, error: 'Empty token' };
+    }
+    return telegramBridge.setToken(token.trim());
+  });
+
+  ipcMain.handle(IPC_CHANNELS.TELEGRAM_CLEAR_TOKEN, async () => {
+    if (!telegramBridge) return { ok: false, error: 'Bridge not initialized' };
+    return telegramBridge.setToken(null);
   });
 }
 
@@ -1329,6 +1359,9 @@ const createWindow = () => {
   }
   if (voiceSession) {
     voiceSession.setWebContents(mainWindow.webContents);
+  }
+  if (telegramBridge) {
+    telegramBridge.setWebContents(mainWindow.webContents);
   }
 
   // Open DevTools in dev mode — but never in E2E mode, where an extra

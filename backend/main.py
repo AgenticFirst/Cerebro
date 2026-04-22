@@ -112,10 +112,14 @@ class ConversationCreate(BaseModel):
     id: str
     title: str = "New Chat"
     expert_id: str | None = None
+    source: str = "cerebro"
+    external_chat_id: str | None = None
 
 
 class ConversationUpdate(BaseModel):
     title: str | None = None
+    source: str | None = None
+    external_chat_id: str | None = None
 
 
 class MessageCreate(BaseModel):
@@ -148,6 +152,8 @@ class ConversationResponse(BaseModel):
     id: str
     title: str
     expert_id: str | None = None
+    source: str = "cerebro"
+    external_chat_id: str | None = None
     created_at: datetime
     updated_at: datetime
     messages: list[MessageResponse]
@@ -223,7 +229,13 @@ def create_conversation(body: ConversationCreate, db=Depends(get_db)):
     existing = db.get(Conversation, body.id)
     if existing:
         raise HTTPException(status_code=409, detail="Conversation already exists")
-    conv = Conversation(id=body.id, title=body.title, expert_id=body.expert_id)
+    conv = Conversation(
+        id=body.id,
+        title=body.title,
+        expert_id=body.expert_id,
+        source=body.source,
+        external_chat_id=body.external_chat_id,
+    )
     db.add(conv)
     db.commit()
     db.refresh(conv)
@@ -270,11 +282,22 @@ def patch_conversation(conv_id: str, body: ConversationUpdate, db=Depends(get_db
     conv = db.get(Conversation, conv_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    touched = False
     if body.title is not None:
         title = body.title.strip()
         if not title:
             raise HTTPException(status_code=400, detail="Title cannot be empty")
         conv.title = title[:200]
+        touched = True
+    if body.source is not None:
+        if body.source not in ("cerebro", "telegram"):
+            raise HTTPException(status_code=400, detail="Invalid source")
+        conv.source = body.source
+        touched = True
+    if body.external_chat_id is not None:
+        conv.external_chat_id = body.external_chat_id[:64] or None
+        touched = True
+    if touched:
         conv.updated_at = models._utcnow()
     db.commit()
     db.refresh(conv)

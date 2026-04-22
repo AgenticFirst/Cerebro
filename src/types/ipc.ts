@@ -86,6 +86,13 @@ export const IPC_CHANNELS = {
   TELEGRAM_ENABLE: 'telegram:enable',
   TELEGRAM_DISABLE: 'telegram:disable',
   TELEGRAM_STATUS: 'telegram:status',
+  TELEGRAM_RELOAD: 'telegram:reload',
+  TELEGRAM_SET_TOKEN: 'telegram:set-token',
+  TELEGRAM_CLEAR_TOKEN: 'telegram:clear-token',
+  /** Pushed from main → renderer whenever the bridge persists a message into a
+   *  conversation (inbound user message OR final assistant reply), so the chat
+   *  UI can refresh that conversation in real time. */
+  TELEGRAM_CONVERSATION_UPDATED: 'telegram:conversation-updated',
 
   // Files (managed buckets at <userData>/files)
   FILES_PICK_FILES: 'files:pick-files',
@@ -289,6 +296,19 @@ export interface TelegramStatusResponse {
   lastPollAt: number | null;
   lastError: string | null;
   unknownLastAttempt: Record<string, number>;
+  botUsername: string | null;
+  /** True when a bot token is configured (without revealing the value). */
+  hasToken: boolean;
+  /** How the token is encrypted at rest. 'os-keychain' on macOS/Windows and
+   *  Linux with libsecret; 'plaintext-fallback' otherwise. */
+  tokenBackend: 'os-keychain' | 'plaintext-fallback';
+}
+
+export interface TelegramConversationUpdatedEvent {
+  conversationId: string;
+  /** 'created' when a new conversation is being established (first user message
+   *  in a chat), 'message' for any subsequent persisted message. */
+  kind: 'created' | 'message';
 }
 
 export interface TelegramAPI {
@@ -296,6 +316,11 @@ export interface TelegramAPI {
   enable(): Promise<{ ok: boolean; error?: string }>;
   disable(): Promise<void>;
   status(): Promise<TelegramStatusResponse>;
+  reload(): Promise<{ ok: boolean; error?: string }>;
+  setToken(token: string): Promise<{ ok: boolean; error?: string }>;
+  clearToken(): Promise<{ ok: boolean; error?: string }>;
+  /** Returns an unsubscribe function. */
+  onConversationUpdated(callback: (event: TelegramConversationUpdatedEvent) => void): () => void;
 }
 
 // --- Files (managed buckets) ---

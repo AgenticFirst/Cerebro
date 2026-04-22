@@ -168,9 +168,11 @@ const es: TranslationKeys = {
     scheduled: 'Programado',
     webhook: 'Webhook',
     chat: 'Chat',
+    telegramMessage: 'Mensaje de Telegram',
     scheduleTrigger: 'Disparador programado',
     manualTrigger: 'Disparador manual',
     webhookTrigger: 'Disparador de webhook',
+    telegramMessageTrigger: 'Disparador de mensaje de Telegram',
     appEventTrigger: 'Disparador de evento de app',
     trigger: 'Disparador',
     noScheduleSet: 'Sin programaci\u00f3n definida',
@@ -596,6 +598,7 @@ const es: TranslationKeys = {
     triggerManualDesc: 'Ejecutar bajo demanda',
     triggerScheduledDesc: 'Ejecutar con programaci\u00f3n',
     triggerWebhookDesc: 'Ejecutar v\u00eda webhook',
+    triggerTelegramDesc: 'Ejecutar cuando llega un mensaje de Telegram',
     schedule: 'Programaci\u00f3n',
     createRoutine: 'Crear rutina',
   },
@@ -641,6 +644,7 @@ const es: TranslationKeys = {
     triggerManual: 'Iniciar esta rutina con un clic',
     triggerScheduled: 'Ejecutar esta rutina en un horario',
     triggerWebhook: 'Iniciar esta rutina desde una llamada HTTP externa',
+    triggerTelegram: 'Iniciar esta rutina cuando un mensaje de Telegram coincida con el filtro',
     cancel: 'Cancelar sin crear',
     create: 'Crear esta rutina y abrir el editor',
     addAction: 'Agregar un nuevo paso al lienzo',
@@ -890,10 +894,71 @@ const es: TranslationKeys = {
       'Conecta plataformas de mensajer\u00eda para interactuar con Cerebro de forma remota.',
     telegram: 'Telegram',
     telegramDesc: 'Env\u00eda mensajes a Cerebro a trav\u00e9s del bot de Telegram',
+    telegramDescConnected: 'Conectado como @{{username}}',
     whatsapp: 'WhatsApp',
     whatsappDesc: 'Chatea con Cerebro en WhatsApp',
     email: 'Correo electr\u00f3nico',
     emailDesc: 'Interact\u00faa con Cerebro v\u00eda correo electr\u00f3nico',
+    connect: 'Conectar',
+    setupTour: 'Tour de configuraci\u00f3n',
+    statusConfigured: 'Configurado',
+  },
+
+  // ── Modal de conexión de Telegram ───────────────────────
+  telegramConnect: {
+    stepLabel: 'Paso {{current}} de {{total}}',
+    back: 'Atr\u00e1s',
+    continue: 'Continuar',
+    skip: 'Omitir',
+    enableAndFinish: 'Activar y finalizar',
+    enabling: 'Activando\u2026',
+    enableFailed: 'No se pudo iniciar el puente.',
+    verifiedAs: 'Verificado como @{{username}}',
+    allowlistCount_one: '{{count}} usuario',
+    allowlistCount_other: '{{count}} usuarios',
+    storageLabel: 'Almacenamiento',
+    storageKeychain: 'Llavero del SO',
+    storagePlaintext: 'Texto plano (respaldo)',
+
+    step1Title: 'Crea tu bot',
+    step1Body:
+      'Los bots de Telegram se crean con @BotFather, el bot oficial para administrar bots. S\u00f3lo toma un minuto.',
+    step1Item1: 'Abre Telegram e inicia un chat con @BotFather.',
+    step1Item2: 'Env\u00eda /newbot y elige un nombre p\u00fablico.',
+    step1Item3: 'Elige un nombre de usuario que termine en \u00abbot\u00bb (p. ej. cerebro_helper_bot).',
+    step1Item4: 'Copia el token que BotFather te env\u00ede \u2014 se ve as\u00ed: 123456789:AA\u2026',
+    openBotFather: 'Abrir @BotFather en Telegram',
+
+    step2Title: 'Pega tu token',
+    step2Body:
+      'Pega el token de BotFather. Cerebro lo verificar\u00e1 con Telegram y lo guardar\u00e1 cifrado en el llavero de tu sistema operativo.',
+    step2AlreadyConfiguredTitle: 'Bot ya conectado',
+    step2AlreadyConfiguredBody:
+      'Ya hay un token guardado para este bot \u2014 no hace falta volver a pegarlo. Contin\u00faa al siguiente paso, o reempl\u00e1zalo si has creado un bot nuevo.',
+
+    step3Title: '\u00bfQui\u00e9n puede chatear con el bot?',
+    step3Body:
+      'S\u00f3lo los IDs de Telegram que listes aqu\u00ed pueden enviar mensajes a Cerebro. Esto evita que extra\u00f1os entren aunque se filtre el nombre del bot.',
+    step3HintTitle: 'C\u00f3mo encontrar tu ID de usuario de Telegram',
+    step3HintOption1Label: 'Lo m\u00e1s r\u00e1pido',
+    step3HintOption1:
+      'Abre Telegram e inicia un chat con @userinfobot. Te responder\u00e1 al instante con tu ID num\u00e9rico \u2014 c\u00f3pialo y p\u00e9galo arriba.',
+    step3HintOption2Label: 'Usa tu propio bot',
+    step3HintOption2:
+      'Omite este paso y termina la configuraci\u00f3n. Cerebro iniciar\u00e1 el bot en modo de descubrimiento \u2014 env\u00edale un mensaje desde Telegram y te responder\u00e1 con tu ID num\u00e9rico. Vuelve aqu\u00ed para a\u00f1adirlo.',
+    openUserInfoBot: 'Abrir @userinfobot',
+
+    step4Title: 'Listo para empezar',
+    step4Body:
+      'Activa el puente y Cerebro empezar\u00e1 a escuchar mensajes. Puedes cambiar cualquiera de estos ajustes m\u00e1s tarde desde la tarjeta de Telegram.',
+    step4EmptyAllowlistTitle: 'A\u00f1ade un ID de usuario antes de activar',
+    step4EmptyAllowlistBody:
+      'El puente no puede iniciarse sin al menos un ID de usuario permitido. Guarda tu token ahora y termina la configuraci\u00f3n despu\u00e9s desde la tarjeta de Telegram, o vuelve atr\u00e1s para a\u00f1adir un ID y activarlo de una vez.',
+    saveAndClose: 'Guardar y cerrar',
+    step4DiscoveryTitle: 'Iniciando en modo de descubrimiento',
+    step4DiscoveryBody:
+      'A\u00fan no hay IDs permitidos \u2014 no pasa nada. El bot solo responder\u00e1 con el ID num\u00e9rico del remitente y nada m\u00e1s. Env\u00eda un mensaje a tu bot desde Telegram, copia el ID que te devuelve y a\u00f1\u00e1delo en la tarjeta de Telegram para desbloquear conversaciones reales.',
+    enableDiscoveryMode: 'Activar en modo descubrimiento',
   },
 
   // ── Secci\u00f3n de Telegram ─────────────────────────────────────
@@ -908,21 +973,32 @@ const es: TranslationKeys = {
     verified: 'Verificado',
     allowlistLabel: 'IDs de usuario permitidos',
     allowlistHelp: 'Solo estos IDs de usuario de Telegram pueden chatear con el bot. Separa varios IDs con comas.',
+    allowlistHintOption2:
+      'Activa el puente abajo \u2014 incluso sin IDs funciona en modo descubrimiento. Env\u00eda cualquier mensaje a tu bot desde Telegram y te responder\u00e1 con tu ID num\u00e9rico, que podr\u00e1s pegar arriba.',
     allowlistPlaceholder: '123456789, 987654321',
     forwardAllLabel: 'Reenviar todas las aprobaciones a Telegram',
     forwardAllHelp: 'Desactivado por defecto: solo se env\u00edan las aprobaciones de ejecuciones iniciadas desde Telegram. Act\u00edvalo si tambi\u00e9n quieres recibir en el tel\u00e9fono las aprobaciones iniciadas desde el escritorio.',
     enableLabel: 'Activar puente',
-    enableDisabledHint: 'Verifica el token y agrega al menos un ID de usuario para activar.',
+    enableDisabledHint: 'Verifica el token para activar el puente.',
+    discoveryModeHint:
+      'A\u00fan no hay IDs permitidos \u2014 el bot funcionar\u00e1 en modo descubrimiento y solo responder\u00e1 con los IDs de los remitentes. Env\u00edale un mensaje desde Telegram para conocer el tuyo y a\u00f1\u00e1delo arriba.',
     statusRunning: 'En ejecuci\u00f3n',
     statusStopped: 'Detenido',
     lastPoll: '\u00daltimo contacto',
     lastError: '\u00daltimo error',
+    botLabel: 'Bot',
     never: 'nunca',
     howToTitle: 'C\u00f3mo obtener tu ID de usuario de Telegram',
     howToSteps:
       '1. Abre Telegram y busca tu bot por su nombre de usuario.\n2. Pulsa Iniciar y env\u00eda cualquier mensaje.\n3. El bot responde con un mensaje que contiene tu ID num\u00e9rico.\n4. Pega ese n\u00famero en la lista de permitidos de arriba.',
-    warningPlaintext:
-      'Los tokens se almacenan localmente en tu base de datos en texto plano. Si tu m\u00e1quina se ve comprometida, revoca el token con @BotFather y crea uno nuevo.',
+    storageEncrypted:
+      'El token del bot se cifra en reposo con el llavero de tu sistema operativo (Keychain en macOS, DPAPI en Windows, libsecret en Linux). Cerebro solo lo descifra dentro del proceso principal al enviar solicitudes.',
+    storagePlaintextFallback:
+      'El llavero de tu sistema operativo no está disponible, así que el token se guarda en texto plano en el disco. Instala libsecret (Linux) o ejecuta como sesión de usuario normal para activar el almacenamiento cifrado.',
+    tokenStored: 'Token guardado de forma segura',
+    replaceToken: 'Reemplazar',
+    clearToken: 'Borrar',
+    cancel: 'Cancelar',
     save: 'Guardar',
     saved: 'Guardado',
   },

@@ -29,6 +29,11 @@ class Conversation(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+    # Origin channel of the conversation. 'cerebro' = standard in-app chat,
+    # 'telegram' = inbound from the Telegram bridge (external_chat_id is set).
+    # Future: 'slack', 'sms', etc.
+    source: Mapped[str] = mapped_column(String(20), default="cerebro")
+    external_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation",

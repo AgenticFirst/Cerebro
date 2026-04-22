@@ -32,6 +32,9 @@ export interface ExecutorContext {
   signal: AbortSignal;
   onStepUpdate?: (stepId: string, update: StepPersistenceUpdate) => void;
   onApprovalRequired?: (step: StepDefinition) => Promise<boolean>;
+  /** Trigger payload made available to steps via the synthetic '__trigger__'
+   *  source step (referenced from inputMappings.sourceStepId). */
+  triggerPayload?: Record<string, unknown>;
 }
 
 type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
@@ -369,6 +372,20 @@ export class DAGExecutor {
   private resolveInputMappings(step: StepDefinition): Record<string, unknown> {
     const wiredInputs: Record<string, unknown> = {};
 
+    // Splat trigger payload fields first so explicit input mappings always win
+    // on key collisions. This lets steps reference `{{chat_id}}`,
+    // `{{message_text}}`, etc. without needing the user to draw a wire from
+    // the trigger node — which the trigger panel UI doesn't expose. Only
+    // primitives are splatted to avoid leaking deep structures into templates.
+    if (this.ctx.triggerPayload) {
+      for (const [key, value] of Object.entries(this.ctx.triggerPayload)) {
+        const t = typeof value;
+        if (value === null || t === 'string' || t === 'number' || t === 'boolean') {
+          wiredInputs[key] = value;
+        }
+      }
+    }
+
     for (const mapping of step.inputMappings) {
       const sourceState = this.stepStates.get(mapping.sourceStepId);
       if (!sourceState?.output) {
@@ -386,9 +403,25 @@ export class DAGExecutor {
 
   /** Build the in-degree and successor maps from the DAG. */
   private buildGraph(): void {
+    // Seed a synthetic '__trigger__' step state so steps can wire its fields
+    // via inputMappings (sourceStepId='__trigger__'). Trigger payloads
+    // typically come from cron, webhooks, or inbound chat platform events.
+    const triggerActive = !!this.ctx.triggerPayload;
+    if (triggerActive) {
+      this.stepStates.set('__trigger__', {
+        status: 'completed',
+        output: { data: this.ctx.triggerPayload },
+      });
+    }
+
     for (const step of this.dag.steps) {
       this.stepStates.set(step.id, { status: 'pending' });
-      this.inDegree.set(step.id, step.dependsOn.length);
+      // Trigger deps are pre-satisfied (the synthetic node has no execution),
+      // so don't count them toward this step's in-degree.
+      const realDepCount = triggerActive
+        ? step.dependsOn.filter((id) => id !== '__trigger__').length
+        : step.dependsOn.length;
+      this.inDegree.set(step.id, realDepCount);
       this.successors.set(step.id, []);
     }
 

@@ -69,6 +69,11 @@ export interface EngineRunRequest {
   /** Optional reference to the routine definition. */
   routineId?: string;
 
-  /** How this run was triggered: 'manual' | 'schedule' | 'chat'. */
+  /** How this run was triggered: 'manual' | 'schedule' | 'chat' | 'telegram_message'. */
   triggerSource?: string;
+
+  /** Payload from the trigger event (e.g. inbound Telegram message fields).
+   *  Made available to steps as a synthetic '__trigger__' step output, so
+   *  inputMappings with sourceStepId='__trigger__' can read individual fields. */
+  triggerPayload?: Record<string, unknown>;
 }

@@ -15,12 +15,13 @@ export async function loadSetting<T>(key: string): Promise<T | null> {
   return null;
 }
 
-export function saveSetting(key: string, value: unknown): void {
-  window.cerebro
+export function saveSetting(key: string, value: unknown): Promise<void> {
+  return window.cerebro
     .invoke({
       method: 'PUT',
       path: `/settings/${key}`,
       body: { value: JSON.stringify(value) },
     })
-    .catch(console.error);
+    .then(() => undefined)
+    .catch((err) => { console.error(err); });
 }
