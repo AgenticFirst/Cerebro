@@ -3537,6 +3537,218 @@ function SendTelegramParams({ params, onChange, step, sourceSteps, onAddMapping 
   );
 }
 
+function SendWhatsAppParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const [phone, setPhone] = useState((params.phone_number as string) ?? '');
+  const [message, setMessage] = useState((params.message as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const lastFocused = useRef<'phone_number' | 'message'>('message');
+
+  const handlePhoneChange = (v: string) => {
+    setPhone(v);
+    onChange({ ...paramsRef.current, phone_number: v });
+  };
+  const handleMessageChange = (v: string) => {
+    setMessage(v);
+    onChange({ ...paramsRef.current, message: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const field = lastFocused.current;
+    const el = field === 'phone_number' ? phoneRef.current : messageRef.current;
+    if (!el) return;
+    const current = field === 'phone_number' ? phone : message;
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    if (field === 'phone_number') handlePhoneChange(next);
+    else handleMessageChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <FieldLabel text="Phone number" />
+        <input
+          ref={phoneRef}
+          value={phone}
+          onChange={(e) => handlePhoneChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'phone_number'; }}
+          placeholder="+14155552671  or  {{__trigger__.phone_number}}"
+          className={inputCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          E.164-formatted customer phone. Use <code>{'{{__trigger__.phone_number}}'}</code> to reply to whoever messaged the routine. Must be in the WhatsApp allowlist.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="Message" />
+        <textarea
+          ref={messageRef}
+          value={message}
+          onChange={(e) => handleMessageChange(e.target.value)}
+          onFocus={() => { lastFocused.current = 'message'; }}
+          rows={4}
+          placeholder="Hi {{customer_name}}! Ticket #{{ticket_id}} is open."
+          className={textareaCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Use <code>{'{{step_name.field}}'}</code> to insert outputs from earlier steps.
+        </p>
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+    </div>
+  );
+}
+
+function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  const subject = (params.subject as string) ?? '';
+  const content = (params.content as string) ?? '';
+  const pipeline = (params.pipeline as string) ?? '';
+  const stage = (params.stage as string) ?? '';
+  const priority = (params.priority as string) ?? '';
+  const contactId = (params.contact_id as string) ?? '';
+
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+
+  const set = (patch: Record<string, unknown>) => onChange({ ...paramsRef.current, ...patch });
+
+  const insertAtCursor = (token: string) => {
+    const el = contentRef.current;
+    if (!el) return;
+    const current = content;
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    set({ content: next });
+    requestAnimationFrame(() => { el.focus(); const pos = start + token.length; el.setSelectionRange(pos, pos); });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <FieldLabel text="Subject" />
+        <input
+          value={subject}
+          onChange={(e) => set({ subject: e.target.value })}
+          placeholder="{{extract_fields.issue_summary}}"
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <FieldLabel text="Content (body)" />
+        <textarea
+          ref={contentRef}
+          value={content}
+          onChange={(e) => set({ content: e.target.value })}
+          rows={4}
+          placeholder="Customer: {{customer_name}}. Issue: {{issue_summary}}."
+          className={textareaCls}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <FieldLabel text="Pipeline id (optional)" />
+          <input value={pipeline} onChange={(e) => set({ pipeline: e.target.value })} placeholder="uses default" className={inputCls} />
+        </div>
+        <div>
+          <FieldLabel text="Stage id (optional)" />
+          <input value={stage} onChange={(e) => set({ stage: e.target.value })} placeholder="uses default" className={inputCls} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <FieldLabel text="Priority" />
+          <select value={priority} onChange={(e) => set({ priority: e.target.value })} className={selectCls}>
+            <option value="">—</option>
+            <option value="LOW">LOW</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="HIGH">HIGH</option>
+          </select>
+        </div>
+        <div>
+          <FieldLabel text="Contact id (optional)" />
+          <input value={contactId} onChange={(e) => set({ contact_id: e.target.value })} placeholder="{{upsert_contact.contact_id}}" className={inputCls} />
+        </div>
+      </div>
+      <p className="text-[11px] text-text-tertiary">
+        Pipeline + stage ids fall back to the defaults you set on the HubSpot integration card when left blank.
+      </p>
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+    </div>
+  );
+}
+
+function HubSpotUpsertContactParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  const email = (params.email as string) ?? '';
+  const phone = (params.phone as string) ?? '';
+  const firstname = (params.firstname as string) ?? '';
+  const lastname = (params.lastname as string) ?? '';
+  const lifecyclestage = (params.lifecyclestage as string) ?? '';
+  const set = (patch: Record<string, unknown>) => onChange({ ...paramsRef.current, ...patch });
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <FieldLabel text="Email" />
+          <input value={email} onChange={(e) => set({ email: e.target.value })} placeholder="{{extract_fields.customer_email}}" className={inputCls} />
+        </div>
+        <div>
+          <FieldLabel text="Phone" />
+          <input value={phone} onChange={(e) => set({ phone: e.target.value })} placeholder="{{__trigger__.phone_number}}" className={inputCls} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <FieldLabel text="First name" />
+          <input value={firstname} onChange={(e) => set({ firstname: e.target.value })} placeholder="{{customer_name}}" className={inputCls} />
+        </div>
+        <div>
+          <FieldLabel text="Last name" />
+          <input value={lastname} onChange={(e) => set({ lastname: e.target.value })} className={inputCls} />
+        </div>
+      </div>
+      <div>
+        <FieldLabel text="Lifecycle stage" />
+        <input value={lifecyclestage} onChange={(e) => set({ lifecyclestage: e.target.value })} placeholder="customer" className={inputCls} />
+      </div>
+      <p className="text-[11px] text-text-tertiary">
+        At least one of email or phone is required. The action searches by that value and updates if a match exists, creates otherwise.
+      </p>
+      <AvailableVariablesSection
+        step={step}
+        onInsert={() => { /* nothing focused */ }}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+    </div>
+  );
+}
+
 function StubParams({ name }: { name: string }) {
   return (
     <div className="rounded-lg bg-bg-base border border-border-subtle p-3">
@@ -3599,6 +3811,11 @@ function ParamForm({
     case 'send_message': return <SendMessageParams params={params} onChange={onChange} />;
     case 'send_notification': return <NotificationParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
     case 'send_telegram_message': return <SendTelegramParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'send_whatsapp_message': return <SendWhatsAppParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+
+    // CRM
+    case 'hubspot_create_ticket': return <HubSpotCreateTicketParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'hubspot_upsert_contact': return <HubSpotUpsertContactParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
 
     default:
       return <StubParams name={ACTION_META[actionType]?.name ?? actionType} />;

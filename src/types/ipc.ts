@@ -94,6 +94,25 @@ export const IPC_CHANNELS = {
    *  UI can refresh that conversation in real time. */
   TELEGRAM_CONVERSATION_UPDATED: 'telegram:conversation-updated',
 
+  // WhatsApp bridge (Baileys / WhatsApp Web)
+  WHATSAPP_START_PAIRING: 'whatsapp:start-pairing',
+  WHATSAPP_CANCEL_PAIRING: 'whatsapp:cancel-pairing',
+  WHATSAPP_CLEAR_SESSION: 'whatsapp:clear-session',
+  WHATSAPP_STATUS: 'whatsapp:status',
+  WHATSAPP_SET_ALLOWLIST: 'whatsapp:set-allowlist',
+  WHATSAPP_ENABLE: 'whatsapp:enable',
+  WHATSAPP_DISABLE: 'whatsapp:disable',
+  WHATSAPP_STATUS_CHANGED: 'whatsapp:status-changed',
+  WHATSAPP_CONVERSATION_UPDATED: 'whatsapp:conversation-updated',
+
+  // HubSpot CRM
+  HUBSPOT_VERIFY: 'hubspot:verify',
+  HUBSPOT_LIST_PIPELINES: 'hubspot:list-pipelines',
+  HUBSPOT_STATUS: 'hubspot:status',
+  HUBSPOT_SET_TOKEN: 'hubspot:set-token',
+  HUBSPOT_CLEAR_TOKEN: 'hubspot:clear-token',
+  HUBSPOT_SET_DEFAULTS: 'hubspot:set-defaults',
+
   // Files (managed buckets at <userData>/files)
   FILES_PICK_FILES: 'files:pick-files',
   FILES_IMPORT_TO_BUCKET: 'files:import-to-bucket',
@@ -390,7 +409,70 @@ export interface CerebroAPI {
   shell: ShellAPI;
   sandbox: SandboxAPI;
   telegram: TelegramAPI;
+  whatsapp: WhatsAppAPI;
+  hubspot: HubSpotAPI;
   files: FilesAPI;
+}
+
+// --- WhatsApp bridge (Baileys) ---
+
+export interface WhatsAppStatusResponse {
+  state: 'off' | 'pairing' | 'connecting' | 'connected' | 'error';
+  phoneNumber: string | null;
+  pushName: string | null;
+  qr: string | null;
+  lastError: string | null;
+  lastConnectedAt: number | null;
+  credsBackend: 'os-keychain' | 'plaintext-fallback';
+  hasCreds: boolean;
+}
+
+export interface WhatsAppConversationUpdatedEvent {
+  conversationId: string;
+  kind: 'created' | 'message';
+}
+
+export interface WhatsAppAPI {
+  startPairing(): Promise<{ ok: boolean; error?: string }>;
+  cancelPairing(): Promise<void>;
+  clearSession(): Promise<{ ok: boolean; error?: string }>;
+  status(): Promise<WhatsAppStatusResponse>;
+  setAllowlist(list: string[]): Promise<{ ok: boolean; error?: string }>;
+  enable(): Promise<{ ok: boolean; error?: string }>;
+  disable(): Promise<void>;
+  onStatusChanged(callback: (status: WhatsAppStatusResponse) => void): () => void;
+  onConversationUpdated(callback: (event: WhatsAppConversationUpdatedEvent) => void): () => void;
+}
+
+// --- HubSpot CRM ---
+
+export interface HubSpotPipelineSummary {
+  id: string;
+  label: string;
+  stages: Array<{ id: string; label: string; displayOrder: number }>;
+}
+
+export interface HubSpotStatusResponse {
+  hasToken: boolean;
+  portalId: string | null;
+  defaultPipeline: string | null;
+  defaultStage: string | null;
+  tokenBackend: 'os-keychain' | 'plaintext-fallback';
+}
+
+export interface HubSpotVerifyResult {
+  ok: boolean;
+  portalId?: string | null;
+  error?: string;
+}
+
+export interface HubSpotAPI {
+  verify(token: string): Promise<HubSpotVerifyResult>;
+  listPipelines(): Promise<{ ok: boolean; pipelines?: HubSpotPipelineSummary[]; error?: string }>;
+  status(): Promise<HubSpotStatusResponse>;
+  setToken(token: string): Promise<{ ok: boolean; error?: string }>;
+  clearToken(): Promise<{ ok: boolean; error?: string }>;
+  setDefaults(defaults: { pipeline: string | null; stage: string | null }): Promise<{ ok: boolean; error?: string }>;
 }
 
 export interface ShellStatResult {

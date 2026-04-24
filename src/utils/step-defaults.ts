@@ -37,15 +37,19 @@ import {
   Terminal,
   Webhook,
   FileCode,
+  Ticket,
+  UserPlus,
   type LucideIcon,
 } from 'lucide-react';
-import { TelegramIcon as TelegramBrandIcon } from '../components/icons/BrandIcons';
+import { TelegramIcon as TelegramBrandIcon, WhatsAppIcon as WhatsAppBrandIcon, HubSpotIcon as HubSpotBrandIcon } from '../components/icons/BrandIcons';
 import type { RoutineStepData } from './dag-flow-mapping';
 import { DEFAULT_CLAUDE_MODEL } from './claude-models';
 
 // lucide-react icons are functional components with the same shape as our
 // brand SVGs. Cast once so ACTION_META can mix them without per-entry casts.
 const TelegramIcon = TelegramBrandIcon as unknown as LucideIcon;
+const WhatsAppIcon = WhatsAppBrandIcon as unknown as LucideIcon;
+const HubSpotIcon = HubSpotBrandIcon as unknown as LucideIcon;
 
 // ── Action Categories ─────────────────────────────────────────
 
@@ -134,6 +138,16 @@ export const ACTION_META: Record<string, ActionMeta> = {
     category: 'triggers',
     isAvailable: true,
     keywords: ['telegram', 'chat', 'message', 'inbound', 'trigger'],
+  },
+  trigger_whatsapp_message: {
+    name: 'WhatsApp Message',
+    icon: WhatsAppIcon,
+    color: 'teal',
+    colorHex: TRIGGER_TEAL,
+    description: 'Run when a WhatsApp message arrives',
+    category: 'triggers',
+    isAvailable: true,
+    keywords: ['whatsapp', 'chat', 'message', 'inbound', 'support', 'trigger'],
   },
   trigger_app_event: {
     name: 'App Event',
@@ -281,15 +295,25 @@ export const ACTION_META: Record<string, ActionMeta> = {
     isAvailable: false,
     keywords: ['slack', 'chat', 'channel', 'message'],
   },
-  integration_whatsapp: {
-    name: 'WhatsApp',
-    icon: MessageCircle,
+  hubspot_create_ticket: {
+    name: 'HubSpot: Create Ticket',
+    icon: Ticket,
     color: 'amber',
     colorHex: '#f59e0b',
-    description: 'Send messages',
+    description: 'Open a support ticket in HubSpot Service Hub',
     category: 'integrations',
-    isAvailable: false,
-    keywords: ['whatsapp', 'message', 'phone', 'text'],
+    isAvailable: true,
+    keywords: ['hubspot', 'ticket', 'support', 'crm', 'service'],
+  },
+  hubspot_upsert_contact: {
+    name: 'HubSpot: Upsert Contact',
+    icon: UserPlus,
+    color: 'amber',
+    colorHex: '#f59e0b',
+    description: 'Find or create a HubSpot contact',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['hubspot', 'contact', 'customer', 'crm', 'upsert'],
   },
   integration_strava: {
     name: 'Strava',
@@ -444,6 +468,16 @@ export const ACTION_META: Record<string, ActionMeta> = {
     category: 'output',
     isAvailable: true,
     keywords: ['telegram', 'chat', 'message', 'bot', 'reply', 'send'],
+  },
+  send_whatsapp_message: {
+    name: 'Send WhatsApp Message',
+    icon: WhatsAppIcon,
+    color: 'emerald',
+    colorHex: '#10b981',
+    description: 'Reply via the paired WhatsApp account',
+    category: 'output',
+    isAvailable: true,
+    keywords: ['whatsapp', 'chat', 'message', 'reply', 'send', 'support'],
   },
   send_email: {
     name: 'Send Email',
@@ -607,6 +641,14 @@ export function getDefaultStepData(
       return { ...base, params: { title: '', body: '', urgency: 'normal' } };
     case 'send_telegram_message':
       return { ...base, params: { chat_id: '', message: '', parse_mode: 'none' } };
+    case 'send_whatsapp_message':
+      return { ...base, params: { phone_number: '', message: '' } };
+
+    // HubSpot
+    case 'hubspot_create_ticket':
+      return { ...base, params: { subject: '', content: '', pipeline: '', stage: '', priority: '', contact_id: '' } };
+    case 'hubspot_upsert_contact':
+      return { ...base, params: { email: '', phone: '', firstname: '', lastname: '' } };
 
     case 'send_email':
       return { ...base, params: { to: '', subject: '', body: '', provider: '' } };

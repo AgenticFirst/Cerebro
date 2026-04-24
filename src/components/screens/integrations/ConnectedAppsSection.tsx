@@ -1,12 +1,16 @@
-import { type ComponentType } from 'react';
+import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
   GoogleCalendarIcon,
   GmailIcon,
+  HubSpotIcon,
   NotionIcon,
   SlackIcon,
 } from '../../icons/BrandIcons';
+import IntegrationCard from './IntegrationCard';
+import HubSpotSection from './HubSpotSection';
+import type { HubSpotStatusResponse } from '../../../types/ipc';
 
 interface Service {
   id: string;
@@ -80,12 +84,58 @@ function ComingSoonCard({ service }: { service: Service }) {
 
 export default function ConnectedAppsSection() {
   const { t } = useTranslation();
+  const [hubSpotStatus, setHubSpotStatus] = useState<HubSpotStatusResponse | null>(null);
+
+  const refreshHubSpot = useCallback(async () => {
+    const s = await window.cerebro.hubspot.status();
+    setHubSpotStatus((prev) =>
+      prev
+        && prev.hasToken === s.hasToken
+        && prev.portalId === s.portalId
+        && prev.defaultPipeline === s.defaultPipeline
+        && prev.defaultStage === s.defaultStage
+        && prev.tokenBackend === s.tokenBackend
+        ? prev
+        : s,
+    );
+  }, []);
+
+  useEffect(() => {
+    void refreshHubSpot();
+    const id = setInterval(refreshHubSpot, 10_000);
+    return () => clearInterval(id);
+  }, [refreshHubSpot]);
+
+  const hubSpotStatusPill = hubSpotStatus?.hasToken ? (
+    <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+      Connected
+    </span>
+  ) : null;
+
+  const hubSpotDescription = hubSpotStatus?.hasToken && hubSpotStatus.portalId
+    ? `Connected to portal ${hubSpotStatus.portalId}.`
+    : 'Open support tickets and update contacts in HubSpot from a routine.';
+
   return (
     <div>
       <h2 className="text-lg font-medium text-text-primary">{t('connectedApps.title')}</h2>
       <p className="text-sm text-text-secondary mt-1 leading-relaxed">
         {t('connectedApps.description')}
       </p>
+
+      <div className="mt-6 space-y-2">
+        <IntegrationCard
+          icon={HubSpotIcon}
+          iconBg="bg-orange-500/15"
+          iconColor="text-orange-400"
+          name="HubSpot CRM"
+          description={hubSpotDescription}
+          status={hubSpotStatusPill}
+        >
+          <HubSpotSection />
+        </IntegrationCard>
+      </div>
 
       <div className="mt-6">
         <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary mb-3">

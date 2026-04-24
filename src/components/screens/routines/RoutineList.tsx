@@ -1,15 +1,17 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Loader2, Search, RefreshCw, AlertCircle } from 'lucide-react';
+import { Plus, Loader2, Search, RefreshCw, AlertCircle, Sparkles } from 'lucide-react';
 import clsx from 'clsx';
 import { useRoutines } from '../../../context/RoutineContext';
 import type { CreateRoutineInput } from '../../../types/routines';
 import RoutineCard from './RoutineCard';
 import CreateRoutineDialog from './CreateRoutineDialog';
+import TemplatesView from './TemplatesView';
 import AlertModal from '../../ui/AlertModal';
 import Tooltip from '../../ui/Tooltip';
 
 type Filter = 'all' | 'enabled' | 'scheduled' | 'manual';
+type Tab = 'mine' | 'templates';
 
 export default function RoutineList() {
   const { t } = useTranslation();
@@ -31,6 +33,7 @@ export default function RoutineList() {
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [tab, setTab] = useState<Tab>('mine');
 
   useEffect(() => {
     loadRoutines();
@@ -144,8 +147,35 @@ export default function RoutineList() {
           </Tooltip>
         </div>
 
-        {/* Filter pills + search */}
-        <div className="flex items-center gap-3">
+        {/* Tab bar: My routines | Templates */}
+        <div className="flex items-center gap-1 mb-4 -mt-1">
+          <button
+            onClick={() => setTab('mine')}
+            className={clsx(
+              'px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+              tab === 'mine'
+                ? 'bg-accent/15 text-accent border border-accent/30'
+                : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover border border-transparent',
+            )}
+          >
+            My routines
+          </button>
+          <button
+            onClick={() => setTab('templates')}
+            className={clsx(
+              'px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5',
+              tab === 'templates'
+                ? 'bg-accent/15 text-accent border border-accent/30'
+                : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover border border-transparent',
+            )}
+          >
+            <Sparkles size={11} />
+            Templates
+          </button>
+        </div>
+
+        {/* Filter pills + search — hidden on Templates tab */}
+        {tab === 'mine' && <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             {([
               { key: 'all' as const, labelKey: 'routines.filterAll', tipKey: 'routineTooltips.filterAll', count: routines.length },
@@ -186,10 +216,13 @@ export default function RoutineList() {
               />
             </Tooltip>
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* Content */}
+      {tab === 'templates' ? (
+        <TemplatesView />
+      ) : (
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         {routines.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center py-20">
@@ -234,6 +267,7 @@ export default function RoutineList() {
           </div>
         )}
       </div>
+      )}
 
       {/* Create Dialog */}
       <CreateRoutineDialog

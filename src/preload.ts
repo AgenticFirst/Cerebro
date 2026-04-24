@@ -15,6 +15,11 @@ import type {
   TelegramVerifyResponse,
   TelegramStatusResponse,
   TelegramConversationUpdatedEvent,
+  WhatsAppStatusResponse,
+  WhatsAppConversationUpdatedEvent,
+  HubSpotStatusResponse,
+  HubSpotVerifyResult,
+  HubSpotPipelineSummary,
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
@@ -285,6 +290,71 @@ const api: CerebroAPI = {
       ipcRenderer.on(IPC_CHANNELS.TELEGRAM_CONVERSATION_UPDATED, listener);
       return () =>
         ipcRenderer.removeListener(IPC_CHANNELS.TELEGRAM_CONVERSATION_UPDATED, listener);
+    },
+  },
+
+  whatsapp: {
+    startPairing(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_START_PAIRING);
+    },
+    cancelPairing(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_CANCEL_PAIRING);
+    },
+    clearSession(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_CLEAR_SESSION);
+    },
+    status(): Promise<WhatsAppStatusResponse> {
+      return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_STATUS);
+    },
+    setAllowlist(list: string[]): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_SET_ALLOWLIST, list);
+    },
+    enable(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_ENABLE);
+    },
+    disable(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_DISABLE);
+    },
+    onStatusChanged(callback: (status: WhatsAppStatusResponse) => void): () => void {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: WhatsAppStatusResponse,
+      ) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.WHATSAPP_STATUS_CHANGED, listener);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.WHATSAPP_STATUS_CHANGED, listener);
+    },
+    onConversationUpdated(
+      callback: (event: WhatsAppConversationUpdatedEvent) => void,
+    ): () => void {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: WhatsAppConversationUpdatedEvent,
+      ) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.WHATSAPP_CONVERSATION_UPDATED, listener);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.WHATSAPP_CONVERSATION_UPDATED, listener);
+    },
+  },
+
+  hubspot: {
+    verify(token: string): Promise<HubSpotVerifyResult> {
+      return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_VERIFY, token);
+    },
+    listPipelines(): Promise<{ ok: boolean; pipelines?: HubSpotPipelineSummary[]; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_LIST_PIPELINES);
+    },
+    status(): Promise<HubSpotStatusResponse> {
+      return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_STATUS);
+    },
+    setToken(token: string): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_SET_TOKEN, token);
+    },
+    clearToken(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_CLEAR_TOKEN);
+    },
+    setDefaults(defaults: { pipeline: string | null; stage: string | null }): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_SET_DEFAULTS, defaults);
     },
   },
 

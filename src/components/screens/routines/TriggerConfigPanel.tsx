@@ -146,6 +146,66 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
           </div>
         )}
 
+        {/* WhatsApp Message config */}
+        {triggerType === 'trigger_whatsapp_message' && (
+          <>
+            <div>
+              <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
+                Phone number
+              </label>
+              <input
+                type="text"
+                value={(config.phone_number as string) ?? ''}
+                onChange={(e) => updateConfig({ phone_number: e.target.value })}
+                placeholder="+14155552671  or  *"
+                className="w-full h-8 px-3 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+              />
+              <p className="mt-1 text-[10px] text-text-tertiary">
+                Customer phone number in E.164 format, or <code>*</code> to match any number in the WhatsApp allowlist.
+              </p>
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
+                Filter
+              </label>
+              <select
+                value={(config.filter_type as string) ?? 'none'}
+                onChange={(e) => updateConfig({ filter_type: e.target.value })}
+                className="w-full h-8 px-2 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
+              >
+                <option value="none">No filter (any message)</option>
+                <option value="keyword">Contains keyword</option>
+                <option value="prefix">Starts with</option>
+                <option value="regex">Matches regex</option>
+              </select>
+            </div>
+            {((config.filter_type as string) ?? 'none') !== 'none' && (
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
+                  Filter Value
+                </label>
+                <input
+                  type="text"
+                  value={(config.filter_value as string) ?? ''}
+                  onChange={(e) => updateConfig({ filter_value: e.target.value })}
+                  placeholder={
+                    (config.filter_type as string) === 'regex'
+                      ? '^(hola|hi|hello)\\b'
+                      : (config.filter_type as string) === 'prefix'
+                        ? 'support:'
+                        : 'help'
+                  }
+                  className="w-full h-8 px-3 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 font-mono"
+                />
+              </div>
+            )}
+            <p className="text-[10px] text-text-tertiary">
+              Available variables in steps: <code>{'{{__trigger__.phone_number}}'}</code>, <code>{'{{__trigger__.message_text}}'}</code>,
+              <code>{'{{__trigger__.customer_display_name}}'}</code>, <code>{'{{__trigger__.conversation_history}}'}</code>.
+            </p>
+          </>
+        )}
+
         {/* Telegram Message config */}
         {triggerType === 'trigger_telegram_message' && (
           <>

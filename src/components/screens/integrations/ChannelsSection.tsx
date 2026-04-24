@@ -5,7 +5,8 @@ import { TelegramIcon, WhatsAppIcon } from '../../icons/BrandIcons';
 import IntegrationCard from './IntegrationCard';
 import TelegramSection from './TelegramSection';
 import TelegramConnectModal from './TelegramConnectModal';
-import type { TelegramStatusResponse } from '../../../types/ipc';
+import WhatsAppSection from './WhatsAppSection';
+import type { TelegramStatusResponse, WhatsAppStatusResponse } from '../../../types/ipc';
 
 interface ComingSoonChannel {
   id: string;
@@ -17,14 +18,6 @@ interface ComingSoonChannel {
 }
 
 const COMING_SOON_CHANNELS: ComingSoonChannel[] = [
-  {
-    id: 'whatsapp',
-    nameKey: 'channelsSection.whatsapp',
-    descKey: 'channelsSection.whatsappDesc',
-    icon: WhatsAppIcon,
-    iconBg: 'bg-emerald-500/15',
-    iconColor: 'text-emerald-400',
-  },
   {
     id: 'email',
     nameKey: 'channelsSection.email',
@@ -38,6 +31,7 @@ const COMING_SOON_CHANNELS: ComingSoonChannel[] = [
 export default function ChannelsSection() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<TelegramStatusResponse | null>(null);
+  const [waStatus, setWaStatus] = useState<WhatsAppStatusResponse | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
   // Bumping this remounts the TelegramSection so it reloads from settings
   // after the onboarding modal persists changes.
@@ -53,6 +47,15 @@ export default function ChannelsSection() {
     const id = setInterval(refreshStatus, 5_000);
     return () => clearInterval(id);
   }, [refreshStatus]);
+
+  useEffect(() => {
+    void (async () => {
+      const s = await window.cerebro.whatsapp.status();
+      setWaStatus(s);
+    })();
+    const off = window.cerebro.whatsapp.onStatusChanged((s) => setWaStatus(s));
+    return off;
+  }, []);
 
   const tokenConfigured = Boolean(status?.hasToken);
 
@@ -104,6 +107,30 @@ export default function ChannelsSection() {
           }}
         >
           <TelegramSection key={reloadKey} />
+        </IntegrationCard>
+
+        <IntegrationCard
+          icon={WhatsAppIcon}
+          iconBg="bg-emerald-500/15"
+          iconColor="text-emerald-400"
+          name="WhatsApp Business"
+          description={
+            waStatus?.state === 'connected' && waStatus.phoneNumber
+              ? `Connected as ${waStatus.phoneNumber}.`
+              : 'Pair a WhatsApp Business number for customer-support routines.'
+          }
+          status={waStatus?.state === 'connected' ? (
+            <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              Connected
+            </span>
+          ) : waStatus?.state === 'pairing' ? (
+            <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400">
+              Pairing
+            </span>
+          ) : null}
+        >
+          <WhatsAppSection />
         </IntegrationCard>
 
         {COMING_SOON_CHANNELS.map((c) => (

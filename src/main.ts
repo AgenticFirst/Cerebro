@@ -37,6 +37,8 @@ import {
 import { setClaudeCodeCwd } from './claude-code/single-shot';
 import { VoiceSessionManager } from './voice/session';
 import { TelegramBridge } from './telegram/bridge';
+import { WhatsAppBridge } from './whatsapp/bridge';
+import { HubSpotHolder } from './hubspot/holder';
 import { registerChannelSender, unregisterChannelSender } from './engine/actions/channel';
 import { initializeSandbox } from './sandbox/initialize';
 import { getCachedSandboxConfig, setCachedSandboxConfig } from './sandbox/config-cache';
@@ -169,6 +171,10 @@ engineEventBus.setMaxListeners(50);
 
 // Telegram bridge (initialized after backend is healthy)
 let telegramBridge: TelegramBridge | null = null;
+// WhatsApp bridge (Baileys / WhatsApp Web)
+let whatsAppBridge: WhatsAppBridge | null = null;
+// HubSpot credential holder
+let hubSpotHolder: HubSpotHolder | null = null;
 
 // --- Utility functions ---
 
@@ -322,6 +328,24 @@ async function startPythonBackend(): Promise<void> {
     console.error('[Cerebro] Telegram bridge start failed:', err);
   });
 
+  // WhatsApp bridge — starts only if the user has paired + enabled it.
+  whatsAppBridge = new WhatsAppBridge({
+    backendPort: port,
+    dataDir,
+    executionEngine,
+  });
+  executionEngine.setWhatsAppChannel(whatsAppBridge);
+  whatsAppBridge.start().catch((err) => {
+    console.error('[Cerebro] WhatsApp bridge start failed:', err);
+  });
+
+  // HubSpot holder — load any stored token from settings.
+  hubSpotHolder = new HubSpotHolder({ backendPort: port });
+  executionEngine.setHubSpotChannel(hubSpotHolder);
+  hubSpotHolder.init().catch((err) => {
+    console.error('[Cerebro] HubSpot holder init failed:', err);
+  });
+
   // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
   // Cerebro's project-scoped subagents and skills.
   setClaudeCodeCwd(dataDir);
@@ -346,6 +370,7 @@ async function startPythonBackend(): Promise<void> {
     routineScheduler.setWebContents(windows[0].webContents);
     voiceSession.setWebContents(windows[0].webContents);
     telegramBridge?.setWebContents(windows[0].webContents);
+    whatsAppBridge?.setWebContents(windows[0].webContents);
   }
 
   // Initial scheduler sync + start periodic re-sync
@@ -1320,6 +1345,109 @@ function registerIpcHandlers(): void {
     if (!telegramBridge) return { ok: false, error: 'Bridge not initialized' };
     return telegramBridge.setToken(null);
   });
+
+  // --- WhatsApp bridge ---
+
+  ipcMain.handle(IPC_CHANNELS.WHATSAPP_START_PAIRING, async () => {
+    if (!whatsAppBridge) return { ok: false, error: 'Bridge not initialized' };
+    return whatsAppBridge.startPairing();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WHATSAPP_CANCEL_PAIRING, async () => {
+    if (!whatsAppBridge) return;
+    await whatsAppBridge.cancelPairing();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WHATSAPP_CLEAR_SESSION, async () => {
+    if (!whatsAppBridge) return { ok: false, error: 'Bridge not initialized' };
+    return whatsAppBridge.clearSession();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WHATSAPP_STATUS, async () => {
+    if (!whatsAppBridge) {
+      return {
+        state: 'off' as const,
+        phoneNumber: null,
+        pushName: null,
+        qr: null,
+        lastError: 'Bridge not initialized',
+        lastConnectedAt: null,
+        credsBackend: 'plaintext-fallback' as const,
+        hasCreds: false,
+      };
+    }
+    return whatsAppBridge.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WHATSAPP_SET_ALLOWLIST, async (_event, list: string[]) => {
+    if (!whatsAppBridge) return { ok: false, error: 'Bridge not initialized' };
+    try {
+      await whatsAppBridge.setAllowlist(Array.isArray(list) ? list : []);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WHATSAPP_ENABLE, async () => {
+    if (!whatsAppBridge) return { ok: false, error: 'Bridge not initialized' };
+    return whatsAppBridge.enable();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WHATSAPP_DISABLE, async () => {
+    if (!whatsAppBridge) return;
+    await whatsAppBridge.disable();
+  });
+
+  // --- HubSpot ---
+
+  ipcMain.handle(IPC_CHANNELS.HUBSPOT_VERIFY, async (_event, token: string) => {
+    if (!hubSpotHolder) return { ok: false, error: 'HubSpot holder not initialized' };
+    return hubSpotHolder.verify(token);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.HUBSPOT_LIST_PIPELINES, async () => {
+    if (!hubSpotHolder) return { ok: false, error: 'HubSpot holder not initialized' };
+    return hubSpotHolder.listPipelines();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.HUBSPOT_STATUS, async () => {
+    if (!hubSpotHolder) {
+      return {
+        hasToken: false,
+        portalId: null,
+        defaultPipeline: null,
+        defaultStage: null,
+        tokenBackend: 'plaintext-fallback' as const,
+      };
+    }
+    return hubSpotHolder.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.HUBSPOT_SET_TOKEN, async (_event, token: string) => {
+    if (!hubSpotHolder) return { ok: false, error: 'HubSpot holder not initialized' };
+    if (typeof token !== 'string') return { ok: false, error: 'Invalid token' };
+    return hubSpotHolder.setToken(token);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.HUBSPOT_CLEAR_TOKEN, async () => {
+    if (!hubSpotHolder) return { ok: false, error: 'HubSpot holder not initialized' };
+    await hubSpotHolder.clearToken();
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.HUBSPOT_SET_DEFAULTS, async (_event, defaults: { pipeline: string | null; stage: string | null }) => {
+    if (!hubSpotHolder) return { ok: false, error: 'HubSpot holder not initialized' };
+    try {
+      await hubSpotHolder.setDefaults({
+        pipeline: defaults?.pipeline ?? null,
+        stage: defaults?.stage ?? null,
+      });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 }
 
 // --- Window creation ---
@@ -1362,6 +1490,9 @@ const createWindow = () => {
   }
   if (telegramBridge) {
     telegramBridge.setWebContents(mainWindow.webContents);
+  }
+  if (whatsAppBridge) {
+    whatsAppBridge.setWebContents(mainWindow.webContents);
   }
 
   // Open DevTools in dev mode — but never in E2E mode, where an extra
@@ -1522,6 +1653,9 @@ app.on('before-quit', async () => {
   }
   if (taskReconciler) {
     taskReconciler.stop();
+  }
+  if (whatsAppBridge) {
+    try { await whatsAppBridge.stop(); } catch { /* ignore */ }
   }
   if (telegramBridge) {
     try { await telegramBridge.stop(); } catch { /* ignore */ }
