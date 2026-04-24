@@ -148,11 +148,12 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
       <div className="mt-6">
         <label className="text-xs font-medium text-text-secondary">Private App access token</label>
         <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
-          Create a Private App in HubSpot Settings → Integrations → Private Apps, with the
-          <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]">crm.objects.tickets.write</code>
+          Create a Private App under HubSpot's Legacy Apps section with the
+          <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]">tickets</code>,
+          <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]">crm.objects.contacts.read</code>,
           and
           <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]">crm.objects.contacts.write</code>
-          scopes, then paste the generated token below.
+          scopes, then paste the generated token below. (Click <strong>Connect</strong> in the card header for a guided tour.)
         </p>
 
         {showTokenInput ? (

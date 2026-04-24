@@ -1003,6 +1003,18 @@ function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IPC_CHANNELS.SHELL_OPEN_EXTERNAL,
+    async (_event, url: string) => {
+      // Hard-fail any non-http(s) scheme so a compromised renderer can't use
+      // this channel to launch arbitrary protocol handlers (file://, ssh://, …).
+      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+        throw new Error('Refusing to open non-http(s) URL externally');
+      }
+      await shell.openExternal(url);
+    },
+  );
+
+  ipcMain.handle(
     IPC_CHANNELS.SHELL_REVEAL_PATH,
     async (_event, filePath: string) => {
       shell.showItemInFolder(filePath);
@@ -1473,6 +1485,18 @@ const createWindow = () => {
   });
 
   mainWindow.maximize();
+
+  // Route any window.open(http://…) — including target="_blank" links —
+  // to the user's default browser instead of spawning an Electron child
+  // window. Returning {action: 'deny'} keeps Electron from creating a new
+  // BrowserWindow once we've handed the URL off to the OS.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url).catch((err) => console.error('openExternal failed:', err));
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
 
   // and load the index.html of the app.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {

@@ -76,6 +76,7 @@ export const IPC_CHANNELS = {
 
   // Shell
   SHELL_OPEN_PATH: 'shell:open-path',
+  SHELL_OPEN_EXTERNAL: 'shell:open-external',
   SHELL_REVEAL_PATH: 'shell:reveal-path',
   SHELL_STAT_PATH: 'shell:stat-path',
   SHELL_DOWNLOAD_TO_DOWNLOADS: 'shell:download-to-downloads',
@@ -483,6 +484,9 @@ export interface ShellStatResult {
 
 export interface ShellAPI {
   openPath(filePath: string): Promise<void>;
+  /** Open an http/https URL in the user's default browser (NOT a new
+   *  Electron window). Refuses non-http(s) schemes. */
+  openExternal(url: string): Promise<void>;
   revealPath(filePath: string): Promise<void>;
   statPath(filePath: string): Promise<ShellStatResult>;
   /** Copy a regular file to the user's OS Downloads folder, deduping on collision.

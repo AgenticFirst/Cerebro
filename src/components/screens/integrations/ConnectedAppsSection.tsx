@@ -10,6 +10,7 @@ import {
 } from '../../icons/BrandIcons';
 import IntegrationCard from './IntegrationCard';
 import HubSpotSection from './HubSpotSection';
+import HubSpotConnectModal from './HubSpotConnectModal';
 import type { HubSpotStatusResponse } from '../../../types/ipc';
 
 interface Service {
@@ -85,6 +86,9 @@ function ComingSoonCard({ service }: { service: Service }) {
 export default function ConnectedAppsSection() {
   const { t } = useTranslation();
   const [hubSpotStatus, setHubSpotStatus] = useState<HubSpotStatusResponse | null>(null);
+  const [showHubSpotTour, setShowHubSpotTour] = useState(false);
+  // Bumping this remounts HubSpotSection so it reloads after the tour saves.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const refreshHubSpot = useCallback(async () => {
     const s = await window.cerebro.hubspot.status();
@@ -132,10 +136,21 @@ export default function ConnectedAppsSection() {
           name="HubSpot CRM"
           description={hubSpotDescription}
           status={hubSpotStatusPill}
+          primaryAction={{
+            label: hubSpotStatus?.hasToken ? 'Setup tour' : 'Connect',
+            onClick: () => setShowHubSpotTour(true),
+          }}
         >
-          <HubSpotSection />
+          <HubSpotSection key={reloadKey} />
         </IntegrationCard>
       </div>
+
+      {showHubSpotTour && (
+        <HubSpotConnectModal
+          onClose={() => { setShowHubSpotTour(false); setReloadKey((k) => k + 1); void refreshHubSpot(); }}
+          onPersisted={() => { setReloadKey((k) => k + 1); void refreshHubSpot(); }}
+        />
+      )}
 
       <div className="mt-6">
         <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary mb-3">

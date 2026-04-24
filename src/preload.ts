@@ -229,6 +229,9 @@ const api: CerebroAPI = {
     openPath(filePath: string): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_PATH, filePath);
     },
+    openExternal(url: string): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, url);
+    },
     revealPath(filePath: string): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL_REVEAL_PATH, filePath);
     },
