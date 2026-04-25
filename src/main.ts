@@ -44,6 +44,13 @@ import { initializeSandbox } from './sandbox/initialize';
 import { getCachedSandboxConfig, setCachedSandboxConfig } from './sandbox/config-cache';
 import { generateProfile } from './sandbox/profile-generator';
 import type { SandboxConfig } from './sandbox/types';
+import {
+  startUpdateChecker,
+  checkNow as checkForUpdate,
+  downloadAndOpen as downloadUpdate,
+  ackUpdateBanner,
+} from './updater';
+import type { UpdateAsset } from './types/ipc';
 
 // Voice session manager (initialized after backend is healthy)
 let voiceSession: VoiceSessionManager | null = null;
@@ -1460,6 +1467,30 @@ function registerIpcHandlers(): void {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
+
+  // --- App auto-updater ---
+  ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK_NOW, async () => {
+    return checkForUpdate();
+  });
+  ipcMain.handle(IPC_CHANNELS.UPDATE_DOWNLOAD, async (event, asset: UpdateAsset) => {
+    // Renderer is showing the banner — suppress the native dialog fallback.
+    ackUpdateBanner();
+    try {
+      await downloadUpdate(asset);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      event.sender.send(IPC_CHANNELS.UPDATE_ERROR, message);
+      throw err;
+    }
+  });
+  ipcMain.handle(IPC_CHANNELS.UPDATE_DISMISS, async () => {
+    ackUpdateBanner();
+  });
+  ipcMain.handle(IPC_CHANNELS.UPDATE_OPEN_RELEASE_PAGE, async (_event, url: string) => {
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
+      await shell.openExternal(url);
+    }
+  });
 }
 
 // --- Window creation ---
@@ -1526,6 +1557,9 @@ const createWindow = () => {
   if (!process.env.CEREBRO_E2E_DEBUG_PORT) {
     mainWindow.webContents.openDevTools();
   }
+
+  // Begin polling GitHub Releases for newer versions. No-op in dev mode.
+  startUpdateChecker(mainWindow);
 };
 
 // This method will be called when Electron has finished

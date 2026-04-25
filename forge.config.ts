@@ -4,6 +4,8 @@ import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
+import { MakerAppImage } from '@reforged/maker-appimage';
+import { PublisherGithub } from '@electron-forge/publisher-github';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
@@ -24,6 +26,17 @@ const config: ForgeConfig = {
     new MakerDMG({}),
     new MakerDeb({}),
     new MakerRpm({}),
+    new MakerAppImage({ options: { icon: './assets/icon.png' } }),
+  ],
+  publishers: [
+    new PublisherGithub({
+      repository: {
+        owner: 'AgenticFirst',
+        name: 'Cerebro',
+      },
+      prerelease: false,
+      draft: true,
+    }),
   ],
   plugins: [
     new VitePlugin({

@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Build & publish (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Linux deb/rpm makers need fakeroot + dpkg/rpm tooling.
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fakeroot dpkg rpm
+
+      # Pre-populate voice-models so the postinstall hook short-circuits.
+      # The script uses only stdlib (urllib) so no venv setup is needed.
+      - name: Download voice models
+        shell: bash
+        run: python3 scripts/download-voice-models.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish to GitHub Releases
+        run: npm run publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

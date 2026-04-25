@@ -114,6 +114,16 @@ export const IPC_CHANNELS = {
   HUBSPOT_CLEAR_TOKEN: 'hubspot:clear-token',
   HUBSPOT_SET_DEFAULTS: 'hubspot:set-defaults',
 
+  // App auto-updater (GitHub Releases)
+  UPDATE_CHECK_NOW: 'update:check-now',
+  UPDATE_DOWNLOAD: 'update:download',
+  UPDATE_DISMISS: 'update:dismiss',
+  UPDATE_OPEN_RELEASE_PAGE: 'update:open-release-page',
+  UPDATE_AVAILABLE: 'update:available',
+  UPDATE_DOWNLOAD_PROGRESS: 'update:download-progress',
+  UPDATE_DOWNLOADED: 'update:downloaded',
+  UPDATE_ERROR: 'update:error',
+
   // Files (managed buckets at <userData>/files)
   FILES_PICK_FILES: 'files:pick-files',
   FILES_IMPORT_TO_BUCKET: 'files:import-to-bucket',
@@ -391,6 +401,45 @@ export interface FilesAPI {
   readManagedText(relPath: string): Promise<string>;
 }
 
+// --- App auto-updater ---
+
+export interface UpdateAsset {
+  name: string;
+  url: string;
+  size: number;
+  contentType: string;
+}
+
+export interface UpdateInfo {
+  version: string;
+  name: string;
+  notes: string;
+  htmlUrl: string;
+  asset: UpdateAsset;
+}
+
+export interface UpdateDownloadProgress {
+  transferred: number;
+  total: number;
+  percent: number;
+}
+
+export interface UpdateDownloadedEvent {
+  path: string;
+  asset: UpdateAsset;
+}
+
+export interface UpdaterAPI {
+  checkNow(): Promise<UpdateInfo | null>;
+  download(asset: UpdateAsset): Promise<void>;
+  dismiss(): Promise<void>;
+  openReleasePage(url: string): Promise<void>;
+  onAvailable(callback: (info: UpdateInfo) => void): () => void;
+  onProgress(callback: (progress: UpdateDownloadProgress) => void): () => void;
+  onDownloaded(callback: (event: UpdateDownloadedEvent) => void): () => void;
+  onError(callback: (message: string) => void): () => void;
+}
+
 // --- Preload API exposed on window.cerebro ---
 
 export interface CerebroAPI {
@@ -413,6 +462,7 @@ export interface CerebroAPI {
   whatsapp: WhatsAppAPI;
   hubspot: HubSpotAPI;
   files: FilesAPI;
+  updater: UpdaterAPI;
 }
 
 // --- WhatsApp bridge (Baileys) ---

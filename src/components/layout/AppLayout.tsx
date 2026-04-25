@@ -6,6 +6,7 @@ import { useTasks } from '../../context/TaskContext';
 import { useExperts } from '../../context/ExpertContext';
 import { useFeatureFlags } from '../../context/FeatureFlagsContext';
 import Sidebar from './Sidebar';
+import UpdateBanner from '../update/UpdateBanner';
 import ChatView from '../chat/ChatView';
 import WelcomeView from '../chat/WelcomeView';
 import ExpertsScreen from '../screens/ExpertsScreen';
@@ -95,6 +96,7 @@ export default function AppLayout() {
       <Sidebar />
       <main className="flex-1 flex flex-col min-h-0">
         {activeScreen !== 'files' && <div className="app-drag-region h-11 flex-shrink-0" />}
+        <UpdateBanner />
         {renderContent()}
       </main>
 

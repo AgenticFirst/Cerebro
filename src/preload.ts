@@ -20,6 +20,10 @@ import type {
   HubSpotStatusResponse,
   HubSpotVerifyResult,
   HubSpotPipelineSummary,
+  UpdateInfo,
+  UpdateAsset,
+  UpdateDownloadProgress,
+  UpdateDownloadedEvent,
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
@@ -358,6 +362,43 @@ const api: CerebroAPI = {
     },
     setDefaults(defaults: { pipeline: string | null; stage: string | null }): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_SET_DEFAULTS, defaults);
+    },
+  },
+
+  updater: {
+    checkNow(): Promise<UpdateInfo | null> {
+      return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK_NOW);
+    },
+    download(asset: UpdateAsset): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, asset);
+    },
+    dismiss(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_DISMISS);
+    },
+    openReleasePage(url: string): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_OPEN_RELEASE_PAGE, url);
+    },
+    onAvailable(callback: (info: UpdateInfo) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, data: UpdateInfo) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.UPDATE_AVAILABLE, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_AVAILABLE, listener);
+    },
+    onProgress(callback: (progress: UpdateDownloadProgress) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, data: UpdateDownloadProgress) =>
+        callback(data);
+      ipcRenderer.on(IPC_CHANNELS.UPDATE_DOWNLOAD_PROGRESS, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_DOWNLOAD_PROGRESS, listener);
+    },
+    onDownloaded(callback: (event: UpdateDownloadedEvent) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, data: UpdateDownloadedEvent) =>
+        callback(data);
+      ipcRenderer.on(IPC_CHANNELS.UPDATE_DOWNLOADED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_DOWNLOADED, listener);
+    },
+    onError(callback: (message: string) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, data: string) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.UPDATE_ERROR, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_ERROR, listener);
     },
   },
 

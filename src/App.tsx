@@ -15,6 +15,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { UIPreferencesProvider } from './context/UIPreferencesContext';
 import { MarkdownDocumentProvider } from './context/MarkdownDocumentContext';
 import { FilesProvider } from './context/FilesContext';
+import { UpdateProvider } from './context/UpdateContext';
 import AppLayout from './components/layout/AppLayout';
 import ToastContainer from './components/ui/Toast';
 
@@ -23,6 +24,7 @@ function App() {
     <ToastProvider>
       <ThemeProvider>
       <UIPreferencesProvider>
+      <UpdateProvider>
       <ProviderProvider>
         <SandboxProvider>
           <FeatureFlagsProvider>
@@ -50,6 +52,7 @@ function App() {
           </FeatureFlagsProvider>
         </SandboxProvider>
       </ProviderProvider>
+      </UpdateProvider>
       </UIPreferencesProvider>
       </ThemeProvider>
       <ToastContainer />
