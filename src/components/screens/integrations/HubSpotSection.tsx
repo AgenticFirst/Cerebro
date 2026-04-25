@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Eye, EyeOff, Loader2, Lock, ShieldAlert, XCircle } from 'lucide-react';
 import clsx from 'clsx';
+import { Trans, useTranslation } from 'react-i18next';
 import { HubSpotIcon } from '../../icons/BrandIcons';
 import type { HubSpotPipelineSummary, HubSpotStatusResponse } from '../../../types/ipc';
 
@@ -15,6 +16,7 @@ interface HubSpotSectionProps {
 }
 
 export default function HubSpotSection({ showHeader = false }: HubSpotSectionProps = {}) {
+  const { t } = useTranslation();
   const [tokenDraft, setTokenDraft] = useState('');
   const [editingToken, setEditingToken] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -69,8 +71,8 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
     setVerify({ kind: 'verifying' });
     const res = await window.cerebro.hubspot.verify(tokenDraft.trim());
     if (res.ok) setVerify({ kind: 'ok', portalId: res.portalId ?? null });
-    else setVerify({ kind: 'err', error: res.error ?? 'Unknown error' });
-  }, [tokenDraft]);
+    else setVerify({ kind: 'err', error: res.error ?? t('hubspotSection.unknownError') });
+  }, [tokenDraft, t]);
 
   const handleSaveToken = useCallback(async () => {
     if (!tokenDraft.trim()) return;
@@ -80,9 +82,9 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
       await refreshStatus();
       await loadPipelines();
     } else {
-      setVerify({ kind: 'err', error: res.error ?? 'Save failed' });
+      setVerify({ kind: 'err', error: res.error ?? t('hubspotSection.saveFailed') });
     }
-  }, [tokenDraft, refreshStatus, loadPipelines, resetTokenEditor]);
+  }, [tokenDraft, refreshStatus, loadPipelines, resetTokenEditor, t]);
 
   const handleClearToken = useCallback(async () => {
     await window.cerebro.hubspot.clearToken();
@@ -121,10 +123,10 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
             <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-orange-500/15 text-orange-400">
               <HubSpotIcon size={18} />
             </div>
-            <h2 className="text-lg font-medium text-text-primary">HubSpot CRM</h2>
+            <h2 className="text-lg font-medium text-text-primary">{t('hubspotSection.title')}</h2>
           </div>
           <p className="text-sm text-text-secondary mt-3 leading-relaxed">
-            Open and update tickets, contacts, and deals in HubSpot from a routine.
+            {t('hubspotSection.description')}
           </p>
         </>
       )}
@@ -134,26 +136,27 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
         usingKeychain ? (
           <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
             <Lock size={14} className="mt-0.5 flex-shrink-0" />
-            <span className="leading-relaxed">Access token is encrypted in your OS keychain.</span>
+            <span className="leading-relaxed">{t('hubspotSection.keychainEncrypted')}</span>
           </div>
         ) : (
           <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-warning/30 bg-warning/10 text-xs text-warning-text">
             <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
-            <span className="leading-relaxed">No OS keychain available — token stored with fallback encoding.</span>
+            <span className="leading-relaxed">{t('hubspotSection.keychainFallback')}</span>
           </div>
         )
       )}
 
       {/* Token row */}
       <div className="mt-6">
-        <label className="text-xs font-medium text-text-secondary">Private App access token</label>
+        <label className="text-xs font-medium text-text-secondary">{t('hubspotSection.tokenLabel')}</label>
         <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
-          Create a Private App under HubSpot's Legacy Apps section with the
-          <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]">tickets</code>,
-          <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]">crm.objects.contacts.read</code>,
-          and
-          <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]">crm.objects.contacts.write</code>
-          scopes, then paste the generated token below. (Click <strong>Connect</strong> in the card header for a guided tour.)
+          <Trans
+            i18nKey="hubspotSection.tokenHelp"
+            components={{
+              code: <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]" />,
+              bold: <strong />,
+            }}
+          />
         </p>
 
         {showTokenInput ? (
@@ -164,7 +167,7 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                   type={showToken ? 'text' : 'password'}
                   value={tokenDraft}
                   onChange={(e) => { setTokenDraft(e.target.value); setVerify({ kind: 'idle' }); }}
-                  placeholder="pat-na1-..."
+                  placeholder={t('hubspotSection.tokenPlaceholder')}
                   className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                   autoComplete="off"
                   spellCheck={false}
@@ -172,6 +175,7 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                 <button
                   type="button"
                   onClick={() => setShowToken((v) => !v)}
+                  aria-label={showToken ? t('hubspotSection.hideToken') : t('hubspotSection.showToken')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary"
                 >
                   {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -187,7 +191,7 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                   'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
               >
-                {verify.kind === 'verifying' ? 'Verifying…' : 'Verify'}
+                {verify.kind === 'verifying' ? t('hubspotSection.verifying') : t('hubspotSection.verify')}
               </button>
               {verify.kind === 'ok' && (
                 <button
@@ -195,7 +199,7 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                   onClick={handleSaveToken}
                   className="px-3 py-2 text-sm rounded-md font-medium bg-accent text-white hover:bg-accent-hover"
                 >
-                  Save
+                  {t('hubspotSection.save')}
                 </button>
               )}
               {tokenConfigured && (
@@ -204,14 +208,14 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                   onClick={resetTokenEditor}
                   className="px-3 py-2 text-sm rounded-md font-medium text-text-tertiary hover:text-text-secondary"
                 >
-                  Cancel
+                  {t('hubspotSection.cancel')}
                 </button>
               )}
             </div>
             {verify.kind === 'ok' && (
               <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400">
                 <CheckCircle2 size={13} />
-                <span>Portal id: {verify.portalId ?? '(hidden)'}</span>
+                <span>{t('hubspotSection.portalIdLine', { portalId: verify.portalId ?? t('hubspotSection.portalIdHidden') })}</span>
               </div>
             )}
             {verify.kind === 'err' && (
@@ -225,21 +229,24 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
           <div className="mt-2 flex items-center gap-2">
             <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-md bg-bg-surface border border-border-subtle text-sm">
               <Lock size={13} className="text-emerald-400/80 flex-shrink-0" />
-              <span className="text-text-secondary">Connected to portal <span className="font-mono">{status?.portalId ?? '(unknown)'}</span></span>
+              <span className="text-text-secondary">
+                {t('hubspotSection.connectedToPortal')}{' '}
+                <span className="font-mono">{status?.portalId ?? t('hubspotSection.unknownPortal')}</span>
+              </span>
             </div>
             <button
               type="button"
               onClick={() => { setEditingToken(true); setVerify({ kind: 'idle' }); }}
               className="px-3 py-2 text-sm rounded-md font-medium bg-accent/15 text-accent hover:bg-accent/25"
             >
-              Replace token
+              {t('hubspotSection.replaceToken')}
             </button>
             <button
               type="button"
               onClick={handleClearToken}
               className="px-3 py-2 text-sm rounded-md font-medium text-text-tertiary hover:text-red-400"
             >
-              Disconnect
+              {t('hubspotSection.disconnect')}
             </button>
           </div>
         )}
@@ -248,13 +255,13 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
       {/* Default ticket pipeline + stage */}
       {tokenConfigured && (
         <div className="mt-6">
-          <label className="text-xs font-medium text-text-secondary">Default ticket pipeline + stage</label>
+          <label className="text-xs font-medium text-text-secondary">{t('hubspotSection.defaultsLabel')}</label>
           <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
-            New tickets created by routines land here unless a step overrides them.
+            {t('hubspotSection.defaultsHelp')}
           </p>
           {pipelinesLoading ? (
             <div className="mt-3 flex items-center gap-2 text-xs text-text-tertiary">
-              <Loader2 size={12} className="animate-spin" /> Loading pipelines…
+              <Loader2 size={12} className="animate-spin" /> {t('hubspotSection.loadingPipelines')}
             </div>
           ) : (
             <div className="mt-2 grid grid-cols-2 gap-2">
@@ -263,7 +270,7 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                 onChange={(e) => { setSelectedPipeline(e.target.value); setSelectedStage(''); }}
                 className="w-full h-9 px-3 text-sm bg-bg-surface border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
               >
-                <option value="">— Pipeline —</option>
+                <option value="">{t('hubspotSection.pipelinePlaceholder')}</option>
                 {pipelines.map((p) => (
                   <option key={p.id} value={p.id}>{p.label}</option>
                 ))}
@@ -274,7 +281,7 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                 disabled={!selectedPipeline}
                 className="w-full h-9 px-3 text-sm bg-bg-surface border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50 disabled:opacity-50"
               >
-                <option value="">— Stage —</option>
+                <option value="">{t('hubspotSection.stagePlaceholder')}</option>
                 {stagesForSelected.map((s) => (
                   <option key={s.id} value={s.id}>{s.label}</option>
                 ))}
@@ -284,7 +291,7 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
           <div className="mt-3 flex items-center justify-end gap-3">
             {savedFlash && (
               <span className="text-xs text-emerald-400 flex items-center gap-1.5">
-                <CheckCircle2 size={12} /> Saved
+                <CheckCircle2 size={12} /> {t('hubspotSection.saved')}
               </span>
             )}
             <button
@@ -293,7 +300,7 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
               disabled={!selectedPipeline || !selectedStage}
               className="px-3 py-1.5 text-xs rounded-md font-medium bg-accent text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save defaults
+              {t('hubspotSection.saveDefaults')}
             </button>
           </div>
         </div>

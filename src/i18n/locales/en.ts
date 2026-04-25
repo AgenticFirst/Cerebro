@@ -901,7 +901,8 @@ const en = {
     telegramDesc: 'Message Cerebro via Telegram bot',
     telegramDescConnected: 'Connected as @{{username}}',
     whatsapp: 'WhatsApp',
-    whatsappDesc: 'Chat with Cerebro on WhatsApp',
+    whatsappDesc: 'Pair a WhatsApp Business number for customer-support routines.',
+    whatsappDescConnected: 'Connected as {{phone}}.',
     email: 'Email',
     emailDesc: 'Interact with Cerebro via email',
     connect: 'Connect',
@@ -1263,6 +1264,345 @@ const en = {
     formatNumberList: 'Numbered list',
     formatChecklist: 'Checklist',
     formatHr: 'Divider',
+  },
+
+  // ── WhatsApp inline settings card ───────────────────────────
+  whatsappSection: {
+    title: 'WhatsApp Business',
+    description:
+      'Pair a WhatsApp Business number to Cerebro and let routines respond to inbound customer messages.',
+    safetyCallout:
+      "Use a dedicated WhatsApp Business number for this integration. WhatsApp may rate-limit or ban accounts it detects as automated — the risk is lower on a Business account with a dedicated number you aren't also using for personal chats.",
+    sessionKeychain: 'Session encrypted via the OS keychain.',
+    sessionPlaintext:
+      "Session stored under Cerebro's user-data directory (OS-level file permissions).",
+
+    pairDevice: 'Pair a WhatsApp device',
+    pairHint:
+      'Opens a QR code. Scan it from WhatsApp → Settings → Linked devices → Link a device.',
+
+    scanToPair: 'Scan to pair',
+    scanInstructions:
+      'Open WhatsApp on your phone → Settings → Linked devices → Link a device → scan this code.',
+    waitingForQr: 'Waiting for a QR code…',
+    qrAltText: 'WhatsApp pairing QR code',
+    cancel: 'Cancel',
+
+    disconnect: 'Disconnect + wipe session',
+
+    allowlistLabel: 'Allowed customer numbers',
+    allowlistPlaceholder: '+14155552671, +491701234567    or    *',
+    allowlistHelp:
+      'Only messages from these numbers will trigger routines. Use <code>*</code> to allow any caller (recommended only on a dedicated business number with strong filtering in your routine triggers).',
+    saveAllowlist: 'Save allowlist',
+    saved: 'Saved',
+
+    statePillOff: 'Not paired',
+    statePillPairing: 'Pairing',
+    statePillConnecting: 'Connecting',
+    statePillConnected: 'Connected',
+    statePillError: 'Error',
+  },
+
+  // ── WhatsApp onboarding tour (4-step modal with branching step 1) ──
+  whatsappConnect: {
+    stepLabel: 'Step {{current}} of {{total}}',
+    back: 'Back',
+    continue: 'Continue',
+    cancel: 'Cancel',
+    finish: 'Save & finish',
+    saving: 'Saving…',
+    allowlistCount_one: '{{count}} number',
+    allowlistCount_other: '{{count}} numbers',
+
+    // Step 1 — branching choice
+    step1Title: 'Do you have WhatsApp Business?',
+    step1Body:
+      'Cerebro pairs with the WhatsApp Business app as a linked device — the same way WhatsApp Web works. You can put it on a dedicated business phone number and have Cerebro answer inbound customer messages automatically.',
+    step1ChoiceYesTitle: 'Yes, I already have it',
+    step1ChoiceYesDesc:
+      "I've installed WhatsApp Business and signed up with a dedicated number.",
+    step1ChoiceNoTitle: 'Not yet — show me how',
+    step1ChoiceNoDesc: 'Walk me through creating a WhatsApp Business account first.',
+    step1AlreadyPairedTitle: 'Already paired',
+    step1AlreadyPairedDesc:
+      'Skip the setup and jump to the allowed-callers list.',
+
+    // Step 2a — Create a WhatsApp Business account (chosen "Not yet")
+    step2NoTitle: 'Create a WhatsApp Business account',
+    step2NoBody:
+      "WhatsApp Business is a free app separate from regular WhatsApp. Do this on the phone you want Cerebro to answer messages from — you don't need Cerebro to finish any of these steps.",
+    step2NoItem1Title: 'Get a dedicated phone number',
+    step2NoItem1Body:
+      "Use a number you aren't using for personal WhatsApp — a secondary SIM, an eSIM, or a virtual number. WhatsApp won't let the same number be signed in to both WhatsApp and WhatsApp Business.",
+    step2NoItem2Title: 'Install WhatsApp Business',
+    step2NoItem2Body:
+      "Download \"WhatsApp Business\" from the App Store (iPhone) or Google Play (Android). It's a separate app — not regular WhatsApp.",
+    step2NoItem3Title: 'Sign up with your business number',
+    step2NoItem3Body:
+      'Open the app, accept the terms, enter your dedicated number, and type in the 6-digit SMS code it texts you.',
+    step2NoItem4Title: 'Fill out your business profile',
+    step2NoItem4Body:
+      'Tap Settings → Business tools → Business profile. Add your business name, category, description, hours, and website. Customers see this when they message you.',
+    step2NoItem5Title: 'Set a greeting and away message (optional)',
+    step2NoItem5Body:
+      'Under Business tools, turn on a greeting message for first-time contacts and an away message for off-hours. These run if Cerebro ever disconnects.',
+    step2NoReadyTitle: "Got it set up? Let's pair it.",
+    step2NoReadyBody:
+      'When WhatsApp Business is signed in and can send/receive messages, continue to the QR step to connect it to Cerebro.',
+    step2NoOpenAppStore: 'Open the App Store (iPhone)',
+    step2NoOpenPlayStore: 'Open Google Play (Android)',
+    step2NoContinue: "I'm ready to pair",
+
+    // Step 2b — Before we scan (chosen "Yes")
+    step2YesTitle: 'Before we scan',
+    step2YesBody:
+      "Cerebro will pair as a linked device inside your WhatsApp Business app. Your phone needs to be unlocked and online for the first link — after that, Cerebro keeps its own session even if your phone goes offline briefly.",
+    step2YesTipTitle: 'Use a dedicated business number',
+    step2YesTipBody:
+      "WhatsApp may rate-limit or ban accounts it detects as automated. The risk is much lower on a dedicated Business number you aren't using for personal chats. Don't pair your personal number here.",
+    step2YesChecklistTitle: 'On your phone, have this ready',
+    step2YesChecklist1: 'WhatsApp Business app open and signed in',
+    step2YesChecklist2: 'Tap Settings → Linked devices → Link a device',
+    step2YesChecklist3: 'A face-unlock or fingerprint prompt may appear — approve it',
+    step2YesContinue: 'Open the QR code',
+
+    // Step 3 — Scan QR
+    step3Title: 'Scan this on your phone',
+    step3Body:
+      'In WhatsApp Business → Settings → Linked devices → Link a device, then point the camera at this code.',
+    step3WaitingForQr: 'Waiting for a QR code…',
+    step3Connecting: 'Linking with your phone…',
+    step3Connected: 'Connected! Finishing up…',
+    step3Error: 'Pairing failed.',
+    step3ErrorHint:
+      'Check your phone is online and the WhatsApp Business app is signed in, then try again.',
+    step3Restart: 'Restart',
+    step3CouldNotStart: "Couldn't start pairing.",
+
+    // Step 4 — Allowlist + finish
+    step4Title: 'Who can message Cerebro?',
+    step4Body:
+      'List the customer numbers Cerebro should respond to. Use international format (e.g. +14155552671). Separate multiple numbers with commas.',
+    step4Placeholder: '+14155552671, +491701234567',
+    step4AllowAllTitle: 'Or allow any caller',
+    step4AllowAllBody:
+      'Any number that messages this WhatsApp Business account will trigger routines. Recommended only if your routines filter messages strictly.',
+    step4AllowAllToggle: 'Allow any number',
+    step4SummaryTitle: "You're ready",
+    step4SummaryPhone: 'Paired number',
+    step4SummaryAllowlist: 'Allowed callers',
+    step4SummaryStorage: 'Session storage',
+    step4SummaryAllowAny: 'Anyone (*)',
+    step4NoneSet: 'none',
+    step4StorageKeychain: 'OS keychain',
+    step4StoragePlaintext: 'File (OS-protected)',
+    step4SaveError: "Couldn't save the allowlist.",
+    step4NotConnectedYet:
+      "You're not paired yet. Go back to scan the QR code, or save the allowlist now and pair later from the WhatsApp card.",
+  },
+
+  // ── Routine templates (list + 3-step instantiation dialog) ──
+  routineTemplates: {
+    // List view
+    title: 'Templates',
+    description:
+      'Pre-built routines for common workflows. Pick one, connect the integrations it needs, and customize a few fields.',
+    useTemplate: 'Use template',
+    moreSteps: '+ {{count}} more…',
+
+    // Dialog chrome
+    stepCounter: 'Step {{current}} of {{total}}',
+    close: 'Close',
+    back: 'Back',
+    next: 'Next',
+    createRoutine: 'Create routine',
+    useThisTemplate: 'Use this template',
+
+    // Preview step
+    previewStepsHeader: 'What this routine does',
+    previewIntegrationsHeader: 'Integrations it uses',
+
+    // Setup-required banner (shown on Preview when user clicks "Use this template"
+    // but a required integration is missing).
+    setupTitle: 'Finish setup to use this template',
+    setupBody_one:
+      'Connect the following integration and come back — your place in the wizard is kept.',
+    setupBody_other:
+      'Connect the following integrations and come back — your place in the wizard is kept.',
+    goToIntegrations: 'Go to Integrations',
+
+    // Customize step
+    customizeHeader: 'Customize',
+    customizeBody: 'Fill in the details the template uses for this specific flow.',
+
+    // Review step
+    reviewHeader: 'Review',
+    reviewBody: 'Cerebro will create a new routine with the following:',
+    reviewNameLabel: 'Name',
+    reviewDescriptionLabel: 'Description',
+    reviewWhatItDoes: 'What it does',
+    createFailed: 'Failed to create routine.',
+
+    // Connection labels + statuses (reused inside the dialog)
+    waLabel: 'WhatsApp Business',
+    waConnected: 'Connected as {{phone}}',
+    waNotConnected:
+      'Not paired — open the Integrations screen to pair a device.',
+    hsLabel: 'HubSpot CRM',
+    hsConnected: 'Connected to portal {{portal}}',
+    hsNotConnected:
+      'Not connected — paste a Private App token in the Integrations screen.',
+    tgLabel: 'Telegram',
+    tgConnected: 'Connected as @{{username}}',
+    tgNotConnected: 'Not connected.',
+    unknownPhone: '(unknown)',
+    unknownPortal: '(unknown)',
+    unknownUsername: '…',
+
+    // Variable inputs
+    selectPipelinePlaceholder: '— Select a pipeline —',
+    selectStagePlaceholder: '— Select a stage —',
+    selectPlaceholder: '— Select —',
+  },
+
+  // ── HubSpot settings card (inline configuration in Integrations) ──
+  hubspotSection: {
+    title: 'HubSpot CRM',
+    description:
+      'Open and update tickets, contacts, and deals in HubSpot from a routine.',
+    keychainEncrypted: 'Access token is encrypted in your OS keychain.',
+    keychainFallback:
+      'No OS keychain available — token stored with fallback encoding.',
+    tokenLabel: 'Private App access token',
+    // Renders with <Trans> so the bold "Connect" word can be emphasized.
+    tokenHelp:
+      'Create a Private App under HubSpot\'s Legacy Apps section with the <code>tickets</code>, <code>crm.objects.contacts.read</code>, and <code>crm.objects.contacts.write</code> scopes, then paste the generated token below. (Click <bold>Connect</bold> in the card header for a guided tour.)',
+    tokenPlaceholder: 'pat-na1-...',
+    verify: 'Verify',
+    verifying: 'Verifying…',
+    save: 'Save',
+    cancel: 'Cancel',
+    portalIdLine: 'Portal id: {{portalId}}',
+    portalIdHidden: '(hidden)',
+    unknownPortal: '(unknown)',
+    connectedToPortal: 'Connected to portal',
+    replaceToken: 'Replace token',
+    disconnect: 'Disconnect',
+    defaultsLabel: 'Default ticket pipeline + stage',
+    defaultsHelp:
+      'New tickets created by routines land here unless a step overrides them.',
+    loadingPipelines: 'Loading pipelines…',
+    pipelinePlaceholder: '— Pipeline —',
+    stagePlaceholder: '— Stage —',
+    saved: 'Saved',
+    saveDefaults: 'Save defaults',
+    unknownError: 'Unknown error',
+    saveFailed: 'Save failed',
+    hideToken: 'Hide token',
+    showToken: 'Show token',
+  },
+
+  // ── HubSpot onboarding tour (4-step modal) ──
+  hubspotTour: {
+    closeAriaLabel: 'Close',
+    stepCounter: 'Step {{current}} of {{total}}',
+    screenCounter: '· screen {{current}} of {{total}}',
+    step1Title: 'Connect HubSpot',
+    step2Title: 'Create the Private App',
+    step3Title: 'Paste your access token',
+    step4Title: 'Pick a default ticket pipeline',
+
+    // Step 1 body uses <Trans> so the emphasised phrases can move in translation.
+    step1Body:
+      'Cerebro talks to HubSpot using a <bold>Private App access token</bold>. Private Apps live under <bold>Legacy Apps</bold> in your portal — HubSpot renamed the section recently but the mechanism is unchanged. The next step walks you through creating one screen-by-screen.',
+    step1WarningTitle: "Don't use the Developer portal",
+    step1WarningBody:
+      'Pages saying "Developer" / "Projects" / "MCP Auth Apps" are for building marketplace apps and won\'t give you a token Cerebro can use. The button on the next step opens the right page directly.',
+    step1Bullet1: 'Stays inside your portal — no public app submission, no review.',
+    step1Bullet2: 'You pick exactly which scopes Cerebro can use.',
+    step1Bullet3: 'The token is encrypted at rest in your OS keychain.',
+
+    openInBrowser: 'Open in browser',
+    copy: 'Copy',
+    copyAll: 'Copy all',
+    placeholderDropFile:
+      'Drop this screenshot at <code>src/assets/hubspot-tour/{{filename}}</code> and it will render here.',
+    goToScreenAria: 'Go to screen {{number}}',
+    scopesToEnable: 'Scopes to enable',
+
+    // Walkthrough screenshots (step 2)
+    walk1Caption: 'You\'ll land on a "Private apps have moved" page.',
+    walk1Hint: 'Click the black "Go to Legacy Apps" button.',
+    walk2Caption: "You're now on the Legacy Apps list.",
+    walk2Hint: 'Click "Create legacy app" in the top-right.',
+    walk3Caption: 'HubSpot asks: Public or Private?',
+    walk3Hint:
+      'Pick "Private" — the right card. (Ignore the "won\'t get future updates" warning; Private Apps are still the supported per-portal integration mechanism.)',
+    walk4Caption: 'Basic info — name your app.',
+    walk4Hint:
+      'Pick anything memorable, e.g. "Cerebro". Then click the "Scopes" tab at the top.',
+    walk5Caption: 'Scopes — pick what Cerebro can do.',
+    walk5Hint:
+      'Click "Add new scope", then search for and tick the three scopes listed below this walkthrough. Click Update, then "Create app" in the top-right.',
+    walk6Caption: 'HubSpot confirms.',
+    walk6Hint: 'Click "Continue creating".',
+    walk7Caption: 'Done — your access token is on the Auth tab.',
+    walk7Hint:
+      'Click "Show token", then "Copy". Paste it into the next step of this tour.',
+
+    // Required scopes descriptions (the slug names themselves stay in English)
+    scopeReasonTickets:
+      'Read your ticket pipelines and open new support tickets from a routine.',
+    scopeReasonContactsRead:
+      'Look up an existing customer by email or phone before creating a ticket.',
+    scopeReasonContactsWrite:
+      "Create or update the customer's contact record.",
+
+    // Step 3 — paste token
+    step3AlreadySavedBody:
+      "A HubSpot token is already saved. Continue to pick your default ticket pipeline, or replace the token if you've rotated it.",
+    step3Connected: 'Connected',
+    step3PortalLine: 'Portal {{portalId}}',
+    step3ReplaceToken: 'Replace token',
+    step3PasteBody:
+      "Paste the access token from your Private App's <bold>Auth</bold> tab. It usually starts with <code>pat-na2-</code> or similar.",
+    step3TokenLabel: 'Access token',
+    step3TokenPlaceholder: 'pat-na2-...',
+    step3Verify: 'Verify',
+    step3Verifying: 'Verifying…',
+    step3Cancel: 'Cancel',
+    step3VerifiedPortal: 'Verified — portal {{portalId}}',
+    step3PortalHidden: '(hidden)',
+    step3CouldNotStoreToken: 'Could not store token',
+    step3WillEncrypt:
+      'Once saved, the token is encrypted in your OS keychain.',
+    step3NoKeychain:
+      'No OS keychain available — Cerebro will store the token with fallback encoding.',
+    step3UnknownError: 'Unknown error',
+    step3HideToken: 'Hide token',
+    step3ShowToken: 'Show token',
+
+    // Step 4 — defaults
+    step4Body:
+      "Pick the pipeline + stage new tickets should land in by default. Routine steps can override these, but you'll save a click on every routine if you set them once here.",
+    step4Loading: 'Loading pipelines from HubSpot…',
+    step4NoPipelinesPrefix:
+      'No pipelines came back from HubSpot. Check the <code>tickets</code> scope is enabled on the Private App, then',
+    step4TryAgain: 'try again',
+    step4PipelinePlaceholder: '— Pipeline —',
+    step4StagePlaceholder: '— Stage —',
+    step4CouldNotSave: 'Could not save defaults',
+
+    // Footer
+    back: 'Back',
+    cancel: 'Cancel',
+    continue: 'Continue',
+    nextScreen: 'Next screen',
+    iHaveToken: 'I have my token',
+    skip: 'Skip',
+    saving: 'Saving…',
+    saveAndFinish: 'Save & finish',
   },
 } as const;
 

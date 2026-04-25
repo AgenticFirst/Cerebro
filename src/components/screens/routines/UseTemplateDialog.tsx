@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Settings2, Sparkles, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Plug, Settings2, Sparkles, X } from 'lucide-react';
 import clsx from 'clsx';
-import type { RoutineTemplate } from '../../../types/routine-templates';
+import { useTranslation } from 'react-i18next';
+import type { RoutineTemplate, RequiredConnection } from '../../../types/routine-templates';
 import type { CreateRoutineInput } from '../../../types/routines';
 import type {
   HubSpotPipelineSummary,
@@ -10,12 +11,22 @@ import type {
   TelegramStatusResponse,
 } from '../../../types/ipc';
 import { materializeTemplate } from '../../../routine-templates';
+import { WhatsAppIcon, HubSpotIcon, TelegramIcon } from '../../icons/BrandIcons';
 
 interface UseTemplateDialogProps {
   template: RoutineTemplate;
   onClose: () => void;
   onCreate: (input: CreateRoutineInput) => Promise<boolean>;
+  /** Optional — when provided, the setup banner exposes a "Go to Integrations"
+   *  shortcut that closes the dialog and navigates the app there. */
+  onOpenIntegrations?: () => void;
 }
+
+const CONNECTION_ICON: Partial<Record<RequiredConnection, (p: { size?: number; className?: string }) => JSX.Element>> = {
+  whatsapp: WhatsAppIcon,
+  hubspot: HubSpotIcon,
+  telegram: TelegramIcon,
+};
 
 type Step = 1 | 2 | 3;
 type ConnectionId = 'whatsapp' | 'hubspot' | 'telegram';
@@ -27,9 +38,14 @@ interface ConnectionStatus {
   detail: string;
 }
 
-export default function UseTemplateDialog({ template, onClose, onCreate }: UseTemplateDialogProps) {
+export default function UseTemplateDialog({ template, onClose, onCreate, onOpenIntegrations }: UseTemplateDialogProps) {
+  const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
   const [connections, setConnections] = useState<ConnectionStatus[]>([]);
+  // When true, the setup-required banner is rendered inside the Preview step.
+  // Flipped on by clicking "Use this template" while any required connection
+  // is missing; cleared when connections are later detected as ready.
+  const [showSetupPrompt, setShowSetupPrompt] = useState(false);
   const [pipelines, setPipelines] = useState<HubSpotPipelineSummary[]>([]);
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
@@ -47,31 +63,37 @@ export default function UseTemplateDialog({ template, onClose, onCreate }: UseTe
       const s: WhatsAppStatusResponse = await window.cerebro.whatsapp.status();
       out.push({
         id: 'whatsapp',
-        label: 'WhatsApp Business',
+        label: t('routineTemplates.waLabel'),
         connected: s.state === 'connected',
-        detail: s.state === 'connected' ? `Connected as ${s.phoneNumber ?? '(unknown)'}` : 'Not paired — open the Integrations screen to pair a device.',
+        detail: s.state === 'connected'
+          ? t('routineTemplates.waConnected', { phone: s.phoneNumber ?? t('routineTemplates.unknownPhone') })
+          : t('routineTemplates.waNotConnected'),
       });
     }
     if (needed.has('hubspot')) {
       const s: HubSpotStatusResponse = await window.cerebro.hubspot.status();
       out.push({
         id: 'hubspot',
-        label: 'HubSpot CRM',
+        label: t('routineTemplates.hsLabel'),
         connected: s.hasToken,
-        detail: s.hasToken ? `Connected to portal ${s.portalId ?? '(unknown)'}` : 'Not connected — paste a Private App token in the Integrations screen.',
+        detail: s.hasToken
+          ? t('routineTemplates.hsConnected', { portal: s.portalId ?? t('routineTemplates.unknownPortal') })
+          : t('routineTemplates.hsNotConnected'),
       });
     }
     if (needed.has('telegram')) {
       const s: TelegramStatusResponse = await window.cerebro.telegram.status();
       out.push({
         id: 'telegram',
-        label: 'Telegram',
+        label: t('routineTemplates.tgLabel'),
         connected: Boolean(s.hasToken),
-        detail: s.hasToken ? `Connected as @${s.botUsername ?? '…'}` : 'Not connected.',
+        detail: s.hasToken
+          ? t('routineTemplates.tgConnected', { username: s.botUsername ?? t('routineTemplates.unknownUsername') })
+          : t('routineTemplates.tgNotConnected'),
       });
     }
     setConnections((prev) => (sameConnections(prev, out) ? prev : out));
-  }, [template.requiredConnections]);
+  }, [template.requiredConnections, t]);
 
   useEffect(() => {
     void refreshConnections();
@@ -98,6 +120,21 @@ export default function UseTemplateDialog({ template, onClose, onCreate }: UseTe
   }, [hubSpotConnected]);
 
   const allConnected = connections.length > 0 && connections.every((c) => c.connected);
+  const missingConnections = useMemo(() => connections.filter((c) => !c.connected), [connections]);
+
+  // Auto-clear the setup banner once the user has finished connecting everything
+  // (e.g. they clicked "Go to Integrations", paired WhatsApp, came back).
+  useEffect(() => {
+    if (allConnected && showSetupPrompt) setShowSetupPrompt(false);
+  }, [allConnected, showSetupPrompt]);
+
+  const handleAdvanceFromPreview = useCallback(() => {
+    if (!allConnected) {
+      setShowSetupPrompt(true);
+      return;
+    }
+    setStep(2);
+  }, [allConnected]);
 
   // ── Validation for Customize step ────────────────────────────
   const missingVariables = useMemo(() => {
@@ -128,13 +165,13 @@ export default function UseTemplateDialog({ template, onClose, onCreate }: UseTe
       };
       const ok = await onCreate(input);
       if (ok) onClose();
-      else setSubmitError('Failed to create routine.');
+      else setSubmitError(t('routineTemplates.createFailed'));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
     }
-  }, [materialized, onCreate, onClose]);
+  }, [materialized, onCreate, onClose, t]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={onClose}>
@@ -149,9 +186,15 @@ export default function UseTemplateDialog({ template, onClose, onCreate }: UseTe
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-text-primary truncate">{template.name.replace(/%%\w+%%/g, '…')}</div>
-            <div className="text-xs text-text-tertiary">Step {step} of 3</div>
+            <div className="text-xs text-text-tertiary">
+              {t('routineTemplates.stepCounter', { current: step, total: 3 })}
+            </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded text-text-tertiary hover:text-text-secondary">
+          <button
+            onClick={onClose}
+            aria-label={t('routineTemplates.close')}
+            className="p-1 rounded text-text-tertiary hover:text-text-secondary"
+          >
             <X size={16} />
           </button>
         </div>
@@ -160,43 +203,98 @@ export default function UseTemplateDialog({ template, onClose, onCreate }: UseTe
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {step === 1 && (
             <div>
-              <h4 className="text-sm font-medium text-text-primary mb-1">Required connections</h4>
-              <p className="text-xs text-text-tertiary mb-4 leading-relaxed">
-                This template needs the integrations below. Connect them in the Integrations screen, then return here.
+              <p className="text-sm text-text-secondary leading-relaxed mb-5">
+                {template.description.replace(/%%\w+%%/g, '…')}
               </p>
-              <div className="space-y-2">
-                {connections.map((c) => (
-                  <div
-                    key={c.id}
-                    className={clsx(
-                      'flex items-center gap-3 px-3 py-2.5 rounded-md border',
-                      c.connected
-                        ? 'border-emerald-500/30 bg-emerald-500/5'
-                        : 'border-amber-500/30 bg-amber-500/5',
-                    )}
-                  >
-                    {c.connected ? (
-                      <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0" />
-                    ) : (
-                      <AlertCircle size={14} className="text-amber-400 flex-shrink-0" />
-                    )}
+
+              <div className="mb-5">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-2">
+                  {t('routineTemplates.previewStepsHeader')}
+                </div>
+                <ol className="space-y-2">
+                  {template.plainEnglishSteps.map((s, i) => (
+                    <li key={i} className="flex gap-3 text-xs text-text-secondary leading-relaxed">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-accent/15 text-accent text-[10px] font-semibold flex items-center justify-center">
+                        {i + 1}
+                      </span>
+                      <span className="pt-0.5">{s.replace(/%%\w+%%/g, '…')}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {connections.length > 0 && (
+                <div className="mb-1">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-2">
+                    {t('routineTemplates.previewIntegrationsHeader')}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {connections.map((c) => {
+                      const Icon = CONNECTION_ICON[c.id];
+                      return (
+                        <span
+                          key={c.id}
+                          title={c.detail}
+                          className={clsx(
+                            'text-[11px] font-medium px-2 py-1 rounded-full border flex items-center gap-1.5',
+                            c.connected
+                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                              : 'border-border-subtle bg-bg-surface text-text-tertiary',
+                          )}
+                        >
+                          {Icon ? <Icon size={11} /> : null}
+                          {c.label}
+                          {c.connected ? <CheckCircle2 size={10} /> : null}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {showSetupPrompt && missingConnections.length > 0 && (
+                <div className="mt-5 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-text-primary">{c.label}</div>
-                      <div className="text-[11px] text-text-tertiary">{c.detail}</div>
+                      <div className="text-xs font-medium text-text-primary">
+                        {t('routineTemplates.setupTitle')}
+                      </div>
+                      <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
+                        {t('routineTemplates.setupBody', { count: missingConnections.length })}
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {missingConnections.map((c) => (
+                          <li key={c.id} className="text-[11px] text-text-secondary flex items-center gap-1.5">
+                            <span className="w-1 h-1 rounded-full bg-amber-400" />
+                            <span className="font-medium text-text-primary">{c.label}</span>
+                            <span className="text-text-tertiary">— {c.detail}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {onOpenIntegrations && (
+                        <button
+                          type="button"
+                          onClick={onOpenIntegrations}
+                          className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/30"
+                        >
+                          <Plug size={11} /> {t('routineTemplates.goToIntegrations')}
+                        </button>
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
           {step === 2 && (
             <div>
               <div className="flex items-center gap-2 text-sm font-medium text-text-primary mb-1">
-                <Settings2 size={14} /> Customize
+                <Settings2 size={14} /> {t('routineTemplates.customizeHeader')}
               </div>
               <p className="text-xs text-text-tertiary mb-4 leading-relaxed">
-                Fill in the details the template uses for this specific customer-support flow.
+                {t('routineTemplates.customizeBody')}
               </p>
               <div className="space-y-3">
                 {template.variables.map((v) => (
@@ -216,16 +314,18 @@ export default function UseTemplateDialog({ template, onClose, onCreate }: UseTe
           {step === 3 && (
             <div>
               <div className="flex items-center gap-2 text-sm font-medium text-text-primary mb-1">
-                <Sparkles size={14} /> Review
+                <Sparkles size={14} /> {t('routineTemplates.reviewHeader')}
               </div>
               <p className="text-xs text-text-tertiary mb-4 leading-relaxed">
-                Cerebro will create a new routine with the following:
+                {t('routineTemplates.reviewBody')}
               </p>
               <div className="space-y-3 text-xs">
-                <ReviewRow label="Name" value={materialized.name} />
-                <ReviewRow label="Description" value={materialized.description} />
+                <ReviewRow label={t('routineTemplates.reviewNameLabel')} value={materialized.name} />
+                <ReviewRow label={t('routineTemplates.reviewDescriptionLabel')} value={materialized.description} />
                 <div className="rounded-md border border-border-subtle bg-bg-surface p-3">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-2">What it does</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-2">
+                    {t('routineTemplates.reviewWhatItDoes')}
+                  </div>
                   <ul className="space-y-1 text-text-secondary leading-relaxed">
                     {materialized.plainEnglishSteps.map((s, i) => (
                       <li key={i} className="flex gap-2">
@@ -252,20 +352,24 @@ export default function UseTemplateDialog({ template, onClose, onCreate }: UseTe
               onClick={() => setStep((s) => Math.max(1, s - 1) as Step)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md text-text-tertiary hover:text-text-secondary"
             >
-              <ArrowLeft size={12} /> Back
+              <ArrowLeft size={12} /> {t('routineTemplates.back')}
             </button>
           ) : <span />}
 
-          {step < 3 ? (
+          {step === 1 ? (
             <button
-              onClick={() => setStep((s) => Math.min(3, s + 1) as Step)}
-              disabled={
-                (step === 1 && !allConnected) ||
-                (step === 2 && missingVariables.length > 0)
-              }
+              onClick={handleAdvanceFromPreview}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-accent text-white hover:bg-accent-hover"
+            >
+              <Sparkles size={12} /> {t('routineTemplates.useThisTemplate')}
+            </button>
+          ) : step === 2 ? (
+            <button
+              onClick={() => setStep(3)}
+              disabled={missingVariables.length > 0}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Next <ArrowRight size={12} />
+              {t('routineTemplates.next')} <ArrowRight size={12} />
             </button>
           ) : (
             <button
@@ -274,7 +378,7 @@ export default function UseTemplateDialog({ template, onClose, onCreate }: UseTe
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
             >
               {submitting && <Loader2 size={12} className="animate-spin" />}
-              Create routine
+              {t('routineTemplates.createRoutine')}
             </button>
           )}
         </div>
@@ -309,6 +413,7 @@ function VariableInput(props: {
   parentPipeline: string | undefined;
   onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation();
   const { variable, value, pipelines, parentPipeline, onChange } = props;
 
   const labelNode = (
@@ -327,7 +432,7 @@ function VariableInput(props: {
           onChange={(e) => onChange(e.target.value)}
           className="mt-1 w-full h-9 px-3 text-sm bg-bg-surface border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
         >
-          <option value="">— Select a pipeline —</option>
+          <option value="">{t('routineTemplates.selectPipelinePlaceholder')}</option>
           {pipelines.map((p) => (
             <option key={p.id} value={p.id}>{p.label}</option>
           ))}
@@ -348,7 +453,7 @@ function VariableInput(props: {
           disabled={!parentPipeline}
           className="mt-1 w-full h-9 px-3 text-sm bg-bg-surface border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50 disabled:opacity-50"
         >
-          <option value="">— Select a stage —</option>
+          <option value="">{t('routineTemplates.selectStagePlaceholder')}</option>
           {stages.map((s) => (
             <option key={s.id} value={s.id}>{s.label}</option>
           ))}
@@ -367,7 +472,7 @@ function VariableInput(props: {
           onChange={(e) => onChange(e.target.value)}
           className="mt-1 w-full h-9 px-3 text-sm bg-bg-surface border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
         >
-          <option value="">— Select —</option>
+          <option value="">{t('routineTemplates.selectPlaceholder')}</option>
           {(variable.options ?? []).map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}

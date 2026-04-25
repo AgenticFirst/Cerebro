@@ -896,7 +896,8 @@ const es: TranslationKeys = {
     telegramDesc: 'Env\u00eda mensajes a Cerebro a trav\u00e9s del bot de Telegram',
     telegramDescConnected: 'Conectado como @{{username}}',
     whatsapp: 'WhatsApp',
-    whatsappDesc: 'Chatea con Cerebro en WhatsApp',
+    whatsappDesc: 'Vincula un número de WhatsApp Business para rutinas de atención al cliente.',
+    whatsappDescConnected: 'Conectado como {{phone}}.',
     email: 'Correo electr\u00f3nico',
     emailDesc: 'Interact\u00faa con Cerebro v\u00eda correo electr\u00f3nico',
     connect: 'Conectar',
@@ -1255,6 +1256,330 @@ const es: TranslationKeys = {
     formatNumberList: 'Lista numerada',
     formatChecklist: 'Lista de verificaci\u00f3n',
     formatHr: 'Divisor',
+  },
+
+  // ── Tarjeta de configuración de WhatsApp ───────────────────
+  whatsappSection: {
+    title: 'WhatsApp Business',
+    description:
+      'Vincula un número de WhatsApp Business a Cerebro y deja que las rutinas respondan a los mensajes entrantes de tus clientes.',
+    safetyCallout:
+      'Usa un número de WhatsApp Business dedicado para esta integración. WhatsApp puede limitar o bloquear cuentas que detecte como automatizadas — el riesgo es menor en una cuenta Business con un número dedicado que no uses también para chats personales.',
+    sessionKeychain: 'Sesión cifrada en el llavero del sistema operativo.',
+    sessionPlaintext:
+      'Sesión guardada en el directorio de datos de Cerebro (permisos de archivo del sistema operativo).',
+
+    pairDevice: 'Vincular un dispositivo de WhatsApp',
+    pairHint:
+      'Abre un código QR. Escanéalo desde WhatsApp → Ajustes → Dispositivos vinculados → Vincular un dispositivo.',
+
+    scanToPair: 'Escanea para vincular',
+    scanInstructions:
+      'Abre WhatsApp en tu teléfono → Ajustes → Dispositivos vinculados → Vincular un dispositivo → escanea este código.',
+    waitingForQr: 'Esperando el código QR…',
+    qrAltText: 'Código QR de vinculación de WhatsApp',
+    cancel: 'Cancelar',
+
+    disconnect: 'Desconectar y borrar sesión',
+
+    allowlistLabel: 'Números de clientes permitidos',
+    allowlistPlaceholder: '+14155552671, +491701234567    o    *',
+    allowlistHelp:
+      'Solo los mensajes de estos números activarán rutinas. Usa <code>*</code> para permitir cualquier remitente (se recomienda únicamente en un número Business dedicado con filtros estrictos en los disparadores de tus rutinas).',
+    saveAllowlist: 'Guardar lista',
+    saved: 'Guardado',
+
+    statePillOff: 'Sin vincular',
+    statePillPairing: 'Vinculando',
+    statePillConnecting: 'Conectando',
+    statePillConnected: 'Conectado',
+    statePillError: 'Error',
+  },
+
+  // ── Tour de incorporación de WhatsApp (modal de 4 pasos) ──
+  whatsappConnect: {
+    stepLabel: 'Paso {{current}} de {{total}}',
+    back: 'Atrás',
+    continue: 'Continuar',
+    cancel: 'Cancelar',
+    finish: 'Guardar y finalizar',
+    saving: 'Guardando…',
+    allowlistCount_one: '{{count}} número',
+    allowlistCount_other: '{{count}} números',
+
+    step1Title: '¿Tienes WhatsApp Business?',
+    step1Body:
+      'Cerebro se vincula a la app de WhatsApp Business como un dispositivo vinculado — igual que WhatsApp Web. Puedes usarlo con un número de teléfono dedicado para tu negocio y dejar que Cerebro responda automáticamente los mensajes entrantes de tus clientes.',
+    step1ChoiceYesTitle: 'Sí, ya la tengo',
+    step1ChoiceYesDesc:
+      'Ya instalé WhatsApp Business y me registré con un número dedicado.',
+    step1ChoiceNoTitle: 'Todavía no — muéstrame cómo',
+    step1ChoiceNoDesc:
+      'Guíame para crear primero una cuenta de WhatsApp Business.',
+    step1AlreadyPairedTitle: 'Ya está vinculado',
+    step1AlreadyPairedDesc:
+      'Omite la configuración y ve directo a la lista de remitentes permitidos.',
+
+    step2NoTitle: 'Crea una cuenta de WhatsApp Business',
+    step2NoBody:
+      'WhatsApp Business es una app gratuita, distinta de la de WhatsApp normal. Haz estos pasos en el teléfono desde el que quieres que Cerebro responda los mensajes — Cerebro no es necesario para ninguno de ellos.',
+    step2NoItem1Title: 'Consigue un número de teléfono dedicado',
+    step2NoItem1Body:
+      'Usa un número que no estés usando con WhatsApp personal — una SIM secundaria, una eSIM o un número virtual. WhatsApp no permite que el mismo número esté a la vez en WhatsApp y WhatsApp Business.',
+    step2NoItem2Title: 'Instala WhatsApp Business',
+    step2NoItem2Body:
+      'Descarga "WhatsApp Business" desde la App Store (iPhone) o Google Play (Android). Es una app distinta — no es la de WhatsApp normal.',
+    step2NoItem3Title: 'Regístrate con tu número de negocio',
+    step2NoItem3Body:
+      'Abre la app, acepta los términos, introduce tu número dedicado y escribe el código SMS de 6 dígitos que te envíen.',
+    step2NoItem4Title: 'Completa el perfil de tu negocio',
+    step2NoItem4Body:
+      'Ve a Ajustes → Herramientas para la empresa → Perfil de la empresa. Añade el nombre del negocio, categoría, descripción, horarios y sitio web. Los clientes lo verán cuando te escriban.',
+    step2NoItem5Title: 'Configura un saludo y mensaje de ausencia (opcional)',
+    step2NoItem5Body:
+      'En Herramientas para la empresa, activa un mensaje de bienvenida para nuevos contactos y un mensaje de ausencia fuera de horario. Se usarán si Cerebro llegara a desconectarse.',
+    step2NoReadyTitle: '¿Listo? Vinculémoslo.',
+    step2NoReadyBody:
+      'Cuando WhatsApp Business esté iniciado y pueda enviar y recibir mensajes, continúa al paso del QR para vincularlo a Cerebro.',
+    step2NoOpenAppStore: 'Abrir App Store (iPhone)',
+    step2NoOpenPlayStore: 'Abrir Google Play (Android)',
+    step2NoContinue: 'Estoy listo para vincular',
+
+    step2YesTitle: 'Antes de escanear',
+    step2YesBody:
+      'Cerebro se vinculará como un dispositivo dentro de tu app de WhatsApp Business. Tu teléfono debe estar desbloqueado y en línea para el primer vínculo — luego Cerebro mantiene su propia sesión aunque tu teléfono se desconecte unos momentos.',
+    step2YesTipTitle: 'Usa un número dedicado para negocio',
+    step2YesTipBody:
+      'WhatsApp puede limitar o bloquear cuentas que detecte como automatizadas. El riesgo es mucho menor en un número Business dedicado que no uses para chats personales. No vincules aquí tu número personal.',
+    step2YesChecklistTitle: 'En tu teléfono, ten listo lo siguiente',
+    step2YesChecklist1: 'La app de WhatsApp Business abierta y con sesión iniciada',
+    step2YesChecklist2: 'Toca Ajustes → Dispositivos vinculados → Vincular un dispositivo',
+    step2YesChecklist3:
+      'Puede aparecer un aviso de desbloqueo con rostro o huella — apruébalo',
+    step2YesContinue: 'Abrir el código QR',
+
+    step3Title: 'Escanea esto en tu teléfono',
+    step3Body:
+      'Ve a WhatsApp Business → Ajustes → Dispositivos vinculados → Vincular un dispositivo, y apunta la cámara a este código.',
+    step3WaitingForQr: 'Esperando el código QR…',
+    step3Connecting: 'Vinculando con tu teléfono…',
+    step3Connected: '¡Conectado! Finalizando…',
+    step3Error: 'La vinculación falló.',
+    step3ErrorHint:
+      'Verifica que tu teléfono esté en línea y que la app de WhatsApp Business tenga la sesión iniciada; luego vuelve a intentarlo.',
+    step3Restart: 'Reintentar',
+    step3CouldNotStart: 'No se pudo iniciar la vinculación.',
+
+    step4Title: '¿Quién puede escribirle a Cerebro?',
+    step4Body:
+      'Lista los números de clientes a los que Cerebro debe responder. Usa formato internacional (p. ej. +14155552671). Separa varios con comas.',
+    step4Placeholder: '+14155552671, +491701234567',
+    step4AllowAllTitle: 'O permite a cualquiera',
+    step4AllowAllBody:
+      'Cualquier número que escriba a esta cuenta de WhatsApp Business activará rutinas. Recomendado solo si tus rutinas filtran los mensajes estrictamente.',
+    step4AllowAllToggle: 'Permitir cualquier número',
+    step4SummaryTitle: 'Todo listo',
+    step4SummaryPhone: 'Número vinculado',
+    step4SummaryAllowlist: 'Remitentes permitidos',
+    step4SummaryStorage: 'Almacenamiento de sesión',
+    step4SummaryAllowAny: 'Cualquiera (*)',
+    step4NoneSet: 'ninguno',
+    step4StorageKeychain: 'Llavero del SO',
+    step4StoragePlaintext: 'Archivo (protegido por el SO)',
+    step4SaveError: 'No se pudo guardar la lista.',
+    step4NotConnectedYet:
+      'Todavía no estás vinculado. Vuelve atrás para escanear el código QR, o guarda la lista ahora y vincula más tarde desde la tarjeta de WhatsApp.',
+  },
+
+  // ── Plantillas de rutinas (lista + diálogo de 3 pasos) ──
+  routineTemplates: {
+    title: 'Plantillas',
+    description:
+      'Rutinas predefinidas para flujos comunes. Elige una, conecta las integraciones que necesita y personaliza algunos campos.',
+    useTemplate: 'Usar plantilla',
+    moreSteps: '+ {{count}} más…',
+
+    stepCounter: 'Paso {{current}} de {{total}}',
+    close: 'Cerrar',
+    back: 'Atrás',
+    next: 'Siguiente',
+    createRoutine: 'Crear rutina',
+    useThisTemplate: 'Usar esta plantilla',
+
+    previewStepsHeader: 'Qué hace esta rutina',
+    previewIntegrationsHeader: 'Integraciones que utiliza',
+
+    setupTitle: 'Termina la configuración para usar esta plantilla',
+    setupBody_one:
+      'Conecta la siguiente integración y vuelve — se conservará tu avance en el asistente.',
+    setupBody_other:
+      'Conecta las siguientes integraciones y vuelve — se conservará tu avance en el asistente.',
+    goToIntegrations: 'Ir a Integraciones',
+
+    customizeHeader: 'Personalizar',
+    customizeBody:
+      'Completa los detalles que la plantilla usa para este flujo específico.',
+
+    reviewHeader: 'Revisar',
+    reviewBody: 'Cerebro creará una nueva rutina con lo siguiente:',
+    reviewNameLabel: 'Nombre',
+    reviewDescriptionLabel: 'Descripción',
+    reviewWhatItDoes: 'Qué hace',
+    createFailed: 'No se pudo crear la rutina.',
+
+    waLabel: 'WhatsApp Business',
+    waConnected: 'Conectado como {{phone}}',
+    waNotConnected:
+      'No vinculado — abre la pantalla de Integraciones para vincular un dispositivo.',
+    hsLabel: 'HubSpot CRM',
+    hsConnected: 'Conectado al portal {{portal}}',
+    hsNotConnected:
+      'No conectado — pega un token de Private App en la pantalla de Integraciones.',
+    tgLabel: 'Telegram',
+    tgConnected: 'Conectado como @{{username}}',
+    tgNotConnected: 'No conectado.',
+    unknownPhone: '(desconocido)',
+    unknownPortal: '(desconocido)',
+    unknownUsername: '…',
+
+    selectPipelinePlaceholder: '— Selecciona un pipeline —',
+    selectStagePlaceholder: '— Selecciona una etapa —',
+    selectPlaceholder: '— Selecciona —',
+  },
+
+  // ── Tarjeta de configuración de HubSpot ──
+  hubspotSection: {
+    title: 'HubSpot CRM',
+    description:
+      'Abre y actualiza tickets, contactos y negocios en HubSpot desde una rutina.',
+    keychainEncrypted:
+      'El token de acceso se cifra en el llavero de tu sistema operativo.',
+    keychainFallback:
+      'Llavero del SO no disponible — el token se guarda con codificación de respaldo.',
+    tokenLabel: 'Token de acceso de la Private App',
+    tokenHelp:
+      'Crea una Private App en la sección Legacy Apps de HubSpot con los permisos <code>tickets</code>, <code>crm.objects.contacts.read</code> y <code>crm.objects.contacts.write</code>, y luego pega el token generado abajo. (Haz clic en <bold>Conectar</bold> en la cabecera de la tarjeta para un tour guiado.)',
+    tokenPlaceholder: 'pat-na1-...',
+    verify: 'Verificar',
+    verifying: 'Verificando…',
+    save: 'Guardar',
+    cancel: 'Cancelar',
+    portalIdLine: 'Portal id: {{portalId}}',
+    portalIdHidden: '(oculto)',
+    unknownPortal: '(desconocido)',
+    connectedToPortal: 'Conectado al portal',
+    replaceToken: 'Reemplazar token',
+    disconnect: 'Desconectar',
+    defaultsLabel: 'Pipeline y etapa de ticket predeterminados',
+    defaultsHelp:
+      'Los tickets nuevos creados por rutinas llegan aquí a menos que un paso lo sobrescriba.',
+    loadingPipelines: 'Cargando pipelines…',
+    pipelinePlaceholder: '— Pipeline —',
+    stagePlaceholder: '— Etapa —',
+    saved: 'Guardado',
+    saveDefaults: 'Guardar predeterminados',
+    unknownError: 'Error desconocido',
+    saveFailed: 'Error al guardar',
+    hideToken: 'Ocultar token',
+    showToken: 'Mostrar token',
+  },
+
+  // ── Tour de incorporación de HubSpot (modal de 4 pasos) ──
+  hubspotTour: {
+    closeAriaLabel: 'Cerrar',
+    stepCounter: 'Paso {{current}} de {{total}}',
+    screenCounter: '· pantalla {{current}} de {{total}}',
+    step1Title: 'Conectar HubSpot',
+    step2Title: 'Crear la Private App',
+    step3Title: 'Pega tu token de acceso',
+    step4Title: 'Elige un pipeline de tickets predeterminado',
+
+    step1Body:
+      'Cerebro se comunica con HubSpot mediante un <bold>token de acceso de Private App</bold>. Las Private Apps están dentro de <bold>Legacy Apps</bold> en tu portal — HubSpot renombró la sección recientemente pero el mecanismo no cambió. El siguiente paso te guía pantalla por pantalla para crear una.',
+    step1WarningTitle: 'No uses el portal de Developer',
+    step1WarningBody:
+      'Las páginas que digan "Developer" / "Projects" / "MCP Auth Apps" son para apps de marketplace y no te darán un token que Cerebro pueda usar. El botón del siguiente paso abre la página correcta directamente.',
+    step1Bullet1:
+      'Se queda dentro de tu portal — sin envío público ni revisión.',
+    step1Bullet2: 'Tú eliges exactamente qué scopes puede usar Cerebro.',
+    step1Bullet3:
+      'El token se almacena cifrado en el llavero de tu sistema operativo.',
+
+    openInBrowser: 'Abrir en el navegador',
+    copy: 'Copiar',
+    copyAll: 'Copiar todo',
+    placeholderDropFile:
+      'Coloca esta captura en <code>src/assets/hubspot-tour/{{filename}}</code> y se mostrará aquí.',
+    goToScreenAria: 'Ir a la pantalla {{number}}',
+    scopesToEnable: 'Scopes a habilitar',
+
+    walk1Caption: 'Llegarás a la página "Private apps have moved".',
+    walk1Hint: 'Haz clic en el botón negro "Go to Legacy Apps".',
+    walk2Caption: 'Ahora estás en la lista de Legacy Apps.',
+    walk2Hint: 'Haz clic en "Create legacy app" en la esquina superior derecha.',
+    walk3Caption: 'HubSpot pregunta: ¿Public o Private?',
+    walk3Hint:
+      'Elige "Private" — la tarjeta de la derecha. (Ignora el aviso "won\'t get future updates"; las Private Apps siguen siendo el mecanismo oficial por portal.)',
+    walk4Caption: 'Información básica — dale nombre a tu app.',
+    walk4Hint:
+      'Elige algo memorable, p. ej. "Cerebro". Luego haz clic en la pestaña "Scopes" arriba.',
+    walk5Caption: 'Scopes — elige qué puede hacer Cerebro.',
+    walk5Hint:
+      'Haz clic en "Add new scope", luego busca y marca los tres scopes que aparecen debajo de este tutorial. Haz clic en Update y luego en "Create app" arriba a la derecha.',
+    walk6Caption: 'HubSpot confirma.',
+    walk6Hint: 'Haz clic en "Continue creating".',
+    walk7Caption: 'Listo — tu token de acceso está en la pestaña Auth.',
+    walk7Hint:
+      'Haz clic en "Show token" y luego en "Copy". Pégalo en el siguiente paso de este tour.',
+
+    scopeReasonTickets:
+      'Leer tus pipelines de tickets y abrir nuevos tickets de soporte desde una rutina.',
+    scopeReasonContactsRead:
+      'Buscar un cliente existente por email o teléfono antes de crear un ticket.',
+    scopeReasonContactsWrite:
+      'Crear o actualizar el registro de contacto del cliente.',
+
+    step3AlreadySavedBody:
+      'Ya hay un token de HubSpot guardado. Continúa para elegir tu pipeline de tickets predeterminado, o reemplaza el token si lo rotaste.',
+    step3Connected: 'Conectado',
+    step3PortalLine: 'Portal {{portalId}}',
+    step3ReplaceToken: 'Reemplazar token',
+    step3PasteBody:
+      'Pega el token de acceso de la pestaña <bold>Auth</bold> de tu Private App. Normalmente empieza con <code>pat-na2-</code> o similar.',
+    step3TokenLabel: 'Token de acceso',
+    step3TokenPlaceholder: 'pat-na2-...',
+    step3Verify: 'Verificar',
+    step3Verifying: 'Verificando…',
+    step3Cancel: 'Cancelar',
+    step3VerifiedPortal: 'Verificado — portal {{portalId}}',
+    step3PortalHidden: '(oculto)',
+    step3CouldNotStoreToken: 'No se pudo guardar el token',
+    step3WillEncrypt:
+      'Una vez guardado, el token se cifra en el llavero de tu sistema operativo.',
+    step3NoKeychain:
+      'Llavero del SO no disponible — Cerebro guardará el token con codificación de respaldo.',
+    step3UnknownError: 'Error desconocido',
+    step3HideToken: 'Ocultar token',
+    step3ShowToken: 'Mostrar token',
+
+    step4Body:
+      'Elige el pipeline y la etapa donde llegarán los tickets nuevos por defecto. Los pasos de las rutinas pueden sobrescribir esto, pero te ahorras un clic en cada rutina si lo configuras una vez aquí.',
+    step4Loading: 'Cargando pipelines de HubSpot…',
+    step4NoPipelinesPrefix:
+      'HubSpot no devolvió pipelines. Verifica que el scope <code>tickets</code> esté habilitado en la Private App y luego',
+    step4TryAgain: 'inténtalo de nuevo',
+    step4PipelinePlaceholder: '— Pipeline —',
+    step4StagePlaceholder: '— Etapa —',
+    step4CouldNotSave: 'No se pudieron guardar los predeterminados',
+
+    back: 'Atrás',
+    cancel: 'Cancelar',
+    continue: 'Continuar',
+    nextScreen: 'Siguiente pantalla',
+    iHaveToken: 'Ya tengo mi token',
+    skip: 'Omitir',
+    saving: 'Guardando…',
+    saveAndFinish: 'Guardar y finalizar',
   },
 } as const;
 

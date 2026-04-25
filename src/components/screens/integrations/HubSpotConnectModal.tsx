@@ -28,6 +28,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { Trans, useTranslation } from 'react-i18next';
 import { HubSpotIcon } from '../../icons/BrandIcons';
 import type { HubSpotPipelineSummary, HubSpotStatusResponse } from '../../../types/ipc';
 
@@ -51,10 +52,12 @@ const HUBSPOT_LEGACY_APPS_URL = 'https://app.hubspot.com/l/legacy-apps';
 // The actual scope names HubSpot exposes today (verified in the Add Scope
 // dialog). `tickets` is the single legacy scope covering both read+write —
 // HubSpot doesn't split it the way contacts are split.
-const REQUIRED_SCOPES: Array<{ slug: string; reason: string }> = [
-  { slug: 'tickets', reason: 'Read your ticket pipelines and open new support tickets from a routine.' },
-  { slug: 'crm.objects.contacts.read', reason: 'Look up an existing customer by email or phone before creating a ticket.' },
-  { slug: 'crm.objects.contacts.write', reason: 'Create or update the customer\'s contact record.' },
+// Slugs are HubSpot-official identifiers and NOT translated — the `reasonKey`
+// points at the localized explanation assembled inside the component.
+const REQUIRED_SCOPES: Array<{ slug: string; reasonKey: string }> = [
+  { slug: 'tickets', reasonKey: 'hubspotTour.scopeReasonTickets' },
+  { slug: 'crm.objects.contacts.read', reasonKey: 'hubspotTour.scopeReasonContactsRead' },
+  { slug: 'crm.objects.contacts.write', reasonKey: 'hubspotTour.scopeReasonContactsWrite' },
 ];
 
 // ── Walkthrough screenshots ─────────────────────────────────────
@@ -80,47 +83,32 @@ interface WalkthroughScreen {
   hint: string;
 }
 
-const WALKTHROUGH: WalkthroughScreen[] = [
-  {
-    imageFile: '01-private-apps-moved.png',
-    caption: 'You\'ll land on a "Private apps have moved" page.',
-    hint: 'Click the black "Go to Legacy Apps" button.',
-  },
-  {
-    imageFile: '02-legacy-apps-empty.png',
-    caption: 'You\'re now on the Legacy Apps list.',
-    hint: 'Click "Create legacy app" in the top-right.',
-  },
-  {
-    imageFile: '03-create-modal-private.png',
-    caption: 'HubSpot asks: Public or Private?',
-    hint: 'Pick "Private" — the right card. (Ignore the "won\'t get future updates" warning; Private Apps are still the supported per-portal integration mechanism.)',
-  },
-  {
-    imageFile: '04-basic-info.png',
-    caption: 'Basic info — name your app.',
-    hint: 'Pick anything memorable, e.g. "Cerebro". Then click the "Scopes" tab at the top.',
-  },
-  {
-    imageFile: '05-scopes-add.png',
-    caption: 'Scopes — pick what Cerebro can do.',
-    hint: 'Click "Add new scope", then search for and tick the three scopes listed below this walkthrough. Click Update, then "Create app" in the top-right.',
-  },
-  {
-    imageFile: '06-confirm-create.png',
-    caption: 'HubSpot confirms.',
-    hint: 'Click "Continue creating".',
-  },
-  {
-    imageFile: '07-auth-token.png',
-    caption: 'Done — your access token is on the Auth tab.',
-    hint: 'Click "Show token", then "Copy". Paste it into the next step of this tour.',
-  },
+// Screen order is fixed (matches screenshot filenames); caption + hint are
+// built from translation keys inside the component.
+const WALKTHROUGH_SCREENS: Array<{ imageFile: string; captionKey: string; hintKey: string }> = [
+  { imageFile: '01-private-apps-moved.png', captionKey: 'hubspotTour.walk1Caption', hintKey: 'hubspotTour.walk1Hint' },
+  { imageFile: '02-legacy-apps-empty.png',  captionKey: 'hubspotTour.walk2Caption', hintKey: 'hubspotTour.walk2Hint' },
+  { imageFile: '03-create-modal-private.png', captionKey: 'hubspotTour.walk3Caption', hintKey: 'hubspotTour.walk3Hint' },
+  { imageFile: '04-basic-info.png',         captionKey: 'hubspotTour.walk4Caption', hintKey: 'hubspotTour.walk4Hint' },
+  { imageFile: '05-scopes-add.png',         captionKey: 'hubspotTour.walk5Caption', hintKey: 'hubspotTour.walk5Hint' },
+  { imageFile: '06-confirm-create.png',     captionKey: 'hubspotTour.walk6Caption', hintKey: 'hubspotTour.walk6Hint' },
+  { imageFile: '07-auth-token.png',         captionKey: 'hubspotTour.walk7Caption', hintKey: 'hubspotTour.walk7Hint' },
 ];
 
 export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotConnectModalProps) {
+  const { t } = useTranslation();
   const [step, setStep] = useState(1);
   const [walkIndex, setWalkIndex] = useState(0);
+
+  // Localized walkthrough — rebuilt when language changes.
+  const WALKTHROUGH = useMemo<WalkthroughScreen[]>(
+    () => WALKTHROUGH_SCREENS.map((s) => ({
+      imageFile: s.imageFile,
+      caption: t(s.captionKey),
+      hint: t(s.hintKey),
+    })),
+    [t],
+  );
 
   const [tokenDraft, setTokenDraft] = useState('');
   const [showToken, setShowToken] = useState(false);
@@ -162,14 +150,14 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
     setVerify({ kind: 'verifying' });
     const res = await window.cerebro.hubspot.verify(tokenDraft.trim());
     if (res.ok) setVerify({ kind: 'ok', portalId: res.portalId ?? null });
-    else setVerify({ kind: 'err', error: res.error ?? 'Unknown error' });
-  }, [tokenDraft]);
+    else setVerify({ kind: 'err', error: res.error ?? t('hubspotTour.step3UnknownError') });
+  }, [tokenDraft, t]);
 
   const persistTokenAndAdvance = useCallback(async () => {
     if (verify.kind !== 'ok') return;
     const res = await window.cerebro.hubspot.setToken(tokenDraft.trim());
     if (!res.ok) {
-      setVerify({ kind: 'err', error: res.error ?? 'Could not store token' });
+      setVerify({ kind: 'err', error: res.error ?? t('hubspotTour.step3CouldNotStoreToken') });
       return;
     }
     onPersisted?.();
@@ -177,7 +165,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
     setReplaceTokenMode(false);
     setTokenDraft('');
     setStep(4);
-  }, [tokenDraft, verify, onPersisted, refreshStatus]);
+  }, [tokenDraft, verify, onPersisted, refreshStatus, t]);
 
   const handleSaveDefaults = useCallback(async () => {
     setSavingDefaults(true);
@@ -188,7 +176,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
         stage: stageId || null,
       });
       if (!res.ok) {
-        setSaveError(res.error ?? 'Could not save defaults');
+        setSaveError(res.error ?? t('hubspotTour.step4CouldNotSave'));
         return;
       }
       onPersisted?.();
@@ -196,7 +184,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
     } finally {
       setSavingDefaults(false);
     }
-  }, [pipelineId, stageId, onPersisted, onClose]);
+  }, [pipelineId, stageId, onPersisted, onClose, t]);
 
   const openHubSpotPortal = useCallback(() => {
     void window.cerebro.shell.openExternal(HUBSPOT_LEGACY_APPS_URL);
@@ -252,7 +240,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
           <button
             onClick={onClose}
             className="absolute top-3 right-3 p-1 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
-            aria-label="Close"
+            aria-label={t('hubspotTour.closeAriaLabel')}
           >
             <X size={14} />
           </button>
@@ -263,18 +251,18 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
             </div>
             <div className="min-w-0">
               <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
-                Step {step} of {STEP_COUNT}
+                {t('hubspotTour.stepCounter', { current: step, total: STEP_COUNT })}
                 {step === 2 && (
                   <span className="ml-2 text-text-tertiary/70">
-                    · screen {walkIndex + 1} of {WALKTHROUGH.length}
+                    {t('hubspotTour.screenCounter', { current: walkIndex + 1, total: WALKTHROUGH.length })}
                   </span>
                 )}
               </div>
               <h3 className="text-base font-medium text-text-primary mt-0.5 truncate">
-                {step === 1 && 'Connect HubSpot'}
-                {step === 2 && 'Create the Private App'}
-                {step === 3 && 'Paste your access token'}
-                {step === 4 && 'Pick a default ticket pipeline'}
+                {step === 1 && t('hubspotTour.step1Title')}
+                {step === 2 && t('hubspotTour.step2Title')}
+                {step === 3 && t('hubspotTour.step3Title')}
+                {step === 4 && t('hubspotTour.step4Title')}
               </h3>
             </div>
           </div>
@@ -300,35 +288,34 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
           {step === 1 && (
             <div className="space-y-4">
               <p className="text-sm text-text-secondary leading-relaxed">
-                Cerebro talks to HubSpot using a <strong className="text-text-primary">Private App access token</strong>.
-                Private Apps live under <strong className="text-text-primary">Legacy Apps</strong> in your portal — HubSpot
-                renamed the section recently but the mechanism is unchanged. The next step walks you through
-                creating one screen-by-screen.
+                <Trans
+                  i18nKey="hubspotTour.step1Body"
+                  components={{ bold: <strong className="text-text-primary" /> }}
+                />
               </p>
 
               <div className="rounded-md bg-amber-500/[0.08] border border-amber-500/30 p-3.5">
                 <div className="flex items-center gap-2 text-xs font-semibold text-amber-300">
                   <Lightbulb size={13} />
-                  Don't use the Developer portal
+                  {t('hubspotTour.step1WarningTitle')}
                 </div>
                 <p className="mt-2 text-xs text-amber-100/90 leading-relaxed">
-                  Pages saying "Developer" / "Projects" / "MCP Auth Apps" are for building marketplace apps and won't
-                  give you a token Cerebro can use. The button on the next step opens the right page directly.
+                  {t('hubspotTour.step1WarningBody')}
                 </p>
               </div>
 
               <ul className="space-y-2.5 text-sm text-text-secondary">
                 <li className="flex gap-3">
                   <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0 mt-0.5" />
-                  <span className="leading-relaxed">Stays inside your portal — no public app submission, no review.</span>
+                  <span className="leading-relaxed">{t('hubspotTour.step1Bullet1')}</span>
                 </li>
                 <li className="flex gap-3">
                   <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0 mt-0.5" />
-                  <span className="leading-relaxed">You pick exactly which scopes Cerebro can use.</span>
+                  <span className="leading-relaxed">{t('hubspotTour.step1Bullet2')}</span>
                 </li>
                 <li className="flex gap-3">
                   <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0 mt-0.5" />
-                  <span className="leading-relaxed">The token is encrypted at rest in your OS keychain.</span>
+                  <span className="leading-relaxed">{t('hubspotTour.step1Bullet3')}</span>
                 </li>
               </ul>
             </div>
@@ -345,7 +332,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                   className="flex items-center gap-2 px-3 py-2 rounded-md bg-orange-500/10 text-orange-400 hover:bg-orange-500/15 border border-orange-500/30 text-xs font-medium transition-colors flex-shrink-0"
                 >
                   <ExternalLink size={12} />
-                  Open in browser
+                  {t('hubspotTour.openInBrowser')}
                 </button>
                 <div className="flex-1 flex items-center gap-2 px-2.5 py-2 rounded-md bg-bg-elevated border border-border-subtle min-w-0">
                   <code className="text-[11px] font-mono text-text-secondary truncate flex-1 select-all">
@@ -356,7 +343,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                     onClick={copyUrl}
                     className="text-[11px] text-text-tertiary hover:text-text-secondary px-1.5 py-0.5 rounded hover:bg-white/5 flex-shrink-0"
                   >
-                    Copy
+                    {t('hubspotTour.copy')}
                   </button>
                 </div>
               </div>
@@ -375,8 +362,11 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                     <Lightbulb size={24} className="text-text-tertiary/60 mb-2" />
                     <div className="font-mono">{currentScreen.imageFile}</div>
                     <div className="mt-1 max-w-xs leading-relaxed">
-                      Drop this screenshot at <code className="text-text-secondary">src/assets/hubspot-tour/{currentScreen.imageFile}</code>{' '}
-                      and it will render here.
+                      <Trans
+                        i18nKey="hubspotTour.placeholderDropFile"
+                        values={{ filename: currentScreen.imageFile }}
+                        components={{ code: <code className="text-text-secondary" /> }}
+                      />
                     </div>
                   </div>
                 )}
@@ -394,7 +384,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                     key={i}
                     type="button"
                     onClick={() => setWalkIndex(i)}
-                    aria-label={`Go to screen ${i + 1}`}
+                    aria-label={t('hubspotTour.goToScreenAria', { number: i + 1 })}
                     className={clsx(
                       'h-1.5 rounded-full transition-all',
                       i === walkIndex ? 'w-5 bg-accent' : 'w-1.5 bg-white/15 hover:bg-white/30',
@@ -409,14 +399,14 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-xs font-semibold text-accent">
                       <Lightbulb size={13} />
-                      Scopes to enable
+                      {t('hubspotTour.scopesToEnable')}
                     </div>
                     <button
                       type="button"
                       onClick={copyScopes}
                       className="text-[11px] text-accent/80 hover:text-accent px-1.5 py-0.5 rounded hover:bg-accent/10"
                     >
-                      Copy all
+                      {t('hubspotTour.copyAll')}
                     </button>
                   </div>
                   <ul className="mt-3 space-y-2.5">
@@ -425,7 +415,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                         <CheckCircle2 size={12} className="text-accent/80 flex-shrink-0 mt-1" />
                         <div className="flex-1 min-w-0">
                           <code className="text-[11px] font-mono text-text-primary break-all">{s.slug}</code>
-                          <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed">{s.reason}</p>
+                          <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed">{t(s.reasonKey)}</p>
                         </div>
                       </li>
                     ))}
@@ -440,15 +430,16 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
               {!showTokenForm ? (
                 <>
                   <p className="text-sm text-text-secondary leading-relaxed">
-                    A HubSpot token is already saved. Continue to pick your default ticket pipeline,
-                    or replace the token if you've rotated it.
+                    {t('hubspotTour.step3AlreadySavedBody')}
                   </p>
                   <div className="flex items-start gap-3 px-3 py-3 rounded-md border border-emerald-500/30 bg-emerald-500/10">
                     <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-400" />
                     <div className="text-sm flex-1 min-w-0">
-                      <div className="font-medium text-emerald-300">Connected</div>
+                      <div className="font-medium text-emerald-300">{t('hubspotTour.step3Connected')}</div>
                       {status?.portalId && (
-                        <div className="text-xs text-emerald-300/80 mt-0.5 font-mono">Portal {status.portalId}</div>
+                        <div className="text-xs text-emerald-300/80 mt-0.5 font-mono">
+                          {t('hubspotTour.step3PortalLine', { portalId: status.portalId })}
+                        </div>
                       )}
                     </div>
                     <button
@@ -456,25 +447,30 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                       onClick={() => { setReplaceTokenMode(true); setTokenDraft(''); setVerify({ kind: 'idle' }); }}
                       className="text-xs font-medium text-text-tertiary hover:text-text-secondary px-2 py-1 rounded hover:bg-white/5"
                     >
-                      Replace token
+                      {t('hubspotTour.step3ReplaceToken')}
                     </button>
                   </div>
                 </>
               ) : (
                 <>
                   <p className="text-sm text-text-secondary leading-relaxed">
-                    Paste the access token from your Private App's <strong className="text-text-primary">Auth</strong> tab.
-                    It usually starts with <code className="px-1 py-0.5 rounded bg-bg-elevated text-[10px] font-mono">pat-na2-</code> or similar.
+                    <Trans
+                      i18nKey="hubspotTour.step3PasteBody"
+                      components={{
+                        bold: <strong className="text-text-primary" />,
+                        code: <code className="px-1 py-0.5 rounded bg-bg-elevated text-[10px] font-mono" />,
+                      }}
+                    />
                   </p>
                   <div>
-                    <label className="text-xs font-medium text-text-secondary">Access token</label>
+                    <label className="text-xs font-medium text-text-secondary">{t('hubspotTour.step3TokenLabel')}</label>
                     <div className="mt-1.5 flex items-center gap-2">
                       <div className="relative flex-1">
                         <input
                           type={showToken ? 'text' : 'password'}
                           value={tokenDraft}
                           onChange={(e) => { setTokenDraft(e.target.value); setVerify({ kind: 'idle' }); }}
-                          placeholder="pat-na2-..."
+                          placeholder={t('hubspotTour.step3TokenPlaceholder')}
                           className="w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                           autoComplete="off"
                           spellCheck={false}
@@ -484,7 +480,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                           type="button"
                           onClick={() => setShowToken((v) => !v)}
                           className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary"
-                          aria-label={showToken ? 'Hide token' : 'Show token'}
+                          aria-label={showToken ? t('hubspotTour.step3HideToken') : t('hubspotTour.step3ShowToken')}
                         >
                           {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
@@ -499,7 +495,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                           'disabled:opacity-50 disabled:cursor-not-allowed',
                         )}
                       >
-                        {verify.kind === 'verifying' ? 'Verifying…' : 'Verify'}
+                        {verify.kind === 'verifying' ? t('hubspotTour.step3Verifying') : t('hubspotTour.step3Verify')}
                       </button>
                       {tokenAlreadyConfigured && (
                         <button
@@ -507,14 +503,16 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                           onClick={() => { setReplaceTokenMode(false); setTokenDraft(''); setVerify({ kind: 'idle' }); }}
                           className="px-2 py-2 text-xs text-text-tertiary hover:text-text-secondary"
                         >
-                          Cancel
+                          {t('hubspotTour.step3Cancel')}
                         </button>
                       )}
                     </div>
                     {verify.kind === 'ok' && (
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400">
                         <CheckCircle2 size={13} />
-                        <span>Verified — portal {verify.portalId ?? '(hidden)'}</span>
+                        <span>
+                          {t('hubspotTour.step3VerifiedPortal', { portalId: verify.portalId ?? t('hubspotTour.step3PortalHidden') })}
+                        </span>
                       </div>
                     )}
                     {verify.kind === 'err' && (
@@ -527,12 +525,12 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                   {status && (usingKeychain ? (
                     <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
                       <Lock size={14} className="mt-0.5 flex-shrink-0" />
-                      <span className="leading-relaxed">Once saved, the token is encrypted in your OS keychain.</span>
+                      <span className="leading-relaxed">{t('hubspotTour.step3WillEncrypt')}</span>
                     </div>
                   ) : (
                     <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-warning/30 bg-warning/10 text-xs text-warning-text">
                       <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
-                      <span className="leading-relaxed">No OS keychain available — Cerebro will store the token with fallback encoding.</span>
+                      <span className="leading-relaxed">{t('hubspotTour.step3NoKeychain')}</span>
                     </div>
                   ))}
                 </>
@@ -543,21 +541,24 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
           {step === 4 && (
             <div className="space-y-4">
               <p className="text-sm text-text-secondary leading-relaxed">
-                Pick the pipeline + stage new tickets should land in by default. Routine steps can override these,
-                but you'll save a click on every routine if you set them once here.
+                {t('hubspotTour.step4Body')}
               </p>
               {pipelinesLoading ? (
                 <div className="flex items-center gap-2 text-xs text-text-tertiary">
-                  <Loader2 size={12} className="animate-spin" /> Loading pipelines from HubSpot…
+                  <Loader2 size={12} className="animate-spin" /> {t('hubspotTour.step4Loading')}
                 </div>
               ) : pipelines.length === 0 ? (
                 <div className="flex items-start gap-2 px-3 py-2.5 rounded-md border border-amber-500/30 bg-amber-500/10 text-xs text-amber-200">
                   <Lightbulb size={13} className="mt-0.5 flex-shrink-0" />
                   <span className="leading-relaxed">
-                    No pipelines came back from HubSpot. Check the
-                    <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]">tickets</code>
-                    scope is enabled on the Private App, then{' '}
-                    <button type="button" onClick={loadPipelines} className="underline hover:no-underline">try again</button>.
+                    <Trans
+                      i18nKey="hubspotTour.step4NoPipelinesPrefix"
+                      components={{ code: <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]" /> }}
+                    />
+                    {' '}
+                    <button type="button" onClick={loadPipelines} className="underline hover:no-underline">
+                      {t('hubspotTour.step4TryAgain')}
+                    </button>.
                   </span>
                 </div>
               ) : (
@@ -567,7 +568,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                     onChange={(e) => { setPipelineId(e.target.value); setStageId(''); }}
                     className="w-full h-9 px-3 text-sm bg-bg-elevated border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
                   >
-                    <option value="">— Pipeline —</option>
+                    <option value="">{t('hubspotTour.step4PipelinePlaceholder')}</option>
                     {pipelines.map((p) => (
                       <option key={p.id} value={p.id}>{p.label}</option>
                     ))}
@@ -578,7 +579,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                     disabled={!pipelineId}
                     className="w-full h-9 px-3 text-sm bg-bg-elevated border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50 disabled:opacity-50"
                   >
-                    <option value="">— Stage —</option>
+                    <option value="">{t('hubspotTour.step4StagePlaceholder')}</option>
                     {stagesForSelected.map((s) => (
                       <option key={s.id} value={s.id}>{s.label}</option>
                     ))}
@@ -603,7 +604,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
               onClick={step === 2 ? goBackFromWalkthrough : () => setStep((s) => Math.max(1, s - 1))}
               className="px-3 py-1.5 text-xs font-medium rounded-md text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors flex items-center gap-1.5"
             >
-              <ArrowLeft size={12} /> Back
+              <ArrowLeft size={12} /> {t('hubspotTour.back')}
             </button>
           ) : (
             <button
@@ -611,7 +612,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
               onClick={onClose}
               className="px-3 py-1.5 text-xs font-medium rounded-md text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
             >
-              Cancel
+              {t('hubspotTour.cancel')}
             </button>
           )}
 
@@ -621,7 +622,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
               onClick={() => { setWalkIndex(0); setStep(2); }}
               className="px-4 py-1.5 text-xs font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 transition-colors flex items-center gap-1.5"
             >
-              Continue <ArrowRight size={12} />
+              {t('hubspotTour.continue')} <ArrowRight size={12} />
             </button>
           )}
           {step === 2 && (
@@ -630,7 +631,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
               onClick={advanceFromWalkthrough}
               className="px-4 py-1.5 text-xs font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 transition-colors flex items-center gap-1.5"
             >
-              {isLastWalkScreen ? 'I have my token' : 'Next screen'} <ArrowRight size={12} />
+              {isLastWalkScreen ? t('hubspotTour.iHaveToken') : t('hubspotTour.nextScreen')} <ArrowRight size={12} />
             </button>
           )}
           {step === 3 && (
@@ -640,7 +641,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
               disabled={!canAdvanceFromStep3}
               className="px-4 py-1.5 text-xs font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Continue <ArrowRight size={12} />
+              {t('hubspotTour.continue')} <ArrowRight size={12} />
             </button>
           )}
           {step === 4 && (
@@ -650,7 +651,7 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                 onClick={onClose}
                 className="px-3 py-1.5 text-xs font-medium rounded-md text-text-tertiary hover:text-text-secondary transition-colors"
               >
-                Skip
+                {t('hubspotTour.skip')}
               </button>
               <button
                 type="button"
@@ -659,9 +660,9 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                 className="px-4 py-1.5 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {savingDefaults ? (
-                  <><Loader2 size={12} className="animate-spin" /> Saving…</>
+                  <><Loader2 size={12} className="animate-spin" /> {t('hubspotTour.saving')}</>
                 ) : (
-                  <><CheckCircle2 size={12} /> Save & finish</>
+                  <><CheckCircle2 size={12} /> {t('hubspotTour.saveAndFinish')}</>
                 )}
               </button>
             </div>

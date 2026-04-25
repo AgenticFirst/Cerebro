@@ -6,6 +6,7 @@ import IntegrationCard from './IntegrationCard';
 import TelegramSection from './TelegramSection';
 import TelegramConnectModal from './TelegramConnectModal';
 import WhatsAppSection from './WhatsAppSection';
+import WhatsAppConnectModal from './WhatsAppConnectModal';
 import type { TelegramStatusResponse, WhatsAppStatusResponse } from '../../../types/ipc';
 
 interface ComingSoonChannel {
@@ -33,9 +34,13 @@ export default function ChannelsSection() {
   const [status, setStatus] = useState<TelegramStatusResponse | null>(null);
   const [waStatus, setWaStatus] = useState<WhatsAppStatusResponse | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showWaConnectModal, setShowWaConnectModal] = useState(false);
   // Bumping this remounts the TelegramSection so it reloads from settings
   // after the onboarding modal persists changes.
   const [reloadKey, setReloadKey] = useState(0);
+  // Independent counter so the WhatsApp inline card remounts after its tour
+  // persists an allowlist or pairs a new device.
+  const [waReloadKey, setWaReloadKey] = useState(0);
 
   const refreshStatus = useCallback(async () => {
     const s = await window.cerebro.telegram.status();
@@ -113,24 +118,30 @@ export default function ChannelsSection() {
           icon={WhatsAppIcon}
           iconBg="bg-emerald-500/15"
           iconColor="text-emerald-400"
-          name="WhatsApp Business"
+          name={t('whatsappSection.title')}
           description={
             waStatus?.state === 'connected' && waStatus.phoneNumber
-              ? `Connected as ${waStatus.phoneNumber}.`
-              : 'Pair a WhatsApp Business number for customer-support routines.'
+              ? t('channelsSection.whatsappDescConnected', { phone: waStatus.phoneNumber })
+              : t('channelsSection.whatsappDesc')
           }
           status={waStatus?.state === 'connected' ? (
             <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              Connected
+              {t('whatsappSection.statePillConnected')}
             </span>
           ) : waStatus?.state === 'pairing' ? (
             <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400">
-              Pairing
+              {t('whatsappSection.statePillPairing')}
             </span>
           ) : null}
+          primaryAction={{
+            label: waStatus?.state === 'connected'
+              ? t('channelsSection.setupTour')
+              : t('channelsSection.connect'),
+            onClick: () => setShowWaConnectModal(true),
+          }}
         >
-          <WhatsAppSection />
+          <WhatsAppSection key={waReloadKey} />
         </IntegrationCard>
 
         {COMING_SOON_CHANNELS.map((c) => (
@@ -155,6 +166,26 @@ export default function ChannelsSection() {
         <TelegramConnectModal
           onClose={() => { setShowConnectModal(false); setReloadKey((k) => k + 1); void refreshStatus(); }}
           onPersisted={() => { setReloadKey((k) => k + 1); void refreshStatus(); }}
+        />
+      )}
+
+      {showWaConnectModal && (
+        <WhatsAppConnectModal
+          onClose={() => {
+            setShowWaConnectModal(false);
+            setWaReloadKey((k) => k + 1);
+            void (async () => {
+              const s = await window.cerebro.whatsapp.status();
+              setWaStatus(s);
+            })();
+          }}
+          onPersisted={() => {
+            setWaReloadKey((k) => k + 1);
+            void (async () => {
+              const s = await window.cerebro.whatsapp.status();
+              setWaStatus(s);
+            })();
+          }}
         />
       )}
     </div>

@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { ROUTINE_TEMPLATES } from '../../../routine-templates';
 import type { RoutineTemplate, RequiredConnection } from '../../../types/routine-templates';
 import type { CreateRoutineInput } from '../../../types/routines';
 import { useRoutines } from '../../../context/RoutineContext';
+import { useChat } from '../../../context/ChatContext';
 import { WhatsAppIcon, HubSpotIcon, TelegramIcon } from '../../icons/BrandIcons';
 import UseTemplateDialog from './UseTemplateDialog';
 
 const INITIAL_CONNECTIONS: Record<string, boolean> = { whatsapp: false, hubspot: false, telegram: false };
 
+// Brand names stay as-is across locales (WhatsApp, HubSpot, Telegram are proper nouns).
 const CONNECTION_META: Record<string, { label: string; Icon: (p: { size?: number; className?: string }) => JSX.Element }> = {
   whatsapp: { label: 'WhatsApp', Icon: WhatsAppIcon },
   hubspot: { label: 'HubSpot', Icon: HubSpotIcon },
@@ -17,7 +20,9 @@ const CONNECTION_META: Record<string, { label: string; Icon: (p: { size?: number
 };
 
 export default function TemplatesView() {
+  const { t } = useTranslation();
   const { createRoutine, setEditingRoutineId } = useRoutines();
+  const { setActiveScreen } = useChat();
   const [selected, setSelected] = useState<RoutineTemplate | null>(null);
   const [connectionState, setConnectionState] = useState<Record<string, boolean>>(INITIAL_CONNECTIONS);
 
@@ -61,19 +66,19 @@ export default function TemplatesView() {
     <div className="flex-1 overflow-y-auto scrollbar-thin">
       <div className="p-6">
         <div className="mb-5">
-          <div className="text-sm font-medium text-text-primary">Templates</div>
+          <div className="text-sm font-medium text-text-primary">{t('routineTemplates.title')}</div>
           <p className="text-xs text-text-tertiary mt-1 leading-relaxed">
-            Pre-built routines for common workflows. Pick one, connect the integrations it needs, and customize a few fields.
+            {t('routineTemplates.description')}
           </p>
         </div>
 
         <div className="grid grid-cols-1 gap-3">
-          {ROUTINE_TEMPLATES.map((t) => (
+          {ROUTINE_TEMPLATES.map((tmpl) => (
             <TemplateCard
-              key={t.id}
-              template={t}
+              key={tmpl.id}
+              template={tmpl}
               connectionState={connectionState}
-              onClick={() => setSelected(t)}
+              onClick={() => setSelected(tmpl)}
             />
           ))}
         </div>
@@ -84,6 +89,10 @@ export default function TemplatesView() {
           template={selected}
           onClose={() => setSelected(null)}
           onCreate={handleCreate}
+          onOpenIntegrations={() => {
+            setSelected(null);
+            setActiveScreen('integrations');
+          }}
         />
       )}
     </div>
@@ -99,6 +108,7 @@ function TemplateCard({
   connectionState: Record<string, boolean>;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       role="button"
@@ -135,7 +145,9 @@ function TemplateCard({
               </li>
             ))}
             {template.plainEnglishSteps.length > 3 && (
-              <li className="text-text-tertiary/60">+ {template.plainEnglishSteps.length - 3} more…</li>
+              <li className="text-text-tertiary/60">
+                {t('routineTemplates.moreSteps', { count: template.plainEnglishSteps.length - 3 })}
+              </li>
             )}
           </ul>
         </div>
@@ -145,7 +157,7 @@ function TemplateCard({
           className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover flex-shrink-0 flex items-center gap-1.5"
         >
           <Sparkles size={12} />
-          Use template
+          {t('routineTemplates.useTemplate')}
         </button>
       </div>
     </div>
