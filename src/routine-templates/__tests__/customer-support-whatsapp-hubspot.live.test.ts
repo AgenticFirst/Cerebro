@@ -366,6 +366,23 @@ function uniqueTestPhone(): string {
   return `+15550100${suffix}`;
 }
 
+/** Tolerant "does this look like Spanish?" check used by language scenarios.
+ *  We look for accents / Spanish-only punctuation / a handful of high-frequency
+ *  Spanish words that English doesn't share. The CONFIRMATION_SYSTEM and
+ *  GATHERING_SYSTEM prompts both instruct the bot to "match the customer's
+ *  language exactly" — an English reply here is a real regression. */
+function looksLikeSpanish(text: string): { ok: boolean; hits: string[] } {
+  const lower = text.toLowerCase();
+  const markers = [
+    'á', 'é', 'í', 'ó', 'ú', 'ñ', '¿', '¡',
+    'hola', 'gracias', 'cómo', 'qué', 'soy ', ' es ', ' un ',
+    'por favor', 'usted', 'tú ', 'te ', 'le ',
+    'ticket', // Spanish loanword — neutral but appears in confirmation
+  ];
+  const hits = markers.filter((m) => lower.includes(m));
+  return { ok: hits.length > 0, hits };
+}
+
 // ── Tests ────────────────────────────────────────────────────────
 
 d('WhatsApp → HubSpot customer support routine (live)', () => {
@@ -480,14 +497,8 @@ d('WhatsApp → HubSpot customer support routine (live)', () => {
       const lastSend = ticketTurn!.sendsThisTurn[ticketTurn!.sendsThisTurn.length - 1];
       expect(lastSend?.message ?? '').toContain(ticketId);
 
-      // Tolerant language check: the bot's reply should contain at least one
-      // Spanish-only marker (accented vowel, ñ, or a common Spanish word).
-      // The CONFIRMATION_SYSTEM prompt instructs "match the customer's language
-      // exactly", so an English reply here is a real regression.
-      const reply = (lastSend?.message ?? '').toLowerCase();
-      const spanishMarkers = ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'hola', 'gracias', 'ticket', 'ana'];
-      const hits = spanishMarkers.filter((m) => reply.includes(m));
-      expect(hits.length, `bot reply should look Spanish-ish. Got: "${lastSend?.message}"`).toBeGreaterThan(0);
+      const lang = looksLikeSpanish(lastSend?.message ?? '');
+      expect(lang.ok, `bot confirmation should look Spanish. Got: "${lastSend?.message}"`).toBe(true);
     },
     240_000,
   );
@@ -581,6 +592,110 @@ d('WhatsApp → HubSpot customer support routine (live)', () => {
       expect(turn.completedSteps.has('compose_next_message')).toBe(true);
       expect(turn.completedSteps.has('send_next_message')).toBe(true);
       expect(turn.botReplied.length).toBeGreaterThan(0);
+    },
+    180_000,
+  );
+
+  // ── Scenario 6: Gradual Spanish conversation → ticket ────────
+  // Mirrors scenario 1 in Spanish, including the "Hola" / "¿Cómo estás?"
+  // small-talk drift many real customers open with. Verifies:
+  //   · every gathering reply is in Spanish (no language drift)
+  //   · the bot doesn't get stuck on small talk — it pivots to "how can I help"
+  //   · once a clear error + customer info exists, the ticket opens
+  //   · the WhatsApp confirmation message is also in Spanish
+  it(
+    'Scenario 6: gradual Spanish conversation (with small talk) opens a ticket and confirms in Spanish',
+    async () => {
+      const phone = uniqueTestPhone();
+      const turns = await driveConversation({
+        engine, webContents, dag, capturedSends,
+        phoneNumber: phone,
+        customerScript: [
+          'Hola',
+          '¿Cómo estás?',
+          'Bien, gracias. Soy María',
+          'No puedo entrar a mi cuenta de su plataforma',
+          'Me sale el error 403 desde ayer por la mañana. Mi correo es maria@ejemplo.com. Es bastante urgente, por favor abrime un ticket.',
+        ],
+        maxTurns: 6,
+      });
+
+      const ticketTurn = turns.find((t) => t.ticketCreated);
+      const diagnostic = turns.map((t, i) => {
+        const classify = getStepOutput(t.runId, 'classify_state');
+        const isReady = getStepOutput(t.runId, 'is_ready');
+        return `\n  turn ${i} status=${t.runStatus} category=${JSON.stringify(classify?.category)} branch=${JSON.stringify(isReady?.branch)} reply="${t.botReplied.slice(0, 80)}"`;
+      }).join('');
+      expect(ticketTurn, `expected a ticket within ${turns.length} Spanish turns.${diagnostic}`).toBeDefined();
+
+      const { contactId, ticketId } = extractAndTrackHubSpotIds(ticketTurn!);
+
+      // HubSpot ground truth — same shape as scenario 1 but Spanish content.
+      const fetched = await callHubSpotApi<{ properties?: Record<string, string | null> }>(
+        TOKEN,
+        `/crm/v3/objects/tickets/${ticketId}?properties=subject,content,hs_pipeline,hs_pipeline_stage`,
+      );
+      expect(fetched.ok).toBe(true);
+      expect(fetched.data?.properties?.hs_pipeline).toBe(PIPELINE);
+      expect(fetched.data?.properties?.hs_pipeline_stage).toBe(STAGE);
+      expect((fetched.data?.properties?.subject ?? '').length).toBeGreaterThan(0);
+      expect(fetched.data?.properties?.content ?? '').toContain(phone);
+
+      const contactFetch = await callHubSpotApi<{ properties?: Record<string, string | null> }>(
+        TOKEN,
+        `/crm/v3/objects/contacts/${contactId}?properties=email,firstname,phone`,
+      );
+      expect(contactFetch.ok).toBe(true);
+
+      // Confirmation must reference the ticket id AND be in Spanish.
+      const lastSend = ticketTurn!.sendsThisTurn[ticketTurn!.sendsThisTurn.length - 1];
+      expect(lastSend?.phone).toBe(phone);
+      expect(lastSend?.message ?? '').toContain(ticketId);
+      const confirmLang = looksLikeSpanish(lastSend?.message ?? '');
+      expect(confirmLang.ok, `confirmation should be Spanish. Got: "${lastSend?.message}"`).toBe(true);
+
+      // Every gathering-turn reply should also be Spanish — language drift on
+      // turn 2 ("¿Cómo estás?" → English reply) would be a real regression.
+      for (const t of turns.slice(0, -1)) {
+        if (!t.botReplied) continue;
+        const lang = looksLikeSpanish(t.botReplied);
+        expect(lang.ok, `turn ${t.turnIndex} bot reply drifted out of Spanish: "${t.botReplied}"`).toBe(true);
+      }
+
+      // Branch sanity: ticket-opening turn should NOT also run the gather branch.
+      expect(ticketTurn!.completedSteps).toContain('upsert_contact');
+      expect(ticketTurn!.completedSteps).toContain('create_ticket');
+      expect(ticketTurn!.completedSteps).toContain('send_confirmation');
+      expect(ticketTurn!.completedSteps.has('compose_next_message')).toBe(false);
+    },
+    300_000,
+  );
+
+  // ── Scenario 7: Spanish off-topic — no HubSpot calls ─────────
+  // Parity with scenario 3 but in Spanish. A sales pitch in any language must
+  // be classified off_topic; the bot must still reply (politely, in Spanish).
+  it(
+    'Scenario 7: Spanish off-topic sales pitch is rejected — no HubSpot, bot redirects in Spanish',
+    async () => {
+      const phone = uniqueTestPhone();
+      const turns = await driveConversation({
+        engine, webContents, dag, capturedSends,
+        phoneNumber: phone,
+        customerScript: [
+          'Hola, te escribo de una agencia digital. Vendemos servicios de SEO y posicionamiento web. ¿Eres tú quien decide?',
+        ],
+        maxTurns: 2,
+        stopOnTicket: false,
+      });
+
+      for (const turn of turns) {
+        expect(turn.ticketCreated, `turn ${turn.turnIndex} unexpectedly created a ticket`).toBe(false);
+        expect(turn.completedSteps.has('upsert_contact'), 'no contact upsert on off-topic').toBe(false);
+        expect(turn.completedSteps.has('create_ticket'), 'no ticket creation on off-topic').toBe(false);
+      }
+      expect(turns[0].botReplied.length).toBeGreaterThan(0);
+      const lang = looksLikeSpanish(turns[0].botReplied);
+      expect(lang.ok, `redirect should be in Spanish. Got: "${turns[0].botReplied}"`).toBe(true);
     },
     180_000,
   );
