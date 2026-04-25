@@ -7,6 +7,7 @@
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { singleShotClaudeCode } from '../../claude-code/single-shot';
+import { renderTemplate } from './utils/template';
 
 interface ExtractParams {
   prompt: string;
@@ -47,6 +48,11 @@ export const extractAction: ActionDefinition = {
       .map((f) => `- "${f.name}" (${f.type}): ${f.description}`)
       .join('\n');
 
+    // Render Mustache placeholders in the user-supplied prompt against wired
+    // inputs — same fix as the classify action. Without this the LLM gets
+    // literal "{{...}}" placeholders and returns null for every field.
+    const renderedPrompt = renderTemplate(params.prompt ?? '', input.wiredInputs ?? {});
+
     const fullPrompt = `Extract the following fields from the input text. Return ONLY a valid JSON object (no markdown, no code fences) with these fields:
 
 ${fieldList}
@@ -57,7 +63,7 @@ If a field cannot be extracted, use null for its value.
 
 Input text:
 
-${params.prompt}`;
+${renderedPrompt}`;
 
     const response = await singleShotClaudeCode({
       agent: params.agent ?? 'cerebro',

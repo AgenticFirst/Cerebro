@@ -127,8 +127,13 @@ export class ExecutionEngine {
       );
     }
 
-    // Validate DAG before execution
-    validateDAG(request.dag, registry);
+    // Validate DAG before execution. Tell the validator which synthetic source
+    // ids (besides real steps) are legal — currently just the trigger node when
+    // a triggerPayload is provided, matching what the executor seeds.
+    const extraValidSourceIds = request.triggerPayload
+      ? new Set(['__trigger__'])
+      : new Set<string>();
+    validateDAG(request.dag, registry, extraValidSourceIds);
 
     // Create per-run resources
     const scratchpad = new RunScratchpad();

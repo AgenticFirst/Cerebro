@@ -73,17 +73,14 @@ function step(cfg: {
   };
 }
 
+// Kept short on purpose — the classify action prepends its own
+// "classify into one of these categories" preamble using the `categories`
+// param. Duplicating the category list here once made the LLM mis-classify
+// "Hi" as off_topic; let the action own the labels.
 const CLASSIFY_PROMPT =
-  'You are a conversation-state classifier for a customer-support chat.\n\n' +
-  'Conversation history (oldest first):\n{{conversation_history}}\n\n' +
-  'Latest customer message: "{{latest_message}}"\n\n' +
-  'Choose the category that best describes the CURRENT state of the thread:\n' +
-  '- greeting: the customer just said hello or hi with no substance yet.\n' +
-  '- awaiting_name: we greeted them but do not yet know their name.\n' +
-  '- awaiting_issue: we know the name, but the customer has not described a problem.\n' +
-  '- gathering_details: the customer described a problem but we need more detail to open a useful ticket.\n' +
-  '- ready_for_ticket: we have a clear problem description with enough detail to open a ticket.\n' +
-  '- off_topic: the message is not a support request (sales pitch, spam, unrelated).';
+  'Classify the CURRENT state of this customer-support conversation. Pick the MOST-ADVANCED category that fits — once a category is satisfied, do not downgrade.\n\n' +
+  'Conversation history (oldest first, may be empty):\n{{conversation_history}}\n\n' +
+  'Latest customer message: "{{latest_message}}"';
 
 const EXTRACT_PROMPT =
   'Conversation history:\n{{conversation_history}}\n\n' +
@@ -114,7 +111,18 @@ const STEPS: Step[] = [
     id: 'classify_state', name: 'Classify conversation state', actionType: 'classify',
     params: {
       prompt: CLASSIFY_PROMPT,
-      categories: ['greeting', 'awaiting_name', 'awaiting_issue', 'gathering_details', 'ready_for_ticket', 'off_topic'],
+      // Categories MUST be {label, description} objects — the classify action
+      // reads `.label` to build its prompt + fallback matcher. Plain strings
+      // produce an empty `category` field, which silently keeps the @false
+      // branch firing forever.
+      categories: [
+        { label: 'greeting', description: 'latest message is just "hi" / "hola" / similar, with no substance yet' },
+        { label: 'awaiting_name', description: 'we greeted them but no name is known yet' },
+        { label: 'awaiting_issue', description: 'name is known, customer has not described a problem' },
+        { label: 'gathering_details', description: 'a problem is mentioned but you could NOT yet write a useful one-sentence ticket subject from it (e.g. "something is broken" with zero specifics)' },
+        { label: 'ready_for_ticket', description: 'pick this if you could right now write a useful one-sentence ticket subject (e.g. "Login fails with Error 401 since yesterday"). The customer does NOT need to explicitly ask for a ticket; they only need to have named a concrete error / failure / blocker. If torn between gathering_details and ready_for_ticket, choose ready_for_ticket' },
+        { label: 'off_topic', description: 'NOT a support request — sales pitch, spam, totally unrelated. A plain "hi" is greeting, not off_topic' },
+      ],
       agent: 'cerebro',
     },
     wire: [
@@ -170,7 +178,12 @@ const STEPS: Step[] = [
       priority: '{{priority}}',
       contact_id: '{{contact_id}}',
     },
+    // Gate every step in the @true branch on is_ready.branch — the executor's
+    // branch check only skips steps that *directly* reference the condition.
+    // Without this, create_ticket would run on the @false path with undefined
+    // inputs (HubSpot then errors with "subject is empty").
     wire: [
+      'is_ready.branch -> _gate @true',
       'upsert_contact.contact_id -> contact_id',
       'extract_fields.issue_summary -> subject',
       'extract_fields.issue_summary -> issue_summary',
@@ -191,6 +204,7 @@ const STEPS: Step[] = [
       agent: 'cerebro', mode: 'write', topic: 'Support ticket {{ticket_id}}',
     },
     wire: [
+      'is_ready.branch -> _gate @true',
       'create_ticket.ticket_id -> ticket_id',
       'create_ticket.ticket_url -> ticket_url',
       'extract_fields.customer_name -> customer_name',
@@ -209,6 +223,7 @@ const STEPS: Step[] = [
       agent: 'cerebro',
     },
     wire: [
+      'is_ready.branch -> _gate @true',
       'create_ticket.ticket_id -> ticket_id',
       'extract_fields.customer_name -> customer_name',
       'extract_fields.issue_summary -> issue_summary',
@@ -218,6 +233,7 @@ const STEPS: Step[] = [
     id: 'send_confirmation', name: 'Send WhatsApp confirmation', actionType: 'send_whatsapp_message',
     params: { phone_number: '{{phone_number}}', message: '{{response}}' },
     wire: [
+      'is_ready.branch -> _gate @true',
       '__trigger__.phone_number -> phone_number',
       'compose_confirmation.response -> response',
     ],
@@ -247,6 +263,9 @@ const STEPS: Step[] = [
     id: 'send_next_message', name: 'Send WhatsApp reply', actionType: 'send_whatsapp_message',
     params: { phone_number: '{{phone_number}}', message: '{{response}}' },
     wire: [
+      // Same gating reason as the @true branch — without this, send_next_message
+      // would fire on the ticket-opening turn with an empty response.
+      'is_ready.branch -> _gate @false',
       '__trigger__.phone_number -> phone_number',
       'compose_next_message.response -> response',
     ],

@@ -30,8 +30,19 @@ export interface ValidationResult {
 
 /**
  * Validates a DAG definition. Returns `{ valid: true }` or throws DAGValidationError.
+ *
+ * `extraValidSourceIds` is for synthetic step ids that don't appear in
+ * `dag.steps` but are valid `dependsOn` / `inputMappings.sourceStepId`
+ * targets at runtime. Today the only one is `'__trigger__'` (seeded by the
+ * executor when a trigger payload is present) — passing it here keeps the
+ * validator in sync with the engine's sanitizer + the executor, which both
+ * already treat `__trigger__` as a real source when the trigger fires.
  */
-export function validateDAG(dag: DAGDefinition, registry: ActionRegistry): ValidationResult {
+export function validateDAG(
+  dag: DAGDefinition,
+  registry: ActionRegistry,
+  extraValidSourceIds: ReadonlySet<string> = new Set(),
+): ValidationResult {
   const errors: string[] = [];
   const stepMap = new Map<string, StepDefinition>();
 
@@ -83,13 +94,18 @@ export function validateDAG(dag: DAGDefinition, registry: ActionRegistry): Valid
   for (const step of dag.steps) {
     // Check dependsOn references
     for (const depId of step.dependsOn) {
-      if (!stepMap.has(depId)) {
+      if (!stepMap.has(depId) && !extraValidSourceIds.has(depId)) {
         errors.push(`Step "${step.id}" depends on non-existent step "${depId}"`);
       }
     }
 
     // Check input mappings
     for (const mapping of step.inputMappings) {
+      // Synthetic sources (e.g. `__trigger__`) are always satisfied — the
+      // executor seeds them before any step runs, so the transitive-ancestor
+      // check below doesn't apply.
+      if (extraValidSourceIds.has(mapping.sourceStepId)) continue;
+
       if (!stepMap.has(mapping.sourceStepId)) {
         errors.push(
           `Step "${step.id}" has input mapping from non-existent step "${mapping.sourceStepId}"`
