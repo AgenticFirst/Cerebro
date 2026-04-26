@@ -90,14 +90,17 @@ export default function TeamAvatar({
               }}
             >
               {av ? (
-                <img
-                  src={av.src}
-                  alt={m.name}
-                  width={tileSize}
-                  height={tileSize}
-                  className="object-cover w-full h-full select-none pointer-events-none"
-                  draggable={false}
-                />
+                <div
+                  className="flex items-center justify-center w-full h-full select-none pointer-events-none"
+                  aria-label={m.name}
+                >
+                  <span
+                    className="twemoji leading-none"
+                    style={{ fontSize: Math.round(tileSize * 0.7) }}
+                  >
+                    {av.emoji}
+                  </span>
+                </div>
               ) : (
                 <div className="flex items-center justify-center w-full h-full text-text-secondary">
                   <Users size={Math.round(tileSize * 0.5)} />

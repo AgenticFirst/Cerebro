@@ -66,14 +66,13 @@ export default function SoloExpertCard({
         }}
       >
         {avatar ? (
-          <img
-            src={avatar.src}
-            alt={avatar.label}
-            width={40}
-            height={40}
-            className="object-contain pointer-events-none select-none"
-            draggable={false}
-          />
+          <span
+            className="twemoji leading-none pointer-events-none select-none"
+            style={{ fontSize: 32 }}
+            aria-label={avatar.label}
+          >
+            {avatar.emoji}
+          </span>
         ) : (
           <Bot size={20} style={{ color: accent }} />
         )}

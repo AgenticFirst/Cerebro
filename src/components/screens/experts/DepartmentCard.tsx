@@ -107,14 +107,13 @@ export default function DepartmentCard({
           }}
         >
           {teamAvatar ? (
-            <img
-              src={teamAvatar.src}
-              alt={teamAvatar.label}
-              width={36}
-              height={36}
-              className="object-contain pointer-events-none select-none"
-              draggable={false}
-            />
+            <span
+              className="twemoji leading-none pointer-events-none select-none"
+              style={{ fontSize: 28 }}
+              aria-label={teamAvatar.label}
+            >
+              {teamAvatar.emoji}
+            </span>
           ) : (
             <Users size={18} style={{ color: accent }} />
           )}
@@ -167,12 +166,13 @@ export default function DepartmentCard({
                     title={m.name}
                   >
                     {a ? (
-                      <img
-                        src={a.src}
-                        alt={a.label}
-                        className="w-full h-full object-contain"
-                        draggable={false}
-                      />
+                      <span
+                        className="twemoji leading-none"
+                        style={{ fontSize: 14 }}
+                        aria-label={a.label}
+                      >
+                        {a.emoji}
+                      </span>
                     ) : (
                       <span className="text-[9px] text-text-tertiary">
                         {m.name.slice(0, 1)}

@@ -28,7 +28,9 @@ export default function AvatarPicker({ value, onChange }: AvatarPickerProps) {
       <div className="flex items-center gap-3">
         <div className="w-12 h-12 rounded-lg bg-bg-base border border-border-subtle flex items-center justify-center flex-shrink-0 overflow-hidden">
           {selected ? (
-            <img src={selected.src} alt={selected.label} className="w-10 h-10 object-contain" />
+            <span className="twemoji text-3xl leading-none" aria-label={selected.label}>
+              {selected.emoji}
+            </span>
           ) : (
             <Bot size={20} className="text-text-tertiary" />
           )}
@@ -81,7 +83,9 @@ export default function AvatarPicker({ value, onChange }: AvatarPickerProps) {
                     : 'hover:bg-bg-hover',
                 )}
               >
-                <img src={avatar.src} alt={avatar.label} className="w-8 h-8 object-contain" />
+                <span className="twemoji text-2xl leading-none" aria-label={avatar.label}>
+                  {avatar.emoji}
+                </span>
               </button>
             );
           })

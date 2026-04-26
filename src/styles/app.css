@@ -17,6 +17,31 @@
   font-display: swap;
 }
 
+/*
+ * Twemoji COLR/CPAL — Twitter-style emoji rendered identically on Mac,
+ * Windows, and Linux. Used for expert avatars (and any other emoji we
+ * need to keep visually consistent across platforms).
+ *
+ * Apply via the .twemoji utility class below, or list as the first
+ * font-family for any element where emoji must override the OS default.
+ */
+@font-face {
+  font-family: 'Twemoji';
+  src: url('../fonts/Twemoji.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.twemoji {
+  font-family: 'Twemoji', 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Noto Color Emoji', 'EmojiOne Color', sans-serif;
+  /* Emoji glyphs sit slightly above the baseline by default; nudge them
+   * down so they line up with the surrounding text in inline contexts. */
+  font-feature-settings: normal;
+  text-rendering: optimizeLegibility;
+}
+
 @theme {
   /* Backgrounds */
   --color-bg-base: #09090b;

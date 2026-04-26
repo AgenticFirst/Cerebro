@@ -39,14 +39,13 @@ export default function EmployeeRow({
     >
       <div className="relative w-7 h-7 rounded-lg bg-bg-base border border-border-subtle flex items-center justify-center flex-shrink-0 overflow-hidden">
         {avatar ? (
-          <img
-            src={avatar.src}
-            alt={avatar.label}
-            width={28}
-            height={28}
-            className="object-contain pointer-events-none select-none"
-            draggable={false}
-          />
+          <span
+            className="twemoji leading-none pointer-events-none select-none"
+            style={{ fontSize: 20 }}
+            aria-label={avatar.label}
+          >
+            {avatar.emoji}
+          </span>
         ) : (
           <Bot size={14} className="text-text-tertiary" />
         )}

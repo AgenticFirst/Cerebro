@@ -116,6 +116,34 @@ describe('forge.config.ts', () => {
   });
 });
 
+// ── Avatars: emoji rendering, not PNG bundling ──────────────────
+//
+// Before: src/constants/avatars.ts used `import.meta.glob('../assets/avatars/*.png',
+// { eager: true })`, which packed all 1,595 emoji PNGs into app.asar
+// (~55 MB). We replaced that with unicode chars rendered through the
+// Twemoji COLR font (~470 KB total).
+//
+// If someone re-adds the eager glob, the DMG will balloon by ~50 MB — fail
+// loud here so the regression is caught at the test suite, not at user
+// download time.
+
+describe('src/constants/avatars.ts — bundle hygiene', () => {
+  const avatars = read('src/constants/avatars.ts');
+
+  it('does NOT eagerly glob the avatar PNG directory', () => {
+    expect(avatars).not.toMatch(/import\.meta\.glob\([^)]*assets\/avatars/);
+  });
+
+  it('exposes an emoji field on each AvatarOption (not src)', () => {
+    expect(avatars).toMatch(/emoji:\s*string/);
+    expect(avatars).not.toMatch(/^\s*src:\s*string;?\s*$/m);
+  });
+
+  it('imports the generated mapping that the codegen script produces', () => {
+    expect(avatars).toMatch(/from\s+['"]\.\/avatars\.generated['"]/);
+  });
+});
+
 // ── package.json ────────────────────────────────────────────────
 
 describe('package.json', () => {

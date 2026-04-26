@@ -54,14 +54,13 @@ export default function ExpertAvatar({ domain, name, sessionState, avatarUrl, an
           className="flex items-center justify-center transition-transform duration-75 ease-out will-change-transform"
         >
           {avatar ? (
-            <img
-              src={avatar.src}
-              alt={avatar.label}
-              width={120}
-              height={120}
-              className="object-contain pointer-events-none select-none"
-              draggable={false}
-            />
+            <span
+              className="twemoji leading-none pointer-events-none select-none"
+              style={{ fontSize: 96 }}
+              aria-label={avatar.label}
+            >
+              {avatar.emoji}
+            </span>
           ) : (
             <Bot size={56} style={{ color }} />
           )}

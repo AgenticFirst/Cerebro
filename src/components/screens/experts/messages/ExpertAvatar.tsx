@@ -42,14 +42,14 @@ export default function ExpertAvatar({ expert, size = 32, className, onClick }: 
         )}
       >
         {avatar ? (
-          <img
-            src={avatar.src}
-            alt={expert.name}
-            width={size}
-            height={size}
-            className="object-cover w-full h-full select-none pointer-events-none"
-            draggable={false}
-          />
+          <div
+            className="flex items-center justify-center w-full h-full select-none pointer-events-none"
+            aria-label={expert.name}
+          >
+            <span className="twemoji leading-none" style={{ fontSize: Math.round(size * 0.7) }}>
+              {avatar.emoji}
+            </span>
+          </div>
         ) : (
           <div className="flex items-center justify-center w-full h-full text-text-secondary">
             {expert.type === 'team' ? <Users size={iconSize} /> : <Bot size={iconSize} />}

@@ -121,14 +121,13 @@ export default function ExpertNode({
         {isCerebro ? (
           <Brain size={iconSize} style={{ color: glow.color }} />
         ) : avatar ? (
-          <img
-            src={avatar.src}
-            alt={avatar.label}
-            width={avatarSize}
-            height={avatarSize}
-            className="object-contain pointer-events-none select-none"
-            draggable={false}
-          />
+          <span
+            className="twemoji leading-none pointer-events-none select-none"
+            style={{ fontSize: avatarSize }}
+            aria-label={avatar.label}
+          >
+            {avatar.emoji}
+          </span>
         ) : expert?.type === 'team' ? (
           <Users size={iconSize} style={{ color: glow.color }} />
         ) : (
