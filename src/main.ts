@@ -1486,6 +1486,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.UPDATE_DISMISS, async () => {
     ackUpdateBanner();
   });
+  ipcMain.handle(IPC_CHANNELS.UPDATE_NOTIFIED, async () => {
+    ackUpdateBanner();
+  });
   ipcMain.handle(IPC_CHANNELS.UPDATE_OPEN_RELEASE_PAGE, async (_event, url: string) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
       await shell.openExternal(url);

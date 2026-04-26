@@ -19,14 +19,14 @@ const FIRST_CHECK_DELAY_MS = 30_000;
 const POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const RENDERER_ACK_TIMEOUT_MS = 5_000;
 
-interface GithubAsset {
+export interface GithubAsset {
   name: string;
   browser_download_url: string;
   size: number;
   content_type: string;
 }
 
-interface GithubRelease {
+export interface GithubRelease {
   tag_name: string;
   name: string;
   body: string;
@@ -42,25 +42,91 @@ let lastSeenEtag: string | null = null;
 let cachedRelease: GithubRelease | null = null;
 let pendingUpdateInfo: UpdateInfo | null = null;
 let rendererAcked = false;
+let inFlightCheck: Promise<UpdateInfo | null> | null = null;
 
-function pickAssetForPlatform(assets: GithubAsset[]): UpdateAsset | null {
-  const lower = (name: string) => name.toLowerCase();
-  const find = (predicate: (n: string) => boolean) =>
-    assets.find((a) => predicate(lower(a.name)));
+/** Test-only: reset module-level cache so each test sees a clean slate. */
+export function __resetUpdaterStateForTests(): void {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  mainWindow = null;
+  lastSeenEtag = null;
+  cachedRelease = null;
+  pendingUpdateInfo = null;
+  rendererAcked = false;
+  inFlightCheck = null;
+}
+
+/**
+ * Architecture aliases that show up in Forge / Electron Packager artifact
+ * names. The keys are Node.js arch values; the values are the substrings
+ * that appear in actual filenames.
+ */
+const ARCH_ALIASES: Record<string, string[]> = {
+  arm64: ['arm64', 'aarch64'],
+  x64: ['x64', 'x86_64', 'amd64'],
+  ia32: ['ia32', 'x86', 'i386', 'i686'],
+};
+
+function archMatches(filename: string, arch: NodeJS.Architecture): boolean {
+  const aliases = ARCH_ALIASES[arch];
+  if (!aliases) return false;
+  return aliases.some((token) => filename.includes(token));
+}
+
+/**
+ * Picks the right release asset for the current OS + CPU.
+ *
+ * Order of preference:
+ *   1. Asset with a matching extension AND the current arch in its filename
+ *      (e.g. arm64 user → `Cerebro-1.0.0-arm64.dmg`).
+ *   2. Asset with a matching extension and no arch token at all
+ *      (universal builds, or single-arch releases).
+ *   3. Any asset with a matching extension (last-resort fallback so we don't
+ *      strand users when the publisher accidentally only shipped one arch).
+ */
+export function pickAssetForPlatform(
+  assets: GithubAsset[],
+  platform: NodeJS.Platform = process.platform,
+  arch: NodeJS.Architecture = process.arch,
+): UpdateAsset | null {
+  const candidatesByExt = (...exts: string[]): GithubAsset[] =>
+    assets.filter((a) => {
+      const lower = a.name.toLowerCase();
+      return exts.some((ext) => lower.endsWith(ext));
+    });
+
+  const allArchTokens = Object.values(ARCH_ALIASES).flat();
+  const hasAnyArchToken = (filename: string) =>
+    allArchTokens.some((token) => filename.includes(token));
+
+  const choose = (matchingExt: GithubAsset[]): GithubAsset | undefined => {
+    if (matchingExt.length === 0) return undefined;
+    // 1. exact arch match
+    const exact = matchingExt.find((a) => archMatches(a.name.toLowerCase(), arch));
+    if (exact) return exact;
+    // 2. arch-agnostic name (no arch token at all)
+    const archAgnostic = matchingExt.find((a) => !hasAnyArchToken(a.name.toLowerCase()));
+    if (archAgnostic) return archAgnostic;
+    // 3. last resort
+    return matchingExt[0];
+  };
 
   let chosen: GithubAsset | undefined;
 
-  if (process.platform === 'darwin') {
-    chosen = find((n) => n.endsWith('.dmg'));
-  } else if (process.platform === 'win32') {
+  if (platform === 'darwin') {
+    chosen = choose(candidatesByExt('.dmg'));
+  } else if (platform === 'win32') {
+    // Squirrel "Setup.exe" is the auto-update-aware installer; bare ".exe"
+    // is the fallback for cases where Forge only emits the inner binary.
     chosen =
-      find((n) => n.endsWith('setup.exe')) ??
-      find((n) => n.endsWith('.exe'));
-  } else if (process.platform === 'linux') {
+      choose(candidatesByExt('setup.exe')) ?? choose(candidatesByExt('.exe'));
+  } else if (platform === 'linux') {
     chosen =
-      find((n) => n.endsWith('.appimage')) ??
-      find((n) => n.endsWith('.deb')) ??
-      find((n) => n.endsWith('.rpm'));
+      choose(candidatesByExt('.appimage')) ??
+      choose(candidatesByExt('.deb')) ??
+      choose(candidatesByExt('.rpm'));
   }
 
   if (!chosen) return null;
@@ -125,7 +191,7 @@ async function fetchLatestRelease(): Promise<GithubRelease | null> {
   });
 }
 
-export async function checkNow(): Promise<UpdateInfo | null> {
+async function checkNowImpl(): Promise<UpdateInfo | null> {
   if (!app.isPackaged) {
     // Don't pester developers running from source.
     return null;
@@ -141,7 +207,7 @@ export async function checkNow(): Promise<UpdateInfo | null> {
   const asset = pickAssetForPlatform(release.assets);
   if (!asset) {
     console.warn(
-      `[updater] No matching asset for platform=${process.platform} in release ${release.tag_name}`,
+      `[updater] No matching asset for platform=${process.platform}/${process.arch} in release ${release.tag_name}`,
     );
     return null;
   }
@@ -153,6 +219,21 @@ export async function checkNow(): Promise<UpdateInfo | null> {
     htmlUrl: release.html_url,
     asset,
   };
+}
+
+/**
+ * Mutex-guarded entry point — the poll timer and the renderer's manual
+ * `checkNow` IPC can race; without the mutex they'd both update
+ * `lastSeenEtag` / `cachedRelease` at the same time and double-burn the
+ * 60 req/hour unauthenticated quota.
+ */
+export async function checkNow(): Promise<UpdateInfo | null> {
+  if (inFlightCheck) return inFlightCheck;
+  const promise = checkNowImpl().finally(() => {
+    inFlightCheck = null;
+  });
+  inFlightCheck = promise;
+  return promise;
 }
 
 function send<T>(channel: string, payload: T): void {
@@ -276,6 +357,17 @@ export async function downloadAndOpen(asset: UpdateAsset): Promise<void> {
     };
     followRedirects(asset.url, 0);
   });
+
+  // Linux AppImages are downloaded without the executable bit; without
+  // chmod +x, double-clicking them just opens a text editor. Same for the
+  // shell.openPath call.
+  if (process.platform === 'linux' && /\.appimage$/i.test(asset.name)) {
+    try {
+      await fs.promises.chmod(destPath, 0o755);
+    } catch (err) {
+      console.warn('[updater] Failed to chmod AppImage:', err);
+    }
+  }
 
   send(IPC_CHANNELS.UPDATE_DOWNLOADED, { path: destPath, asset });
 

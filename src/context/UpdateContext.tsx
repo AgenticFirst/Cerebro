@@ -44,6 +44,9 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       setErrorMessage(null);
       setProgress(null);
       setDownloadedPath(null);
+      // Tell main the renderer is alive and showing the banner so the 5s
+      // native-dialog fallback doesn't fire on top of it.
+      void window.cerebro.updater.notified();
     });
     const offProgress = window.cerebro.updater.onProgress((p) => {
       setProgress(p);

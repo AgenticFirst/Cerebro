@@ -118,6 +118,9 @@ export const IPC_CHANNELS = {
   UPDATE_CHECK_NOW: 'update:check-now',
   UPDATE_DOWNLOAD: 'update:download',
   UPDATE_DISMISS: 'update:dismiss',
+  /** Renderer → main: "I received UPDATE_AVAILABLE and showed the banner."
+   *  Suppresses the 5s native-dialog fallback. */
+  UPDATE_NOTIFIED: 'update:notified',
   UPDATE_OPEN_RELEASE_PAGE: 'update:open-release-page',
   UPDATE_AVAILABLE: 'update:available',
   UPDATE_DOWNLOAD_PROGRESS: 'update:download-progress',
@@ -433,6 +436,9 @@ export interface UpdaterAPI {
   checkNow(): Promise<UpdateInfo | null>;
   download(asset: UpdateAsset): Promise<void>;
   dismiss(): Promise<void>;
+  /** Renderer tells main "the banner is on screen" so the native
+   *  dialog fallback doesn't fire. Fire-and-forget. */
+  notified(): Promise<void>;
   openReleasePage(url: string): Promise<void>;
   onAvailable(callback: (info: UpdateInfo) => void): () => void;
   onProgress(callback: (progress: UpdateDownloadProgress) => void): () => void;

@@ -375,6 +375,9 @@ const api: CerebroAPI = {
     dismiss(): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_DISMISS);
     },
+    notified(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_NOTIFIED);
+    },
     openReleasePage(url: string): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_OPEN_RELEASE_PAGE, url);
     },
