@@ -107,6 +107,7 @@ describe('forge.config.ts', () => {
 
 describe('package.json', () => {
   const pkg = JSON.parse(read('package.json')) as {
+    name: string;
     version: string;
     repository?: { type: string; url: string };
     devDependencies: Record<string, string>;
@@ -128,5 +129,47 @@ describe('package.json', () => {
   it('has the GitHub publisher and AppImage maker as dev dependencies', () => {
     expect(pkg.devDependencies['@electron-forge/publisher-github']).toBeDefined();
     expect(pkg.devDependencies['@reforged/maker-appimage']).toBeDefined();
+  });
+
+  it('has a verify:build script that the pre-push hook can run', () => {
+    const scripts = JSON.parse(read('package.json')).scripts as Record<string, string>;
+    expect(scripts['verify:build']).toBeDefined();
+  });
+});
+
+// ── Binary naming consistency ───────────────────────────────────
+//
+// THIS is the test that would have caught the v0.1.0 release failure.
+//
+// Forge's deb/rpm/AppImage makers all look for an executable matching
+// `package.json.name` (lowercase) at the root of the packaged app dir.
+// Without `packagerConfig.executableName`, Forge's packager produces a
+// binary named after `packagerConfig.name` (capital `Cerebro`) — and the
+// makers can't find it.
+//
+// Mac and Windows succeed silently because they don't care about the case
+// (Mac wraps it in an .app bundle, Windows in an .exe), so this only
+// surfaces on the Linux runner. Catching it locally avoids a 4-minute CI
+// round-trip per fix attempt.
+
+describe('forge.config.ts — binary naming invariants', () => {
+  const cfg = read('forge.config.ts');
+  const pkg = JSON.parse(read('package.json')) as { name: string };
+
+  it('sets packagerConfig.executableName (otherwise Linux makers cannot find the binary)', () => {
+    expect(cfg).toMatch(/executableName:\s*['"][^'"]+['"]/);
+  });
+
+  it('uses an executableName that matches package.json.name (the default Forge makers look for)', () => {
+    const match = cfg.match(/executableName:\s*['"]([^'"]+)['"]/);
+    expect(match).not.toBeNull();
+    expect(match![1]).toBe(pkg.name);
+  });
+
+  it('uses a lowercase executableName (Linux + POSIX convention; AppImage rejects spaces)', () => {
+    const match = cfg.match(/executableName:\s*['"]([^'"]+)['"]/);
+    expect(match).not.toBeNull();
+    expect(match![1]).toBe(match![1].toLowerCase());
+    expect(match![1]).not.toMatch(/\s/);
   });
 });

@@ -14,6 +14,11 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     name: 'Cerebro',
+    // Lowercase binary name. Forge's deb/rpm/AppImage makers all default
+    // to looking for an executable named `package.json.name` (which is the
+    // lowercase `cerebro`). Without this, makers fail with
+    // "Could not find executable 'cerebro' in packaged application".
+    executableName: 'cerebro',
     icon: './assets/icon',
     extraResource: [
       './voice-models',
@@ -26,15 +31,7 @@ const config: ForgeConfig = {
     new MakerDMG({}),
     new MakerDeb({}),
     new MakerRpm({}),
-    new MakerAppImage({
-      options: {
-        // Forge packages the binary as `Cerebro` (matches packagerConfig.name).
-        // Without `bin`, the AppImage maker defaults to `package.json.name`
-        // (lowercase `cerebro`) and bombs out with "Could not find executable".
-        bin: 'Cerebro',
-        icon: './assets/icon.png',
-      },
-    }),
+    new MakerAppImage({ options: { icon: './assets/icon.png' } }),
   ],
   publishers: [
     new PublisherGithub({
