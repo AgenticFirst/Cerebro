@@ -1,13 +1,13 @@
 # Cerebro Local Server: Product Requirement Document (V0)
 
-**Product:** Cerebro (Personal Intelligence Platform)  
+**Product:** Cerebro (Open-Source AI Studio for Solopreneurs & Small Teams)  
 **Deliverable:** Cerebro Local Server (Desktop app \+ local runtime)  
 **Platforms:** macOS (DMG), Windows (EXE)  
 **Document scope:** User-facing functionality and system behavior for Local Server V0.
 
 # 1\) Product definition
 
-Cerebro is the future of personal intelligence. It acts like a **team of experts** working for you. You tell Cerebro what you want in plain English, and it **plans the work, uses your tools, double-checks results, and keeps going** until the job is done, with clear logs and approvals so you stay in control.
+Cerebro is an open-source AI studio for solopreneurs and small teams. It gives one operator a **roster of specialized experts** that work as a team — you tell Cerebro what you want in plain English, and it **plans the work, uses your tools, double-checks results, and keeps going** until the job is done, with clear logs and approvals so you stay in control.
 
 Cerebro Local Server is the first deliverable: an always-on desktop runtime and UI that:
 
@@ -35,7 +35,7 @@ AI today mostly feels like a reactive chat box. You type, it replies. That is no
 
 # 3\) Solution
 
-Cerebro makes AI feel like a team of experts, not a chat box, by giving experts the ability to learn about you and take action across your tools, with logs and approvals.
+Cerebro makes AI feel like a studio of experts working alongside you, not a chat box, by giving each expert the ability to learn about your business, coordinate with peers as a team, and take action across your tools — with logs and approvals.
 
 * **Experts own domains.** You can talk to Cerebro or a specific expert (and expert teams). Experts handle one-off requests, ongoing coaching, and update scoped memory over time.  
 * **Reliable execution across tools.** Experts can read and write through connected tools like calendar, email, docs, and chat. When work needs multiple steps or needs to be reusable, experts compile it into typed routines with explicit steps, required connections, and approval gates, then execute it through the local runtime.  

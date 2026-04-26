@@ -53,17 +53,17 @@ const en = {
 
   // ── Chat ────────────────────────────────────────────────────
   chat: {
-    welcomeTitle: 'Chat with Cerebro',
+    welcomeTitle: 'Welcome to your studio',
     welcomeSubtitle:
-      "Your lead expert. Ask anything \u2014 Cerebro will plan the work, delegate to specialists when needed, and follow up.",
+      'Cerebro is your roster of AI experts. Brief one or run them as a team \u2014 research, drafts, ops, follow-through, all from one chat.',
     welcomeCapPlan: 'Plans tasks',
-    welcomeCapPlanDesc: 'Breaks goals into steps before acting',
+    welcomeCapPlanDesc: 'Breaks any goal into a plan before a single step runs',
     welcomeCapDelegate: 'Delegates to experts',
-    welcomeCapDelegateDesc: 'Routes work to the right specialist',
+    welcomeCapDelegateDesc: 'Routes work to the right specialist, or runs them as a team',
     welcomeCapRoutines: 'Proposes routines',
-    welcomeCapRoutinesDesc: 'Automates recurring workflows',
+    welcomeCapRoutinesDesc: 'Spots repeatable work and offers to save it as a routine',
     welcomeCapMemory: 'Remembers what matters',
-    welcomeCapMemoryDesc: 'Learns facts and context over time',
+    welcomeCapMemoryDesc: 'Builds context about you, your customers, and your projects over time',
     welcomeHint: 'To message one specific expert directly, open Experts \u2192 Messages.',
     sendPlaceholder: 'Send a message...',
     copyMessage: 'Copy message',

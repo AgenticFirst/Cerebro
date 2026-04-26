@@ -2,7 +2,7 @@
   "name": "cerebro",
   "productName": "Cerebro",
   "version": "0.1.0",
-  "description": "Your team of experts, powered by AI",
+  "description": "Open-source AI studio for solopreneurs and small teams — ship like a 50-person team, on your own machine.",
   "main": ".vite/build/main.js",
   "private": true,
   "repository": {
@@ -25,7 +25,18 @@
     "test:e2e:headed": "npx playwright test e2e/ --headed",
     "verify:build": "bash scripts/verify-build.sh"
   },
-  "keywords": [],
+  "keywords": [
+    "ai",
+    "agents",
+    "llm",
+    "electron",
+    "desktop",
+    "solopreneur",
+    "open-source",
+    "local-first",
+    "multi-agent",
+    "ai-team"
+  ],
   "author": {
     "name": "Carlos",
     "email": "calovera@bu.edu"

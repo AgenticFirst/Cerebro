@@ -5,9 +5,9 @@
 <h1 align="center">Cerebro</h1>
 
 <p align="center">
-  <strong>Your team of AI experts.</strong>
+  <strong>Ship like a 50-person team — solo.</strong>
   <br />
-  Cerebro is an open-source platform for building your own team of AI experts to help run work and life.
+  The open-source AI studio for solopreneurs and small teams. Build a roster of expert agents that research, draft, automate, and follow through as a team — and get a workweek back, every week.
 </p>
 
 <p align="center">
@@ -27,23 +27,30 @@
 
 ## Why Cerebro?
 
-Most AI assistants are a single chat window that forgets everything between sessions. Cerebro is a self-hosted alternative that gives you a **team of experts** (specialized AI agents) — each with persistent memory, tool access, and the ability to execute multi-step workflows — running entirely on your machine.
+Solopreneurs and small teams are running ten roles at once — research, drafting, ops, customer follow-up, content, code. Most AI tools give you one chat window that forgets everything between sessions. Cerebro gives you a **studio of specialized experts** — each with persistent memory, tool access, and the ability to plan and execute multi-step work as a coordinated team.
 
-|  | Traditional AI assistants | Cerebro |
+|  | One chat window | Cerebro |
 |---|---|---|
-| **Architecture** | Single general-purpose assistant | Team of specialized experts with defined roles |
+| **Architecture** | Single general-purpose assistant | Studio of role-specialized experts you brief as a team |
 | **Memory** | Conversation-scoped, resets often | Persistent 3-tier memory scoped per user, expert, and routine |
 | **Execution** | Answers and advice only | Plans, acts, and runs multi-step routines across tools |
 | **Trust** | Black box | Approval gates, live execution logs, full activity history |
-| **Data** | Cloud-hosted | Local-first — SQLite, on your machine, your data stays yours |
+| **Data** | Cloud-hosted | Conversations, memory, and routines stored in local SQLite — yours to export, fork, or delete |
 
 <!-- Screenshots and demo video coming soon -->
+
+## Built for
+
+- **Solopreneurs** running multiple products, clients, or income streams at once.
+- **Two-to-five-person teams** that want a force-multiplier without hiring.
+- **Indie hackers, agency operators, and consultants** who'd rather brief an expert than copy-paste between five tabs.
+- **Operators who want their work data on their own machine** — conversations, memory, and routines live in local SQLite. MIT-licensed. Yours to fork.
 
 ## Features
 
 ### Specialized AI Agents
 
-Create domain-specific experts — Executive Assistant, Personal CFO, Fitness Coach, Research Analyst — each with their own memory, model selection, and tool access. Select an expert in the chat tray, or let Cerebro route automatically. Need a new specialist? Describe it in plain English and Cerebro will vibe-engineer one for you: propose, preview, install.
+Create domain-specific experts — Research Analyst, Content Writer, Sales Ops, Customer Success, Bookkeeper — each with their own memory, model selection, and tool access. Select an expert in the chat tray, or let Cerebro route automatically. Need a new specialist? Describe it in plain English and Cerebro will vibe-engineer one for you: propose, preview, install.
 
 ### Multi-Agent Orchestration
 
@@ -63,7 +70,7 @@ Approval gates pause execution before sensitive actions (sending emails, editing
 
 ### Long-Term Memory
 
-Three-tier scoped memory that grows with you: **context files** (your profile, communication style, project notes), **learned facts** (auto-extracted from conversations), and **knowledge entries** (structured domain records like workouts, expenses, meetings). Memory is scoped per user, per expert, and per routine — fully viewable and editable in Settings.
+Three-tier scoped memory that grows with you: **context files** (your profile, communication style, project notes), **learned facts** (auto-extracted from conversations), and **knowledge entries** (structured domain records like customer conversations, deals, content calendar, weekly metrics). Memory is scoped per user, per expert, and per routine — fully viewable and editable in Settings.
 
 ### Voice Interface
 
@@ -98,7 +105,6 @@ Electron Main Process
 | Frontend | React 19, TypeScript, Tailwind CSS 4 |
 | Backend | Python, FastAPI, SQLAlchemy, SQLite |
 | Agent system | pi-agent-core |
-| Local models | llama-cpp-python (GGUF) |
 | Voice | faster-whisper (STT), Kokoro ONNX (TTS) |
 | Build & test | Electron Forge, Vite, Vitest, Pytest |
 
@@ -133,7 +139,7 @@ npm install
 npm start
 ```
 
-On first launch, head to **Integrations** to add an API key (Anthropic, OpenAI, or Google) or download a local model to start chatting.
+On first launch, the app will guide you through setup. Once you're in, head to **Experts** to spin up your first specialist — or just start chatting with Cerebro to delegate.
 
 ## Development
 
@@ -193,7 +199,7 @@ npm run make
 See the full [roadmap](docs/roadmap.md) for details.
 
 - [x] App shell + chat with streaming responses
-- [x] Integrations (API keys, local models, HuggingFace)
+- [x] Integrations & connections
 - [x] Persistent 3-tier memory system
 - [x] Experts with agentic capabilities
 - [x] Execution engine (DAG executor)

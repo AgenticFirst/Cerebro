@@ -54,17 +54,17 @@ const es: TranslationKeys = {
 
   // ── Chat ────────────────────────────────────────────────────
   chat: {
-    welcomeTitle: 'Chatea con Cerebro',
+    welcomeTitle: 'Bienvenido a tu estudio',
     welcomeSubtitle:
-      'Tu experto principal. Preg\u00fantale lo que sea \u2014 Cerebro planifica el trabajo, delega a especialistas cuando hace falta y hace seguimiento.',
+      'Cerebro es tu equipo de expertos de IA. Habla con uno o coord\u00ednalos como equipo \u2014 investigaci\u00f3n, redacci\u00f3n, operaciones y seguimiento, todo desde un solo chat.',
     welcomeCapPlan: 'Planifica tareas',
-    welcomeCapPlanDesc: 'Divide el objetivo en pasos antes de actuar',
+    welcomeCapPlanDesc: 'Divide cualquier objetivo en un plan antes de ejecutar un paso',
     welcomeCapDelegate: 'Delega a expertos',
-    welcomeCapDelegateDesc: 'Deriva el trabajo al especialista adecuado',
+    welcomeCapDelegateDesc: 'Deriva el trabajo al especialista adecuado, o coord\u00ednalos como equipo',
     welcomeCapRoutines: 'Propone rutinas',
-    welcomeCapRoutinesDesc: 'Automatiza flujos recurrentes',
+    welcomeCapRoutinesDesc: 'Detecta el trabajo repetitivo y propone guardarlo como rutina',
     welcomeCapMemory: 'Recuerda lo importante',
-    welcomeCapMemoryDesc: 'Aprende hechos y contexto con el tiempo',
+    welcomeCapMemoryDesc: 'Construye contexto sobre ti, tus clientes y tus proyectos con el tiempo',
     welcomeHint: 'Para hablar con un experto concreto en privado, abre Expertos \u2192 Mensajes.',
     sendPlaceholder: 'Escribe un mensaje...',
     copyMessage: 'Copiar mensaje',
