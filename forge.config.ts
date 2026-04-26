@@ -26,7 +26,15 @@ const config: ForgeConfig = {
     new MakerDMG({}),
     new MakerDeb({}),
     new MakerRpm({}),
-    new MakerAppImage({ options: { icon: './assets/icon.png' } }),
+    new MakerAppImage({
+      options: {
+        // Forge packages the binary as `Cerebro` (matches packagerConfig.name).
+        // Without `bin`, the AppImage maker defaults to `package.json.name`
+        // (lowercase `cerebro`) and bombs out with "Could not find executable".
+        bin: 'Cerebro',
+        icon: './assets/icon.png',
+      },
+    }),
   ],
   publishers: [
     new PublisherGithub({
