@@ -258,10 +258,19 @@ async function startPythonBackend(): Promise<void> {
   const dataDir = app.getPath('userData');
   const dbPath = path.join(dataDir, 'cerebro.db');
   const agentMemoryDir = path.join(dataDir, 'agent-memory');
-  // Voice models are bundled with the app (extraResource in forge config)
-  const voiceModelsDir = app.isPackaged
-    ? path.join(process.resourcesPath, 'voice-models')
-    : path.join(app.getAppPath(), 'voice-models');
+  // Voice models are downloaded on demand (~480 MB total) into a writable
+  // user-data directory. They are NOT bundled with the app — the Voice
+  // section in Settings drives the download. In dev, we still honor the
+  // legacy `voice-models/` at the repo root if it's already populated, so
+  // developers don't have to re-download every time they wipe userData.
+  let voiceModelsDir = path.join(dataDir, 'voice-models');
+  if (!app.isPackaged) {
+    const repoVoiceDir = path.join(app.getAppPath(), 'voice-models');
+    if (fs.existsSync(path.join(repoVoiceDir, 'kokoro', 'kokoro-v1.0.onnx'))) {
+      voiceModelsDir = repoVoiceDir;
+    }
+  }
+  fs.mkdirSync(voiceModelsDir, { recursive: true });
 
   backendStatus = 'starting';
   console.log(`[Cerebro] Starting Python backend on port ${port}...`);

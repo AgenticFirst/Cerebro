@@ -5,7 +5,13 @@
  * the value once on mount and clears it.
  */
 
-export type PendingSettingsSection = 'memory' | 'sandbox' | 'appearance' | 'beta' | 'about';
+export type PendingSettingsSection =
+  | 'memory'
+  | 'sandbox'
+  | 'voice'
+  | 'appearance'
+  | 'beta'
+  | 'about';
 
 let pending: PendingSettingsSection | null = null;
 

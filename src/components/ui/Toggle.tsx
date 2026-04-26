@@ -3,15 +3,18 @@ import clsx from 'clsx';
 interface ToggleProps {
   checked: boolean;
   onChange: () => void;
+  disabled?: boolean;
 }
 
-export default function Toggle({ checked, onChange }: ToggleProps) {
+export default function Toggle({ checked, onChange, disabled = false }: ToggleProps) {
   return (
     <button
       onClick={onChange}
+      disabled={disabled}
       className={clsx(
         'relative w-8 h-[18px] rounded-full transition-colors duration-200 flex-shrink-0',
         checked ? 'bg-accent' : 'bg-bg-elevated border border-border-default',
+        disabled && 'opacity-40 cursor-not-allowed',
       )}
     >
       <div

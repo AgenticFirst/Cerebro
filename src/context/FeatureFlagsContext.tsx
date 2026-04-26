@@ -17,7 +17,11 @@ export interface BetaFeatureDef {
   descriptionKey: string;
 }
 
-/** Registry of beta features. Add an entry here + extend BetaFeatureKey to ship a new gated feature. */
+/** Registry of beta features. Add an entry here + extend BetaFeatureKey to ship a new gated feature.
+ *
+ * `voice-calls` is the master switch for the entire voice feature: when
+ * OFF, the Voice section is hidden from Settings (so the model downloads
+ * aren't reachable) AND the Phone button is hidden from expert profiles. */
 export const BETA_FEATURES: BetaFeatureDef[] = [
   {
     key: 'teams',

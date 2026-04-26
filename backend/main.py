@@ -44,10 +44,11 @@ async def lifespan(application: FastAPI):
         os.makedirs(agent_memory_dir, exist_ok=True)
         print(f"[Cerebro] Agent memory directory: {agent_memory_dir}")
 
-    # Voice models (bundled with the app)
+    # Voice models (downloaded on demand into the user-data dir).
     voice_models_dir = getattr(application.state, "voice_models_dir", None)
     if voice_models_dir:
-        init_voice_singletons()
+        os.makedirs(voice_models_dir, exist_ok=True)
+        init_voice_singletons(voice_models_dir)
         print(f"[Cerebro] Voice models directory: {voice_models_dir}")
 
     # Seed builtin skills + verified experts (skippable for tests)

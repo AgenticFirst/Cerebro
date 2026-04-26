@@ -1,7 +1,8 @@
-"""Voice model catalog — models are bundled with the app.
+"""Voice model catalog + on-disk presence checks.
 
-No download management needed; models ship in the app's resources.
-This module just describes the catalog and checks file presence.
+Models are no longer bundled with the app. They're downloaded on demand
+into the user-data directory the first time the user enables voice in
+Settings → Voice. See ``downloader.py`` for the download pipeline.
 """
 
 from __future__ import annotations
@@ -9,10 +10,23 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from .schemas import VoiceModelInfo
+from .schemas import DownloadState, VoiceModelInfo
 
 
 # ── Hardcoded catalog ─────────────────────────────────────────────
+#
+# `urls` is the list of (filename, public_url, expected_size_bytes) tuples
+# that the downloader fetches into <voice_models_dir>/<dir_name>/. The
+# downloader writes to a `.part` file and atomically renames on success.
+#
+# `check_files` are the filenames whose presence indicates a complete
+# install. For Whisper we let faster-whisper auto-download on first use,
+# so we just check the cache dir exists with the expected snapshot.
+
+KOKORO_RELEASE = (
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
+)
+WHISPER_BASE_HF = "https://huggingface.co/Systran/faster-whisper-base/resolve/main"
 
 VOICE_CATALOG: list[dict[str, Any]] = [
     {
@@ -20,12 +34,18 @@ VOICE_CATALOG: list[dict[str, Any]] = [
         "name": "Faster Whisper Base",
         "type": "stt",
         "description": "CTranslate2-optimized Whisper — <200ms transcription for short clips",
-        "size_bytes": 75_000_000,
-        # faster-whisper auto-downloads the CTranslate2 model; the dir is
-        # just used as the download cache.  No check_file needed.
-        "dir_name": ".",
-        "check_file": None,
-        "auto_download": True,
+        "size_bytes": 145_000_000,
+        "dir_name": "models--Systran--faster-whisper-base",
+        # Files placed inside <dir_name>/snapshots/main/ to mimic the HF cache
+        # layout that faster-whisper expects.
+        "snapshot_subdir": "snapshots/main",
+        "urls": [
+            ("config.json", f"{WHISPER_BASE_HF}/config.json", 2_000),
+            ("model.bin", f"{WHISPER_BASE_HF}/model.bin", 145_000_000),
+            ("tokenizer.json", f"{WHISPER_BASE_HF}/tokenizer.json", 2_500_000),
+            ("vocabulary.txt", f"{WHISPER_BASE_HF}/vocabulary.txt", 460_000),
+        ],
+        "check_files": ["model.bin"],
     },
     {
         "id": "kokoro-82m",
@@ -33,9 +53,13 @@ VOICE_CATALOG: list[dict[str, Any]] = [
         "type": "tts",
         "description": "Kokoro StyleTTS2 — 54 voices, 24kHz, non-autoregressive (deterministic)",
         "size_bytes": 340_000_000,
-        # Two files in a directory: the ONNX graph and the voices binary.
         "dir_name": "kokoro",
-        "check_file": "kokoro-v1.0.onnx",
+        "snapshot_subdir": "",
+        "urls": [
+            ("kokoro-v1.0.onnx", f"{KOKORO_RELEASE}/kokoro-v1.0.onnx", 310_000_000),
+            ("voices-v1.0.bin", f"{KOKORO_RELEASE}/voices-v1.0.bin", 27_000_000),
+        ],
+        "check_files": ["kokoro-v1.0.onnx", "voices-v1.0.bin"],
     },
 ]
 
@@ -47,37 +71,57 @@ def get_catalog_entry(model_id: str) -> dict[str, Any] | None:
     return None
 
 
-def get_model_path(voice_models_dir: str, model_id: str) -> str | None:
-    """Return the path to the model files, or None if not found."""
+def model_dir(voice_models_dir: str, model_id: str) -> str | None:
     entry = get_catalog_entry(model_id)
     if not entry:
         return None
+    base = os.path.join(voice_models_dir, entry["dir_name"])
+    sub = entry.get("snapshot_subdir") or ""
+    return os.path.join(base, sub) if sub else base
 
-    # Auto-download models (e.g. faster-whisper) just need the cache dir
-    if entry.get("auto_download"):
-        os.makedirs(voice_models_dir, exist_ok=True)
-        return voice_models_dir
 
-    model_dir = os.path.join(voice_models_dir, entry["dir_name"])
-    check_file = entry.get("check_file")
-    if not check_file:
-        return model_dir if os.path.isdir(model_dir) else None
+def is_model_installed(voice_models_dir: str, model_id: str) -> bool:
+    """True iff every required check_file is present and non-empty."""
+    target_dir = model_dir(voice_models_dir, model_id)
+    if not target_dir or not os.path.isdir(target_dir):
+        return False
+    entry = get_catalog_entry(model_id)
+    if not entry:
+        return False
+    for fname in entry.get("check_files", []):
+        path = os.path.join(target_dir, fname)
+        if not os.path.exists(path) or os.path.getsize(path) == 0:
+            return False
+    return True
 
-    check = os.path.join(model_dir, check_file)
-    if not os.path.exists(check):
+
+def get_model_path(voice_models_dir: str, model_id: str) -> str | None:
+    """Return the dir the engine should load from, or None if not installed."""
+    if not is_model_installed(voice_models_dir, model_id):
         return None
+    # STT engine wants the parent voice_models_dir (HF cache layout) so
+    # faster-whisper resolves snapshots/main/ itself.
+    entry = get_catalog_entry(model_id)
+    if entry and entry["type"] == "stt":
+        return voice_models_dir
+    return model_dir(voice_models_dir, model_id)
 
-    # Both STT and TTS engines load from a directory containing their model
-    # files (faster-whisper uses a cache dir, Kokoro uses a dir with the
-    # onnx graph + voices binary).
-    return model_dir
 
-
-def get_catalog(voice_models_dir: str) -> list[VoiceModelInfo]:
-    """Return all catalog models with availability status."""
+def get_catalog(
+    voice_models_dir: str,
+    download_states: dict[str, dict[str, Any]] | None = None,
+) -> list[VoiceModelInfo]:
+    """Return all catalog models with availability + download status."""
+    states = download_states or {}
     result: list[VoiceModelInfo] = []
     for entry in VOICE_CATALOG:
-        model_path = get_model_path(voice_models_dir, entry["id"])
+        installed = is_model_installed(voice_models_dir, entry["id"])
+        st = states.get(entry["id"], {})
+        download_state: DownloadState = (
+            "installed"
+            if installed
+            else st.get("state", "not_installed")
+        )
         result.append(
             VoiceModelInfo(
                 id=entry["id"],
@@ -85,7 +129,10 @@ def get_catalog(voice_models_dir: str) -> list[VoiceModelInfo]:
                 type=entry["type"],
                 description=entry["description"],
                 size_bytes=entry["size_bytes"],
-                available=model_path is not None,
+                available=installed,
+                download_state=download_state,
+                downloaded_bytes=int(st.get("downloaded_bytes", 0)),
+                error=st.get("error"),
             )
         )
     return result

@@ -52,8 +52,12 @@ describe('.github/workflows/release.yml', () => {
     expect(yml).toMatch(/rpm/);
   });
 
-  it('pre-downloads voice models so the postinstall hook short-circuits in CI', () => {
-    expect(yml).toMatch(/python3 scripts\/download-voice-models\.py/);
+  it('does NOT pre-download voice models in CI (they are lazy-loaded post-install)', () => {
+    // Voice models live in userData and download from Settings → Voice.
+    // Pre-downloading them in CI was a leftover from when they were
+    // bundled via extraResource and would re-introduce a 480 MB download
+    // to every release runner.
+    expect(yml).not.toMatch(/python3 scripts\/download-voice-models\.py/);
   });
 
   it('also exposes a workflow_dispatch trigger for manual releases', () => {
@@ -100,6 +104,15 @@ describe('forge.config.ts', () => {
     expect(cfg).toMatch(/new MakerDeb/);
     expect(cfg).toMatch(/new MakerRpm/);
     expect(cfg).toMatch(/new MakerAppImage/);
+  });
+
+  it('does NOT bundle voice-models in extraResource (must be lazy-downloaded)', () => {
+    // Voice models are ~480 MB. Bundling them inflated the DMG to 475 MB.
+    // Settings → Voice handles the on-demand download into userData. If this
+    // test fails, someone has reintroduced the bundle and a release will
+    // ship as a half-gigabyte download to every user.
+    expect(cfg).not.toMatch(/['"]\.\/voice-models['"]/);
+    expect(cfg).not.toMatch(/extraResource:\s*\[[^\]]*voice-models/);
   });
 });
 

@@ -1071,6 +1071,7 @@ const es: TranslationKeys = {
     title: 'Ajustes',
     memory: 'Memoria',
     sandbox: 'Sandbox',
+    voice: 'Voz',
     appearance: 'Apariencia',
     beta: 'Funciones beta',
     about: 'Acerca de',

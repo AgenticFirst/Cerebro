@@ -59,12 +59,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fakeroot dpkg rpm
 
-      # Pre-populate voice-models so the postinstall hook short-circuits.
-      # The script uses only stdlib (urllib) so no venv setup is needed.
-      - name: Download voice models
-        shell: bash
-        run: python3 scripts/download-voice-models.py
-
       - name: Install dependencies
         run: npm ci
 

@@ -1,14 +1,16 @@
-import { useState } from 'react';
-import { Brain, Palette, Info, Shield, FlaskConical, type LucideIcon } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Brain, Palette, Info, Shield, FlaskConical, Mic, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import MemorySection from './settings/MemorySection';
 import AppearanceSection from './settings/AppearanceSection';
 import SandboxSection from './settings/SandboxSection';
 import BetaFeaturesSection from './settings/BetaFeaturesSection';
+import VoiceSection from './settings/VoiceSection';
 import { consumePendingSettingsSection } from './settings/pending-section';
+import { useFeatureFlags } from '../../context/FeatureFlagsContext';
 
-type Section = 'memory' | 'sandbox' | 'appearance' | 'beta' | 'about';
+type Section = 'memory' | 'sandbox' | 'voice' | 'appearance' | 'beta' | 'about';
 
 interface SectionNavItem {
   id: Section;
@@ -18,6 +20,7 @@ interface SectionNavItem {
 const SECTIONS: SectionNavItem[] = [
   { id: 'memory', icon: Brain },
   { id: 'sandbox', icon: Shield },
+  { id: 'voice', icon: Mic },
   { id: 'appearance', icon: Palette },
   { id: 'beta', icon: FlaskConical },
   { id: 'about', icon: Info },
@@ -25,9 +28,34 @@ const SECTIONS: SectionNavItem[] = [
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
-  const [activeSection, setActiveSection] = useState<Section>(
-    () => consumePendingSettingsSection() ?? 'memory',
+  const { flags } = useFeatureFlags();
+
+  // Voice is hidden from the sidebar AND from direct routing when the
+  // beta flag is off — the master switch lives in Settings → Beta.
+  const visibleSections = useMemo(
+    () => SECTIONS.filter((s) => (s.id === 'voice' ? flags['voice-calls'] : true)),
+    [flags],
   );
+
+  const [activeSection, setActiveSection] = useState<Section>(() => {
+    const pending = consumePendingSettingsSection();
+    if (pending === 'voice' && !flags['voice-calls']) {
+      // A caller (e.g. Phone-button click) asked us to land on Voice but
+      // the flag is off — that should never happen because the gating in
+      // VoiceContext also checks the flag, but be defensive: fall back to
+      // Beta so the user can flip the flag and try again.
+      return 'beta';
+    }
+    return pending ?? 'memory';
+  });
+
+  // If the user disables the flag while Voice is the active section,
+  // bounce them back to Memory so they don't see a dangling pane.
+  useEffect(() => {
+    if (activeSection === 'voice' && !flags['voice-calls']) {
+      setActiveSection('memory');
+    }
+  }, [activeSection, flags]);
 
   return (
     <div className="flex h-full">
@@ -37,7 +65,7 @@ export default function SettingsScreen() {
           {t('settings.title')}
         </div>
         <div className="space-y-px">
-          {SECTIONS.map((section) => {
+          {visibleSections.map((section) => {
             const Icon = section.icon;
             const isActive = activeSection === section.id;
             return (
@@ -82,6 +110,7 @@ export default function SettingsScreen() {
         )}>
           {activeSection === 'memory' && <MemorySection />}
           {activeSection === 'sandbox' && <SandboxSection />}
+          {activeSection === 'voice' && <VoiceSection />}
           {activeSection === 'appearance' && <AppearanceSection />}
           {activeSection === 'beta' && <BetaFeaturesSection />}
           {activeSection === 'about' && (

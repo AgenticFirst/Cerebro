@@ -1080,6 +1080,7 @@ const en = {
     title: 'Settings',
     memory: 'Memory',
     sandbox: 'Sandbox',
+    voice: 'Voice',
     appearance: 'Appearance',
     beta: 'Beta Features',
     about: 'About',

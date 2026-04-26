@@ -13,6 +13,29 @@ import type {
   VoiceSessionState,
   VoiceSessionEvent,
 } from '../voice/types';
+import { setPendingSettingsSection } from '../components/screens/settings/pending-section';
+
+// ── Catalog types (mirrors backend voice/schemas.py) ─────────────
+
+export type VoiceDownloadState = 'not_installed' | 'downloading' | 'installed' | 'failed';
+
+export interface VoiceCatalogModel {
+  id: string;
+  name: string;
+  type: 'stt' | 'tts';
+  description: string;
+  size_bytes: number;
+  available: boolean;
+  download_state: VoiceDownloadState;
+  downloaded_bytes: number;
+  error: string | null;
+}
+
+export interface VoiceCatalog {
+  models: VoiceCatalogModel[];
+  voice_models_dir: string;
+  all_installed: boolean;
+}
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -39,11 +62,21 @@ interface VoiceActions {
   startSpeaking: () => void;
   stopSpeaking: () => void;
   toggleSubtitles: () => void;
+  refreshCatalog: () => Promise<void>;
+  startDownload: (modelId: string) => Promise<void>;
+  cancelDownload: (modelId: string) => Promise<void>;
 }
 
-type VoiceContextValue = VoiceState & VoiceActions;
+interface VoiceModelsState {
+  catalog: VoiceCatalog | null;
+  catalogLoading: boolean;
+}
 
-const VoiceContext = createContext<VoiceContextValue | null>(null);
+type VoiceContextValue = VoiceState & VoiceModelsState & VoiceActions;
+
+// Exported so test harnesses can render consumers with a stubbed value
+// without spinning up the whole provider tree (ChatContext, FeatureFlags, etc.).
+export const VoiceContext = createContext<VoiceContextValue | null>(null);
 
 // ── Provider ─────────────────────────────────────────────────────
 
@@ -59,10 +92,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(true);
   const [callError, setCallError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('');
+  const [catalog, setCatalog] = useState<VoiceCatalog | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
 
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const activeSessionRef = useRef<ActiveSession | null>(null);
   const sessionStateRef = useRef<VoiceSessionState>('idle');
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Keep refs in sync
   useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
@@ -72,12 +108,100 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return () => {
       unsubscribeRef.current?.();
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
   }, []);
+
+  // ── Catalog + downloads ────────────────────────────────────────
+
+  const refreshCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    try {
+      const res = await window.cerebro.invoke<VoiceCatalog>({
+        method: 'GET',
+        path: '/voice/catalog',
+      });
+      if (res.ok) setCatalog(res.data);
+    } catch {
+      // Backend may not be ready yet — silent retry on next poll.
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, []);
+
+  // Initial catalog fetch + adaptive polling.
+  // Poll every 1500ms while ANY model is downloading; stop when idle.
+  useEffect(() => {
+    void refreshCatalog();
+  }, [refreshCatalog]);
+
+  useEffect(() => {
+    const downloading = catalog?.models.some((m) => m.download_state === 'downloading') ?? false;
+    if (downloading && !pollTimerRef.current) {
+      pollTimerRef.current = setInterval(() => {
+        void refreshCatalog();
+      }, 1500);
+    } else if (!downloading && pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, [catalog, refreshCatalog]);
+
+  const startDownload = useCallback(
+    async (modelId: string) => {
+      const res = await window.cerebro.invoke<{ model_id: string; state: VoiceDownloadState }>({
+        method: 'POST',
+        path: '/voice/download/start',
+        body: { model_id: modelId },
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to start download: HTTP ${res.status}`);
+      }
+      await refreshCatalog();
+    },
+    [refreshCatalog],
+  );
+
+  const cancelDownload = useCallback(
+    async (modelId: string) => {
+      await window.cerebro.invoke({
+        method: 'POST',
+        path: '/voice/download/cancel',
+        body: { model_id: modelId },
+      });
+      await refreshCatalog();
+    },
+    [refreshCatalog],
+  );
 
   const startCall = useCallback(
     async (expertId: string) => {
       if (!flags['voice-calls']) return;
+
+      // Gate on model installation FIRST. If either model is missing,
+      // redirect to Settings → Voice instead of starting a call that's
+      // guaranteed to fail at the /voice/stt/load step.
+      // Re-fetch the catalog so the decision is based on live disk state,
+      // not whatever was cached from app startup.
+      let live: VoiceCatalog | null = null;
+      try {
+        const res = await window.cerebro.invoke<VoiceCatalog>({
+          method: 'GET',
+          path: '/voice/catalog',
+        });
+        if (res.ok) {
+          live = res.data;
+          setCatalog(res.data);
+        }
+      } catch {
+        // Fall through to old behavior if backend is unreachable.
+      }
+      if (live && !live.all_installed) {
+        setPendingSettingsSection('voice');
+        setActiveScreen('settings');
+        return;
+      }
+
       setActiveScreen('call');
       setCurrentTranscription('');
       setCurrentResponse('');
@@ -216,11 +340,16 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
     subtitlesEnabled,
     callError,
     statusMessage,
+    catalog,
+    catalogLoading,
     startCall,
     endCall,
     startSpeaking,
     stopSpeaking,
     toggleSubtitles,
+    refreshCatalog,
+    startDownload,
+    cancelDownload,
   };
 
   return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;

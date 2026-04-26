@@ -20,9 +20,10 @@ const config: ForgeConfig = {
     // "Could not find executable 'cerebro' in packaged application".
     executableName: 'cerebro',
     icon: './assets/icon',
-    extraResource: [
-      './voice-models',
-    ],
+    // Voice models (~480 MB) are deliberately NOT bundled — they're
+    // downloaded on demand into the user's data dir from Settings → Voice.
+    // Bundling them ballooned the DMG to 475 MB; lazy download brings the
+    // installed app down to ~120 MB.
   },
   rebuildConfig: {},
   makers: [
