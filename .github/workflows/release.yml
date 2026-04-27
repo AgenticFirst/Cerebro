@@ -13,23 +13,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # Windows is intentionally excluded — Cerebro's Python backend
+        # doesn't have a Windows bundle path yet (bundle-python.sh skips
+        # on Windows runners). Add windows-latest back once the backend
+        # supports it.
+        os: [macos-latest, ubuntu-latest]
 
     permissions:
       contents: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: npm
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -67,10 +71,8 @@ jobs:
       # uv (Astral's Python manager) is required by scripts/bundle-python.sh,
       # which the generateAssets hook in forge.config.ts runs to build the
       # relocatable CPython 3.11 + backend deps that ship in the .app/.deb/
-      # .rpm/.AppImage. macOS GHA runners install via the same script;
-      # Windows isn't covered yet (no Python backend support there).
+      # .rpm/.AppImage.
       - name: Install uv
-        if: runner.os != 'Windows'
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
@@ -85,7 +87,60 @@ jobs:
         if: runner.os == 'macOS'
         run: npm rebuild fs-xattr macos-alias
 
+      # Import the Developer ID Application certificate into a temporary
+      # keychain so codesign + osx-sign can find it during postPackage.
+      # The .p12 is held as a base64-encoded repo secret. We unlock the
+      # keychain for the duration of the job and add it to the search
+      # list, then forge.config.ts's findDeveloperIdIdentity() will see
+      # the cert, sign the .app, and notarize it via the env credentials
+      # set on the publish step below.
+      - name: Set up macOS code-signing keychain
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE_P12_BASE64 != ''
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+
+          # Decode + write the cert
+          echo "$APPLE_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT_PATH"
+
+          # Create + unlock the keychain (long timeout so it stays unlocked
+          # for the entire build/sign/notarize cycle).
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import the Developer ID cert
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          rm -f "$CERT_PATH"
+
+          # Allow codesign / osx-sign to use the cert without UI prompts
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Make this keychain the default + part of the search list so
+          # `security find-identity -v -p codesigning` discovers the cert.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/[\" ]//g')
+          security default-keychain -s "$KEYCHAIN_PATH"
+
+          # Sanity check
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
       - name: Publish to GitHub Releases
         run: npm run publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Apple credentials are only consumed by macOS jobs; harmless to
+          # set on Linux since forge.config.ts's notarytool path is gated
+          # on Darwin + Developer-ID-found.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

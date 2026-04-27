@@ -26,6 +26,23 @@ import * as crypto from 'node:crypto';
 const NOTARIZE_KEYCHAIN_PROFILE = 'cerebro-notarytool';
 const ENTITLEMENTS_PATH = path.join(__dirname, 'build', 'entitlements.mac.plist');
 
+/**
+ * Build the notarytool credential args. CI runners don't have the keychain
+ * profile baked in, so we accept Apple ID + app-specific password + team ID
+ * via env vars and fall back to the keychain profile for local builds.
+ */
+function notarytoolCredentialArgs(): string[] {
+  const { APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID } = process.env;
+  if (APPLE_ID && APPLE_APP_SPECIFIC_PASSWORD && APPLE_TEAM_ID) {
+    return [
+      '--apple-id', APPLE_ID,
+      '--password', APPLE_APP_SPECIFIC_PASSWORD,
+      '--team-id', APPLE_TEAM_ID,
+    ];
+  }
+  return ['--keychain-profile', NOTARIZE_KEYCHAIN_PROFILE];
+}
+
 // Native node modules in `dependencies` that ship with .node binaries.
 // `@electron-forge/plugin-vite` only packages the `.vite/` output —
 // it does NOT copy node_modules into the packaged app. So our bundled
@@ -318,7 +335,7 @@ const config: ForgeConfig = {
           'xcrun',
           [
             'notarytool', 'submit', zipPath,
-            '--keychain-profile', NOTARIZE_KEYCHAIN_PROFILE,
+            ...notarytoolCredentialArgs(),
             '--wait',
           ],
           { stdio: 'inherit' },
@@ -357,7 +374,7 @@ const config: ForgeConfig = {
             'xcrun',
             [
               'notarytool', 'submit', artifactPath,
-              '--keychain-profile', NOTARIZE_KEYCHAIN_PROFILE,
+              ...notarytoolCredentialArgs(),
               '--wait',
             ],
             { stdio: 'inherit' },
