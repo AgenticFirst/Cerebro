@@ -55,6 +55,7 @@ vi.mock('../../../context/OnboardingContext', () => ({
     step: { id: 'welcome', kind: 'welcome', titleKey: '', bodyKey: '' },
     hasCompletedBefore: true,
     forcedSettingsSection: null,
+    spotlightedNavId: null,
     language: 'en',
     start: vi.fn(),
     next: vi.fn(),

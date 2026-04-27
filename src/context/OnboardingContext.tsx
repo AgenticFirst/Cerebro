@@ -50,6 +50,11 @@ interface OnboardingContextValue {
   hasCompletedBefore: boolean;
   /** When set, SettingsScreen overrides its activeSection accordingly. */
   forcedSettingsSection: 'memory' | null;
+  /** ID of the sidebar nav item that should be lifted above the tour dim
+   *  layer for the current spotlight step. Sidebar reads this and applies
+   *  an elevated z-index to the matching NavButton — guarantees the nav
+   *  item is visible regardless of whether the SVG cutout punches through. */
+  spotlightedNavId: string | null;
   /** Language picked during welcome (drives copy in this session). */
   language: TourLanguage;
   /** Open the tour from step 0. Used by the Settings → Appearance button. */
@@ -155,6 +160,11 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     return step?.settingsSection ?? null;
   }, [isOpen, step]);
 
+  const spotlightedNavId = useMemo<string | null>(() => {
+    if (!isOpen || step?.kind !== 'spotlight' || !step.screen) return null;
+    return step.screen;
+  }, [isOpen, step]);
+
   const value = useMemo<OnboardingContextValue>(
     () => ({
       isOpen,
@@ -162,6 +172,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       step,
       hasCompletedBefore,
       forcedSettingsSection,
+      spotlightedNavId,
       language,
       start,
       next,
@@ -175,6 +186,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       step,
       hasCompletedBefore,
       forcedSettingsSection,
+      spotlightedNavId,
       language,
       start,
       next,

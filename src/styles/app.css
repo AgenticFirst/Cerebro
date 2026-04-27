@@ -523,6 +523,37 @@ html.light .canvas-grid {
   animation: spotlightPulse 2.4s ease-in-out infinite;
 }
 
+/* Elevate the matching sidebar NavButton above the tour dim layer.
+   The dim sits at z-index 10000; this lifts the button to 10001 so it
+   stays fully visible during the spotlight, regardless of whether the
+   SVG mask cutout punches through. The cyan ring + box-shadow give it
+   the same "spotlight" feel as the primary cutout. */
+.tour-spotlit-nav {
+  position: relative;
+  z-index: 10001;
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 0 6px rgba(6, 182, 212, 0.18),
+    0 0 24px rgba(6, 182, 212, 0.45);
+  background: var(--color-bg-surface);
+  animation: spotlightPulse 2.4s ease-in-out infinite;
+}
+
+/* Smooth tween between steps — applies to the SVG mask cutout rects and the
+   HTML cyan ring divs. Chromium supports CSS transitions on SVG rect x/y/
+   width/height since Chrome 99, so the cutout follows the ring exactly. */
+.cerebro-tour-cutout,
+.cerebro-tour-ring {
+  transition:
+    x 360ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    y 360ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    width 360ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    height 360ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    left 360ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    top 360ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    opacity 220ms ease-out;
+}
+
 /* Confetti pieces falling from above the viewport on completion. */
 @keyframes confettiFall {
   0% {

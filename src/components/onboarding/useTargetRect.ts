@@ -32,8 +32,14 @@ export function useTargetRect(
   const [rect, setRect] = useState<TargetRect | null>(null);
 
   useEffect(() => {
-    setRect(null);
-    if (!targetId) return;
+    // Don't clear the previous rect when targetId changes — keep it so the
+    // cyan ring + SVG cutout transition smoothly to the new target instead
+    // of snapping through a no-cutout intermediate state. Only clear if
+    // there's no new target to measure.
+    if (!targetId) {
+      setRect(null);
+      return;
+    }
 
     let cancelled = false;
     let pollTimer: ReturnType<typeof setInterval> | null = null;

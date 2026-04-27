@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { useChat } from '../../context/ChatContext';
 import { useApprovals } from '../../context/ApprovalContext';
 import { useTasks } from '../../context/TaskContext';
+import { useOnboarding } from '../../context/OnboardingContext';
 import { isUntitledConversationTitle } from '../../context/chat-helpers';
 import type { Conversation, Screen } from '../../types/chat';
 import { TelegramIcon } from '../icons/BrandIcons';
@@ -66,11 +67,13 @@ function NavButton({
   isActive,
   collapsed,
   onClick,
+  isTourSpotlit,
 }: {
   item: NavItem;
   isActive: boolean;
   collapsed: boolean;
   onClick: () => void;
+  isTourSpotlit?: boolean;
 }) {
   const Icon = item.icon;
 
@@ -85,6 +88,7 @@ function NavButton({
         isActive
           ? 'nav-item-active text-text-primary font-medium'
           : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]',
+        isTourSpotlit && 'tour-spotlit-nav',
       )}
       title={collapsed ? item.label : undefined}
     >
@@ -123,11 +127,13 @@ function NavGroup({
   activeScreen,
   collapsed,
   onNavClick,
+  spotlightedNavId,
 }: {
   items: NavItem[];
   activeScreen: Screen;
   collapsed: boolean;
   onNavClick: (screen: Screen) => void;
+  spotlightedNavId: string | null;
 }) {
   return (
     <div className="space-y-px">
@@ -138,6 +144,7 @@ function NavGroup({
           isActive={activeScreen === item.id}
           collapsed={collapsed}
           onClick={() => onNavClick(item.id)}
+          isTourSpotlit={spotlightedNavId === item.id}
         />
       ))}
     </div>
@@ -218,6 +225,7 @@ export default function Sidebar() {
   } = useChat();
   const { pendingCount } = useApprovals();
   const { stats } = useTasks();
+  const { spotlightedNavId } = useOnboarding();
 
   const [collapsed, setCollapsed] = useState(false);
   const grouped = useMemo(() => groupByTime(generalConversations), [generalConversations]);
@@ -333,6 +341,7 @@ export default function Sidebar() {
           activeScreen={activeScreen}
           collapsed={collapsed}
           onNavClick={handleNavClick}
+          spotlightedNavId={spotlightedNavId}
         />
 
         <GhostSeparator collapsed={collapsed} />
@@ -343,6 +352,7 @@ export default function Sidebar() {
           activeScreen={activeScreen}
           collapsed={collapsed}
           onNavClick={handleNavClick}
+          spotlightedNavId={spotlightedNavId}
         />
 
         <GhostSeparator collapsed={collapsed} />
@@ -353,6 +363,7 @@ export default function Sidebar() {
           activeScreen={activeScreen}
           collapsed={collapsed}
           onNavClick={handleNavClick}
+          spotlightedNavId={spotlightedNavId}
         />
       </nav>
 
@@ -398,6 +409,7 @@ export default function Sidebar() {
           isActive={activeScreen === 'settings'}
           collapsed={collapsed}
           onClick={() => handleNavClick('settings')}
+          isTourSpotlit={spotlightedNavId === 'settings'}
         />
       </div>
     </div>
