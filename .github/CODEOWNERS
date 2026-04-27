@@ -1,0 +1,30 @@
+# CODEOWNERS — paths that require explicit review by @calovera before merge.
+# All of these run during the release workflow with Apple signing/notarization
+# secrets in the environment. A subtle change here (e.g. an extra `curl` to
+# an attacker-controlled URL bundled into the build script) could exfiltrate
+# the .p12 + Apple ID + app-specific password.
+#
+# Branch protection on `main` requires 1 approving review on PRs; combined
+# with this file, any PR touching the paths below will block until @calovera
+# is the reviewer who approves.
+
+# CI / GitHub Actions
+.github/                     @calovera
+.github/workflows/           @calovera
+.github/workflows/release.yml @calovera
+
+# Build / packaging — runs on the release runner with secrets in env
+forge.config.ts              @calovera
+package.json                 @calovera
+package-lock.json            @calovera
+scripts/                     @calovera
+scripts/bundle-python.sh     @calovera
+scripts/verify-build.sh      @calovera
+
+# Native build manifests
+build/                       @calovera
+build/entitlements.mac.plist @calovera
+
+# Python bundle inputs (run via uv during generateAssets hook)
+backend/requirements.txt     @calovera
+backend/pyproject.toml       @calovera
