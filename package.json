@@ -54,6 +54,7 @@
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron-forge/publisher-github": "^7.11.1",
     "@electron/fuses": "^1.8.0",
+    "@electron/osx-sign": "^2.4.0",
     "@playwright/test": "^1.59.1",
     "@reforged/maker-appimage": "^5.0.0",
     "@testing-library/jest-dom": "^6.9.1",

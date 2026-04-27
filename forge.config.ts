@@ -12,6 +12,7 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { execFileSync } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import * as crypto from 'node:crypto';
 
 // macOS code-signing configuration. We resolve the Developer ID Application
 // identity from the keychain at build time so the config isn't tied to a
@@ -24,6 +25,31 @@ import * as fs from 'node:fs';
 // won't pass Gatekeeper for downloaded installs).
 const NOTARIZE_KEYCHAIN_PROFILE = 'cerebro-notarytool';
 const ENTITLEMENTS_PATH = path.join(__dirname, 'build', 'entitlements.mac.plist');
+
+// Native node modules in `dependencies` that ship with .node binaries.
+// `@electron-forge/plugin-vite` only packages the `.vite/` output —
+// it does NOT copy node_modules into the packaged app. So our bundled
+// main.js's `require('node-pty')` call resolves to nothing at runtime
+// and the app crashes on launch with "Cannot find module 'node-pty'".
+// We copy each entry below into Cerebro.app/Contents/Resources/app.asar.unpacked/
+// node_modules/<name>/ during the postPackage hook, BEFORE signing,
+// so osx-sign covers the bundled .node binaries with our entitlements.
+const NATIVE_MODULES_TO_BUNDLE = ['node-pty'];
+
+function copyDirRecursive(src: string, dest: string): void {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, destPath);
+    } else if (entry.isSymbolicLink()) {
+      fs.symlinkSync(fs.readlinkSync(srcPath), destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
 
 function findDeveloperIdIdentity(): string | null {
   try {
@@ -39,7 +65,48 @@ function findDeveloperIdIdentity(): string | null {
 
 const config: ForgeConfig = {
   packagerConfig: {
+    // Has to stay `true` (boolean), not an object — @electron-forge/
+    // plugin-vite has an internal check that breaks if this is an object.
+    // The `unpack` glob we actually need (for native .node files) is
+    // applied later by re-packing the asar in the postPackage hook,
+    // see hooks.postPackage below.
     asar: true,
+    // Bundles the Python backend + a relocatable CPython 3.11 (with all
+    // backend deps installed) so the app can spawn its FastAPI server
+    // without requiring Python on the user's machine. Both directories
+    // are produced by scripts/bundle-python.sh and end up at
+    // Cerebro.app/Contents/Resources/python-dist/ and .../backend/.
+    // src/main.ts resolves them via process.resourcesPath when packaged.
+    extraResource: [
+      'build-resources/python-dist',
+      'build-resources/backend',
+    ],
+    // forge-vite only places its bundled output in the build dir — it
+    // does NOT include node_modules of externals like node-pty. We
+    // copy them in here so they end up packed into app.asar; the
+    // postPackage hook then re-packs the asar with `--unpack` to push
+    // .node binaries out to app.asar.unpacked/. Without this two-step,
+    // the bundled main.js's `require('node-pty')` fails at boot with
+    // "Cannot find module 'node-pty'".
+    afterCopy: [
+      (buildPath, _electronVersion, _platform, _arch, callback) => {
+        try {
+          for (const moduleName of NATIVE_MODULES_TO_BUNDLE) {
+            const src = path.join(__dirname, 'node_modules', moduleName);
+            if (!fs.existsSync(src)) {
+              console.warn(`[afterCopy] WARN native module ${moduleName} missing from node_modules — skipping`);
+              continue;
+            }
+            const dest = path.join(buildPath, 'node_modules', moduleName);
+            copyDirRecursive(src, dest);
+            console.log(`[afterCopy] bundled native module: ${moduleName}`);
+          }
+          callback();
+        } catch (err) {
+          callback(err as Error);
+        }
+      },
+    ],
     name: 'Cerebro',
     // Lowercase binary name. Forge's deb/rpm/AppImage makers all default
     // to looking for an executable named `package.json.name` (which is the
@@ -69,6 +136,16 @@ const config: ForgeConfig = {
     // installed app down to ~120 MB.
   },
   hooks: {
+    // Runs before packaging — ensures build-resources/python-dist/ and
+    // build-resources/backend/ exist (and are fresh if requirements.txt
+    // changed). The script is idempotent: skips python-dist/ rebuild
+    // when the requirements hash hasn't changed.
+    async generateAssets() {
+      const script = path.join(__dirname, 'scripts', 'bundle-python.sh');
+      if (!fs.existsSync(script)) return;
+      console.log('[generateAssets] running bundle-python.sh…');
+      execFileSync('bash', [script], { stdio: 'inherit' });
+    },
     // Runs AFTER all plugins (including Fuses) have modified the packaged
     // app. Three responsibilities on macOS:
     //   1. Force CFBundleDisplayName back to "Cerebro" — packager's
@@ -96,7 +173,53 @@ const config: ForgeConfig = {
       // `codesign --deep` does NOT do reliably — Apple's notary service
       // rejects --deep-signed bundles because it misses inner dylibs
       // like libEGL, libvk_swiftshader, libffmpeg, ShipIt, etc.
-      const { signAsync } = await import('@electron/osx-sign');
+      // v2.x renamed `signAsync` → `sign` (which is still async).
+      const osxSign = await import('@electron/osx-sign');
+      const sign = (osxSign as any).sign ?? (osxSign as any).signAsync;
+
+      // Re-pack app.asar with an unpack glob for native modules. This
+      // can't be set as packagerConfig.asar.unpack (object form breaks
+      // forge-vite — see comment there), so we extract + re-pack here.
+      // After re-packing, we MUST update the Info.plist's
+      // ElectronAsarIntegrity entry to the new asar's header hash.
+      // packager originally computed and embedded the OLD asar's hash;
+      // when EnableEmbeddedAsarIntegrityValidation is on, Electron
+      // SIGTRAPs at boot if Info.plist's hash doesn't match the actual
+      // asar (`Integrity check failed for asar archive (X vs Y)`).
+      // The algorithm — SHA256 over `asar.getRawHeader(...).headerString`
+      // — is taken from @electron/universal/dist/cjs/asar-utils.js's
+      // `generateAsarIntegrity()`.
+      const asarLib = await import('@electron/asar');
+      const ASAR_UNPACK_GLOB = '*.node';
+      for (const outputPath of options.outputPaths) {
+        const appPath = path.join(outputPath, 'Cerebro.app');
+        const asarPath = path.join(appPath, 'Contents', 'Resources', 'app.asar');
+        const tmpExtract = path.join(outputPath, '.asar-extract-tmp');
+        fs.rmSync(tmpExtract, { recursive: true, force: true });
+        asarLib.extractAll(asarPath, tmpExtract);
+        const oldUnpacked = `${asarPath}.unpacked`;
+        fs.rmSync(oldUnpacked, { recursive: true, force: true });
+        fs.rmSync(asarPath, { force: true });
+        // @electron/asar's unpack option uses minimatch with matchBase: true,
+        // which matches by *basename* when the pattern has no slashes. So
+        // `*.node` extracts all native binaries to .unpacked regardless of
+        // depth. JS files stay in the archive (loadable from inside asar);
+        // when node-pty's JS does require('./build/Release/pty.node'), the
+        // asar layer transparently redirects to the .unpacked sibling.
+        await asarLib.createPackageWithOptions(tmpExtract, asarPath, { unpack: ASAR_UNPACK_GLOB });
+        fs.rmSync(tmpExtract, { recursive: true, force: true });
+
+        const newHash = crypto
+          .createHash('SHA256')
+          .update(asarLib.getRawHeader(asarPath).headerString)
+          .digest('hex');
+        const infoPlist = path.join(appPath, 'Contents', 'Info.plist');
+        execFileSync('/usr/libexec/PlistBuddy', [
+          '-c', `Set :ElectronAsarIntegrity:Resources/app.asar:hash ${newHash}`,
+          infoPlist,
+        ]);
+        console.log(`[postPackage] re-packed asar (unpack='${ASAR_UNPACK_GLOB}') + patched Info.plist hash → ${newHash.slice(0, 12)}…`);
+      }
 
       for (const outputPath of options.outputPaths) {
         const appPath = path.join(outputPath, 'Cerebro.app');
@@ -109,7 +232,7 @@ const config: ForgeConfig = {
         ]);
 
         if (isDeveloperId) {
-          await signAsync({
+          await sign({
             app: appPath,
             identity: identity!,
             hardenedRuntime: true,
@@ -136,6 +259,10 @@ const config: ForgeConfig = {
 
         if (!isDeveloperId) {
           console.log('[postPackage] skipping notarization (ad-hoc only)');
+          continue;
+        }
+        if (process.env.SKIP_NOTARIZE === '1') {
+          console.log('[postPackage] SKIP_NOTARIZE=1 — packaged + signed but not notarized');
           continue;
         }
 

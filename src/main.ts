@@ -201,8 +201,29 @@ function getFreePort(): Promise<number> {
   });
 }
 
+/**
+ * Resolves the Python interpreter to run the FastAPI backend.
+ *
+ * In packaged mode (DMG/installed app), uses the relocatable CPython 3.11
+ * we ship under Contents/Resources/python-dist/ — see
+ * scripts/bundle-python.sh and packagerConfig.extraResource in forge.config.ts.
+ *
+ * In dev mode, prefers a local backend/venv/ if it exists (developer's
+ * own venv); otherwise falls back to system python3 / python.
+ */
 function resolvePythonPath(): string {
   const isWin = process.platform === 'win32';
+
+  if (app.isPackaged) {
+    const bundled = isWin
+      ? path.join(process.resourcesPath, 'python-dist', 'python.exe')
+      : path.join(process.resourcesPath, 'python-dist', 'bin', 'python3.11');
+    if (fs.existsSync(bundled)) {
+      return bundled;
+    }
+    console.warn(`[Cerebro] Bundled Python missing at ${bundled} — falling back to system python (likely to fail)`);
+  }
+
   const venvPython = isWin
     ? path.join(app.getAppPath(), 'backend', 'venv', 'Scripts', 'python.exe')
     : path.join(app.getAppPath(), 'backend', 'venv', 'bin', 'python');
@@ -213,6 +234,18 @@ function resolvePythonPath(): string {
 
   // Fall back to system Python
   return isWin ? 'python' : 'python3';
+}
+
+/**
+ * Resolves the directory containing backend/main.py.
+ * Packaged: Contents/Resources/backend/  (bundled via extraResource).
+ * Dev:      <repo>/backend/  (under app.getAppPath()).
+ */
+function resolveBackendDir(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'backend');
+  }
+  return path.join(app.getAppPath(), 'backend');
 }
 
 function checkHealth(port: number): Promise<boolean> {
@@ -254,7 +287,8 @@ function waitForHealthCheck(port: number): Promise<void> {
 async function startPythonBackend(): Promise<void> {
   const port = await getFreePort();
   const pythonPath = resolvePythonPath();
-  const scriptPath = path.join(app.getAppPath(), 'backend', 'main.py');
+  const backendDir = resolveBackendDir();
+  const scriptPath = path.join(backendDir, 'main.py');
   const dataDir = app.getPath('userData');
   const dbPath = path.join(dataDir, 'cerebro.db');
   const agentMemoryDir = path.join(dataDir, 'agent-memory');
@@ -289,7 +323,7 @@ async function startPythonBackend(): Promise<void> {
     ],
     {
       stdio: ['ignore', 'pipe', 'pipe'],
-      cwd: path.join(app.getAppPath(), 'backend'),
+      cwd: backendDir,
       env: process.env,
     },
   );
