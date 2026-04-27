@@ -46,6 +46,25 @@ vi.mock('../../../context/FeatureFlagsContext', () => ({
   useFeatureFlags: () => ({ flags: mockFlags, setFlag: vi.fn() }),
 }));
 
+// Stub OnboardingContext so SettingsScreen doesn't require the provider.
+// The Voice gating tests don't exercise tour state at all.
+vi.mock('../../../context/OnboardingContext', () => ({
+  useOnboarding: () => ({
+    isOpen: false,
+    stepIndex: 0,
+    step: { id: 'welcome', kind: 'welcome', titleKey: '', bodyKey: '' },
+    hasCompletedBefore: true,
+    forcedSettingsSection: null,
+    language: 'en',
+    start: vi.fn(),
+    next: vi.fn(),
+    prev: vi.fn(),
+    setLanguageAndAdvance: vi.fn(),
+    finish: vi.fn(),
+  }),
+  OnboardingProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 beforeEach(() => {
   mockFlags = { teams: false, 'voice-calls': false };
 });
