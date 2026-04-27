@@ -1119,6 +1119,9 @@ const es: TranslationKeys = {
     language: 'Idioma',
     languageDesc:
       'Elige el idioma de la interfaz de Cerebro. Las respuestas de la IA tambi\u00e9n se adaptar\u00e1n al idioma seleccionado.',
+    takeTourTitle: 'Repetir el recorrido',
+    takeTourDesc: 'Vuelve a hacer el recorrido de bienvenida cuando quieras \u2014 un paseo guiado de 90 segundos por cada pantalla.',
+    takeTourCta: 'Iniciar recorrido',
   },
 
   // ── Secci\u00f3n de memoria ──────────────────────────────────────
@@ -1581,6 +1584,60 @@ const es: TranslationKeys = {
     skip: 'Omitir',
     saving: 'Guardando…',
     saveAndFinish: 'Guardar y finalizar',
+  },
+
+  // ── Recorrido de bienvenida ─────────────────────────────────
+  onboarding: {
+    progress: '{{current}} / {{total}}',
+    next: 'Siguiente',
+    back: 'Atrás',
+    finish: 'Terminar',
+    skip: 'Omitir recorrido',
+    skipConfirm: '¿Estás seguro?',
+    skipKeep: 'Continuar',
+    skipConfirmYes: 'Omitir',
+    welcome: {
+      title: 'Bienvenido a Cerebro 👋',
+      body: 'Soy tu centro de mando con IA. Elige un idioma y te muestro todo en unos 90 segundos.',
+      languagePrompt: 'Elige tu idioma',
+      skipForNow: 'Omitir por ahora — puedo encontrarlo en Ajustes',
+    },
+    steps: {
+      chat: {
+        title: 'Aquí es tu casa',
+        body: 'Pregúntame lo que sea — puedo responder, investigar con tus herramientas o pasarle trabajo a especialistas. Prueba a saludarme cuando terminemos.',
+      },
+      experts: {
+        title: 'Contrata especialistas',
+        body: 'Los Expertos son compañeros de IA con personalidad y habilidades propias — un investigador, un redactor, un coach. Incluso puedes formar todo un equipo.',
+      },
+      tasks: {
+        title: 'Tu trabajo, ordenado',
+        body: 'Un tablero simple para ver qué está en marcha, qué está bloqueado y qué ya está listo. Asigna tarjetas a tus Expertos.',
+      },
+      routines: {
+        title: 'Automatiza lo aburrido',
+        body: 'Encadena pasos y dispáralos por horario, por webhook o con un mensaje. Yo hago lo aburrido mientras tú duermes.',
+      },
+      approvals: {
+        title: 'Siempre te pregunto primero',
+        body: 'Cuando una rutina quiere hacer algo delicado, se pausa y espera tu luz verde. El control siempre es tuyo.',
+      },
+      integrations: {
+        title: 'Trae tus herramientas',
+        body: 'Conecta las apps que ya usas — tu CRM, calendario, chat — y yo puedo leer y escribir en tu nombre.',
+      },
+      memory: {
+        title: 'Yo me acuerdo',
+        body: 'Cuéntame sobre ti, tu equipo y tus metas — una sola vez. Mantengo ese contexto en cada conversación.',
+      },
+    },
+    completion: {
+      title: '¡Todo listo! 🚀',
+      body: 'Vamos al chat y construyamos algo. Puedes repetir este recorrido cuando quieras desde Ajustes.',
+      cta: 'Abrir el chat de Cerebro',
+      replayHint: 'Tip: vuelve a este recorrido desde Ajustes → Apariencia.',
+    },
   },
 } as const;
 

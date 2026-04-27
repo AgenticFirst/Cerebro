@@ -9,6 +9,7 @@ import BetaFeaturesSection from './settings/BetaFeaturesSection';
 import VoiceSection from './settings/VoiceSection';
 import { consumePendingSettingsSection } from './settings/pending-section';
 import { useFeatureFlags } from '../../context/FeatureFlagsContext';
+import { useOnboarding } from '../../context/OnboardingContext';
 
 type Section = 'memory' | 'sandbox' | 'voice' | 'appearance' | 'beta' | 'about';
 
@@ -29,6 +30,7 @@ const SECTIONS: SectionNavItem[] = [
 export default function SettingsScreen() {
   const { t } = useTranslation();
   const { flags } = useFeatureFlags();
+  const { forcedSettingsSection } = useOnboarding();
 
   // Voice is hidden from the sidebar AND from direct routing when the
   // beta flag is off — the master switch lives in Settings → Beta.
@@ -56,6 +58,14 @@ export default function SettingsScreen() {
       setActiveSection('memory');
     }
   }, [activeSection, flags]);
+
+  // While the onboarding tour is on the Memory step, force the inner
+  // sidebar to that section regardless of the user's last choice.
+  useEffect(() => {
+    if (forcedSettingsSection) {
+      setActiveSection(forcedSettingsSection);
+    }
+  }, [forcedSettingsSection]);
 
   return (
     <div className="flex h-full">
@@ -100,14 +110,17 @@ export default function SettingsScreen() {
 
       {/* Content pane */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className={clsx(
-          'px-8 py-8',
-          activeSection === 'memory'
-            ? 'max-w-5xl h-full flex flex-col'
-            : activeSection === 'sandbox'
-              ? 'max-w-3xl'
-              : 'max-w-2xl',
-        )}>
+        <div
+          data-tour-id={activeSection === 'memory' ? 'settings-memory' : undefined}
+          className={clsx(
+            'px-8 py-8',
+            activeSection === 'memory'
+              ? 'max-w-5xl h-full flex flex-col'
+              : activeSection === 'sandbox'
+                ? 'max-w-3xl'
+                : 'max-w-2xl',
+          )}
+        >
           {activeSection === 'memory' && <MemorySection />}
           {activeSection === 'sandbox' && <SandboxSection />}
           {activeSection === 'voice' && <VoiceSection />}

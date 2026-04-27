@@ -1128,6 +1128,9 @@ const en = {
     language: 'Language',
     languageDesc:
       'Choose the language for the Cerebro interface. AI responses will also adapt to your selected language.',
+    takeTourTitle: 'Take the tour again',
+    takeTourDesc: 'Replay the welcome tour anytime — a 90-second guided walkthrough of every screen.',
+    takeTourCta: 'Start tour',
   },
 
   // ── Memory section ──────────────────────────────────────────
@@ -1604,6 +1607,60 @@ const en = {
     skip: 'Skip',
     saving: 'Saving…',
     saveAndFinish: 'Save & finish',
+  },
+
+  // ── Onboarding tour ─────────────────────────────────────────
+  onboarding: {
+    progress: '{{current}} / {{total}}',
+    next: 'Next',
+    back: 'Back',
+    finish: 'Finish',
+    skip: 'Skip tour',
+    skipConfirm: 'Are you sure?',
+    skipKeep: 'Keep going',
+    skipConfirmYes: 'Skip',
+    welcome: {
+      title: 'Welcome to Cerebro 👋',
+      body: "I'm your AI command center. Pick a language and I'll show you around in about 90 seconds.",
+      languagePrompt: 'Choose your language',
+      skipForNow: 'Skip for now — I can find this in Settings',
+    },
+    steps: {
+      chat: {
+        title: 'This is home',
+        body: "Ask anything — I can answer, dig into your tools, or hand work off to specialists. Try saying hi when we're done.",
+      },
+      experts: {
+        title: 'Hire specialists',
+        body: 'Experts are AI teammates with their own personalities and skills — a researcher, a writer, a coach. You can even build a whole team.',
+      },
+      tasks: {
+        title: 'Your work, organized',
+        body: "A simple board to track what's in flight, what's blocked, and what's done. Assign cards to your Experts.",
+      },
+      routines: {
+        title: 'Automate the boring',
+        body: "String steps together and trigger them on a schedule, a webhook, or a message. I'll do the boring work while you sleep.",
+      },
+      approvals: {
+        title: "I'll always ask first",
+        body: "When a routine wants to do something risky, it pauses and waits for your green light. You're always in control.",
+      },
+      integrations: {
+        title: 'Bring your tools',
+        body: 'Connect the apps you already use — your CRM, calendar, chat — and I can read and write on your behalf.',
+      },
+      memory: {
+        title: "I'll remember",
+        body: "Tell me about you, your team, your goals — once. I'll keep that context across every conversation.",
+      },
+    },
+    completion: {
+      title: "You're all set! 🚀",
+      body: "Take me to the chat and let's build something. You can replay this tour anytime from Settings.",
+      cta: 'Open Cerebro Chat',
+      replayHint: 'Tip: revisit this tour from Settings → Appearance.',
+    },
   },
 } as const;
 

@@ -75,7 +75,7 @@ export default function ApprovalsScreen() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-0 border-b border-border-subtle">
+        <div className="flex gap-0 border-b border-border-subtle" data-tour-id="approvals-tabs">
           {(['pending', 'history'] as Tab[]).map((tab) => (
             <button
               key={tab}

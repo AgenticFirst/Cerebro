@@ -77,6 +77,7 @@ function NavButton({
   return (
     <button
       onClick={onClick}
+      data-tour-id={`nav-${item.id}`}
       className={clsx(
         'group relative w-full flex items-center rounded-md',
         'transition-all duration-150 ease-[cubic-bezier(0.4,0,0.2,1)] cursor-pointer',

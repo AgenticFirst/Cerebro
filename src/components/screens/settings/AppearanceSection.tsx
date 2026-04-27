@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Sparkles } from 'lucide-react';
 import Toggle from '../../ui/Toggle';
 import { loadSetting, saveSetting } from '../../../lib/settings';
 import { useTheme, type Theme } from '../../../context/ThemeContext';
 import { useUIPreferences } from '../../../context/UIPreferencesContext';
+import { useOnboarding } from '../../../context/OnboardingContext';
 
 /** Language options — autonym labels so users can always find their language. */
 const LANGUAGES = [
@@ -21,6 +23,7 @@ export default function AppearanceSection() {
   const { t, i18n } = useTranslation();
   const { theme, setTheme } = useTheme();
   const { showToolCalls, setShowToolCalls } = useUIPreferences();
+  const { start: startTour } = useOnboarding();
   const [showHistoricalLogs, setShowHistoricalLogs] = useState(false);
 
   useEffect(() => {
@@ -100,7 +103,7 @@ export default function AppearanceSection() {
       </div>
 
       {/* Historical logs toggle */}
-      <div className="flex items-start justify-between gap-4 py-3">
+      <div className="flex items-start justify-between gap-4 py-3 border-b border-white/[0.06]">
         <div>
           <p className="text-sm text-text-primary">{t('appearance.showHistoricalLogs')}</p>
           <p className="text-xs text-text-secondary mt-0.5">
@@ -108,6 +111,23 @@ export default function AppearanceSection() {
           </p>
         </div>
         <Toggle checked={showHistoricalLogs} onChange={handleToggle} />
+      </div>
+
+      {/* Replay onboarding tour */}
+      <div className="flex items-start justify-between gap-4 py-3">
+        <div>
+          <p className="text-sm text-text-primary">{t('appearance.takeTourTitle')}</p>
+          <p className="text-xs text-text-secondary mt-0.5">
+            {t('appearance.takeTourDesc')}
+          </p>
+        </div>
+        <button
+          onClick={startTour}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent/10 hover:bg-accent/20 text-accent text-[13px] font-medium border border-accent/20 transition-colors cursor-pointer"
+        >
+          <Sparkles size={13} strokeWidth={2} />
+          {t('appearance.takeTourCta')}
+        </button>
       </div>
     </div>
   );

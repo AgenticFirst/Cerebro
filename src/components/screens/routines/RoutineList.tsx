@@ -139,6 +139,7 @@ export default function RoutineList() {
           <Tooltip label={t('routineTooltips.newRoutine')} shortcut="N">
             <button
               onClick={() => setShowCreate(true)}
+              data-tour-id="routines-create"
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-bg-base bg-accent hover:bg-accent-hover rounded-lg transition-colors"
             >
               <Plus size={14} />

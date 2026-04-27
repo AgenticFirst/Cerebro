@@ -501,6 +501,55 @@ html.light .canvas-grid {
   animation: slideUp 0.25s ease-out;
 }
 
+/* ── Onboarding Tour ──────────────────────────────────────────── */
+
+/* Pulsing cyan ring around the spotlight target. */
+@keyframes spotlightPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px var(--color-accent),
+      0 0 0 6px rgba(6, 182, 212, 0.20),
+      0 0 24px rgba(6, 182, 212, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--color-accent),
+      0 0 0 10px rgba(6, 182, 212, 0.10),
+      0 0 36px rgba(6, 182, 212, 0.55);
+  }
+}
+
+.animate-spotlight-pulse {
+  animation: spotlightPulse 2.4s ease-in-out infinite;
+}
+
+/* Confetti pieces falling from above the viewport on completion. */
+@keyframes confettiFall {
+  0% {
+    transform: translate3d(0, -120vh, 0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--confetti-drift, 40px), 120vh, 0) rotate(720deg);
+    opacity: 0.85;
+  }
+}
+
+.animate-confetti-fall {
+  animation: confettiFall var(--confetti-duration, 3.4s) cubic-bezier(0.25, 0.85, 0.55, 1) forwards;
+  animation-delay: var(--confetti-delay, 0s);
+}
+
+/* Tour tooltip card entrance — softer than fade-in so it feels intentional. */
+@keyframes tourCardIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-tour-card-in {
+  animation: tourCardIn 0.22s ease-out both;
+}
+
 /* Panel slide from right */
 @keyframes slideInRight {
   from { transform: translateX(100%); }

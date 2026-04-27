@@ -14,7 +14,7 @@ export default function ChatEmptyState() {
   ];
 
   return (
-    <div className="flex w-full flex-col items-center px-4 pt-6 pb-4">
+    <div className="flex w-full flex-col items-center px-4 pt-6 pb-4" data-tour-id="chat-welcome">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[360px]"

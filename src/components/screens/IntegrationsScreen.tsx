@@ -47,6 +47,7 @@ export default function IntegrationsScreen() {
               <button
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
+                data-tour-id={section.id === 'connected-apps' ? 'integrations-apps' : undefined}
                 className={clsx(
                   'group relative w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-md',
                   'transition-all duration-150 cursor-pointer',

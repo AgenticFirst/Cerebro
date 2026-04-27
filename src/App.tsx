@@ -16,12 +16,15 @@ import { UIPreferencesProvider } from './context/UIPreferencesContext';
 import { MarkdownDocumentProvider } from './context/MarkdownDocumentContext';
 import { FilesProvider } from './context/FilesContext';
 import { UpdateProvider } from './context/UpdateContext';
+import { OnboardingProvider } from './context/OnboardingContext';
 import AppLayout from './components/layout/AppLayout';
 import ToastContainer from './components/ui/Toast';
+import OnboardingTour from './components/onboarding/OnboardingTour';
 
 function App() {
   return (
     <ToastProvider>
+      <OnboardingProvider>
       <ThemeProvider>
       <UIPreferencesProvider>
       <UpdateProvider>
@@ -39,6 +42,7 @@ function App() {
                           <VoiceProvider>
                             <MarkdownDocumentProvider>
                               <AppLayout />
+                              <OnboardingTour />
                             </MarkdownDocumentProvider>
                           </VoiceProvider>
                         </FilesProvider>
@@ -55,6 +59,7 @@ function App() {
       </UpdateProvider>
       </UIPreferencesProvider>
       </ThemeProvider>
+      </OnboardingProvider>
       <ToastContainer />
     </ToastProvider>
   );
