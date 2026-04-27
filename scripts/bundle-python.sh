@@ -35,7 +35,21 @@ if ! command -v uv >/dev/null 2>&1; then
   fi
 fi
 
-REQ_HASH=$(shasum -a 256 backend/requirements.txt | awk '{print $1}')
+# Portable SHA-256 — macOS ships `shasum`, most Linux distros ship `sha256sum`,
+# both are present on the GitHub Actions ubuntu-latest runners.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+# The cache key includes the OS+arch so switching platforms (e.g. building
+# the Linux .deb after a macOS DMG, or vice versa) forces a rebuild instead
+# of leaving the wrong-platform .so/.dylib files in build-resources/python-dist/.
+PLATFORM_TAG=$(uname -sm | tr ' /' '_-')
+REQ_HASH="$(sha256_of backend/requirements.txt)__${PLATFORM_TAG}"
 
 if [ -f "$REQ_HASH_FILE" ] && [ "$(cat "$REQ_HASH_FILE")" = "$REQ_HASH" ]; then
   echo "[bundle-python] python-dist/ up to date (requirements unchanged)"
@@ -54,8 +68,15 @@ else
   PY_REAL_DIST_ROOT="$(dirname "$(dirname "$PY_BIN_REAL")")"
 
   echo "[bundle-python] copying $PY_REAL_DIST_ROOT → $OUT_PYTHON"
-  # -RL dereferences symlinks so the distribution is fully self-contained.
-  cp -RL "$PY_REAL_DIST_ROOT" "$OUT_PYTHON"
+  # Use rsync (not `cp -RL`) — the Linux python-build-standalone has
+  # many internal symlinks under share/terminfo (`h/hp2621a → 2/2621a`
+  # etc). With `cp -L` those symlinks get dereferenced, which produces
+  # duplicate target files and `cp` fails with "File exists" partway
+  # through. rsync `-a` preserves the relative symlinks correctly.
+  # The trailing slashes mean "copy contents of src into dest" so we
+  # don't end up with a nested $OUT_PYTHON/<dist-name>/ subdir.
+  mkdir -p "$OUT_PYTHON"
+  rsync -a "$PY_REAL_DIST_ROOT/" "$OUT_PYTHON/"
 
   # python-build-standalone marks itself as PEP 668 externally-managed
   # to discourage modifying the system Python. We're bundling our own

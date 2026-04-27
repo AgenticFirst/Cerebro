@@ -147,20 +147,100 @@ const config: ForgeConfig = {
       execFileSync('bash', [script], { stdio: 'inherit' });
     },
     // Runs AFTER all plugins (including Fuses) have modified the packaged
-    // app. Three responsibilities on macOS:
-    //   1. Force CFBundleDisplayName back to "Cerebro" — packager's
-    //      executableName='cerebro' setting silently overrides extendInfo,
-    //      leaving Finder and Gatekeeper showing "cerebro" lowercase.
-    //   2. Sign with Developer ID Application + Hardened Runtime + the
-    //      entitlements at build/entitlements.mac.plist. Has to happen
-    //      AFTER Fuses or the signature is invalidated.
-    //   3. Submit the .app to Apple's notary service via notarytool, wait
-    //      for the ticket, then staple it to the bundle so the app passes
-    //      Gatekeeper silently even when the user has no internet.
-    // Falls back to ad-hoc signing when no Developer ID identity is in
-    // the keychain — preserves the local-dev path without notarization.
+    // app. Responsibilities are split by platform:
+    //   ALL platforms: re-pack app.asar with `unpack: '*.node'` so .node
+    //     binaries (e.g. node-pty's pty.node) end up at app.asar.unpacked/
+    //     where dlopen can find them. Without this the packaged app
+    //     crashes at boot with "Cannot find module 'node-pty'".
+    //   macOS only:
+    //     1. Patch Info.plist's ElectronAsarIntegrity hash to match the
+    //        re-packed asar. packager embedded the OLD asar's hash; with
+    //        EnableEmbeddedAsarIntegrityValidation on, Electron SIGTRAPs
+    //        at boot if it doesn't match. (Linux/Windows ignore this.)
+    //     2. Force CFBundleDisplayName to "Cerebro" — packager's
+    //        executableName='cerebro' setting silently overrides
+    //        extendInfo, leaving Finder/Gatekeeper showing lowercase.
+    //     3. Sign with Developer ID + Hardened Runtime + entitlements,
+    //        notarize via notarytool, staple. Falls back to ad-hoc
+    //        signing when no Developer ID is in the keychain.
     async postPackage(_forgeConfig, options) {
-      if (options.platform !== 'darwin') return;
+      const isDarwin = options.platform === 'darwin';
+
+      // Resolve where the asar lives based on platform layout.
+      //   macOS:   <out>/Cerebro.app/Contents/Resources/app.asar
+      //   Linux:   <out>/resources/app.asar
+      //   Windows: <out>/resources/app.asar
+      const resolveBundle = (outputPath: string) => {
+        if (isDarwin) {
+          const appPath = path.join(outputPath, 'Cerebro.app');
+          return {
+            appPath,
+            asarPath: path.join(appPath, 'Contents', 'Resources', 'app.asar'),
+            infoPlist: path.join(appPath, 'Contents', 'Info.plist'),
+          };
+        }
+        return {
+          appPath: outputPath,
+          asarPath: path.join(outputPath, 'resources', 'app.asar'),
+          infoPlist: null,
+        };
+      };
+
+      // Step 1 (all platforms): re-pack asar with native unpack glob.
+      // @electron/asar's unpack option uses minimatch with matchBase: true,
+      // which matches by *basename* when the pattern has no slashes. So
+      // `*.node` extracts all native binaries to .unpacked regardless of
+      // depth. JS files stay in the archive (loadable from inside asar);
+      // when node-pty's JS does require('./build/Release/pty.node'), the
+      // asar layer transparently redirects to the .unpacked sibling.
+      const asarLib = await import('@electron/asar');
+      const ASAR_UNPACK_GLOB = '*.node';
+      for (const outputPath of options.outputPaths) {
+        const { asarPath, infoPlist } = resolveBundle(outputPath);
+        const tmpExtract = path.join(outputPath, '.asar-extract-tmp');
+        fs.rmSync(tmpExtract, { recursive: true, force: true });
+        asarLib.extractAll(asarPath, tmpExtract);
+        const oldUnpacked = `${asarPath}.unpacked`;
+        fs.rmSync(oldUnpacked, { recursive: true, force: true });
+        fs.rmSync(asarPath, { force: true });
+        await asarLib.createPackageWithOptions(tmpExtract, asarPath, { unpack: ASAR_UNPACK_GLOB });
+        fs.rmSync(tmpExtract, { recursive: true, force: true });
+        // CRITICAL: @electron/asar caches the parsed header in a
+        // module-level `filesystemCache[archivePath]` map (see
+        // node_modules/@electron/asar/lib/disk.js). The extractAll()
+        // call above populated that cache with the ORIGINAL asar's
+        // file offsets. Now that we've replaced the asar, the cached
+        // offsets point into the new file at wrong positions —
+        // subsequent extractFile() calls (e.g. from electron-installer-
+        // debian's readMetadata) read 4008 bytes at a stale offset and
+        // get back all zeros, causing JSON.parse to fail with
+        // "Unexpected token ' ', '          '... is not valid JSON".
+        // Reproducible only when makers run after postPackage in the
+        // same Node process (i.e. always under `npm run make`).
+        asarLib.uncache(asarPath);
+
+        // macOS only: re-embed asar integrity hash. packager wrote the
+        // OLD hash into Info.plist; the EnableEmbeddedAsarIntegrityValidation
+        // fuse SIGTRAPs at boot if it doesn't match. Algorithm copied from
+        // @electron/universal/dist/cjs/asar-utils.js generateAsarIntegrity().
+        if (isDarwin && infoPlist) {
+          const newHash = crypto
+            .createHash('SHA256')
+            .update(asarLib.getRawHeader(asarPath).headerString)
+            .digest('hex');
+          execFileSync('/usr/libexec/PlistBuddy', [
+            '-c', `Set :ElectronAsarIntegrity:Resources/app.asar:hash ${newHash}`,
+            infoPlist,
+          ]);
+          console.log(`[postPackage] re-packed asar (unpack='${ASAR_UNPACK_GLOB}') + patched Info.plist hash → ${newHash.slice(0, 12)}…`);
+        } else {
+          console.log(`[postPackage] re-packed asar (unpack='${ASAR_UNPACK_GLOB}') for ${options.platform}`);
+        }
+      }
+
+      // Steps 2+3 are macOS-only (signing/notarization/PlistBuddy).
+      if (!isDarwin) return;
+
       const identity = findDeveloperIdIdentity();
       const isDeveloperId = identity !== null;
       console.log(
@@ -177,58 +257,11 @@ const config: ForgeConfig = {
       const osxSign = await import('@electron/osx-sign');
       const sign = (osxSign as any).sign ?? (osxSign as any).signAsync;
 
-      // Re-pack app.asar with an unpack glob for native modules. This
-      // can't be set as packagerConfig.asar.unpack (object form breaks
-      // forge-vite — see comment there), so we extract + re-pack here.
-      // After re-packing, we MUST update the Info.plist's
-      // ElectronAsarIntegrity entry to the new asar's header hash.
-      // packager originally computed and embedded the OLD asar's hash;
-      // when EnableEmbeddedAsarIntegrityValidation is on, Electron
-      // SIGTRAPs at boot if Info.plist's hash doesn't match the actual
-      // asar (`Integrity check failed for asar archive (X vs Y)`).
-      // The algorithm — SHA256 over `asar.getRawHeader(...).headerString`
-      // — is taken from @electron/universal/dist/cjs/asar-utils.js's
-      // `generateAsarIntegrity()`.
-      const asarLib = await import('@electron/asar');
-      const ASAR_UNPACK_GLOB = '*.node';
       for (const outputPath of options.outputPaths) {
-        const appPath = path.join(outputPath, 'Cerebro.app');
-        const asarPath = path.join(appPath, 'Contents', 'Resources', 'app.asar');
-        const tmpExtract = path.join(outputPath, '.asar-extract-tmp');
-        fs.rmSync(tmpExtract, { recursive: true, force: true });
-        asarLib.extractAll(asarPath, tmpExtract);
-        const oldUnpacked = `${asarPath}.unpacked`;
-        fs.rmSync(oldUnpacked, { recursive: true, force: true });
-        fs.rmSync(asarPath, { force: true });
-        // @electron/asar's unpack option uses minimatch with matchBase: true,
-        // which matches by *basename* when the pattern has no slashes. So
-        // `*.node` extracts all native binaries to .unpacked regardless of
-        // depth. JS files stay in the archive (loadable from inside asar);
-        // when node-pty's JS does require('./build/Release/pty.node'), the
-        // asar layer transparently redirects to the .unpacked sibling.
-        await asarLib.createPackageWithOptions(tmpExtract, asarPath, { unpack: ASAR_UNPACK_GLOB });
-        fs.rmSync(tmpExtract, { recursive: true, force: true });
-
-        const newHash = crypto
-          .createHash('SHA256')
-          .update(asarLib.getRawHeader(asarPath).headerString)
-          .digest('hex');
-        const infoPlist = path.join(appPath, 'Contents', 'Info.plist');
+        const { appPath, infoPlist } = resolveBundle(outputPath);
         execFileSync('/usr/libexec/PlistBuddy', [
-          '-c', `Set :ElectronAsarIntegrity:Resources/app.asar:hash ${newHash}`,
-          infoPlist,
-        ]);
-        console.log(`[postPackage] re-packed asar (unpack='${ASAR_UNPACK_GLOB}') + patched Info.plist hash → ${newHash.slice(0, 12)}…`);
-      }
-
-      for (const outputPath of options.outputPaths) {
-        const appPath = path.join(outputPath, 'Cerebro.app');
-        const plistPath = path.join(appPath, 'Contents', 'Info.plist');
-
-        execFileSync('/usr/libexec/PlistBuddy', [
-          '-c',
-          'Set :CFBundleDisplayName Cerebro',
-          plistPath,
+          '-c', 'Set :CFBundleDisplayName Cerebro',
+          infoPlist!,
         ]);
 
         if (isDeveloperId) {

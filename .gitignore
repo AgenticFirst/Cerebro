@@ -122,3 +122,6 @@ playwright-report/
 test-results/
 e2e/screenshots/
 
+
+# Bundled Python runtime + staged backend (built by scripts/bundle-python.sh)
+build-resources/

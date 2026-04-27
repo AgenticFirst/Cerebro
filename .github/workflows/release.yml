@@ -52,12 +52,28 @@ jobs:
             exit 1
           fi
 
-      # Linux deb/rpm makers need fakeroot + dpkg/rpm tooling.
+      # Linux makers need: fakeroot + dpkg (deb), rpm (rpm), mksquashfs
+      # (AppImage). bundle-python.sh shells out to rsync + sha256sum (both
+      # in Ubuntu's coreutils). build-essential + python3-dev cover
+      # node-pty's source build (no Linux prebuild ships with the package).
       - name: Install Linux build tools
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fakeroot dpkg rpm
+          sudo apt-get install -y --no-install-recommends \
+            fakeroot dpkg rpm squashfs-tools \
+            build-essential python3 python3-dev rsync
+
+      # uv (Astral's Python manager) is required by scripts/bundle-python.sh,
+      # which the generateAssets hook in forge.config.ts runs to build the
+      # relocatable CPython 3.11 + backend deps that ship in the .app/.deb/
+      # .rpm/.AppImage. macOS GHA runners install via the same script;
+      # Windows isn't covered yet (no Python backend support there).
+      - name: Install uv
+        if: runner.os != 'Windows'
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
         run: npm ci
