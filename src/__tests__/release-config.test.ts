@@ -29,8 +29,8 @@ describe('.github/workflows/release.yml', () => {
     expect(yml).not.toMatch(/branches:\s*\n\s*-\s*main/);
   });
 
-  it('builds in parallel on macos, windows, and ubuntu runners', () => {
-    expect(yml).toMatch(/os:\s*\[macos-latest,\s*windows-latest,\s*ubuntu-latest\]/);
+  it('builds in parallel on macos and ubuntu runners (Windows excluded — no Python backend bundle on Windows yet)', () => {
+    expect(yml).toMatch(/os:\s*\[macos-latest,\s*ubuntu-latest\]/);
   });
 
   it('grants contents:write so the Forge publisher can create releases', () => {
