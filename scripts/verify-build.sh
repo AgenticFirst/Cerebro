@@ -10,9 +10,9 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-echo "[verify-build] running electron-forge package (SKIP_NOTARIZE=1 — pre-push only verifies the bundle, release workflow handles notarization)…"
+echo "[verify-build] running electron-forge package (SKIP_SIGN=1 — pre-push only verifies the bundle; release workflow handles signing + notarization)…"
 # Stream output so the user can see progress; also tee to a log for later inspection.
-SKIP_NOTARIZE=1 npx electron-forge package 2>&1 | tee /tmp/cerebro-verify-build.log
+SKIP_SIGN=1 npx electron-forge package 2>&1 | tee /tmp/cerebro-verify-build.log
 # tee always exits 0 — check the package step's status via PIPESTATUS.
 if [ "${PIPESTATUS[0]}" -ne 0 ]; then
   echo "[verify-build] package step failed. See /tmp/cerebro-verify-build.log for the full log."

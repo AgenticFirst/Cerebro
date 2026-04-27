@@ -241,6 +241,15 @@ const config: ForgeConfig = {
       // Steps 2+3 are macOS-only (signing/notarization/PlistBuddy).
       if (!isDarwin) return;
 
+      // Pre-push verification (and other non-release flows) can opt out of
+      // signing entirely — no Developer-ID call, no ad-hoc codesign, and
+      // therefore no notarization either (unsigned apps can't be notarized).
+      // Saves ~30s per local push without changing the actual release path.
+      if (process.env.SKIP_SIGN === '1') {
+        console.log('[postPackage] SKIP_SIGN=1 — packaged but not signed or notarized');
+        return;
+      }
+
       const identity = findDeveloperIdIdentity();
       const isDeveloperId = identity !== null;
       console.log(
@@ -324,6 +333,10 @@ const config: ForgeConfig = {
     // also passes silently when the user double-clicks the downloaded DMG
     // (before they've even copied the app to /Applications).
     async postMake(_forgeConfig, makeResults) {
+      if (process.env.SKIP_SIGN === '1') {
+        console.log('[postMake] SKIP_SIGN=1 — DMG signing/notarization skipped');
+        return makeResults;
+      }
       const identity = findDeveloperIdIdentity();
       if (!identity) {
         console.log('[postMake] no Developer ID — skipping DMG notarization');
