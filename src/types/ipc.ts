@@ -34,6 +34,11 @@ export const IPC_CHANNELS = {
   // Claude Code
   CLAUDE_CODE_DETECT: 'claude-code:detect',
   CLAUDE_CODE_STATUS: 'claude-code:status',
+  CLAUDE_CODE_INSTALL: 'claude-code:install',
+  CLAUDE_CODE_INSTALL_CANCEL: 'claude-code:install-cancel',
+  /** Main → renderer: live stdout/stderr lines from the running install
+   *  script. One event per buffered chunk. */
+  CLAUDE_CODE_INSTALL_LOG: 'claude-code:install-log',
 
   // Voice
   VOICE_START: 'voice:start',
@@ -280,9 +285,26 @@ export interface SchedulerAPI {
 
 // --- Claude Code ---
 
+export interface ClaudeCodeInstallResult {
+  /** True iff the script exited 0 AND post-install detection found `claude`. */
+  ok: boolean;
+  /** Process exit code (or -1 if killed). */
+  exitCode: number;
+  /** Last ~2 KB of combined stderr/stdout, useful for inline error display. */
+  outputTail: string;
+  /** Detection result run AFTER the install attempt. */
+  info: ClaudeCodeInfo;
+}
+
 export interface ClaudeCodeAPI {
   detect(): Promise<ClaudeCodeInfo>;
   getStatus(): Promise<ClaudeCodeInfo>;
+  /** Spawns Anthropic's official curl install script in a login bash shell.
+   *  Streams output lines via `onLog` until the script exits, then resolves
+   *  with the install result + a fresh detection. */
+  install(onLog: (line: string) => void): Promise<ClaudeCodeInstallResult>;
+  /** Sends SIGTERM to the running install (no-op if none in flight). */
+  cancelInstall(): Promise<void>;
 }
 
 // --- Installer ---

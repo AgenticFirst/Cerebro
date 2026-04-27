@@ -949,6 +949,88 @@ function registerIpcHandlers(): void {
     return getCachedClaudeCodeInfo();
   });
 
+  // Anthropic's official curl install script. We spawn it in a login bash
+  // shell (`bash -lc`) so it picks up the user's full PATH from their shell
+  // rc files — Electron started from Finder on macOS otherwise misses
+  // homebrew/nvm/custom npm prefixes. The script installs `claude` to
+  // ~/.local/bin which is user-writable, so no sudo prompt.
+  let activeInstall: ChildProcess | null = null;
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_INSTALL, async (event) => {
+    if (activeInstall) {
+      // Refuse concurrent installs — caller should cancel first.
+      return {
+        ok: false,
+        exitCode: -1,
+        outputTail: 'Install already in progress.',
+        info: getCachedClaudeCodeInfo(),
+      };
+    }
+    const sender = event.sender;
+    const installCmd = 'curl -fsSL https://claude.ai/install.sh | bash';
+    const child = spawn('bash', ['-lc', installCmd], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    activeInstall = child;
+
+    // Ring-buffer the last ~2 KB of combined output for inline error display.
+    let outputTail = '';
+    const appendTail = (chunk: string) => {
+      outputTail = (outputTail + chunk).slice(-2048);
+    };
+
+    const sendLine = (line: string) => {
+      if (!sender.isDestroyed()) {
+        sender.send(IPC_CHANNELS.CLAUDE_CODE_INSTALL_LOG, line);
+      }
+    };
+
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (data: string) => {
+      appendTail(data);
+      for (const line of data.split('\n')) {
+        if (line.length > 0) sendLine(line);
+      }
+    });
+    child.stderr?.on('data', (data: string) => {
+      appendTail(data);
+      for (const line of data.split('\n')) {
+        if (line.length > 0) sendLine(line);
+      }
+    });
+
+    const exitCode: number = await new Promise((resolve) => {
+      child.on('close', (code, signal) => {
+        resolve(typeof code === 'number' ? code : signal ? -1 : 0);
+      });
+      child.on('error', (err) => {
+        appendTail(`spawn error: ${err.message}`);
+        resolve(-1);
+      });
+    });
+    activeInstall = null;
+
+    // Re-detect so the cache reflects post-install state for every other
+    // surface (Engine section, ChatContext block-modal, etc.) immediately.
+    const info = await detectClaudeCode();
+    return {
+      ok: exitCode === 0 && info.status === 'available',
+      exitCode,
+      outputTail,
+      info,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_INSTALL_CANCEL, async () => {
+    if (!activeInstall) return;
+    const child = activeInstall;
+    child.kill('SIGTERM');
+    // Force-kill if it doesn't exit within 2 s (mirrors the single-shot pattern).
+    setTimeout(() => {
+      if (!child.killed) child.kill('SIGKILL');
+    }, 2000);
+  });
+
   // --- Installer sync (called by renderer after expert CRUD) ---
 
   ipcMain.handle(IPC_CHANNELS.INSTALLER_SYNC_EXPERT, async (_event, expertId: string) => {

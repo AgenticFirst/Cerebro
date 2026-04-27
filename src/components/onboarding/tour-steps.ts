@@ -9,7 +9,7 @@
 
 import type { Screen } from '../../types/chat';
 
-export type TourStepKind = 'welcome' | 'spotlight' | 'completion';
+export type TourStepKind = 'welcome' | 'spotlight' | 'install-check' | 'completion';
 
 export interface TourStep {
   id: string;
@@ -106,6 +106,12 @@ export const TOUR_STEPS: TourStep[] = [
     emoji: '🧠',
     titleKey: 'onboarding.steps.memory.title',
     bodyKey: 'onboarding.steps.memory.body',
+  },
+  {
+    id: 'install-check',
+    kind: 'install-check',
+    titleKey: 'onboarding.installCheck.prompt.title',
+    bodyKey: 'onboarding.installCheck.prompt.body',
   },
   {
     id: 'done',
