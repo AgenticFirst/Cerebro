@@ -8,6 +8,47 @@ import StatusDot from './StatusDot';
 import StepTimeline from './StepTimeline';
 import EventLog from './EventLog';
 import RunLogs from './RunLogs';
+import type { ExecutionEvent } from '../../../engine/events/types';
+
+// Step state-changing event types — when one of these arrives via IPC we
+// kick a silent run-only refetch so the Steps tab transitions (queued →
+// running → completed/failed/skipped, plus durations) update instantly
+// instead of waiting for the 5-second poll.
+const STEP_STATE_EVENTS = new Set([
+  'step_started',
+  'step_completed',
+  'step_failed',
+  'step_skipped',
+  'run_completed',
+  'run_failed',
+  'run_cancelled',
+  'approval_requested',
+  'approval_granted',
+  'approval_denied',
+]);
+
+/**
+ * Translate a live engine event (from `engine.onAnyEvent`) into the
+ * `EventRecord` shape that the persisted `/engine/runs/<id>/events`
+ * endpoint returns. The id is synthetic; the next poll will replace
+ * this row with the real persisted version (matched by timestamp +
+ * type + step_id during merge below).
+ */
+function liveEventToRecord(event: ExecutionEvent, runId: string, seq: number): EventRecord {
+  const stepId = 'stepId' in event ? (event.stepId as string) : null;
+  const timestamp = 'timestamp' in event && typeof event.timestamp === 'string'
+    ? event.timestamp
+    : new Date().toISOString();
+  return {
+    id: `live:${runId}:${seq}`,
+    run_id: runId,
+    seq: -1, // sentinel: live events sort by timestamp, not seq
+    event_type: event.type,
+    step_id: stepId,
+    payload_json: JSON.stringify(event),
+    timestamp,
+  };
+}
 
 // ── Section helper ─────────���────────────────────────────────────
 
@@ -66,7 +107,25 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
       const childrenOk = childrenRes.status === 'fulfilled' && childrenRes.value.ok;
 
       if (runOk) setRun(runRes.value.data);
-      if (eventsOk) setEvents(eventsRes.value.data);
+      if (eventsOk) {
+        // Merge: server events are the source of truth, but keep any
+        // live-arrived events that the server hasn't persisted yet so
+        // the user doesn't see them flicker out and back in.
+        const serverEvents = eventsRes.value.data;
+        setEvents((prev) => {
+          const liveOnly = prev.filter((e) => {
+            if (!e.id.startsWith('live:')) return false;
+            const persistedExists = serverEvents.some(
+              (s) =>
+                s.event_type === e.event_type &&
+                s.timestamp === e.timestamp &&
+                s.step_id === e.step_id,
+            );
+            return !persistedExists;
+          });
+          return [...serverEvents, ...liveOnly];
+        });
+      }
       if (childrenOk) setChildren(childrenRes.value.data.runs);
 
       // Only show error if all three failed
@@ -99,6 +158,63 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
       fetchDetail(runIdRef.current, { cancelled: false }, { silent: true });
     }, 5000);
     return () => clearInterval(id);
+  }, [isLive, fetchDetail]);
+
+  /**
+   * Real-time event subscription. The Electron main process broadcasts
+   * every engine event on `ENGINE_ANY_EVENT`; we filter to our run and
+   * append matches to local state with a synthetic id. The 5s poll
+   * then replaces the synthetic rows with persisted ones (de-duped by
+   * timestamp + event_type + step_id below). This makes the Events
+   * and Logs tabs update with sub-100ms latency instead of waiting up
+   * to 5 seconds per chunk.
+   *
+   * Step state changes (started/completed/failed/skipped, approvals,
+   * run termination) also kick a silent run-only refetch so the Steps
+   * tab status badges and live-elapsed counters move with the events.
+   */
+  const liveSeqRef = useRef(0);
+  const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!isLive) return;
+
+    const unsubscribe = window.cerebro.engine.onAnyEvent((event: ExecutionEvent) => {
+      // Filter to events for this run only.
+      if (!('runId' in event) || event.runId !== runIdRef.current) return;
+
+      const record = liveEventToRecord(event, runIdRef.current, ++liveSeqRef.current);
+      setEvents((prev) => {
+        // De-dup against any persisted record that may have just arrived
+        // from a poll race: same type + same timestamp + same step_id is
+        // the same event. Drop the live duplicate in that case.
+        const isDup = prev.some(
+          (e) =>
+            e.event_type === record.event_type &&
+            e.timestamp === record.timestamp &&
+            e.step_id === record.step_id &&
+            !e.id.startsWith('live:'),
+        );
+        if (isDup) return prev;
+        return [...prev, record];
+      });
+
+      // Step / run state transitions → re-fetch the run record so the
+      // Steps tab badges flip immediately. Coalesce multiple events
+      // arriving in the same tick into a single network call.
+      if (STEP_STATE_EVENTS.has(event.type)) {
+        if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+        refetchTimerRef.current = setTimeout(() => {
+          refetchTimerRef.current = null;
+          fetchDetail(runIdRef.current, { cancelled: false }, { silent: true });
+        }, 150);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+    };
   }, [isLive, fetchDetail]);
 
   const cfg = run ? (STATUS_CONFIG[run.status] ?? STATUS_CONFIG.created) : STATUS_CONFIG.created;
