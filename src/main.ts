@@ -19,6 +19,7 @@ import type {
   BackendStatus,
   StreamRequest,
   StreamEvent,
+  ClaudeCodeProbeResult,
 } from './types/ipc';
 import { AgentRuntime } from './agents';
 import type { AgentRunRequest } from './agents';
@@ -51,6 +52,19 @@ import {
   ackUpdateBanner,
 } from './updater';
 import type { UpdateAsset } from './types/ipc';
+
+// Stdio EPIPE guard. When the Electron main process is launched under a
+// shell pipeline (`tail -f /dev/null | npm start`, electron-forge dev,
+// detached background tasks, etc.) and the consumer of stdout/stderr is
+// closed for any reason, the next `console.log` throws EPIPE — which
+// crashes the app. We swallow EPIPE and any pipe errors silently so the
+// app stays alive even when its log destination goes away.
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE' || err.code === 'EBADF') return;
+});
+process.stderr.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE' || err.code === 'EBADF') return;
+});
 
 // Voice session manager (initialized after backend is healthy)
 let voiceSession: VoiceSessionManager | null = null;
@@ -1029,6 +1043,67 @@ function registerIpcHandlers(): void {
     setTimeout(() => {
       if (!child.killed) child.kill('SIGKILL');
     }, 2000);
+  });
+
+  // Runtime auth probe. The detector tells us whether the binary exists;
+  // this tells us whether it's *usable*. Silent 5-min hangs in run_expert
+  // are most often Claude Code waiting on an auth that isn't there. We
+  // spawn a tiny `claude -p` and watch for the first stream-json line
+  // within 5 seconds. Result is cached for 60s so back-to-back routine
+  // runs don't keep spawning probe subprocesses.
+  let probeCache: { value: ClaudeCodeProbeResult; expiresAt: number } | null = null;
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH, async (): Promise<ClaudeCodeProbeResult> => {
+    if (probeCache && probeCache.expiresAt > Date.now()) return probeCache.value;
+    const info = getCachedClaudeCodeInfo();
+    if (info.status !== 'available' || !info.path) {
+      const value: ClaudeCodeProbeResult = { ok: false, reason: 'Claude Code binary not found' };
+      probeCache = { value, expiresAt: Date.now() + 60_000 };
+      return value;
+    }
+
+    const result = await new Promise<ClaudeCodeProbeResult>((resolve) => {
+      const child = spawn(
+        info.path!,
+        ['-p', 'ping', '--max-turns', '1', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      let resolved = false;
+      let stderrTail = '';
+      const settle = (v: ClaudeCodeProbeResult) => {
+        if (resolved) return;
+        resolved = true;
+        if (!child.killed) {
+          child.kill('SIGTERM');
+          setTimeout(() => { if (!child.killed) child.kill('SIGKILL'); }, 1000);
+        }
+        resolve(v);
+      };
+      const timer = setTimeout(() => settle({ ok: false, reason: 'Probe timed out (5s) — Claude Code may not be authenticated.' }), 5000);
+
+      child.stdout?.on('data', (chunk: Buffer) => {
+        const line = chunk.toString().trim();
+        if (line) {
+          clearTimeout(timer);
+          settle({ ok: true });
+        }
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderrTail = (stderrTail + chunk.toString()).slice(-300);
+      });
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        settle({ ok: false, reason: `Spawn error: ${err.message}` });
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        settle({
+          ok: false,
+          reason: stderrTail.trim() || `Subprocess exited (code ${code}) before producing output.`,
+        });
+      });
+    });
+    probeCache = { value: result, expiresAt: Date.now() + 60_000 };
+    return result;
   });
 
   // --- Installer sync (called by renderer after expert CRUD) ---

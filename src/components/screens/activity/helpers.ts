@@ -3,9 +3,32 @@
 import type { TFunction } from 'i18next';
 import type { StepRecord } from './types';
 
+/**
+ * Backend timestamps come back as SQLAlchemy-formatted ISO strings without
+ * a timezone marker (`2026-04-28 01:53:52.736402`). The Python side stores
+ * UTC, but JavaScript's `new Date(str)` parses naive ISO strings as LOCAL
+ * time, which produces nonsense like a 4-hour negative duration when the
+ * user's machine is in a different timezone.
+ *
+ * Always run server timestamps through this helper so the parser knows
+ * they're UTC. Inputs that already have an explicit `Z` or `±HH:MM`
+ * suffix are passed through unchanged.
+ */
+export function parseServerTimestamp(dateStr: string | null | undefined): number {
+  if (!dateStr) return NaN;
+  // Already has a timezone marker → trust it.
+  if (/[Zz]|[+-]\d{2}:?\d{2}$/.test(dateStr)) {
+    return new Date(dateStr).getTime();
+  }
+  // SQLAlchemy uses " " between date and time; convert to ISO-8601 with Z.
+  return new Date(dateStr.replace(' ', 'T') + 'Z').getTime();
+}
+
 export function timeAgo(dateStr: string | null, t: TFunction): string {
   if (!dateStr) return t('timeAgo.never');
-  const diff = Date.now() - new Date(dateStr).getTime();
+  const ts = parseServerTimestamp(dateStr);
+  if (Number.isNaN(ts)) return t('timeAgo.never');
+  const diff = Math.max(0, Date.now() - ts);
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return t('timeAgo.justNow');
   if (mins < 60) return t('timeAgo.minutesAgo', { count: mins });
@@ -26,7 +49,9 @@ export function formatDuration(ms: number | null): string {
 
 export function formatTimestamp(dateStr: string | null, t: TFunction): string {
   if (!dateStr) return '\u2014';
-  const d = new Date(dateStr);
+  const ts = parseServerTimestamp(dateStr);
+  if (Number.isNaN(ts)) return '\u2014';
+  const d = new Date(ts);
   const now = new Date();
   const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
@@ -49,7 +74,9 @@ export function formatTimestamp(dateStr: string | null, t: TFunction): string {
 }
 
 export function formatEventTime(dateStr: string): string {
-  const d = new Date(dateStr);
+  const ts = parseServerTimestamp(dateStr);
+  if (Number.isNaN(ts)) return '\u2014';
+  const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 

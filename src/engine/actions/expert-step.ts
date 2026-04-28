@@ -105,20 +105,56 @@ export function createExpertStepAction(deps: ExpertStepContext): ActionDefinitio
         expertId,
         model: params.model?.trim() || undefined,
       });
+      context.log('Subprocess spawning, waiting for first agent event...');
 
-      // Collect results by listening to the agent event channel
-      const result = await collectAgentResults(
-        webContents,
-        agentRunId,
-        context.signal,
-        (event: RendererAgentEvent) => {
-          // Forward agent events as engine execution events
-          const engineEvent = translateAgentEvent(event, context.stepId);
-          if (engineEvent) {
-            context.emitEvent(engineEvent);
-          }
-        },
-      );
+      // Heartbeat. Until the first agent event arrives, emit a step_log
+      // every 10s so the Activity panel's live feed shows the wait is
+      // ongoing. Cleared inside collectAgentResults on the first event.
+      const heartbeatStartedAt = Date.now();
+      let firstEventReceived = false;
+      const heartbeat = setInterval(() => {
+        if (firstEventReceived) return;
+        const sec = Math.round((Date.now() - heartbeatStartedAt) / 1000);
+        context.log(`Still waiting for agent response (${sec}s elapsed)...`);
+      }, 10_000);
+
+      // Collect results by listening to the agent event channel. We wrap
+      // in try/finally so the heartbeat is cleared whether the run
+      // resolves, errors, or is cancelled.
+      let result: AgentResult;
+      try {
+        result = await collectAgentResults(
+          agentRuntime,
+          agentRunId,
+          context.signal,
+          (event: RendererAgentEvent) => {
+            // First substantive event → cancel heartbeat (idle warnings
+            // and stderr lines don't count — they ARE the wait signal).
+            if (!firstEventReceived &&
+                event.type !== 'agent_idle_warning' &&
+                event.type !== 'subprocess_stderr' &&
+                event.type !== 'run_start') {
+              firstEventReceived = true;
+            }
+            // Forward agent events as engine execution events
+            const engineEvent = translateAgentEvent(event, context.stepId);
+            if (engineEvent) {
+              context.emitEvent(engineEvent);
+            }
+            // Idle-warning + stderr → also surface as step_log so the user
+            // sees a clear timeline in the Steps tab without having to
+            // open the Logs tab.
+            if (event.type === 'agent_idle_warning') {
+              const sec = Math.round(event.elapsedMs / 1000);
+              context.log(`No subprocess output in ${sec}s — Claude Code may not be authenticated. Try \`claude\` in a terminal.`);
+            } else if (event.type === 'subprocess_stderr') {
+              context.log(`[stderr] ${event.line}`);
+            }
+          },
+        );
+      } finally {
+        clearInterval(heartbeat);
+      }
 
       const summary = result.response.length > 80
         ? result.response.slice(0, 77) + '...'
@@ -146,17 +182,16 @@ interface AgentResult {
 }
 
 function collectAgentResults(
-  webContents: WebContents,
+  agentRuntime: AgentRuntime,
   agentRunId: string,
   signal: AbortSignal,
   onEvent: (event: RendererAgentEvent) => void,
 ): Promise<AgentResult> {
   return new Promise((resolve, reject) => {
-    const channel = `agent:event:${agentRunId}`;
     const toolsUsed = new Set<string>();
     let turns = 0;
 
-    const handler = (_ipcEvent: unknown, event: RendererAgentEvent) => {
+    const handler = (event: RendererAgentEvent) => {
       onEvent(event);
 
       switch (event.type) {
@@ -181,12 +216,19 @@ function collectAgentResults(
       }
     };
 
-    const cleanup = () => {
-      webContents.ipc.removeListener(channel, handler);
-    };
+    // Subscribe to the runtime's main-process bus. Previously this used
+    // `webContents.ipc.on`, which only catches messages sent FROM the
+    // renderer — the runner's events go renderer-bound via
+    // `webContents.send`, so the listener here would never fire. The
+    // result was that every run_expert step waited the full 5-minute
+    // wall clock before the dag executor killed it. The runtime bus
+    // delivers events directly in main, so we actually receive `done` /
+    // `error` / `text_delta` and can resolve this promise normally.
+    const unsubscribe = agentRuntime.onAgentEvent(agentRunId, handler);
 
-    // Listen for agent events sent to the renderer
-    webContents.ipc.on(channel, handler);
+    const cleanup = () => {
+      unsubscribe();
+    };
 
     // Handle abort
     signal.addEventListener('abort', () => {

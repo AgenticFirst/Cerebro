@@ -827,6 +827,58 @@ const es: TranslationKeys = {
     },
   },
 
+  // ── Pestaña de pasos: estado en vivo, configuración, actividad ──
+  stepStatus: {
+    queued: 'En cola',
+    queuedWaitingFor: 'Esperando: {{name}}',
+    runningElapsed: 'Ejecutando hace {{elapsed}}',
+    lastActivity: 'última actividad {{ago}}',
+    completedIn: 'Completado en {{duration}}',
+    skipped: 'Omitido',
+  },
+
+  stepConfig: {
+    expert: 'Experto',
+    globalCerebro: 'Cerebro global',
+    model: 'Modelo',
+    modelDefault: 'predeterminado',
+    prompt: 'Prompt',
+    maxTurns: 'Máx. turnos',
+    agent: 'Agente',
+    subject: 'Asunto',
+    priority: 'Prioridad',
+    pipeline: 'Pipeline',
+    stage: 'Etapa',
+    contact: 'Contacto',
+    email: 'Email',
+    phone: 'Teléfono',
+    firstName: 'Nombre',
+    lastName: 'Apellido',
+    method: 'Método',
+    url: 'URL',
+    auth: 'Auth',
+    target: 'Destino',
+    message: 'Mensaje',
+    title: 'Título',
+    body: 'Cuerpo',
+    urgency: 'Urgencia',
+    chatId: 'ID de chat',
+    notSet: 'no establecido',
+    useDefaults: 'usa los predeterminados',
+    rawInput: 'Entrada cruda',
+    rawOutput: 'Salida cruda',
+  },
+
+  liveActivity: {
+    title: 'Actividad en vivo',
+    idleWarning: 'Sin salida del subproceso en {{sec}}s — Claude Code puede no estar autenticado.',
+    toolStart: 'Herramienta: {{tool}}',
+    toolEnd: 'Herramienta lista: {{tool}}',
+    textDelta: 'Salida de texto del LLM',
+    hungTitle: 'Este paso lleva silencioso más de lo normal.',
+    hungBody: 'Causa común: Claude Code no está autenticado. Ejecuta `claude` en una terminal y vuelve a intentarlo.',
+  },
+
   // ── Pantalla de aprobaciones ────────────────────────────────
   approvals: {
     title: 'Aprobaciones',

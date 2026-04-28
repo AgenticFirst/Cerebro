@@ -39,6 +39,7 @@ export const IPC_CHANNELS = {
   /** Main → renderer: live stdout/stderr lines from the running install
    *  script. One event per buffered chunk. */
   CLAUDE_CODE_INSTALL_LOG: 'claude-code:install-log',
+  CLAUDE_CODE_PROBE_AUTH: 'claude-code:probe-auth',
 
   // Voice
   VOICE_START: 'voice:start',
@@ -296,6 +297,13 @@ export interface ClaudeCodeInstallResult {
   info: ClaudeCodeInfo;
 }
 
+export interface ClaudeCodeProbeResult {
+  ok: boolean;
+  /** When ok=false, why we think the probe failed. Populated from stderr or
+   *  a "timed out" sentinel — purely diagnostic. */
+  reason?: string;
+}
+
 export interface ClaudeCodeAPI {
   detect(): Promise<ClaudeCodeInfo>;
   getStatus(): Promise<ClaudeCodeInfo>;
@@ -305,6 +313,16 @@ export interface ClaudeCodeAPI {
   install(onLog: (line: string) => void): Promise<ClaudeCodeInstallResult>;
   /** Sends SIGTERM to the running install (no-op if none in flight). */
   cancelInstall(): Promise<void>;
+  /**
+   * Runtime auth probe — distinct from `detect()`'s binary-availability
+   * check. Spawns `claude -p ping --max-turns 1` with a hard 5s timeout.
+   * If the CLI emits stream-json within the deadline, it's authenticated;
+   * otherwise we surface a `reason` (stderr tail, "timed out", etc.) so
+   * the validator can warn the user before they kick off a routine.
+   * Result is cached in main-process memory for 60s to avoid spawning a
+   * subprocess per click.
+   */
+  probeAuth(): Promise<ClaudeCodeProbeResult>;
 }
 
 // --- Installer ---

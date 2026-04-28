@@ -27,7 +27,7 @@ import type {
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
-import type { ClaudeCodeInstallResult } from './types/ipc';
+import type { ClaudeCodeInstallResult, ClaudeCodeProbeResult } from './types/ipc';
 import type { VoiceSessionEvent } from './voice/types';
 
 const api: CerebroAPI = {
@@ -144,6 +144,9 @@ const api: CerebroAPI = {
     },
     cancelInstall(): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_INSTALL_CANCEL);
+    },
+    probeAuth(): Promise<ClaudeCodeProbeResult> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH);
     },
   },
 

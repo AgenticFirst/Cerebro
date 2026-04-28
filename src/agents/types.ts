@@ -93,7 +93,12 @@ export type RendererAgentEvent =
   | { type: 'tool_end'; toolCallId: string; toolName: string; result: string; isError: boolean }
   | { type: 'system'; message: string; subtype?: string }
   | { type: 'done'; runId: string; messageContent: string }
-  | { type: 'error'; runId: string; error: string };
+  | { type: 'error'; runId: string; error: string }
+  // Idle-watchdog events from ClaudeCodeRunner (chat path). Surfaced as
+  // step_log events by the expert_step action so the user sees the
+  // heartbeat trail in the Activity panel.
+  | { type: 'agent_idle_warning'; runId: string; elapsedMs: number }
+  | { type: 'subprocess_stderr'; runId: string; line: string };
 
 // ── Active run info ─────────────────────────────────────────────
 

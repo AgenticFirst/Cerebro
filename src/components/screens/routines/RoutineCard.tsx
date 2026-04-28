@@ -57,13 +57,22 @@ export default function RoutineCard({
   const TriggerIcon = trigger.icon;
 
   // Pre-flight validation issues, computed at render time. We skip the
-  // HubSpot connection check here (it requires an async IPC) — the full
-  // check still runs in RoutineContext.runRoutine on click.
+  // async checks (HubSpot connection, Claude Code auth probe) here — the
+  // full check still runs in RoutineContext.runRoutine on click. The
+  // synchronous checks (blank fields, expert disabled, expert missing)
+  // are enough to surface the most common problems before the user
+  // clicks Run.
   const issues = useMemo(() => {
     if (!routine.dagJson) return [];
     let dag: DAGDefinition;
     try { dag = JSON.parse(routine.dagJson); } catch { return []; }
-    return validateDagParams(dag, { experts: experts.map((e) => ({ id: e.id })) });
+    return validateDagParams(dag, {
+      experts: experts.map((e) => ({
+        id: e.id,
+        isEnabled: e.isEnabled,
+        requiredConnections: e.requiredConnections,
+      })),
+    });
   }, [routine.dagJson, experts]);
 
   const triggerTooltip =

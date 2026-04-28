@@ -44,8 +44,14 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
   const [loadError, setLoadError] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('steps');
 
-  const fetchDetail = useCallback(async (id: string, signal: { cancelled: boolean }) => {
-    setLoading(true);
+  /**
+   * `silent: true` skips toggling the loading flag — used by the live-poll
+   * interval so the panel content doesn't unmount/remount every 5 seconds
+   * and lose user expansion state. Initial mount and the manual refresh
+   * button still flash the spinner.
+   */
+  const fetchDetail = useCallback(async (id: string, signal: { cancelled: boolean }, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     setLoadError(false);
     try {
       const [runRes, eventsRes, childrenRes] = await Promise.allSettled([
@@ -68,7 +74,7 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
     } catch {
       if (!signal.cancelled) setLoadError(true);
     } finally {
-      if (!signal.cancelled) setLoading(false);
+      if (!signal.cancelled && !opts?.silent) setLoading(false);
     }
   }, []);
 
@@ -80,7 +86,9 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
     return () => { signal.cancelled = true; };
   }, [runId, fetchDetail]);
 
-  // Live refresh for running/paused runs (5s)
+  // Live refresh for running/paused runs (5s) — silent so the panel
+  // doesn't flash the loading spinner and unmount the Steps tab every
+  // poll. The user keeps whatever they had expanded.
   const isLive = run?.status === 'running' || run?.status === 'paused';
   const runIdRef = useRef(runId);
   runIdRef.current = runId;
@@ -88,7 +96,7 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
   useEffect(() => {
     if (!isLive) return;
     const id = setInterval(() => {
-      fetchDetail(runIdRef.current, { cancelled: false });
+      fetchDetail(runIdRef.current, { cancelled: false }, { silent: true });
     }, 5000);
     return () => clearInterval(id);
   }, [isLive, fetchDetail]);
@@ -202,6 +210,7 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
               <StepTimeline
                 steps={run.steps ?? []}
                 events={events}
+                dagJson={run.dag_json}
                 onOpenLogs={() => setActiveTab('logs')}
               />
             )}

@@ -21,27 +21,33 @@ function createMockWebContents() {
 }
 
 /**
- * Creates a mock AgentRuntime.startRun that:
- * 1. Returns a fake runId
- * 2. Asynchronously emits the provided agent events on the IPC channel
+ * Creates a mock AgentRuntime that mirrors the production bus contract:
+ * `onAgentEvent(runId, listener)` returns an unsubscribe function and
+ * receives every agent event for that run. This is the path expert-step
+ * actually uses — `webContents.ipc.on` was the broken old wiring.
  */
 function createMockRuntime(
-  webContents: ReturnType<typeof createMockWebContents>,
+  _webContents: ReturnType<typeof createMockWebContents>,
   events: RendererAgentEvent[],
 ) {
   const fakeRunId = 'agent-run-abc123';
+  const bus = new EventEmitter();
 
   return {
     startRun: vi.fn(async () => {
-      // Emit events on next tick so collectAgentResults has time to subscribe
+      // Emit events on next tick so collectAgentResults has time to subscribe.
       setImmediate(() => {
-        const channel = `agent:event:${fakeRunId}`;
         for (const event of events) {
-          webContents.ipc.emit(channel, {}, event);
+          bus.emit(`event:${fakeRunId}`, event);
         }
       });
       return fakeRunId;
     }),
+    onAgentEvent: (runId: string, listener: (event: RendererAgentEvent) => void) => {
+      const channel = `event:${runId}`;
+      bus.on(channel, listener);
+      return () => bus.off(channel, listener);
+    },
   };
 }
 

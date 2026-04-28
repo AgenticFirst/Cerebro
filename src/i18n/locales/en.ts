@@ -834,6 +834,58 @@ const en = {
     },
   },
 
+  // ── Steps tab: live state, config preview, activity feed ────
+  stepStatus: {
+    queued: 'Queued',
+    queuedWaitingFor: 'Waiting for: {{name}}',
+    runningElapsed: 'Running for {{elapsed}}',
+    lastActivity: 'last activity {{ago}}',
+    completedIn: 'Completed in {{duration}}',
+    skipped: 'Skipped',
+  },
+
+  stepConfig: {
+    expert: 'Expert',
+    globalCerebro: 'Global Cerebro',
+    model: 'Model',
+    modelDefault: 'default',
+    prompt: 'Prompt',
+    maxTurns: 'Max turns',
+    agent: 'Agent',
+    subject: 'Subject',
+    priority: 'Priority',
+    pipeline: 'Pipeline',
+    stage: 'Stage',
+    contact: 'Contact',
+    email: 'Email',
+    phone: 'Phone',
+    firstName: 'First name',
+    lastName: 'Last name',
+    method: 'Method',
+    url: 'URL',
+    auth: 'Auth',
+    target: 'Target',
+    message: 'Message',
+    title: 'Title',
+    body: 'Body',
+    urgency: 'Urgency',
+    chatId: 'Chat ID',
+    notSet: 'not set',
+    useDefaults: 'use defaults',
+    rawInput: 'Raw input',
+    rawOutput: 'Raw output',
+  },
+
+  liveActivity: {
+    title: 'Live activity',
+    idleWarning: 'No subprocess output in {{sec}}s — Claude Code may not be authenticated.',
+    toolStart: 'Tool: {{tool}}',
+    toolEnd: 'Tool done: {{tool}}',
+    textDelta: 'LLM text output',
+    hungTitle: 'This step has been silent longer than usual.',
+    hungBody: 'Common cause: Claude Code is not authenticated. Try running `claude` in a terminal, then re-run this routine.',
+  },
+
   // ── Approvals screen ────────────────────────────────────────
   approvals: {
     title: 'Approvals',

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { RunRecord } from './types';
-import { timeAgo, formatDuration, STATUS_CONFIG } from './helpers';
+import { timeAgo, formatDuration, parseServerTimestamp, STATUS_CONFIG } from './helpers';
 import StatusDot from './StatusDot';
 
 interface RunCardProps {
@@ -29,8 +29,8 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
 
   useEffect(() => {
     if (!isRunning) { setElapsed(null); return; }
-    const start = new Date(run.started_at).getTime();
-    const tick = () => setElapsed(Date.now() - start);
+    const start = parseServerTimestamp(run.started_at);
+    const tick = () => setElapsed(Math.max(0, Date.now() - start));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
