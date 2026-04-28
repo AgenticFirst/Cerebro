@@ -48,8 +48,9 @@ import { RunEventEmitter, ENGINE_EVENT, type EngineEventContext } from './events
 import { validateDAG } from './dag/validator';
 import { DAGExecutor, StepFailedError, StepDeniedError } from './dag/executor';
 import type { ExecutionEvent } from './events/types';
-import type { StepDefinition } from './dag/types';
+import type { StepDefinition, DAGDefinition } from './dag/types';
 import type { ActionDefinition, ChatActionAvailability } from './actions/types';
+import { wrapForDryRun } from './dry-run-stubs';
 
 interface ActiveEngineRun {
   runId: string;
@@ -112,8 +113,11 @@ export class ExecutionEngine {
     const runId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
     const abortController = new AbortController();
 
-    // Build registry with all built-in actions
-    const registry = this.createRegistry(webContents);
+    // Build registry with all built-in actions. In dry-run mode, every
+    // side-effecty action is wrapped to return synthetic success so we
+    // exercise the executor end-to-end without real API calls.
+    const baseRegistry = this.createRegistry(webContents);
+    const registry = request.dryRun ? this.toDryRunRegistry(baseRegistry) : baseRegistry;
 
     // Sanitize the incoming DAG: drop dependsOn / inputMappings entries that
     // reference non-step ids (steps that were deleted after the mapping was
@@ -211,8 +215,13 @@ export class ExecutionEngine {
       stepPatchPromises.push(patch);
     };
 
-    // Approval callback: pauses run and waits for user decision
-    const onApprovalRequired = (step: StepDefinition): Promise<boolean> => {
+    // In dry-run mode, every approval gate auto-passes. The skill that
+    // proposed the routine has already gathered explicit user consent
+    // before invoking us, so we don't want to block the test run waiting
+    // for clicks on every gate the routine declares.
+    const onApprovalRequired = request.dryRun
+      ? () => Promise.resolve(true)
+      : (step: StepDefinition): Promise<boolean> => {
       return new Promise<boolean>((resolvePromise) => {
         const approvalId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
 
@@ -645,6 +654,132 @@ export class ExecutionEngine {
     });
   }
 
+  /**
+   * Run a candidate routine DAG end-to-end with side-effecty actions stubbed.
+   * Used to verify that a Cerebro-proposed routine wires correctly before we
+   * persist it. Returns per-step status so the caller can show the user
+   * exactly which step failed and why.
+   *
+   * Long-running by design (a routine with many LLM-shaped or HTTP steps can
+   * take a minute or two even with stubs); the chat skill that calls us is
+   * expected to tell the user "this can take a couple of minutes".
+   */
+  async dryRunRoutine(
+    webContents: WebContents,
+    options: {
+      dag: DAGDefinition;
+      triggerPayload?: Record<string, unknown>;
+    },
+  ): Promise<{
+    ok: boolean;
+    runId: string;
+    error?: string;
+    failedStepId?: string;
+    steps: Array<{
+      stepId: string;
+      stepName: string;
+      actionType: string;
+      status: 'completed' | 'failed' | 'skipped' | 'pending';
+      summary?: string;
+      error?: string;
+      durationMs?: number;
+    }>;
+  }> {
+    const stepEvents = new Map<
+      string,
+      {
+        stepId: string;
+        stepName: string;
+        actionType: string;
+        status: 'completed' | 'failed' | 'skipped' | 'pending';
+        summary?: string;
+        error?: string;
+        durationMs?: number;
+      }
+    >();
+    for (const s of options.dag.steps) {
+      stepEvents.set(s.id, {
+        stepId: s.id,
+        stepName: s.name,
+        actionType: s.actionType,
+        status: 'pending',
+      });
+    }
+
+    let runId: string;
+    try {
+      runId = await this.startRun(webContents, {
+        dag: options.dag,
+        triggerSource: 'manual',
+        runType: 'preview',
+        triggerPayload: options.triggerPayload,
+        dryRun: true,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        runId: '',
+        error: err instanceof Error ? err.message : String(err),
+        steps: Array.from(stepEvents.values()),
+      };
+    }
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const cleanup = () => {
+        if (this.sharedBus) this.sharedBus.off(ENGINE_EVENT, listener);
+      };
+
+      const finish = (ok: boolean, error?: string, failedStepId?: string) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve({
+          ok,
+          runId,
+          error,
+          failedStepId,
+          steps: options.dag.steps.map((s) => stepEvents.get(s.id)!),
+        });
+      };
+
+      const listener = (event: ExecutionEvent, ctx: EngineEventContext) => {
+        if (ctx.runId !== runId) return;
+        if (event.type === 'step_started') {
+          const slot = stepEvents.get(event.stepId);
+          if (slot) slot.actionType = event.actionType;
+        } else if (event.type === 'step_completed') {
+          const slot = stepEvents.get(event.stepId);
+          if (slot) {
+            slot.status = 'completed';
+            slot.summary = event.summary;
+            slot.durationMs = event.durationMs;
+          }
+        } else if (event.type === 'step_failed') {
+          const slot = stepEvents.get(event.stepId);
+          if (slot) {
+            slot.status = 'failed';
+            slot.error = event.error;
+          }
+        } else if (event.type === 'step_skipped') {
+          const slot = stepEvents.get(event.stepId);
+          if (slot) {
+            slot.status = 'skipped';
+            slot.error = event.reason;
+          }
+        } else if (event.type === 'run_completed') {
+          finish(true);
+        } else if (event.type === 'run_failed') {
+          finish(false, event.error, event.failedStepId);
+        } else if (event.type === 'run_cancelled') {
+          finish(false, event.reason ?? 'Dry-run was cancelled');
+        }
+      };
+
+      if (this.sharedBus) this.sharedBus.on(ENGINE_EVENT, listener);
+    });
+  }
+
   /** Helper for runChatAction — read a step record's output and summary. */
   private async fetchStepOutput(
     runId: string,
@@ -665,6 +800,17 @@ export class ExecutionEngine {
       }
     }
     return { data, summary: step.summary ?? '' };
+  }
+
+  /** Wrap every action in a registry with the dry-run stub. Actions that
+   *  don't have a stub (control-flow: condition, loop, delay, transformer)
+   *  pass through unchanged so we still exercise the routine's real logic. */
+  private toDryRunRegistry(source: ActionRegistry): ActionRegistry {
+    const wrapped = new ActionRegistry();
+    for (const def of source.list()) {
+      wrapped.register(wrapForDryRun(def));
+    }
+    return wrapped;
   }
 
   /** Create an ActionRegistry populated with all built-in actions. */

@@ -57,7 +57,16 @@ describe('ChatActionServer', () => {
     runChatAction: ReturnType<typeof vi.fn>;
   };
 
+  let mockEngineDryRun: ReturnType<typeof vi.fn>;
+
   beforeEach(async () => {
+    mockEngineDryRun = vi.fn().mockResolvedValue({
+      ok: true,
+      runId: 'preview-1',
+      steps: [
+        { stepId: 's1', stepName: 'Step 1', actionType: 'ask_ai', status: 'completed', summary: 'ok' },
+      ],
+    });
     mockEngine = {
       getChatActionCatalog: vi.fn().mockReturnValue([
         {
@@ -77,6 +86,7 @@ describe('ChatActionServer', () => {
         summary: 'done',
         data: { sent: true },
       }),
+      dryRunRoutine: mockEngineDryRun,
     };
     server = new ChatActionServer({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -173,5 +183,51 @@ describe('ChatActionServer', () => {
       body: { type: 'hubspot_create_ticket', params: { subject: 'x' } },
     });
     expect(res.status).toBe(409);
+  });
+
+  it('rejects dry-run-routine without a dag', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/dry-run-routine',
+      token,
+      body: {},
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('forwards dry-run-routine to the engine and returns its result', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/dry-run-routine',
+      token,
+      body: { dag: { steps: [{ id: 's1', name: 'Step 1', actionType: 'ask_ai', params: {}, dependsOn: [], inputMappings: [], requiresApproval: false, onError: 'fail' }] } },
+    });
+    expect(res.status).toBe(200);
+    expect(mockEngineDryRun).toHaveBeenCalled();
+    const body = res.body as { ok: boolean; steps: unknown[] };
+    expect(body.ok).toBe(true);
+    expect(body.steps).toHaveLength(1);
+  });
+
+  it('returns ok=false (still 200) when dry-run reports a step failure', async () => {
+    mockEngineDryRun.mockResolvedValueOnce({
+      ok: false,
+      runId: 'preview-2',
+      error: 'something broke',
+      failedStepId: 's1',
+      steps: [
+        { stepId: 's1', stepName: 'Step 1', actionType: 'ask_ai', status: 'failed', error: 'something broke' },
+      ],
+    });
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/dry-run-routine',
+      token,
+      body: { dag: { steps: [{ id: 's1', name: 'Step 1', actionType: 'ask_ai', params: {}, dependsOn: [], inputMappings: [], requiresApproval: false, onError: 'fail' }] } },
+    });
+    expect(res.status).toBe(200);
+    const body = res.body as { ok: boolean; failedStepId?: string };
+    expect(body.ok).toBe(false);
+    expect(body.failedStepId).toBe('s1');
   });
 });

@@ -26,6 +26,7 @@ import http, { type Server, type IncomingMessage, type ServerResponse } from 'no
 import crypto from 'node:crypto';
 import type { WebContents } from 'electron';
 import type { ExecutionEngine } from '../engine/engine';
+import type { DAGDefinition } from '../engine/dag/types';
 
 export interface ChatActionServerDeps {
   engine: ExecutionEngine;
@@ -96,6 +97,10 @@ export class ChatActionServer {
         return this.handleRun(req, res);
       }
 
+      if (req.method === 'POST' && url.pathname === '/chat-actions/dry-run-routine') {
+        return this.handleDryRunRoutine(req, res);
+      }
+
       this.respondJson(res, 404, { error: 'not_found' });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'internal_error';
@@ -156,6 +161,40 @@ export class ChatActionServer {
             result.status === 'cancelled' ? 409 :
               500;
     this.respondJson(res, httpStatus, result);
+  }
+
+  // ── /dry-run-routine ──────────────────────────────────────────
+
+  private async handleDryRunRoutine(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJsonBody(req);
+    if (!body || typeof body !== 'object') {
+      return this.respondJson(res, 400, { error: 'body_must_be_json' });
+    }
+
+    const dag = (body as { dag?: unknown }).dag;
+    if (!dag || typeof dag !== 'object' || !Array.isArray((dag as { steps?: unknown[] }).steps)) {
+      return this.respondJson(res, 400, { error: 'missing_or_invalid_dag' });
+    }
+    const triggerPayloadRaw = (body as { trigger_payload?: unknown }).trigger_payload;
+    const triggerPayload =
+      triggerPayloadRaw && typeof triggerPayloadRaw === 'object' && !Array.isArray(triggerPayloadRaw)
+        ? (triggerPayloadRaw as Record<string, unknown>)
+        : undefined;
+
+    const wc = this.deps.getMainWebContents();
+    if (!wc) {
+      return this.respondJson(res, 503, { error: 'main_window_not_ready' });
+    }
+
+    const result = await this.deps.engine.dryRunRoutine(wc, {
+      dag: dag as DAGDefinition,
+      triggerPayload,
+    });
+
+    // 200 for both pass and fail — the body's `ok` field carries the result.
+    // The chat skill needs to see per-step status either way, and a 4xx/5xx
+    // would short-circuit curl's body capture in some shells.
+    this.respondJson(res, 200, result);
   }
 
   // ── Helpers ───────────────────────────────────────────────────

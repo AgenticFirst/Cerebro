@@ -223,6 +223,7 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
 - \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram or WhatsApp message, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
+- \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
 - \`summarize-conversation\` — used by routines.
 
 ## Integration actions
@@ -232,7 +233,7 @@ When the user asks you to do something through an external service — create a 
 ### Task vs Routine vs Expert — choose the right one
 
 - **Task** = a card on the Kanban board, assigned to an Expert who executes it autonomously. Use \`create-task\` when the user wants something tracked, owned, and queued — not just answered in chat.
-- **Routine** = same steps repeating on a schedule or trigger ("every morning…", "on every push…"). Managed in the Routines screen — never \`create-task\`.
+- **Routine** = same steps repeating on a schedule or trigger ("every morning…", "on every push…", "cada lunes…"). Use the \`propose-routine\` skill, which always proposes first → confirms with the user → dry-runs end-to-end (a couple of minutes) → saves only on a clean test.
 - **Expert** = a persistent persona the user returns to ("I need a fitness coach"). Use \`create-expert\`.
 - A plain question or chat → answer directly or delegate to an existing expert via the \`Agent\` tool.
 
@@ -623,6 +624,102 @@ fi
 `,
     },
     {
+      name: 'dry-run-routine.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Tests a candidate routine end-to-end with side-effects stubbed so we can
+# tell the user "it works" before persisting. Long-poll: blocks until the
+# engine completes the dry-run (a couple of minutes on a heavy routine).
+#
+# Usage: bash dry-run-routine.sh <json-file>
+#   JSON body: { "dag": { "steps": [...] }, "trigger_payload"?: {...} }
+#
+# Exit codes:
+#   0 — dry-run completed (caller MUST inspect .ok in the body)
+#   1 — transport / validation error before the run started
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  exit 1
+fi
+
+curl -sf --max-time 600 \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/dry-run-routine" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE"
+`,
+    },
+    {
+      name: 'save-routine.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Persists a routine via the backend API. Use this AFTER dry-run-routine.sh
+# has returned ok=true.
+#
+# Usage: bash save-routine.sh <json-file>
+#   JSON body matches POST /routines: { name, description?, plain_english_steps?,
+#                                       dag_json (string), trigger_type, ... }
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
+  echo "ERROR: backend not running" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  exit 1
+fi
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" -X POST "http://127.0.0.1:$PORT/routines" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  ROUTINE_NAME=$(echo "$BODY_RESPONSE" | jq -r '.name // "unknown"')
+  ROUTINE_ID=$(echo "$BODY_RESPONSE" | jq -r '.id // "unknown"')
+  echo "SUCCESS: Saved routine '$ROUTINE_NAME' (id: $ROUTINE_ID)"
+  echo "$BODY_RESPONSE" | jq .
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2
+  echo "$BODY_RESPONSE" >&2
+  exit 1
+fi
+`,
+    },
+    {
       name: 'list-chat-actions.sh',
       content: `#!/usr/bin/env bash
 set -euo pipefail
@@ -941,6 +1038,132 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/run-chat-action.sh" "$CLAUDE_PROJECT_D
 - Skip approval. Every action runs through the human approval gate by design.
 - Compose multi-step workflows. Use **Routines** for anything that should run more than once.
 - Read or modify the file system, run code, or call experts — pick a different tool for that.
+`,
+    },
+    {
+      name: 'propose-routine',
+      description: 'Draft a Cerebro Routine from a natural-language request, confirm it with the user, dry-run it end-to-end (with side-effects stubbed), then save it on success.',
+      body: `# Propose routine
+
+Use this skill whenever the user asks for **recurring or triggered work** — anything they want Cerebro to run more than once on a schedule, on an inbound message, or by clicking Run. Phrases that should match (English **or** Spanish):
+
+- "every Monday morning…", "daily at 8…", "cada lunes…", "todos los días…"
+- "when a Telegram message arrives from…", "cuando llegue un WhatsApp…"
+- "any time someone emails X, do Y", "set up a workflow that…"
+- "make a routine that…", "crea una rutina que…"
+
+For one-off work, use \`run-chat-action\` instead. For tracked tasks, use \`create-task\`.
+
+## Workflow (always in this order)
+
+### 1. Gather what you need
+
+Find these in the conversation. If anything is missing, **ask one short clarifying question at a time** — don't dump a checklist.
+
+- **name** — short title (3–8 words).
+- **description** — one sentence about what the routine does.
+- **trigger_type** — one of: \`manual\`, \`cron\`, \`webhook\`, \`telegram_message\`, \`whatsapp_message\`.
+- **cron_expression** — required when \`trigger_type=cron\`. Use 5-field cron (minute hour day-of-month month day-of-week, e.g. \`0 9 * * 1\` for "every Monday at 9am").
+- **plain_english_steps** — array of human-readable step descriptions in order.
+- **DAG steps** — programmatic version of the steps. Each step is:
+  \`\`\`json
+  {
+    "id": "stable-id-1",
+    "name": "Fetch order from HubSpot",
+    "actionType": "<action_type>",
+    "params": { /* per-action inputs */ },
+    "dependsOn": [],
+    "inputMappings": [],
+    "requiresApproval": false,
+    "onError": "fail"
+  }
+  \`\`\`
+
+To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`send_telegram_message\`, \`send_whatsapp_message\`, \`send_notification\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, HubSpot, WhatsApp, email).
+
+### 2. Wire steps together
+
+Use \`inputMappings\` to feed an upstream step's output into a downstream step. Mapping shape:
+\`\`\`json
+{ "sourceStepId": "step-1", "sourceField": "result", "targetField": "input_field" }
+\`\`\`
+Use Mustache templates inside string params to read wired inputs: \`{{input_field}}\`.
+
+For triggered routines, the inbound payload is exposed as a synthetic step \`__trigger__\`. Example for a Telegram trigger:
+\`\`\`json
+{ "sourceStepId": "__trigger__", "sourceField": "chat_id", "targetField": "trigger.chat_id" }
+\`\`\`
+
+### 3. Propose the routine to the user — do NOT save anything yet
+
+Restate the routine in plain English with this structure:
+
+\`\`\`
+Here's the routine I'd build:
+
+**Name:** <name>
+**Trigger:** <human description, e.g. "Every Monday at 9 AM" or "When a Telegram message arrives from chat 123456">
+**Steps:**
+  1. <step 1 description>
+  2. <step 2 description>
+  …
+
+Want me to test and save this, or change something first?
+\`\`\`
+
+Then **wait for the user's reply**. Only continue once they say "yes / save / go ahead / sounds good / ship it" (or the Spanish equivalent). If they ask for changes, regenerate the proposal and ask again.
+
+### 4. Tell the user testing will take a moment
+
+Before you run the dry-run, say something like:
+
+> Testing the routine end-to-end now — this can take a couple of minutes while I exercise every step with safe stand-ins for the real integrations.
+
+### 5. Run the dry-run
+
+Build the dag JSON, write it to a tmp file, then test it:
+
+\`\`\`bash
+jq -n --argjson dag 'DAG_JSON' '{dag: $dag}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/dry-run-routine.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/dry-run-routine.sh" \\
+  "$CLAUDE_PROJECT_DIR/.claude/tmp/dry-run-routine.json"
+\`\`\`
+
+The script blocks until the engine finishes and prints a JSON object with \`{ok, runId, error?, failedStepId?, steps: [...] }\`. Inspect:
+
+- **\`ok: true\`** → every step completed (with side-effects stubbed). Move on to step 6.
+- **\`ok: false\`** → tell the user *which* step failed (look up the failed step in \`.steps\` by \`failedStepId\`) and what the error said. Offer to amend and re-run, or stop. **Never persist a routine that fails its dry-run.**
+
+### 6. Save the routine
+
+Build the final body. \`dag_json\` MUST be a JSON-encoded **string**, not an object. Then:
+
+\`\`\`bash
+jq -n \\
+  --arg name "ROUTINE_NAME" \\
+  --arg description "ROUTINE_DESCRIPTION" \\
+  --arg trigger_type "TRIGGER_TYPE" \\
+  --arg cron_expression "CRON_OR_EMPTY" \\
+  --arg dag_json "DAG_AS_JSON_STRING" \\
+  --argjson plain_english_steps 'PLAIN_STEPS_ARRAY' \\
+  --argjson required_connections 'CONNECTIONS_ARRAY' \\
+  --argjson approval_gates 'APPROVAL_STEP_IDS_ARRAY' \\
+  '{name: $name, description: $description, trigger_type: $trigger_type, cron_expression: (if $cron_expression == "" then null else $cron_expression end), dag_json: $dag_json, plain_english_steps: $plain_english_steps, required_connections: $required_connections, approval_gates: $approval_gates, source: "user"}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/save-routine.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/save-routine.sh" \\
+  "$CLAUDE_PROJECT_DIR/.claude/tmp/save-routine.json"
+\`\`\`
+
+If the output starts with \`SUCCESS:\`, tell the user the routine was saved (mention the name) and that it appears in the Routines screen. If it starts with \`ERROR:\`, surface the error and stop.
+
+## Hard rules
+
+- **Always propose first, then test, then save.** Skipping the proposal step is a contract violation.
+- **Never save a routine that failed dry-run.** Tell the user what broke and offer to fix it.
+- **Always tell the user testing takes a couple of minutes** before kicking off the dry-run.
+- **For external-facing actions** (Telegram, WhatsApp, HubSpot, email, run_command), **add an \`approval_gate\` step or set \`requiresApproval: true\`** on the action step so real runs pause for the user.
+- Reply in the user's language (English or Spanish) throughout.
 `,
     },
   ];
