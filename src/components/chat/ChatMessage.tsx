@@ -8,6 +8,7 @@ import ThinkingIndicator from './ThinkingIndicator';
 import ToolCallsGroup from './ToolCallsGroup';
 import RunLogCard from './RunLogCard';
 import RoutineProposalCard from './RoutineProposalCard';
+import IntegrationSetupCard from './IntegrationSetupCard';
 import ExpertProposalCard from './ExpertProposalCard';
 import TeamProposalCard from './TeamProposalCard';
 import TeamRunCard from './TeamRunCard';
@@ -86,6 +87,17 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         <div className="mb-2">
           <RoutineProposalCard
             proposal={message.routineProposal}
+            messageId={message.id}
+            conversationId={message.conversationId}
+          />
+        </div>
+      )}
+
+      {/* Integration setup proposal card */}
+      {!isUser && message.integrationProposal && (
+        <div className="mb-2">
+          <IntegrationSetupCard
+            proposal={message.integrationProposal}
             messageId={message.id}
             conversationId={message.conversationId}
           />

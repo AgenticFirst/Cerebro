@@ -1,4 +1,11 @@
-import type { Conversation, Message, RoutineProposal, ExpertProposal, TeamProposal } from '../types/chat';
+import type {
+  Conversation,
+  Message,
+  RoutineProposal,
+  ExpertProposal,
+  TeamProposal,
+  IntegrationSetupProposal,
+} from '../types/chat';
 
 // ── Pure helpers ─────────────────────────────────────────────────
 
@@ -148,6 +155,14 @@ function expertProposalFromApi(raw: Record<string, unknown>): ExpertProposal {
   };
 }
 
+function integrationProposalFromApi(raw: Record<string, unknown>): IntegrationSetupProposal {
+  return {
+    integrationId: raw.integration_id as string,
+    reason: raw.reason as string | undefined,
+    status: (raw.status as IntegrationSetupProposal['status']) ?? 'proposed',
+  };
+}
+
 function proposalFromApi(raw: Record<string, unknown>): RoutineProposal {
   return {
     name: raw.name as string,
@@ -216,6 +231,11 @@ export function fromApiMessage(m: ApiMessage): Message {
     if (m.metadata.is_preview_run) {
       msg.isPreviewRun = true;
     }
+    if (m.metadata.integration_proposal) {
+      msg.integrationProposal = integrationProposalFromApi(
+        m.metadata.integration_proposal as Record<string, unknown>,
+      );
+    }
   }
 
   return msg;
@@ -262,6 +282,16 @@ export function toApiProposal(p: RoutineProposal): Record<string, unknown> {
     status: p.status,
     saved_routine_id: p.savedRoutineId,
     preview_run_id: p.previewRunId,
+  };
+}
+
+export function toApiIntegrationProposal(
+  p: IntegrationSetupProposal,
+): Record<string, unknown> {
+  return {
+    integration_id: p.integrationId,
+    reason: p.reason,
+    status: p.status,
   };
 }
 

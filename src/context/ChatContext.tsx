@@ -8,7 +8,13 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import type { Conversation, Message, Screen, ToolCall } from '../types/chat';
+import type {
+  Conversation,
+  IntegrationSetupProposal,
+  Message,
+  Screen,
+  ToolCall,
+} from '../types/chat';
 import type { BackendResponse, RendererAgentEvent } from '../types/ipc';
 import { useProviders } from './ProviderContext';
 import { useRoutines } from './RoutineContext';
@@ -21,7 +27,9 @@ import {
   toApiProposal,
   toApiExpertProposal,
   toApiTeamProposal,
+  toApiIntegrationProposal,
   resolveNewChatTarget,
+  apiPatchMessageMetadata,
   type ApiConversationList,
 } from './chat-helpers';
 
@@ -136,6 +144,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Keep ref in sync so async callbacks always see latest state
   conversationsRef.current = conversations;
+
+  const activeConversationIdRef = useRef<string | null>(null);
+  activeConversationIdRef.current = activeConversationId;
 
   const claudeCodeInfoRef = useRef(claudeCodeInfo);
   claudeCodeInfoRef.current = claudeCodeInfo;
@@ -723,6 +734,42 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     registerRunCallback(runRoutineFromUi);
   }, [registerRunCallback, runRoutineFromUi]);
+
+  // Listen once for integration setup proposals fired by the chat-actions
+  // HTTP server when the chat agent runs propose-integration.sh. The
+  // listener reads the active conversation through a ref so we don't
+  // re-subscribe on every chat switch.
+  useEffect(() => {
+    const unsub = window.cerebro.chatActions.onIntegrationProposal((payload) => {
+      const targetConvId = payload.conversationId ?? activeConversationIdRef.current;
+      if (!targetConvId) return;
+      const conv = conversationsRef.current.find((c) => c.id === targetConvId);
+      if (!conv) return;
+      const proposal: IntegrationSetupProposal = {
+        integrationId: payload.integrationId,
+        reason: payload.reason,
+        status: 'proposed',
+      };
+      let lastAssistant: Message | undefined;
+      for (let i = conv.messages.length - 1; i >= 0; i--) {
+        if (conv.messages[i].role === 'assistant') {
+          lastAssistant = conv.messages[i];
+          break;
+        }
+      }
+      if (lastAssistant) {
+        updateMessage(targetConvId, lastAssistant.id, { integrationProposal: proposal });
+        apiPatchMessageMetadata(targetConvId, lastAssistant.id, {
+          integration_proposal: toApiIntegrationProposal(proposal),
+        }).catch(console.error);
+      } else {
+        addMessage(targetConvId, 'assistant', '', {
+          integration_proposal: toApiIntegrationProposal(proposal),
+        });
+      }
+    });
+    return unsub;
+  }, [addMessage, updateMessage]);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
 

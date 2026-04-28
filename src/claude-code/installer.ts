@@ -223,12 +223,17 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
 - \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram or WhatsApp message, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
+- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, HubSpot, WhatsApp, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
 - \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
 - \`summarize-conversation\` — used by routines.
 
 ## Integration actions
 
 When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "crea un ticket de HubSpot sobre X", "avísame en 30 minutos", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
+
+## Connecting integrations
+
+When the user asks to **set up, connect, or link** an integration ("set up Telegram", "connect HubSpot", "configura WhatsApp", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, Private App for HubSpot, QR pairing for WhatsApp). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`hubspot\`, \`whatsapp\`. Anything else — Slack, Gmail, Notion, Calendar, etc. — is on the roadmap; tell the user and stop.
 
 ### Task vs Routine vs Expert — choose the right one
 
@@ -835,6 +840,68 @@ case "$STATUS" in
 esac
 `,
     },
+    {
+      name: 'propose-integration.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Asks the Cerebro UI to render an inline IntegrationSetupCard so the user
+# can connect an integration (Telegram, HubSpot, WhatsApp, …) without
+# leaving chat. The renderer owns credential entry — this script never
+# transmits secrets and the chat agent must not ask for tokens in chat.
+#
+# Usage: bash propose-integration.sh <integration_id> [reason]
+#
+# integration_id must match a manifest in src/integrations/registry.ts.
+# Currently: telegram | hubspot | whatsapp.
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running" >&2
+  exit 1
+fi
+
+INTEGRATION_ID="\${1:-}"
+if [ -z "$INTEGRATION_ID" ]; then
+  echo "ERROR: integration_id is required (e.g. telegram, hubspot, whatsapp)" >&2
+  exit 1
+fi
+REASON="\${2:-}"
+
+BODY=$(jq -n \\
+  --arg integration_id "$INTEGRATION_ID" \\
+  --arg reason "$REASON" \\
+  '{integration_id: $integration_id} + (if $reason == "" then {} else {reason: $reason} end)')
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/propose-integration" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d "$BODY") || {
+  echo "ERROR: Cannot reach chat-actions server on port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" = "200" ]; then
+  echo "SUCCESS: Setup card opened for $INTEGRATION_ID"
+  exit 0
+fi
+ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
+echo "ERROR: \${ERROR:-Could not open setup card} (HTTP $HTTP_CODE)" >&2
+exit 1
+`,
+    },
   ];
 }
 
@@ -1164,6 +1231,68 @@ If the output starts with \`SUCCESS:\`, tell the user the routine was saved (men
 - **Always tell the user testing takes a couple of minutes** before kicking off the dry-run.
 - **For external-facing actions** (Telegram, WhatsApp, HubSpot, email, run_command), **add an \`approval_gate\` step or set \`requiresApproval: true\`** on the action step so real runs pause for the user.
 - Reply in the user's language (English or Spanish) throughout.
+`,
+    },
+    {
+      name: 'connect-integration',
+      description:
+        'Open the inline setup card so the user can connect an integration (Telegram, HubSpot, WhatsApp, …) without leaving the chat. Never ask for tokens in chat — the card collects them securely.',
+      body: `# Connect an integration
+
+Use this skill whenever the user asks Cerebro to **connect, set up, link, or wire up** an external service — anything that needs credentials before \`run-chat-action\` or a routine can use it. Phrases that should match (English **or** Spanish):
+
+- "set up Telegram", "connect Telegram", "help me set up the Telegram bot"
+- "configura HubSpot", "conecta WhatsApp", "vincula mi cuenta de HubSpot"
+- "I want to use Telegram with Cerebro", "how do I connect HubSpot"
+
+Currently supported \`integration_id\` values: \`telegram\`, \`hubspot\`, \`whatsapp\`. Others — including everything listed as "coming soon" in the Integrations screen — are not yet implemented; tell the user it's on the roadmap and stop.
+
+## Workflow
+
+1. **Confirm intent and pick the integration_id.** Match the user's wording to one of \`telegram\`, \`hubspot\`, \`whatsapp\`. If the user is ambiguous (e.g. "set up CRM"), ask one short clarifying question.
+2. **Open the setup card.** Run:
+
+   \`\`\`bash
+   bash "$CLAUDE_PROJECT_DIR/.claude/scripts/propose-integration.sh" INTEGRATION_ID "WHY_THIS_INTEGRATION"
+   \`\`\`
+
+   Replace \`INTEGRATION_ID\` with one of \`telegram\` / \`hubspot\` / \`whatsapp\`. The reason argument is optional and shown as the card subtitle ("So you can send WhatsApp from routines").
+
+3. **Tell the user the card is ready.** One short line in their language: "I'll help you connect Telegram. Open the setup card below." Don't dump instructions — the card already shows the BotFather/Private App walkthrough.
+
+4. **Answer follow-up questions conversationally.** While the card is open, the user may ask things like "what's BotFather?", "where do I find scopes in HubSpot?", "do I need WhatsApp Business?". Use this prose as your source of truth so you don't make things up:
+
+   ### Telegram (BotFather)
+   - Open Telegram and start a chat with **@BotFather** (the @ matters — confirm exactly that handle).
+   - Send \`/newbot\` and follow the prompts to name your bot and pick a unique username (must end in \`bot\`).
+   - BotFather replies with a token like \`123456789:AABBccDD…\`. Copy it.
+   - Paste the token in the card's step 2. Cerebro verifies it against Telegram's getMe API and stores it encrypted in the OS keychain.
+
+   ### HubSpot (Private App access token)
+   - In HubSpot, open **Settings → Integrations → Private Apps** (also reachable via the Legacy Apps shortcut).
+   - Click **Create a private app**, name it (e.g. "Cerebro"), and click **Scopes**.
+   - Enable read+write on **tickets**, **contacts**, and **pipelines** (CRM scopes).
+   - Click **Create app**, then **Show token** and copy the \`pat-na1-…\` value.
+   - Paste the token in the card's step 2. Cerebro verifies it via the HubSpot account-info API.
+
+   ### WhatsApp (QR pairing)
+   - Open WhatsApp on the user's phone (regular or Business).
+   - Settings → **Linked devices** → **Link a device**.
+   - The card shows a QR code; scan it with the phone.
+   - Once paired, the card flips to "Connected".
+
+5. **Don't ask for credentials in chat.** The card's input fields collect tokens directly through the secure IPC bridge so secrets never reach the LLM context. If the user pastes a token in chat by mistake, ignore it and remind them to enter it in the card.
+
+## Interpreting the script output
+
+- \`SUCCESS:\` — card opened. Tell the user.
+- \`ERROR:\` — surface the message verbatim. Common causes: unknown \`integration_id\`, chat-actions server not running, main window not ready.
+
+## What this skill does NOT do
+
+- Walk the user through setup in plain text. The card owns the walkthrough.
+- Collect, store, or even read credentials. The card does that.
+- Connect integrations not in the registry yet. If the user asks for Slack / Gmail / Notion / Calendar, say it's on the roadmap and stop.
 `,
     },
   ];

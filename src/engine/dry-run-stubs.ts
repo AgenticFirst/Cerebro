@@ -14,7 +14,8 @@
  * to surface real failures, not turn the routine into a no-op.
  */
 
-import type { ActionDefinition, ActionInput, ActionOutput } from './actions/types';
+import type { ActionDefinition, ActionInput, ActionOutput, JSONSchema } from './actions/types';
+import { renderTemplate } from './actions/utils/template';
 
 const DRY_RUN_ID_PREFIX = 'dryrun-';
 
@@ -173,13 +174,62 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
     data: { sent: true, message_id: syntheticId('dryrun-msg-') },
     summary: '[dry-run] Would broadcast message',
   }),
+
+  // Delay — short-circuit so a routine with a 1-hour wait doesn't make the
+  // dry-run sit for an hour. The real delay action would also reject
+  // duration <= 0, so we accept any duration here.
+  delay: (input) => {
+    const params = input.params as Record<string, unknown>;
+    return {
+      data: {
+        delayed_ms: 0,
+        completed_at: new Date().toISOString(),
+        ...input.wiredInputs,
+      },
+      summary: `[dry-run] Would wait ${String(params.duration ?? '?')} ${String(params.unit ?? '?')}`,
+    };
+  },
 };
+
+/**
+ * Validate that every required field in the action's inputSchema is
+ * populated. Strings are rendered against wiredInputs so a template like
+ * `{{customer_email}}` that points at a non-existent upstream field will
+ * surface as "required field empty after rendering" instead of slipping
+ * through the synthetic-success stub. This is what makes the dry-run
+ * actually catch broken wiring before users hit production.
+ */
+function validateRequiredParams(
+  schema: JSONSchema,
+  params: Record<string, unknown>,
+  wiredInputs: Record<string, unknown>,
+): void {
+  const required = (schema as { required?: string[] }).required;
+  if (!Array.isArray(required) || required.length === 0) return;
+  for (const field of required) {
+    const value = params[field];
+    if (value === undefined || value === null) {
+      throw new Error(`Required field "${field}" is missing from this step's params.`);
+    }
+    if (typeof value === 'string') {
+      const rendered = renderTemplate(value, wiredInputs).trim();
+      if (!rendered) {
+        throw new Error(
+          `Required field "${field}" is empty after template rendering. ` +
+          `Check that upstream steps actually produce the variables you reference.`,
+        );
+      }
+    }
+  }
+}
 
 /**
  * Returns a wrapped ActionDefinition whose `execute` returns synthetic
  * success when a stub exists for its type. Actions without a stub
  * (condition, loop, delay, transformer, etc.) are returned unchanged so
- * the routine's actual control flow is exercised.
+ * the routine's actual control flow is exercised. Either way, every
+ * wrapped execute first validates required params so the dry-run catches
+ * missing fields and broken templates before the synthetic success.
  */
 export function wrapForDryRun(action: ActionDefinition): ActionDefinition {
   const stub = STUBS[action.type];
@@ -187,7 +237,7 @@ export function wrapForDryRun(action: ActionDefinition): ActionDefinition {
   return {
     ...action,
     execute: async (input: ActionInput): Promise<ActionOutput> => {
-      // Still log the call so the caller can see "dry-run skipped this".
+      validateRequiredParams(action.inputSchema, input.params, input.wiredInputs);
       input.context.log(`[dry-run] ${action.type}: skipping side effects`);
       return Promise.resolve(stub(input));
     },

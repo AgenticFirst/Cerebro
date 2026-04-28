@@ -76,11 +76,14 @@ describe('wrapForDryRun', () => {
     expect((out.data.response as string).length).toBeGreaterThan(0);
   });
 
-  it('passes through control-flow actions unchanged', () => {
-    for (const type of ['condition', 'loop', 'delay', 'transformer']) {
+  it('passes through control-flow actions (condition, loop, transformer) unchanged', () => {
+    // delay and approval_gate are stubbed so the dry-run finishes quickly /
+    // doesn't block on a human; the remaining control-flow actions still run
+    // for real because they're cheap and their actual logic is what we're
+    // trying to verify.
+    for (const type of ['condition', 'loop', 'transformer']) {
       const real = makeFakeAction(type);
       const wrapped = wrapForDryRun(real);
-      // Same reference — no wrapping applied.
       expect(wrapped).toBe(real);
     }
   });

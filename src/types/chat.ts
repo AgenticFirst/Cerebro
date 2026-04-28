@@ -90,6 +90,14 @@ export interface TeamProposal {
   savedTeamId?: string;
 }
 
+export interface IntegrationSetupProposal {
+  /** Manifest id (e.g. 'telegram', 'hubspot'). */
+  integrationId: string;
+  /** Optional reason the agent stated — shown as the card subtitle. */
+  reason?: string;
+  status: 'proposed' | 'connecting' | 'connected' | 'dismissed';
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -107,6 +115,7 @@ export interface Message {
   expertProposal?: ExpertProposal;
   teamProposal?: TeamProposal;
   teamRun?: TeamRun;
+  integrationProposal?: IntegrationSetupProposal;
 }
 
 export type ConversationSource = 'cerebro' | 'telegram';

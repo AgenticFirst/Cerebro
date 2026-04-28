@@ -27,6 +27,8 @@ import crypto from 'node:crypto';
 import type { WebContents } from 'electron';
 import type { ExecutionEngine } from '../engine/engine';
 import type { DAGDefinition } from '../engine/dag/types';
+import { isKnownIntegrationId } from '../integrations/ids';
+import { IPC_CHANNELS } from '../types/ipc';
 
 export interface ChatActionServerDeps {
   engine: ExecutionEngine;
@@ -99,6 +101,10 @@ export class ChatActionServer {
 
       if (req.method === 'POST' && url.pathname === '/chat-actions/dry-run-routine') {
         return this.handleDryRunRoutine(req, res);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/chat-actions/propose-integration') {
+        return this.handleProposeIntegration(req, res);
       }
 
       this.respondJson(res, 404, { error: 'not_found' });
@@ -195,6 +201,44 @@ export class ChatActionServer {
     // The chat skill needs to see per-step status either way, and a 4xx/5xx
     // would short-circuit curl's body capture in some shells.
     this.respondJson(res, 200, result);
+  }
+
+  // ── /propose-integration ──────────────────────────────────────
+
+  private async handleProposeIntegration(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJsonBody(req);
+    if (!body || typeof body !== 'object') {
+      return this.respondJson(res, 400, { error: 'body_must_be_json' });
+    }
+    const integrationIdRaw = (body as { integration_id?: unknown }).integration_id;
+    if (typeof integrationIdRaw !== 'string' || !integrationIdRaw) {
+      return this.respondJson(res, 400, { error: 'missing_integration_id' });
+    }
+    if (!isKnownIntegrationId(integrationIdRaw)) {
+      return this.respondJson(res, 400, {
+        error: `unknown_integration:${integrationIdRaw}`,
+      });
+    }
+    const reasonRaw = (body as { reason?: unknown }).reason;
+    const reason = typeof reasonRaw === 'string' ? reasonRaw : undefined;
+    const conversationIdRaw = (body as { conversation_id?: unknown }).conversation_id;
+    const conversationId = typeof conversationIdRaw === 'string' ? conversationIdRaw : undefined;
+
+    const wc = this.deps.getMainWebContents();
+    if (!wc) {
+      return this.respondJson(res, 503, { error: 'main_window_not_ready' });
+    }
+
+    wc.send(IPC_CHANNELS.INTEGRATION_PROPOSAL, {
+      integrationId: integrationIdRaw,
+      reason,
+      conversationId,
+    });
+
+    this.respondJson(res, 200, {
+      ok: true,
+      integration_id: integrationIdRaw,
+    });
   }
 
   // ── Helpers ───────────────────────────────────────────────────

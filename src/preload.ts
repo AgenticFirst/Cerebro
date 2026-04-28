@@ -20,6 +20,7 @@ import type {
   HubSpotStatusResponse,
   HubSpotVerifyResult,
   HubSpotPipelineSummary,
+  IntegrationProposalEventPayload,
   UpdateInfo,
   UpdateAsset,
   UpdateDownloadProgress,
@@ -382,6 +383,14 @@ const api: CerebroAPI = {
   chatActions: {
     catalog(lang: 'en' | 'es') {
       return ipcRenderer.invoke(IPC_CHANNELS.CHAT_ACTIONS_CATALOG, lang);
+    },
+    onIntegrationProposal(
+      callback: (payload: IntegrationProposalEventPayload) => void,
+    ): () => void {
+      const listener = (_event: unknown, payload: IntegrationProposalEventPayload) =>
+        callback(payload);
+      ipcRenderer.on(IPC_CHANNELS.INTEGRATION_PROPOSAL, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.INTEGRATION_PROPOSAL, listener);
     },
   },
 

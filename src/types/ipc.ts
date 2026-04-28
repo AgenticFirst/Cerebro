@@ -30,6 +30,9 @@ export const IPC_CHANNELS = {
 
   // Chat actions catalog (renderer → main; the run path is HTTP from the chat subprocess)
   CHAT_ACTIONS_CATALOG: 'chat-actions:catalog',
+  /** Main → renderer: chat agent proposed an integration setup card.
+   *  Payload: IntegrationProposalEventPayload. */
+  INTEGRATION_PROPOSAL: 'chat-actions:integration-proposal',
 
   // Scheduler
   SCHEDULER_SYNC: 'scheduler:sync',
@@ -502,10 +505,24 @@ export interface ChatActionCatalogEntry {
   inputSchema: Record<string, unknown>;
 }
 
+export interface IntegrationProposalEventPayload {
+  integrationId: string;
+  reason?: string;
+  /** Conversation the chat agent was running in. When omitted, the
+   *  renderer falls back to the active conversation. */
+  conversationId?: string;
+}
+
 export interface ChatActionsAPI {
   /** Returns the chat-exposable action catalog with current availability.
    *  Lang controls localization of label/description/examples (en|es). */
   catalog(lang: 'en' | 'es'): Promise<ChatActionCatalogEntry[]>;
+  /** Subscribe to integration-setup proposal events fired when the chat
+   *  agent calls the propose-integration script. Returns an unsubscribe
+   *  function. */
+  onIntegrationProposal(
+    callback: (payload: IntegrationProposalEventPayload) => void,
+  ): () => void;
 }
 
 export interface CerebroAPI {

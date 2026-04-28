@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'node:http';
 import { ChatActionServer } from '../server';
+import { IPC_CHANNELS } from '../../types/ipc';
 
 interface FetchOptions {
   method?: string;
@@ -56,6 +57,7 @@ describe('ChatActionServer', () => {
     getChatActionCatalog: ReturnType<typeof vi.fn>;
     runChatAction: ReturnType<typeof vi.fn>;
   };
+  let mockSend: ReturnType<typeof vi.fn>;
 
   let mockEngineDryRun: ReturnType<typeof vi.fn>;
 
@@ -88,11 +90,12 @@ describe('ChatActionServer', () => {
       }),
       dryRunRoutine: mockEngineDryRun,
     };
+    mockSend = vi.fn();
     server = new ChatActionServer({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       engine: mockEngine as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      getMainWebContents: () => ({ isDestroyed: () => false } as any),
+      getMainWebContents: () => ({ isDestroyed: () => false, send: mockSend } as any),
     });
     const info = await server.start();
     port = info.port;
@@ -207,6 +210,48 @@ describe('ChatActionServer', () => {
     const body = res.body as { ok: boolean; steps: unknown[] };
     expect(body.ok).toBe(true);
     expect(body.steps).toHaveLength(1);
+  });
+
+  it('emits an integration setup proposal event when given a known id', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/propose-integration',
+      token,
+      body: { integration_id: 'telegram', reason: 'so you can DM Pablo' },
+    });
+    expect(res.status).toBe(200);
+    expect(mockSend).toHaveBeenCalledWith(
+      IPC_CHANNELS.INTEGRATION_PROPOSAL,
+      expect.objectContaining({
+        integrationId: 'telegram',
+        reason: 'so you can DM Pablo',
+      }),
+    );
+    const body = res.body as { ok: boolean; integration_id: string };
+    expect(body.ok).toBe(true);
+    expect(body.integration_id).toBe('telegram');
+  });
+
+  it('rejects propose-integration with an unknown integration id', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/propose-integration',
+      token,
+      body: { integration_id: 'salesforce' },
+    });
+    expect(res.status).toBe(400);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('rejects propose-integration without an integration_id', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/propose-integration',
+      token,
+      body: { reason: 'just because' },
+    });
+    expect(res.status).toBe(400);
+    expect(mockSend).not.toHaveBeenCalled();
   });
 
   it('returns ok=false (still 200) when dry-run reports a step failure', async () => {
