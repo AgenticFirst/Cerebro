@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useImperativeHandle, forwardRef, type KeyboardEvent, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowUp, Square, Paperclip } from 'lucide-react';
+import { ArrowUp, Square, Paperclip, HelpCircle } from 'lucide-react';
 import clsx from 'clsx';
 import AttachmentChip from './AttachmentChip';
+import CapabilitiesModal from './CapabilitiesModal';
 import type { AttachmentInfo } from '../../types/attachments';
 import { generateId } from '../../context/chat-helpers';
 
@@ -21,6 +22,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const { t } = useTranslation();
     const [value, setValue] = useState('');
     const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
+    const [helpOpen, setHelpOpen] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -138,6 +140,18 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             )}
           />
           <button
+            onClick={() => setHelpOpen(true)}
+            className={clsx(
+              'flex-shrink-0 flex items-center justify-center',
+              'w-8 h-8 rounded-lg transition-all duration-150',
+              'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover',
+            )}
+            title={t('chat.helpChip.tooltip')}
+            aria-label={t('chat.helpChip.label')}
+          >
+            <HelpCircle size={15} />
+          </button>
+          <button
             onClick={handleFilePickerClick}
             disabled={isStreaming}
             className={clsx(
@@ -173,6 +187,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             className="hidden"
           />
         </div>
+        {helpOpen && <CapabilitiesModal onClose={() => setHelpOpen(false)} />}
       </div>
     );
   },

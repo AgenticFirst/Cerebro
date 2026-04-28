@@ -25,6 +25,7 @@ import { AgentRuntime } from './agents';
 import type { AgentRunRequest } from './agents';
 import { ExecutionEngine } from './engine/engine';
 import type { EngineRunRequest } from './engine/dag/types';
+import { ChatActionServer } from './chat-actions/server';
 import { RoutineScheduler } from './scheduler/scheduler';
 import { TaskReconciler } from './scheduler/task-reconciler';
 import { detectClaudeCode, getCachedClaudeCodeInfo } from './claude-code/detector';
@@ -196,6 +197,10 @@ let telegramBridge: TelegramBridge | null = null;
 let whatsAppBridge: WhatsAppBridge | null = null;
 // HubSpot credential holder
 let hubSpotHolder: HubSpotHolder | null = null;
+
+// Loopback HTTP bridge for chat-triggered integration actions.
+let chatActionServer: ChatActionServer | null = null;
+let chatActionServerInfo: { port: number; token: string } | null = null;
 
 // --- Utility functions ---
 
@@ -414,8 +419,26 @@ async function startPythonBackend(): Promise<void> {
   // Cerebro's project-scoped subagents and skills.
   setClaudeCodeCwd(dataDir);
 
+  // Stand up the loopback chat-actions HTTP server before writing the
+  // runtime info file so the port + token are recorded for the chat skill
+  // to discover.
+  try {
+    chatActionServer = new ChatActionServer({
+      engine: executionEngine,
+      getMainWebContents: () => {
+        const wins = BrowserWindow.getAllWindows();
+        return wins.length > 0 ? wins[0].webContents : null;
+      },
+    });
+    chatActionServerInfo = await chatActionServer.start();
+    console.log(`[Cerebro] chat-actions server on port ${chatActionServerInfo.port}`);
+  } catch (err) {
+    console.error('[Cerebro] Failed to start chat-actions server:', err);
+    chatActionServerInfo = null;
+  }
+
   // Refresh the runtime info file (skill scripts read this for the port).
-  writeRuntimeInfo(dataDir, port);
+  writeRuntimeInfo(dataDir, port, chatActionServerInfo ?? undefined);
 
   // Sync project-scoped subagents and skills under <dataDir>/.claude/.
   // Requires Claude Code detection to have run first (handled in `app.on('ready')`).
@@ -942,6 +965,14 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.ENGINE_DENY, async (_event, approvalId: string, reason?: string) => {
     if (!executionEngine) return false;
     return executionEngine.resolveApproval(approvalId, false, reason);
+  });
+
+  // --- Chat actions catalog (renderer-side discovery) ---
+
+  ipcMain.handle(IPC_CHANNELS.CHAT_ACTIONS_CATALOG, async (_event, lang?: string) => {
+    if (!executionEngine) return [];
+    const safeLang: 'en' | 'es' = lang === 'es' ? 'es' : 'en';
+    return executionEngine.getChatActionCatalog(safeLang);
   });
 
   // --- Scheduler ---
@@ -1921,6 +1952,9 @@ app.on('before-quit', async () => {
   if (telegramBridge) {
     try { await telegramBridge.stop(); } catch { /* ignore */ }
     unregisterChannelSender('telegram');
+  }
+  if (chatActionServer) {
+    try { await chatActionServer.stop(); } catch { /* ignore */ }
   }
   await stopPythonBackend();
 });

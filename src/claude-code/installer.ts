@@ -94,16 +94,25 @@ function ensureSettings(paths: InstallerPaths): void {
 
 /**
  * Write the runtime info file every time the backend port changes.
- * Skill scripts read this to discover the current backend port.
+ * Skill scripts read this to discover the current backend port and the
+ * loopback chat-actions server (port + bearer token) when it's available.
  */
-export function writeRuntimeInfo(dataDir: string, backendPort: number): void {
+export function writeRuntimeInfo(
+  dataDir: string,
+  backendPort: number,
+  chatActions?: { port: number; token: string },
+): void {
   const paths = resolvePaths(dataDir);
   fs.mkdirSync(paths.claudeDir, { recursive: true });
-  const info = {
+  const info: Record<string, unknown> = {
     backend_port: backendPort,
     data_dir: dataDir,
     updated_at: new Date().toISOString(),
   };
+  if (chatActions) {
+    info.chat_actions_port = chatActions.port;
+    info.chat_actions_token = chatActions.token;
+  }
   fs.writeFileSync(paths.runtimeInfoPath, JSON.stringify(info, null, 2), 'utf-8');
 }
 
@@ -213,7 +222,12 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`create-expert\` — create a new expert (a persistent specialist persona the user will talk to repeatedly) when the user describes a recurring need that no current expert covers. First confirm the proposed name, description, and system prompt with the user, then invoke.
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
+- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram or WhatsApp message, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
 - \`summarize-conversation\` — used by routines.
+
+## Integration actions
+
+When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "crea un ticket de HubSpot sobre X", "avísame en 30 minutos", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
 
 ### Task vs Routine vs Expert — choose the right one
 
@@ -608,6 +622,122 @@ else
 fi
 `,
     },
+    {
+      name: 'list-chat-actions.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Lists every chat-exposable action with current availability ("available"
+# vs "not_connected") so Cerebro knows which integrations the user has
+# wired up before trying to invoke one.
+#
+# Usage: bash list-chat-actions.sh [en|es]
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat_actions_port/token missing from $RUNTIME_JSON (server not started?)" >&2
+  exit 1
+fi
+
+LANG_CODE="\${1:-en}"
+
+curl -sf "http://127.0.0.1:$PORT/chat-actions/catalog?lang=$LANG_CODE" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  | jq '.actions'
+`,
+    },
+    {
+      name: 'run-chat-action.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Runs a single chat-triggered integration action through Cerebro's routine
+# engine. Always pauses for human approval before the action executes — the
+# call below blocks until the user clicks Approve or Deny in the Approvals
+# tab, then prints the structured result.
+#
+# Usage: bash run-chat-action.sh <json-file>
+#
+# JSON body shape:
+#   { "type": "hubspot_create_ticket",
+#     "params": { "subject": "...", "content": "..." } }
+#
+# Exit codes:
+#   0   success — action executed and returned a result
+#   3   approval denied
+#   4   integration not connected
+#   1   any other failure (network, validation, runtime error)
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running (no chat_actions_port/token in $RUNTIME_JSON)" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  echo "Usage: bash run-chat-action.sh <json-file>" >&2
+  exit 1
+fi
+
+# Long-poll: this curl call sits open until the user resolves the approval
+# (or the underlying run reaches a terminal state). Increase max-time to 30
+# minutes so a slow human reviewer doesn't trip the curl timeout.
+RESPONSE=$(curl -s --max-time 1800 -w "\\n%{http_code}" \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/run" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE" 2>&1) || {
+  echo "ERROR: Cannot reach chat-actions server on port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+STATUS=$(echo "$BODY_RESPONSE" | jq -r '.status // ""')
+SUMMARY=$(echo "$BODY_RESPONSE" | jq -r '.summary // ""')
+ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
+
+case "$STATUS" in
+  succeeded)
+    echo "SUCCESS: $SUMMARY"
+    echo "$BODY_RESPONSE" | jq '.data // {}'
+    exit 0
+    ;;
+  denied)
+    echo "DENIED: \${ERROR:-Approval denied}"
+    exit 3
+    ;;
+  unavailable)
+    echo "NOT_CONNECTED: \${ERROR:-Integration is not connected.}"
+    exit 4
+    ;;
+  *)
+    echo "ERROR: \${ERROR:-Run did not complete successfully} (HTTP $HTTP_CODE)" >&2
+    echo "$BODY_RESPONSE" >&2
+    exit 1
+    ;;
+esac
+`,
+    },
   ];
 }
 
@@ -761,6 +891,56 @@ To assign an expert, add \`--arg expert_id "EXPERT_ID"\` and include \`expert_id
 
 If the output says **SUCCESS**, tell the user the task was created in the **Backlog** column on the Tasks board. They can drag it to "In Progress" to start the Expert, or set a start date for automatic scheduling.
 If the output says **ERROR**, report the error to the user.
+`,
+    },
+    {
+      name: 'run-chat-action',
+      description: 'Invoke a connected integration action (HubSpot, Telegram, WhatsApp, …) directly from chat. Always pauses for human approval.',
+      body: `# Run chat action
+
+Use this skill whenever the user asks Cerebro to **do** something through a connected integration — anything that touches an external service (HubSpot, Telegram, WhatsApp, HTTP endpoints, desktop notifications, and any future integrations like GitHub or iMessage).
+
+The user may speak in **English or Spanish** (or mix them). Recognize natural-language intents and map them to the correct action \`type\`:
+
+| User says (EN / ES) | Action type |
+| --- | --- |
+| "Create a HubSpot ticket about X" / "Crea un ticket de HubSpot sobre X" | \`hubspot_create_ticket\` |
+| "Add Maria to HubSpot" / "Agrega a María a HubSpot" | \`hubspot_upsert_contact\` |
+| "Send Pablo a Telegram" / "Envíale un Telegram a Pablo" | \`send_telegram_message\` |
+| "Send a WhatsApp to +1…" / "Envía un WhatsApp a +1…" | \`send_whatsapp_message\` |
+| "Notify me in 30 minutes" / "Avísame en 30 minutos" | \`send_notification\` |
+| "GET https://… and tell me the status" | \`http_request\` |
+
+## Workflow
+
+1. **List what's available.** Run \`list-chat-actions\` to see the current catalog and which integrations are connected. If the action the user wants shows \`availability: "not_connected"\`, tell them which integration to wire up (point to **Connections** / **Integrations**) and stop.
+2. **Gather parameters.** Inspect the action's \`inputSchema\` from the catalog and ask the user for any required fields you don't already have. Keep it conversational — don't dump JSON at them.
+3. **Confirm before invoking.** Restate what you're about to do in one sentence ("I'll create a HubSpot ticket with subject _X_ and body _Y_ — confirm?"). These actions are visible to other people, so the user must agree.
+4. **Invoke.** Write the request body to a tmp file and call \`run-chat-action.sh\`:
+
+\`\`\`bash
+jq -n \\
+  --arg type "ACTION_TYPE" \\
+  --argjson params 'PARAMS_JSON' \\
+  '{type: $type, params: $params}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/chat-action.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/run-chat-action.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/chat-action.json"
+\`\`\`
+
+5. **Tell the user the run is paused for approval.** The script blocks until the user clicks Approve or Deny in the **Approvals** tab. While you're waiting, do not start another action.
+
+## Interpreting the result
+
+- \`SUCCESS:\` — the action ran. Restate the outcome in natural language using the printed JSON (\`ticket_id\`, \`message_id\`, \`status\`, etc.). Reply in the user's language.
+- \`DENIED:\` — the user declined. Acknowledge briefly; do not retry without new instructions.
+- \`NOT_CONNECTED:\` — the integration was disconnected between catalog fetch and run. Tell the user and link to Connections.
+- \`ERROR:\` — surface the error message verbatim and offer next steps.
+
+## What this skill does NOT do
+
+- Skip approval. Every action runs through the human approval gate by design.
+- Compose multi-step workflows. Use **Routines** for anything that should run more than once.
+- Read or modify the file system, run code, or call experts — pick a different tool for that.
 `,
     },
   ];

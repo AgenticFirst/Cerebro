@@ -258,6 +258,10 @@ export class WhatsAppBridge implements WhatsAppChannel {
     return isAllowed(phoneOrJid, this.settings.allowlist);
   }
 
+  isConnected(): boolean {
+    return this.sock !== null && this.state.state === 'connected';
+  }
+
   async sendActionMessage(
     phoneOrJid: string,
     text: string,

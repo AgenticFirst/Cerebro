@@ -25,6 +25,26 @@ export function createSendWhatsAppAction(deps: {
     name: 'Send WhatsApp Message',
     description: 'Send a message via the paired WhatsApp account. Allowlist-enforced.',
 
+    chatExposable: true,
+    chatGroup: 'whatsapp',
+    chatLabel: { en: 'Send WhatsApp message', es: 'Enviar mensaje de WhatsApp' },
+    chatDescription: {
+      en: 'Send a WhatsApp message to a phone number from your WhatsApp allowlist.',
+      es: 'Envía un mensaje de WhatsApp a un número que esté en tu lista de WhatsApp.',
+    },
+    chatExamples: [
+      {
+        en: 'Send a WhatsApp to +14155552671 saying the package arrived.',
+        es: 'Envía un WhatsApp a +14155552671 diciéndole que el paquete llegó.',
+      },
+    ],
+    availabilityCheck: () => {
+      const ch = deps.getChannel();
+      if (!ch) return 'not_connected';
+      return ch.isConnected() ? 'available' : 'not_connected';
+    },
+    setupHref: 'integrations#whatsapp',
+
     inputSchema: {
       type: 'object',
       properties: {

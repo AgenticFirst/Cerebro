@@ -76,6 +76,48 @@ const es: TranslationKeys = {
     thinking: 'Cerebro est\u00e1 pensando',
     you: 'T\u00fa',
     cerebro: 'Cerebro',
+    helpChip: {
+      label: 'Ayuda',
+      tooltip: 'Ver lo que Cerebro puede hacer',
+    },
+  },
+
+  // \u2500\u2500 Modal de capacidades \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  capabilitiesModal: {
+    title: 'Lo que Cerebro puede hacer',
+    subtitle: 'P\u00eddelo en espa\u00f1ol o ingl\u00e9s \u2014 Cerebro elige la herramienta correcta, te pide los datos que falten y se pausa para que apruebes cualquier acci\u00f3n que afecte al exterior.',
+    sections: {
+      actions: 'Acciones de integraci\u00f3n',
+      skills: 'Habilidades',
+      experts: 'Expertos',
+      examples: 'Prueba diciendo',
+    },
+    availability: {
+      connected: 'Conectado',
+      notConnected: 'Sin conectar',
+      setUp: 'Configurar',
+    },
+    emptyActions: 'A\u00fan no hay integraciones conectadas. Abre Conexiones para vincular HubSpot, Telegram, WhatsApp o cualquier otro servicio compatible.',
+    emptySkills: 'A\u00fan no hay habilidades instaladas.',
+    emptyExperts: 'A\u00fan no hay expertos.',
+    examplesIntro: 'Prueba diciendo cualquiera de estas:',
+    examples: [
+      'Crea un ticket de HubSpot: el cliente X no puede iniciar sesi\u00f3n.',
+      'Create a HubSpot ticket: customer X can\u2019t log in.',
+      'Env\u00edale un Telegram a Pablo diciendo que llego 10 minutos tarde.',
+      'Send Pablo a Telegram saying I\u2019m running 10 minutes late.',
+      'Env\u00eda un WhatsApp a +14155552671 diciendo que el paquete lleg\u00f3.',
+      'Haz un GET a https://status.example.com/health y dime si responde 200.',
+    ],
+    close: 'Cerrar',
+  },
+
+  // \u2500\u2500 Acciones desde el chat (mensajes de estado) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  chatActions: {
+    approval: {
+      pending: 'Esperando tu aprobaci\u00f3n en la pesta\u00f1a de Aprobaciones\u2026',
+      denied: 'Has denegado esta acci\u00f3n.',
+    },
   },
 
   // ── Tarjeta de llamada a herramienta ────────────────────────

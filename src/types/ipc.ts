@@ -28,6 +28,9 @@ export const IPC_CHANNELS = {
   ENGINE_ANY_EVENT: 'engine:any-event',
   engineEvent: (runId: string) => `engine:event:${runId}`,
 
+  // Chat actions catalog (renderer → main; the run path is HTTP from the chat subprocess)
+  CHAT_ACTIONS_CATALOG: 'chat-actions:catalog',
+
   // Scheduler
   SCHEDULER_SYNC: 'scheduler:sync',
 
@@ -488,6 +491,23 @@ export interface UpdaterAPI {
 
 // --- Preload API exposed on window.cerebro ---
 
+export interface ChatActionCatalogEntry {
+  type: string;
+  label: string;
+  description: string;
+  examples: string[];
+  availability: 'available' | 'not_connected' | 'unavailable';
+  group: string;
+  setupHref?: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface ChatActionsAPI {
+  /** Returns the chat-exposable action catalog with current availability.
+   *  Lang controls localization of label/description/examples (en|es). */
+  catalog(lang: 'en' | 'es'): Promise<ChatActionCatalogEntry[]>;
+}
+
 export interface CerebroAPI {
   invoke<T = unknown>(request: BackendRequest): Promise<BackendResponse<T>>;
   getStatus(): Promise<BackendStatus>;
@@ -507,6 +527,7 @@ export interface CerebroAPI {
   telegram: TelegramAPI;
   whatsapp: WhatsAppAPI;
   hubspot: HubSpotAPI;
+  chatActions: ChatActionsAPI;
   files: FilesAPI;
   updater: UpdaterAPI;
 }

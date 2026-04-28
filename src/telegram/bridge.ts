@@ -872,6 +872,12 @@ export class TelegramBridge implements TelegramChannel {
     return Boolean(this.settings.token);
   }
 
+  /** True if the bridge is actively polling Telegram (token configured,
+   *  enabled, and started successfully). Used by the chat-actions catalog. */
+  isConnected(): boolean {
+    return this.polling && this.api !== null && this.settings.enabled === true;
+  }
+
   private async persistLastUpdateId(id: number): Promise<void> {
     this.settings.lastUpdateId = id;
     await backendPutSetting(this.deps.backendPort, TELEGRAM_SETTING_KEYS.lastUpdateId, id);

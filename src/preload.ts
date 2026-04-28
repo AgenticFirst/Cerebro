@@ -379,6 +379,12 @@ const api: CerebroAPI = {
     },
   },
 
+  chatActions: {
+    catalog(lang: 'en' | 'es') {
+      return ipcRenderer.invoke(IPC_CHANNELS.CHAT_ACTIONS_CATALOG, lang);
+    },
+  },
+
   updater: {
     checkNow(): Promise<UpdateInfo | null> {
       return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK_NOW);

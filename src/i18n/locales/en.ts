@@ -75,6 +75,48 @@ const en = {
     thinking: 'Cerebro is thinking',
     you: 'You',
     cerebro: 'Cerebro',
+    helpChip: {
+      label: 'Help',
+      tooltip: 'See what Cerebro can do',
+    },
+  },
+
+  // ── Capabilities help modal ─────────────────────────────────
+  capabilitiesModal: {
+    title: 'What Cerebro can do',
+    subtitle: 'Ask in plain English or Spanish — Cerebro picks the right tool, asks for missing details, and pauses for your approval before running anything that touches the outside world.',
+    sections: {
+      actions: 'Integration actions',
+      skills: 'Skills',
+      experts: 'Experts',
+      examples: 'Try saying',
+    },
+    availability: {
+      connected: 'Connected',
+      notConnected: 'Not connected',
+      setUp: 'Set up',
+    },
+    emptyActions: 'No connected integrations yet. Visit Connections to wire up HubSpot, Telegram, WhatsApp, or any other supported service.',
+    emptySkills: 'No skills installed yet.',
+    emptyExperts: 'No experts yet.',
+    examplesIntro: 'Try saying any of these:',
+    examples: [
+      'Create a HubSpot ticket: customer X can’t log in.',
+      'Crea un ticket de HubSpot: el cliente X no puede iniciar sesión.',
+      'Send Pablo a Telegram saying I’m running 10 minutes late.',
+      'Envíale un Telegram a Pablo diciendo que llego 10 minutos tarde.',
+      'Send a WhatsApp to +14155552671 saying the package arrived.',
+      'GET https://status.example.com/health and tell me if it returns 200.',
+    ],
+    close: 'Close',
+  },
+
+  // ── Chat actions (status messages) ──────────────────────────
+  chatActions: {
+    approval: {
+      pending: 'Waiting for your approval in the Approvals tab…',
+      denied: 'You denied this action.',
+    },
   },
 
   // ── Tool call card ──────────────────────────────────────────

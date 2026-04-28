@@ -50,6 +50,7 @@ function buildChannel(token: string, opts: Partial<{ pipeline: string; stage: st
     getPortalId: () => opts.portalId ?? null,
     getDefaultPipeline: () => opts.pipeline ?? null,
     getDefaultStage: () => opts.stage ?? null,
+    isConnected: () => Boolean(token && opts.pipeline && opts.stage),
   };
 }
 

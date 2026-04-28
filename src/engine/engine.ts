@@ -44,11 +44,12 @@ import { createHubSpotCreateTicketAction } from './actions/hubspot-create-ticket
 import { createHubSpotUpsertContactAction } from './actions/hubspot-upsert-contact';
 import type { HubSpotChannel } from './actions/hubspot-channel';
 import { RunScratchpad } from './scratchpad';
-import { RunEventEmitter } from './events/emitter';
+import { RunEventEmitter, ENGINE_EVENT, type EngineEventContext } from './events/emitter';
 import { validateDAG } from './dag/validator';
 import { DAGExecutor, StepFailedError, StepDeniedError } from './dag/executor';
 import type { ExecutionEvent } from './events/types';
 import type { StepDefinition } from './dag/types';
+import type { ActionDefinition, ChatActionAvailability } from './actions/types';
 
 interface ActiveEngineRun {
   runId: string;
@@ -176,7 +177,7 @@ export class ExecutionEngine {
     const runPersisted: Promise<unknown> = this.backendRequest('POST', '/engine/runs', {
       id: runId,
       routine_id: request.routineId ?? null,
-      run_type: 'routine',
+      run_type: request.runType ?? 'routine',
       trigger: request.triggerSource ?? 'manual',
       dag_json: JSON.stringify(request.dag),
       total_steps: request.dag.steps.length,
@@ -470,6 +471,202 @@ export class ExecutionEngine {
     return this.eventBuffers.get(runId) ?? [];
   }
 
+  // ── Chat action helpers ──────────────────────────────────────────
+
+  /**
+   * Build the list of chat-exposable action definitions. Reuses the same
+   * factories as `createRegistry`, so channel-bound actions (HubSpot,
+   * Telegram, WhatsApp) read from the live channel singletons. Built on
+   * demand and not cached: availability can change between calls.
+   *
+   * Note: skips actions that need a `WebContents` (e.g. expert_step) — none
+   * of them are chat-exposable today.
+   */
+  private buildChatExposableDefs(): ActionDefinition[] {
+    const defs: ActionDefinition[] = [
+      httpRequestAction,
+      sendNotificationAction,
+      createSendTelegramAction({ getChannel: () => this.telegramChannel }),
+      createSendWhatsAppAction({ getChannel: () => this.whatsAppChannel }),
+      createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }),
+      createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }),
+    ];
+    return defs.filter((d) => d.chatExposable === true);
+  }
+
+  /**
+   * Returns the chat-action catalog the chat skill and Help modal render.
+   * `lang` selects the locale of `label`/`description`/`examples`.
+   */
+  getChatActionCatalog(lang: 'en' | 'es' = 'en'): Array<{
+    type: string;
+    label: string;
+    description: string;
+    examples: string[];
+    availability: ChatActionAvailability;
+    group: string;
+    setupHref?: string;
+    inputSchema: Record<string, unknown>;
+  }> {
+    return this.buildChatExposableDefs().map((def) => ({
+      type: def.type,
+      label: def.chatLabel?.[lang] ?? def.name,
+      description: def.chatDescription?.[lang] ?? def.description,
+      examples: (def.chatExamples ?? []).map((e) => e[lang]),
+      availability: def.availabilityCheck?.() ?? 'available',
+      group: def.chatGroup ?? 'other',
+      setupHref: def.setupHref,
+      inputSchema: def.inputSchema,
+    }));
+  }
+
+  /**
+   * Run a single chat-triggered action through the routine engine. Always
+   * gates on approval (per product decision). Resolves when the underlying
+   * run reaches a terminal state. Long-running by design: the chat subprocess
+   * holds the HTTP connection open until this returns.
+   */
+  async runChatAction(
+    webContents: WebContents,
+    options: {
+      type: string;
+      params: Record<string, unknown>;
+      conversationId?: string;
+    },
+  ): Promise<{
+    status: 'succeeded' | 'failed' | 'denied' | 'cancelled' | 'unavailable';
+    runId?: string;
+    approvalId?: string;
+    summary?: string;
+    data?: Record<string, unknown>;
+    error?: string;
+  }> {
+    const def = this.buildChatExposableDefs().find((d) => d.type === options.type);
+    if (!def) {
+      return { status: 'failed', error: `Unknown chat action: ${options.type}` };
+    }
+    const availability = def.availabilityCheck?.() ?? 'available';
+    if (availability !== 'available') {
+      return { status: 'unavailable', error: `Action "${def.name}" is not connected.` };
+    }
+
+    const stepId = 'step_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+    const dag = {
+      steps: [
+        {
+          id: stepId,
+          name: def.chatLabel?.en ?? def.name,
+          actionType: def.type,
+          params: options.params,
+          dependsOn: [],
+          inputMappings: [],
+          requiresApproval: true,
+          onError: 'fail' as const,
+        },
+      ],
+    };
+
+    let runId: string;
+    try {
+      runId = await this.startRun(webContents, {
+        dag,
+        triggerSource: 'chat',
+        runType: 'chat_action',
+      });
+    } catch (err) {
+      return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
+    }
+
+    return new Promise((resolve) => {
+      let approvalId: string | undefined;
+      let resolved = false;
+
+      const cleanup = () => {
+        if (this.sharedBus) {
+          this.sharedBus.off(ENGINE_EVENT, listener);
+        }
+      };
+
+      const finish = (
+        result: Awaited<ReturnType<ExecutionEngine['runChatAction']>>,
+      ) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve(result);
+      };
+
+      const listener = (event: ExecutionEvent, ctx: EngineEventContext) => {
+        if (ctx.runId !== runId) return;
+        if (event.type === 'approval_requested') {
+          approvalId = event.approvalId;
+          return;
+        }
+        if (event.type === 'run_completed') {
+          // Step output lives on the persisted step record. Fetch it so we can
+          // return structured data (ticket_id, message_id, etc.) to the chat.
+          this.fetchStepOutput(event.runId, stepId)
+            .then((step) => {
+              finish({
+                status: 'succeeded',
+                runId: event.runId,
+                approvalId,
+                summary: step?.summary ?? 'Action completed.',
+                data: step?.data ?? {},
+              });
+            })
+            .catch(() => {
+              finish({ status: 'succeeded', runId: event.runId, approvalId, summary: 'Action completed.' });
+            });
+          return;
+        }
+        if (event.type === 'run_cancelled') {
+          finish({
+            status: 'denied',
+            runId: event.runId,
+            approvalId,
+            error: event.reason ?? 'Action was cancelled.',
+          });
+          return;
+        }
+        if (event.type === 'run_failed') {
+          finish({
+            status: 'failed',
+            runId: event.runId,
+            approvalId,
+            error: event.error,
+          });
+        }
+      };
+
+      if (this.sharedBus) {
+        this.sharedBus.on(ENGINE_EVENT, listener);
+      }
+    });
+  }
+
+  /** Helper for runChatAction — read a step record's output and summary. */
+  private async fetchStepOutput(
+    runId: string,
+    stepId: string,
+  ): Promise<{ data: Record<string, unknown>; summary: string } | null> {
+    const run = await this.backendRequest<{
+      steps?: Array<{ step_id: string; output_json: string | null; summary: string | null }>;
+    }>('GET', `/engine/runs/${runId}`, null);
+    if (!run?.steps) return null;
+    const step = run.steps.find((s) => s.step_id === stepId);
+    if (!step) return null;
+    let data: Record<string, unknown> = {};
+    if (step.output_json) {
+      try {
+        data = JSON.parse(step.output_json) as Record<string, unknown>;
+      } catch {
+        data = {};
+      }
+    }
+    return { data, summary: step.summary ?? '' };
+  }
+
   /** Create an ActionRegistry populated with all built-in actions. */
   private createRegistry(webContents: WebContents): ActionRegistry {
     const registry = new ActionRegistry();
@@ -535,17 +732,20 @@ export class ExecutionEngine {
   /** Fire-and-forget HTTP request to the backend. */
   private backendRequest<T>(method: string, path: string, body: unknown): Promise<T | null> {
     return new Promise((resolve) => {
-      const bodyStr = JSON.stringify(body);
+      const hasBody = body !== null && body !== undefined;
+      const bodyStr = hasBody ? JSON.stringify(body) : '';
+      const headers: Record<string, string> = {};
+      if (hasBody) {
+        headers['Content-Type'] = 'application/json';
+        headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
+      }
       const req = http.request(
         {
           hostname: '127.0.0.1',
           port: this.backendPort,
           path,
           method,
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(bodyStr).toString(),
-          },
+          headers,
           timeout: 10_000,
         },
         (res) => {
@@ -567,7 +767,7 @@ export class ExecutionEngine {
         req.destroy();
         resolve(null);
       });
-      req.write(bodyStr);
+      if (hasBody) req.write(bodyStr);
       req.end();
     });
   }

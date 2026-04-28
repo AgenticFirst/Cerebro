@@ -18,6 +18,13 @@ export type JSONSchema = Record<string, unknown>;
 
 // ── Action Definition ───────────────────────────────────────────
 
+export type ChatActionAvailability = 'available' | 'not_connected' | 'unavailable';
+
+export interface ChatActionExample {
+  en: string;
+  es: string;
+}
+
 export interface ActionDefinition {
   type: string;
   name: string;
@@ -25,6 +32,31 @@ export interface ActionDefinition {
   inputSchema: JSONSchema;
   outputSchema: JSONSchema;
   execute: (input: ActionInput) => Promise<ActionOutput>;
+
+  /**
+   * Chat-exposability metadata. When `chatExposable` is true the action is
+   * surfaced through the `/chat-actions/catalog` endpoint and the main
+   * Cerebro chat can invoke it via the `run-chat-action` skill. Routine
+   * control-flow actions (loop, condition, delay, expert_step, etc.) leave
+   * this undefined and stay routine-only.
+   */
+  chatExposable?: boolean;
+  /** Human-readable label used in the Help modal and chat catalog. */
+  chatLabel?: { en: string; es: string };
+  /** Sentence used to describe the action to the model and the user. */
+  chatDescription?: { en: string; es: string };
+  /** Sample phrasings the user might say in EN or ES. */
+  chatExamples?: ChatActionExample[];
+  /**
+   * Returns whether the action can run right now. Channel-bound actions
+   * (HubSpot/Telegram/WhatsApp) check whether the underlying channel is
+   * connected; provider-free actions always return `'available'`.
+   */
+  availabilityCheck?: () => ChatActionAvailability;
+  /** Optional integration grouping key used for the Help modal layout. */
+  chatGroup?: string;
+  /** Optional setup pointer the UI can deep-link to when not_connected. */
+  setupHref?: string;
 }
 
 // ── Action I/O ──────────────────────────────────────────────────

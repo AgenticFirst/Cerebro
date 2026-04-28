@@ -16,4 +16,7 @@ export interface TelegramChannel {
     text: string,
     parseMode?: 'HTML' | 'MarkdownV2' | 'none',
   ): Promise<{ messageId: number | null; error: string | null }>;
+  /** True if a Telegram bot is currently paired and reachable. Used by the
+   *  chat-actions catalog to decide if Telegram is invokable from chat. */
+  isConnected(): boolean;
 }

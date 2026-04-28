@@ -76,4 +76,8 @@ export interface EngineRunRequest {
    *  Made available to steps as a synthetic '__trigger__' step output, so
    *  inputMappings with sourceStepId='__trigger__' can read individual fields. */
   triggerPayload?: Record<string, unknown>;
+
+  /** Run type tag persisted on the run record. Defaults to 'routine'.
+   *  Chat-triggered single-action runs use 'chat_action'. */
+  runType?: 'routine' | 'preview' | 'ad_hoc' | 'orchestration' | 'task' | 'chat_action';
 }

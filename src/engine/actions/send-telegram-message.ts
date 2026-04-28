@@ -23,6 +23,26 @@ export function createSendTelegramAction(deps: { getChannel: () => TelegramChann
     name: 'Send Telegram Message',
     description: 'Send a message via the Telegram Bot. Allowlist-enforced.',
 
+    chatExposable: true,
+    chatGroup: 'telegram',
+    chatLabel: { en: 'Send Telegram message', es: 'Enviar mensaje de Telegram' },
+    chatDescription: {
+      en: 'Send a Telegram message to a numeric chat id from your Telegram allowlist.',
+      es: 'Envía un mensaje de Telegram a un chat_id numérico que esté en tu lista de Telegram.',
+    },
+    chatExamples: [
+      {
+        en: "Send Pablo a Telegram saying I'm running 10 minutes late.",
+        es: 'Envíale un Telegram a Pablo diciéndole que llegaré 10 minutos tarde.',
+      },
+    ],
+    availabilityCheck: () => {
+      const ch = deps.getChannel();
+      if (!ch) return 'not_connected';
+      return ch.isConnected() ? 'available' : 'not_connected';
+    },
+    setupHref: 'integrations#telegram',
+
     inputSchema: {
       type: 'object',
       properties: {

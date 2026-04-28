@@ -27,6 +27,26 @@ export function createHubSpotUpsertContactAction(deps: {
     name: 'HubSpot: Upsert Contact',
     description: 'Find a HubSpot contact by email or phone, create if missing. Returns contact_id.',
 
+    chatExposable: true,
+    chatGroup: 'hubspot',
+    chatLabel: { en: 'Add or update HubSpot contact', es: 'Crear o actualizar contacto de HubSpot' },
+    chatDescription: {
+      en: 'Find a HubSpot contact by email or phone, update them if they exist or create them otherwise.',
+      es: 'Busca un contacto de HubSpot por correo o teléfono; lo actualiza si existe, lo crea si no.',
+    },
+    chatExamples: [
+      {
+        en: 'Add Maria Lopez (maria@example.com) to HubSpot.',
+        es: 'Agrega a María López (maria@example.com) a HubSpot.',
+      },
+    ],
+    availabilityCheck: () => {
+      const ch = deps.getChannel();
+      if (!ch) return 'not_connected';
+      return ch.isConnected() ? 'available' : 'not_connected';
+    },
+    setupHref: 'integrations#hubspot',
+
     inputSchema: {
       type: 'object',
       properties: {

@@ -15,4 +15,8 @@ export interface WhatsAppChannel {
     phoneOrJid: string,
     text: string,
   ): Promise<{ messageId: string | null; error: string | null }>;
+  /** True if a WhatsApp account is currently paired (Baileys session is
+   *  authenticated). Used by the chat-actions catalog to decide if WhatsApp
+   *  actions are invokable from chat. */
+  isConnected(): boolean;
 }
