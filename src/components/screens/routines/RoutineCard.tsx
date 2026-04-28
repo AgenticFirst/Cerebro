@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Hand, Clock, Webhook, Trash2 } from 'lucide-react';
+import { Play, Hand, Clock, Webhook, Trash2, AlertTriangle, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 import type { Routine } from '../../../types/routines';
+import type { DAGDefinition } from '../../../engine/dag/types';
 import Toggle from '../../ui/Toggle';
 import Tooltip, { TooltipCard } from '../../ui/Tooltip';
 import { describeCron } from '../../../utils/cron-helpers';
+import { validateDagParams } from '../../../utils/step-validation';
+import { useExperts } from '../../../context/ExpertContext';
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -48,8 +51,20 @@ export default function RoutineCard({
 }: RoutineCardProps) {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
+  const [showIssues, setShowIssues] = useState(false);
+  const { experts } = useExperts();
   const trigger = TRIGGER_META[routine.triggerType] ?? TRIGGER_META.manual;
   const TriggerIcon = trigger.icon;
+
+  // Pre-flight validation issues, computed at render time. We skip the
+  // HubSpot connection check here (it requires an async IPC) — the full
+  // check still runs in RoutineContext.runRoutine on click.
+  const issues = useMemo(() => {
+    if (!routine.dagJson) return [];
+    let dag: DAGDefinition;
+    try { dag = JSON.parse(routine.dagJson); } catch { return []; }
+    return validateDagParams(dag, { experts: experts.map((e) => ({ id: e.id })) });
+  }, [routine.dagJson, experts]);
 
   const triggerTooltip =
     routine.triggerType === 'cron' && routine.cronExpression
@@ -152,6 +167,49 @@ export default function RoutineCard({
           </div>
         </div>
 
+        {/* Validation warning — fires before the user clicks Run */}
+        {issues.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-amber-500/15">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowIssues((v) => !v);
+              }}
+              className="w-full flex items-center gap-1.5 text-[11px] text-amber-300/90 hover:text-amber-200 transition-colors"
+            >
+              <AlertTriangle size={12} className="flex-shrink-0" />
+              <span className="font-medium">
+                {t(issues.length === 1 ? 'routines.issuesOne' : 'routines.issuesOther', { count: issues.length })}
+              </span>
+              <ChevronDown
+                size={11}
+                className={clsx('ml-auto transition-transform duration-150', showIssues && 'rotate-180')}
+              />
+            </button>
+            {showIssues && (
+              <ul className="mt-2 ml-1 space-y-1">
+                {issues.map((issue, i) => (
+                  <li
+                    key={`${issue.stepId}-${issue.field}-${i}`}
+                    className="flex items-start gap-2 text-[11px] text-amber-200/80 leading-relaxed"
+                  >
+                    <span className="text-amber-400/60 mt-0.5">•</span>
+                    <span>{issue.message}</span>
+                  </li>
+                ))}
+                <li>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onClick(); }}
+                    className="mt-1 text-[11px] text-accent hover:text-accent-hover font-medium transition-colors"
+                  >
+                    {t('routines.issueOpenEditor')} →
+                  </button>
+                </li>
+              </ul>
+            )}
+          </div>
+        )}
+
         {/* Footer row */}
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-border-subtle">
           <div className="flex items-center gap-3 text-[11px] text-text-tertiary">
@@ -176,7 +234,13 @@ export default function RoutineCard({
                 onRun();
               }}
               disabled={!routine.isEnabled || !routine.dagJson}
-              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-accent hover:text-accent-hover disabled:text-text-tertiary disabled:cursor-not-allowed rounded transition-colors"
+              className={clsx(
+                'flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded transition-colors',
+                'disabled:text-text-tertiary disabled:cursor-not-allowed',
+                issues.length > 0
+                  ? 'text-amber-400/80 hover:text-amber-300'
+                  : 'text-accent hover:text-accent-hover',
+              )}
             >
               <Play size={11} />
               {t('routines.runNow')}

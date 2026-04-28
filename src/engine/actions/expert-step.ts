@@ -76,18 +76,33 @@ export function createExpertStepAction(deps: ExpertStepContext): ActionDefinitio
       const { context } = input;
       const { agentRuntime, webContents } = deps;
 
+      // Fast-fail on missing required inputs. Without this check, the agent
+      // subprocess would launch and silently wait for input that never
+      // arrives — burning the full step timeout (5 min) for a trivially
+      // misconfigured step.
+      if (!params.prompt?.trim()) {
+        throw new Error(
+          'Run Expert: prompt is empty. Open the routine editor and write what you want the expert to do.',
+        );
+      }
+
+      // Empty-string expertId means "no expert selected" — fall back to the
+      // global Cerebro agent. The `?? null` form would have left an empty
+      // string here, which the runtime cannot resolve.
+      const expertId = params.expertId?.trim() || null;
+
       // Build the prompt with optional additional context
       const fullPrompt = params.additionalContext
         ? `${params.additionalContext}\n\n${params.prompt}`
         : params.prompt;
 
       // Start the agent run
-      context.log(`Starting expert step${params.expertId ? ` (expert: ${params.expertId})` : ''}...`);
+      context.log(`Starting expert step${expertId ? ` (expert: ${expertId})` : ' (global Cerebro)'}...`);
 
       const agentRunId = await agentRuntime.startRun(webContents, {
         conversationId: `engine-run:${context.runId}`,
         content: fullPrompt,
-        expertId: params.expertId ?? null,
+        expertId,
         model: params.model?.trim() || undefined,
       });
 

@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { X, Loader2, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import type { RunRecord, EventRecord, RunListResponse } from './types';
-import { formatDuration, formatTimestamp, STATUS_CONFIG } from './helpers';
+import { formatDuration, formatTimestamp, humanizeRunError, STATUS_CONFIG } from './helpers';
 import StatusDot from './StatusDot';
 import StepTimeline from './StepTimeline';
 import EventLog from './EventLog';
+import RunLogs from './RunLogs';
 
 // ── Section helper ─────────���────────────────────────────────────
 
@@ -23,7 +24,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 
 // ── Tabs ──────────────���─────────────────────────────────────────
 
-type Tab = 'steps' | 'events' | 'children';
+type Tab = 'steps' | 'events' | 'children' | 'logs';
 
 // ── Component ───────��──────────────────────────────────────────
 
@@ -100,6 +101,7 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
     { key: 'steps', label: t('activity.tabSteps'), show: true },
     { key: 'events', label: t('activity.tabEvents'), show: true },
     { key: 'children', label: t('activity.tabChildren'), show: hasChildren },
+    { key: 'logs', label: t('activity.tabLogs'), show: true },
   ];
 
   return (
@@ -169,7 +171,9 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
                 </div>
                 {run.status === 'failed' && run.error && (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5">
-                    <p className="text-[11px] text-red-400 leading-relaxed">{run.error}</p>
+                    <p className="text-[11px] text-red-400 leading-relaxed">
+                      {humanizeRunError(run.error, run.steps) ?? run.error}
+                    </p>
                   </div>
                 )}
               </div>
@@ -195,7 +199,14 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
 
             {/* Tab content */}
             {activeTab === 'steps' && (
-              <StepTimeline steps={run.steps ?? []} events={events} />
+              <StepTimeline
+                steps={run.steps ?? []}
+                events={events}
+                onOpenLogs={() => setActiveTab('logs')}
+              />
+            )}
+            {activeTab === 'logs' && (
+              <RunLogs run={run} events={events} />
             )}
             {activeTab === 'events' && (
               <EventLog events={events} />

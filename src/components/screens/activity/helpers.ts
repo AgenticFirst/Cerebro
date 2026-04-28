@@ -1,6 +1,7 @@
 // ── Activity screen helpers ─────────────────────────────────────
 
 import type { TFunction } from 'i18next';
+import type { StepRecord } from './types';
 
 export function timeAgo(dateStr: string | null, t: TFunction): string {
   if (!dateStr) return t('timeAgo.never');
@@ -68,3 +69,32 @@ export const STATUS_CONFIG: Record<string, StatusStyle> = {
   cancelled: { dot: 'bg-zinc-500',   text: 'text-text-tertiary' },
   created:   { dot: 'bg-zinc-500',   text: 'text-text-tertiary' },
 };
+
+// ── Error humanizer ──────────────────────────────────────────────
+
+/**
+ * Engine-emitted run errors look like `Step "<uuid>" timed out after 300000ms`.
+ * Surface the step's user-facing name + a friendly duration so the user can
+ * tell which step blew up without cross-referencing UUIDs.
+ *
+ * Falls back to the original string when we can't find a matching step.
+ */
+export function humanizeRunError(
+  error: string | null,
+  steps: StepRecord[] | null,
+): string | null {
+  if (!error) return error;
+  const match = error.match(/Step\s+"([0-9a-f-]{8,})"\s+(.+)$/i);
+  if (!match) return error;
+  const [, uuid, rest] = match;
+  const step = steps?.find((s) => s.step_id === uuid);
+  if (!step) return error;
+  const friendlyRest = rest.replace(/timed out after (\d+)ms/i, (_, ms) => {
+    const n = Number(ms);
+    if (!isFinite(n)) return `timed out after ${ms}ms`;
+    if (n >= 60000) return `timed out after ${Math.round(n / 60000)} min`;
+    if (n >= 1000) return `timed out after ${Math.round(n / 1000)}s`;
+    return `timed out after ${n}ms`;
+  });
+  return `Step "${step.step_name}" ${friendlyRest}`;
+}

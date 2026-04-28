@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, XCircle, Loader2, SkipForward, Clock, ChevronRight, ShieldCheck, ShieldX } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, SkipForward, Clock, ChevronRight, ShieldCheck, ShieldX, FileText } from 'lucide-react';
 import clsx from 'clsx';
 import type { StepRecord, EventRecord } from './types';
 import { formatDuration, formatTimestamp, formatEventTime } from './helpers';
+import JsonSection from './JsonSection';
 
 function StepIcon({ status }: { status: string }) {
   switch (status) {
@@ -19,42 +20,6 @@ function StepIcon({ status }: { status: string }) {
       return <Clock size={12} className="text-zinc-400" />;
   }
 }
-
-// ── Collapsible JSON section ───────────────────────────────────
-
-function JsonSection({ label, json }: { label: string; json: string | null }) {
-  const [open, setOpen] = useState(false);
-  if (!json) return null;
-
-  let formatted: string;
-  try {
-    formatted = JSON.stringify(JSON.parse(json), null, 2);
-  } catch {
-    formatted = json;
-  }
-
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-[10px] font-medium text-text-tertiary hover:text-text-secondary transition-colors"
-      >
-        <ChevronRight
-          size={10}
-          className={clsx('transition-transform duration-150', open && 'rotate-90')}
-        />
-        {label}
-      </button>
-      {open && (
-        <pre className="bg-bg-base rounded-md px-2.5 py-2 font-mono text-[10px] text-text-secondary mt-1 max-h-[200px] overflow-auto scrollbar-thin whitespace-pre-wrap break-all">
-          {formatted}
-        </pre>
-      )}
-    </div>
-  );
-}
-
-// ── Step logs helper ───────────────────────────────────────────
 
 interface StepLog {
   message: string;
@@ -77,18 +42,46 @@ function buildStepLogs(events: EventRecord[]): Map<string, StepLog[]> {
   return map;
 }
 
-// ── Component ──────────────────────────────────────────────────
-
 interface StepTimelineProps {
   steps: StepRecord[];
   events?: EventRecord[];
+  onOpenLogs?: () => void;
 }
 
-export default function StepTimeline({ steps, events = [] }: StepTimelineProps) {
+export default function StepTimeline({ steps, events = [], onOpenLogs }: StepTimelineProps) {
   const { t } = useTranslation();
   const sorted = useMemo(() => [...steps].sort((a, b) => a.order_index - b.order_index), [steps]);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const stepLogs = useMemo(() => buildStepLogs(events), [events]);
+
+  // Auto-expand any failed/running steps so the user doesn't have to hunt
+  // for the row that broke. Multiple failed steps can be open at once.
+  const initialExpanded = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of sorted) {
+      if (s.status === 'failed' || s.status === 'running') set.add(s.id);
+    }
+    return set;
+  }, [sorted]);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(initialExpanded);
+
+  // Re-sync auto-expansion when the underlying step set changes (e.g., live
+  // poll updates while a run is in flight).
+  useEffect(() => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of initialExpanded) next.add(id);
+      return next;
+    });
+  }, [initialExpanded]);
+
+  const toggle = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   if (sorted.length === 0) {
     return <p className="text-xs text-text-tertiary">{t('activity.noStepsRecorded')}</p>;
@@ -97,26 +90,28 @@ export default function StepTimeline({ steps, events = [] }: StepTimelineProps) 
   return (
     <div className="space-y-1">
       {sorted.map((step, i) => {
-        const isExpanded = expandedId === step.id;
+        const isExpanded = expandedIds.has(step.id);
         const logs = stepLogs.get(step.step_id) ?? [];
+        const isFailed = step.status === 'failed';
 
         return (
           <div
             key={step.id}
-            className="animate-step-in"
+            className={clsx(
+              'animate-step-in rounded-md',
+              isFailed && 'bg-red-500/[0.03] border border-red-500/15 px-1',
+            )}
             style={{ animationDelay: `${i * 50}ms` }}
           >
             {/* Collapsed row — clickable */}
             <button
-              onClick={() => setExpandedId(isExpanded ? null : step.id)}
+              onClick={() => toggle(step.id)}
               className="w-full flex items-start gap-2.5 py-2 text-left hover:bg-bg-hover/50 rounded-md px-1 -mx-1 transition-colors"
             >
-              {/* Step number */}
               <span className="w-4 text-right text-[10px] tabular-nums text-text-tertiary pt-px flex-shrink-0">
                 {i + 1}
               </span>
 
-              {/* Expand chevron */}
               <ChevronRight
                 size={12}
                 className={clsx(
@@ -125,15 +120,21 @@ export default function StepTimeline({ steps, events = [] }: StepTimelineProps) 
                 )}
               />
 
-              {/* Icon */}
               <div className="pt-px flex-shrink-0">
                 <StepIcon status={step.status} />
               </div>
 
-              {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-text-primary truncate">{step.step_name}</span>
+                  <span className={clsx(
+                    'text-xs truncate',
+                    isFailed ? 'text-text-primary font-medium' : 'text-text-primary',
+                  )}>
+                    {step.step_name}
+                  </span>
+                  <span className="inline-block bg-bg-elevated text-text-tertiary border border-border-subtle text-[9px] rounded px-1 py-0.5 flex-shrink-0">
+                    {step.action_type}
+                  </span>
                   {step.approval_id && step.approval_status && (
                     <span className={clsx(
                       'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium flex-shrink-0',
@@ -143,11 +144,11 @@ export default function StepTimeline({ steps, events = [] }: StepTimelineProps) 
                       {step.approval_status === 'approved' ? 'Approved' : 'Denied'}
                     </span>
                   )}
-                  <span className="text-[10px] tabular-nums text-text-tertiary flex-shrink-0">
+                  <span className="text-[10px] tabular-nums text-text-tertiary flex-shrink-0 ml-auto">
                     {formatDuration(step.duration_ms)}
                   </span>
                 </div>
-                {!isExpanded && step.summary && (
+                {!isExpanded && step.summary && !isFailed && (
                   <p className="text-[11px] text-text-secondary mt-0.5 line-clamp-2 italic">
                     &ldquo;{step.summary}&rdquo;
                   </p>
@@ -160,13 +161,27 @@ export default function StepTimeline({ steps, events = [] }: StepTimelineProps) 
               </div>
             </button>
 
-            {/* Expanded detail */}
+            {/* Expanded detail — error block first when failed */}
             {isExpanded && (
               <div className="ml-[26px] space-y-2.5 pb-2">
-                {/* Action type badge */}
-                <span className="inline-block bg-bg-elevated text-text-tertiary border border-border-subtle text-[10px] rounded px-1.5 py-0.5">
-                  {step.action_type}
-                </span>
+                {/* Error block — surfaced first so the cause is the
+                    first thing readers see, not last. */}
+                {step.error && (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 space-y-2">
+                    <p className="text-[11px] text-red-400 leading-relaxed whitespace-pre-wrap break-all">
+                      {step.error}
+                    </p>
+                    {onOpenLogs && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onOpenLogs(); }}
+                        className="inline-flex items-center gap-1 text-[10px] font-medium text-accent hover:text-accent-hover transition-colors"
+                      >
+                        <FileText size={10} />
+                        {t('activity.openInLogs')}
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* Timestamps */}
                 <div className="space-y-0.5 text-[11px] text-text-tertiary">
@@ -197,16 +212,10 @@ export default function StepTimeline({ steps, events = [] }: StepTimelineProps) 
                   </div>
                 )}
 
-                {/* Input / Output JSON */}
-                <JsonSection label="Input" json={step.input_json} />
+                {/* Input / Output JSON — auto-open input on failed steps so
+                    the user can see exactly what config the engine had. */}
+                <JsonSection label="Input" json={step.input_json} defaultOpen={isFailed} />
                 <JsonSection label="Output" json={step.output_json} />
-
-                {/* Error */}
-                {step.error && (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5">
-                    <p className="text-[11px] text-red-400 leading-relaxed">{step.error}</p>
-                  </div>
-                )}
               </div>
             )}
           </div>

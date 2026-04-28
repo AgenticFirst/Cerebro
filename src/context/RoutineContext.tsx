@@ -11,8 +11,9 @@ import type { BackendResponse } from '../types/ipc';
 import type { Routine, ApiRoutine, CreateRoutineInput } from '../types/routines';
 import type { DAGDefinition } from '../engine/dag/types';
 import { toRoutine, toApiBody } from '../types/routines';
-import { validateDagParams } from '../utils/step-validation';
+import { validateDagParams, type ValidationContext } from '../utils/step-validation';
 import { useToast } from './ToastContext';
+import { useExperts } from './ExpertContext';
 
 // ── Context ────────────────────────────────────────────────────
 
@@ -51,6 +52,9 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
   const routinesRef = useRef<Routine[]>(routines);
   routinesRef.current = routines;
   const { addToast } = useToast();
+  const { experts } = useExperts();
+  const expertsRef = useRef(experts);
+  expertsRef.current = experts;
 
   const registerRunCallback = useCallback((cb: RunRoutineCallback) => {
     runCallbackRef.current = cb;
@@ -172,11 +176,33 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const issues = validateDagParams(dag);
+    // Build live-resource context. HubSpot status is only checked when the
+    // DAG actually contains a HubSpot step — avoid spamming the IPC otherwise.
+    const usesHubspot = dag.steps.some((s) =>
+      s.actionType === 'hubspot_create_ticket' || s.actionType === 'hubspot_upsert_contact',
+    );
+    const validationCtx: ValidationContext = {
+      experts: expertsRef.current.map((e) => ({ id: e.id })),
+    };
+    if (usesHubspot) {
+      try {
+        const status = await window.cerebro.hubspot.status();
+        validationCtx.hubspotConnected = status.hasToken;
+      } catch {
+        // If we can't tell, don't block the run on this check alone.
+      }
+    }
+
+    const issues = validateDagParams(dag, validationCtx);
     if (issues.length > 0) {
-      const summary = issues.length === 1
-        ? issues[0].message
-        : `${issues.length} steps need attention: ${issues.map((i) => i.stepName).join(', ')}`;
+      let summary: string;
+      if (issues.length === 1) {
+        summary = issues[0].message;
+      } else if (issues.length <= 3) {
+        summary = issues.map((i) => i.message).join('; ');
+      } else {
+        summary = `${issues.length} steps need attention: ${issues.map((i) => i.stepName).join(', ')}`;
+      }
       addToast(`Can't run "${routine.name}" — ${summary}`, 'error');
       return;
     }
