@@ -50,4 +50,13 @@ export interface ActionContext {
   signal: AbortSignal;
   log: (message: string) => void;
   emitEvent: (event: import('../events/types').ExecutionEvent) => void;
+  /**
+   * Read-only access to the full DAG this step is part of. Used by
+   * `run_expert` to inject routine-shape context into the agent's
+   * prompt (so an expert running as step 1 of a 2-step routine knows
+   * step 2 will create the HubSpot ticket and shouldn't try to call
+   * the HubSpot API itself). Optional: PTY-only or telemetry-style
+   * actions that don't need the surrounding workflow can ignore it.
+   */
+  dag?: import('../dag/types').DAGDefinition;
 }

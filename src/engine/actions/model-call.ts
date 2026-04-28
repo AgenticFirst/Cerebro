@@ -16,6 +16,7 @@
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { singleShotClaudeCode } from '../../claude-code/single-shot';
 import { renderTemplate } from './utils/template';
+import { buildRoutineContext } from './routine-context';
 
 interface AskAiParams {
   prompt: string;
@@ -76,9 +77,23 @@ export const askAiAction: ActionDefinition = {
       throw new Error('Ask AI: prompt is empty. Enter an instruction or wire one in from an upstream step.');
     }
 
-    const fullPrompt = systemPrompt
-      ? `${systemPrompt}\n\n---\n\n${prompt}`
-      : prompt;
+    // Routine-shape preface. Same logic as run_expert: if this Ask AI
+    // step lives inside a multi-step DAG, tell the model where it sits
+    // and what downstream steps will do — so it produces the deliverable
+    // they need instead of trying to perform their work itself.
+    const routinePreface = context.dag
+      ? buildRoutineContext(context.dag, context.stepId)
+      : '';
+
+    // Final prompt: [workflow context] + [system_prompt] + [user prompt].
+    const fullPrompt = [
+      routinePreface,
+      systemPrompt,
+      prompt,
+    ]
+      .map((s) => (s ?? '').trim())
+      .filter((s) => s.length > 0)
+      .join('\n\n---\n\n');
 
     const response = await singleShotClaudeCode({
       agent: params.agent?.trim() || 'cerebro',

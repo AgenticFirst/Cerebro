@@ -10,6 +10,7 @@ import type { WebContents } from 'electron';
 import type { AgentRuntime } from '../../agents/runtime';
 import type { RendererAgentEvent } from '../../agents/types';
 import type { ActionDefinition, ActionInput, ActionOutput, ExecutionEvent } from './types';
+import { buildRoutineContext } from './routine-context';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -91,10 +92,20 @@ export function createExpertStepAction(deps: ExpertStepContext): ActionDefinitio
       // string here, which the runtime cannot resolve.
       const expertId = params.expertId?.trim() || null;
 
-      // Build the prompt with optional additional context
-      const fullPrompt = params.additionalContext
-        ? `${params.additionalContext}\n\n${params.prompt}`
-        : params.prompt;
+      // Routine-shape context. Tells the expert "you are step 1 of 2,
+      // step 2 will create the HubSpot ticket using your output, the
+      // integration is already wired" — so it produces a draft instead
+      // of asking for an API token. Empty string for trivial single-step
+      // routines, in which case prompt assembly is unchanged.
+      const routinePreface = context.dag
+        ? buildRoutineContext(context.dag, context.stepId)
+        : '';
+
+      // Final prompt: [workflow context] + [user-supplied additional context] + [user prompt].
+      const fullPrompt = [routinePreface, params.additionalContext, params.prompt]
+        .map((s) => (s ?? '').trim())
+        .filter((s) => s.length > 0)
+        .join('\n\n');
 
       // Start the agent run
       context.log(`Starting expert step${expertId ? ` (expert: ${expertId})` : ' (global Cerebro)'}...`);
