@@ -37,6 +37,14 @@ import { runClaudeCodeAction } from './actions/run-claude-code';
 import { waitForWebhookAction } from './actions/wait-for-webhook';
 import { runScriptAction } from './actions/run-script';
 import { createSendTelegramAction } from './actions/send-telegram-message';
+import {
+  createSendTelegramMediaActions,
+  createSendTelegramLocationAction,
+} from './actions/send-telegram-media';
+import {
+  createSendWhatsAppMediaActions,
+  createSendWhatsAppLocationAction,
+} from './actions/send-whatsapp-media';
 import type { TelegramChannel } from './actions/telegram-channel';
 import { createSendWhatsAppAction } from './actions/send-whatsapp-message';
 import type { WhatsAppChannel } from './actions/whatsapp-channel';
@@ -496,7 +504,17 @@ export class ExecutionEngine {
       httpRequestAction,
       sendNotificationAction,
       createSendTelegramAction({ getChannel: () => this.telegramChannel }),
+      ...createSendTelegramMediaActions({
+        getChannel: () => this.telegramChannel,
+        backendPort: () => this.backendPort,
+      }),
+      createSendTelegramLocationAction({ getChannel: () => this.telegramChannel }),
       createSendWhatsAppAction({ getChannel: () => this.whatsAppChannel }),
+      ...createSendWhatsAppMediaActions({
+        getChannel: () => this.whatsAppChannel,
+        backendPort: () => this.backendPort,
+      }),
+      createSendWhatsAppLocationAction({ getChannel: () => this.whatsAppChannel }),
       createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }),
       createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }),
     ];
@@ -862,7 +880,21 @@ export class ExecutionEngine {
     // after registry construction still works, and so each run picks up the
     // currently-bound bridge instance.
     registry.register(createSendTelegramAction({ getChannel: () => this.telegramChannel }));
+    for (const action of createSendTelegramMediaActions({
+      getChannel: () => this.telegramChannel,
+      backendPort: () => this.backendPort,
+    })) {
+      registry.register(action);
+    }
+    registry.register(createSendTelegramLocationAction({ getChannel: () => this.telegramChannel }));
     registry.register(createSendWhatsAppAction({ getChannel: () => this.whatsAppChannel }));
+    for (const action of createSendWhatsAppMediaActions({
+      getChannel: () => this.whatsAppChannel,
+      backendPort: () => this.backendPort,
+    })) {
+      registry.register(action);
+    }
+    registry.register(createSendWhatsAppLocationAction({ getChannel: () => this.whatsAppChannel }));
 
     // HubSpot (outbound only)
     registry.register(createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }));

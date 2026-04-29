@@ -6,7 +6,8 @@
  */
 
 import { Readable } from 'node:stream';
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream, statSync } from 'node:fs';
+import { basename } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import type {
   TelegramApiEnvelope,
@@ -119,6 +120,96 @@ export class TelegramApi {
 
   async getFile(fileId: string): Promise<TelegramFile> {
     return this.call('getFile', { file_id: fileId });
+  }
+
+  // ── Outbound media ────────────────────────────────────────────
+  // All media sends use multipart/form-data so we can stream the file from
+  // disk rather than base64-blob it through JSON. Telegram caps photos at
+  // 10 MB and other files at 50 MB.
+
+  async sendPhoto(chatId: number | string, filePath: string, caption?: string): Promise<TelegramSentMessage> {
+    return this.callMultipart('sendPhoto', chatId, 'photo', filePath, caption);
+  }
+
+  async sendDocument(chatId: number | string, filePath: string, caption?: string): Promise<TelegramSentMessage> {
+    return this.callMultipart('sendDocument', chatId, 'document', filePath, caption);
+  }
+
+  async sendAudio(chatId: number | string, filePath: string, caption?: string): Promise<TelegramSentMessage> {
+    return this.callMultipart('sendAudio', chatId, 'audio', filePath, caption);
+  }
+
+  async sendVideo(chatId: number | string, filePath: string, caption?: string): Promise<TelegramSentMessage> {
+    return this.callMultipart('sendVideo', chatId, 'video', filePath, caption);
+  }
+
+  /** Voice notes — single OGG opus file, displayed inline as a waveform. */
+  async sendVoice(chatId: number | string, filePath: string, caption?: string): Promise<TelegramSentMessage> {
+    return this.callMultipart('sendVoice', chatId, 'voice', filePath, caption);
+  }
+
+  async sendSticker(chatId: number | string, filePath: string): Promise<TelegramSentMessage> {
+    return this.callMultipart('sendSticker', chatId, 'sticker', filePath);
+  }
+
+  /** Static location pin (no live tracking). */
+  async sendLocation(
+    chatId: number | string,
+    latitude: number,
+    longitude: number,
+  ): Promise<TelegramSentMessage> {
+    return this.call('sendLocation', { chat_id: chatId, latitude, longitude });
+  }
+
+  /** Multipart upload helper. We use Web standard FormData + a Blob built from
+   * the file bytes; Node 20+'s `fetch` accepts both natively. Streaming would
+   * be ideal for huge files, but Telegram's Bot API caps at 50 MB and the
+   * memory footprint stays predictable. */
+  private async callMultipart(
+    method: string,
+    chatId: number | string,
+    field: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<TelegramSentMessage> {
+    const url = `${BASE}/bot${this.token}/${method}`;
+    const stat = statSync(filePath);
+    if (stat.size > 50 * 1024 * 1024) {
+      throw new TelegramApiError(method, 413, `file too large for Telegram (${stat.size} bytes; cap is 50 MB)`);
+    }
+
+    // Build a Blob from the file bytes. We read fully into memory because
+    // Web FormData doesn't accept Node streams in older runtimes.
+    const buf = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const s = createReadStream(filePath);
+      s.on('data', (c: string | Buffer) => chunks.push(typeof c === 'string' ? Buffer.from(c) : c));
+      s.on('end', () => resolve(Buffer.concat(chunks)));
+      s.on('error', reject);
+    });
+
+    const form = new FormData();
+    form.append('chat_id', String(chatId));
+    if (caption) form.append('caption', caption);
+    form.append(field, new Blob([buf as unknown as ArrayBuffer]), basename(filePath));
+
+    let res: Response;
+    try {
+      res = await fetch(url, { method: 'POST', body: form });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new TelegramApiError(method, null, scrubTokenish(msg));
+    }
+    let json: TelegramApiEnvelope<TelegramSentMessage>;
+    try {
+      json = (await res.json()) as TelegramApiEnvelope<TelegramSentMessage>;
+    } catch {
+      throw new TelegramApiError(method, res.status, `non-JSON response (${res.status})`);
+    }
+    if (!json.ok || json.result === undefined) {
+      throw new TelegramApiError(method, json.error_code ?? res.status, json.description ?? 'unknown error');
+    }
+    return json.result;
   }
 
   /** Download a file identified by `file_path` (returned from getFile) to `destPath`. */

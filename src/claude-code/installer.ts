@@ -222,14 +222,16 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`create-expert\` — create a new expert (a persistent specialist persona the user will talk to repeatedly) when the user describes a recurring need that no current expert covers. First confirm the proposed name, description, and system prompt with the user, then invoke.
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
-- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram or WhatsApp message, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
+- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram or WhatsApp **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
 - \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, HubSpot, WhatsApp, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
 - \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
 - \`summarize-conversation\` — used by routines.
 
 ## Integration actions
 
-When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "crea un ticket de HubSpot sobre X", "avísame en 30 minutos", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
+When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "mándale el manual en PDF", "avísame en 30 minutos", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
+
+When sending media, prefer \`file_item_id\` (referencing a file Cerebro already has — e.g., one a previous step generated and registered). Use \`file_path\` only as an escape hatch for an absolute path Cerebro just wrote to disk.
 
 ## Connecting integrations
 
@@ -319,7 +321,65 @@ ${coordinatorBlock}
 `;
 }
 
-function buildExpertBody(expert: ExpertData, memoryDir: string, skills: SkillData[] = []): string {
+/** Per-file cap on injected context (chars). Reference docs ride EVERY chat
+ * turn's system prompt, so we cap lower than the per-attachment cap on
+ * one-shot uploads (60k) to keep total context predictable. */
+const MAX_CONTEXT_FILE_CHARS_PER_FILE = 40_000;
+/** Aggregate cap across all reference docs for one expert. */
+const MAX_CONTEXT_FILE_TOTAL_CHARS = 120_000;
+
+function renderExpertContextSection(
+  contextFiles: ContextFileData[] = [],
+): string {
+  if (contextFiles.length === 0) return '';
+
+  const blocks: string[] = [];
+  let totalChars = 0;
+  for (const cf of contextFiles) {
+    let body = '';
+    let footer = '';
+    if (cf.parsed_text_path && fs.existsSync(cf.parsed_text_path)) {
+      try {
+        body = fs.readFileSync(cf.parsed_text_path, 'utf-8');
+      } catch {
+        body = '';
+      }
+    }
+    if (!body) {
+      // Image / text-passthrough / parse-failed: surface the file path so the
+      // expert can Read it on its own (safe for images and plain text).
+      body = `(File preserved at \`${cf.file_storage_path}\`. Use the Read tool only for text/image formats — never on binary office docs.)`;
+    } else {
+      if (body.length > MAX_CONTEXT_FILE_CHARS_PER_FILE) {
+        body = body.slice(0, MAX_CONTEXT_FILE_CHARS_PER_FILE)
+          + `\n\n[truncated — original was ${body.length} chars; raise expert.token_budget or split the file]`;
+      }
+      if (totalChars + body.length > MAX_CONTEXT_FILE_TOTAL_CHARS) {
+        footer = `\n\n[remaining reference files omitted — aggregate context cap of ${MAX_CONTEXT_FILE_TOTAL_CHARS} chars reached]`;
+        blocks.push(footer);
+        break;
+      }
+      totalChars += body.length;
+    }
+    const kindLabel = cf.kind === 'template' ? ' (TEMPLATE — always follow this format)' : '';
+    blocks.push(`### ${cf.file_name}${kindLabel}\n\n${body.trim()}`);
+  }
+
+  return (
+    '\n## Reference documents\n\n'
+    + 'These files were attached by the user as permanent reference for every turn. '
+    + 'Use them as authoritative context. When a file is marked TEMPLATE, your output MUST follow its structure (headings, sections, formatting) exactly.\n\n'
+    + blocks.join('\n\n')
+    + '\n'
+  );
+}
+
+function buildExpertBody(
+  expert: ExpertData,
+  memoryDir: string,
+  skills: SkillData[] = [],
+  contextFiles: ContextFileData[] = [],
+): string {
   const domainLine = expert.domain ? ` Domain: ${expert.domain}.` : '';
   let body = `You are **${expert.name}**, a Cerebro specialist expert.${domainLine}
 
@@ -332,6 +392,8 @@ ${turnProtocol(memoryDir)}
       body += `### ${skill.name}\n\n${skill.instructions.trimEnd()}\n\n`;
     }
   }
+
+  body += renderExpertContextSection(contextFiles);
 
   return body;
 }
@@ -1348,6 +1410,27 @@ async function fetchExpertSkills(
     .map((s) => s.skill);
 }
 
+interface ContextFileData {
+  id: string;
+  file_name: string;
+  file_ext: string;
+  kind: string;
+  parsed_text_path: string | null;
+  file_storage_path: string;
+  truncated: boolean;
+}
+
+async function fetchExpertContextFiles(
+  backendPort: number,
+  expertId: string,
+): Promise<ContextFileData[]> {
+  const result = await fetchJson<ContextFileData[]>(
+    backendPort,
+    `/experts/${expertId}/context-files`,
+  );
+  return result ?? [];
+}
+
 // ── Public API ───────────────────────────────────────────────────
 
 export interface InstallerOptions {
@@ -1408,10 +1491,17 @@ export async function installAll(options: InstallerOptions): Promise<void> {
   const regulars = experts.filter((e) => (e.type ?? 'expert') !== 'team');
   const teams = experts.filter((e) => e.type === 'team');
 
-  // Fetch skills only for regular experts (teams don't carry skills).
-  const regularSkillSets = await Promise.all(
-    regulars.map((expert) => fetchExpertSkills(options.backendPort, expert.id)),
-  );
+  // Fetch skills + context files for each regular expert (teams don't carry either).
+  const [regularSkillSets, regularContextSets] = await Promise.all([
+    Promise.all(
+      regulars.map((expert) => fetchExpertSkills(options.backendPort, expert.id)),
+    ),
+    Promise.all(
+      regulars.map((expert) =>
+        fetchExpertContextFiles(options.backendPort, expert.id),
+      ),
+    ),
+  ]);
 
   const agentNameById: Record<string, string> = {};
   const memberNamesById: Record<string, string> = {};
@@ -1420,7 +1510,13 @@ export async function installAll(options: InstallerOptions): Promise<void> {
     const expert = regulars[i];
     const agentName = expertAgentName(expert.id, expert.name);
     seen.add(agentName);
-    writeExpertAgent(paths, expert, agentName, regularSkillSets[i]);
+    writeExpertAgent(
+      paths,
+      expert,
+      agentName,
+      regularSkillSets[i],
+      regularContextSets[i],
+    );
     index.experts[expert.id] = agentName;
     agentNameById[expert.id] = agentName;
     memberNamesById[expert.id] = expert.name;
@@ -1489,8 +1585,11 @@ export async function installExpert(options: InstallerOptions, expert: ExpertDat
     }
     writeTeamAgent(paths, expert, agentName, agentNameById, memberNamesById);
   } else {
-    const skills = await fetchExpertSkills(options.backendPort, expert.id);
-    writeExpertAgent(paths, expert, agentName, skills);
+    const [skills, contextFiles] = await Promise.all([
+      fetchExpertSkills(options.backendPort, expert.id),
+      fetchExpertContextFiles(options.backendPort, expert.id),
+    ]);
+    writeExpertAgent(paths, expert, agentName, skills, contextFiles);
   }
   index.experts[expert.id] = agentName;
   writeIndex(paths.indexPath, index);
@@ -1742,6 +1841,7 @@ function writeExpertAgent(
   expert: ExpertData,
   agentName: string,
   skills: SkillData[] = [],
+  contextFiles: ContextFileData[] = [],
 ): void {
   const memoryDir = path.join(paths.memoryRoot, agentName);
   fs.mkdirSync(memoryDir, { recursive: true });
@@ -1754,7 +1854,7 @@ function writeExpertAgent(
     name: agentName,
     description: expert.description || expert.name,
     tools: allTools,
-    body: buildExpertBody(expert, memoryDir, skills),
+    body: buildExpertBody(expert, memoryDir, skills, contextFiles),
   };
   fs.writeFileSync(
     path.join(paths.agentsDir, `${agentName}.md`),

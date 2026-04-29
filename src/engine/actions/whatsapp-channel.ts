@@ -19,4 +19,48 @@ export interface WhatsAppChannel {
    *  authenticated). Used by the chat-actions catalog to decide if WhatsApp
    *  actions are invokable from chat. */
   isConnected(): boolean;
+
+  // ── Outbound media ────────────────────────────────────────────
+  // Each returns `{ messageId, error }` mirroring `sendActionMessage`. The
+  // bridge enforces the allowlist + rate-limit before each call.
+
+  sendPhotoActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: string | null; error: string | null }>;
+
+  sendDocumentActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+    caption?: string,
+    fileName?: string,
+  ): Promise<{ messageId: string | null; error: string | null }>;
+
+  sendAudioActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+  ): Promise<{ messageId: string | null; error: string | null }>;
+
+  sendVideoActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: string | null; error: string | null }>;
+
+  sendVoiceActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+  ): Promise<{ messageId: string | null; error: string | null }>;
+
+  sendStickerActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+  ): Promise<{ messageId: string | null; error: string | null }>;
+
+  sendLocationActionMessage(
+    phoneOrJid: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<{ messageId: string | null; error: string | null }>;
 }

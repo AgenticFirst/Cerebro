@@ -414,3 +414,42 @@ class TaskComment(Base):
         String(32), ForeignKey("experts.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+class ParsedFile(Base):
+    """Sidecar cache for binary files (.docx/.xlsx/.pptx/.pdf/audio) that have
+    been extracted to plain markdown/text. Keyed by sha256 + parser_version so
+    upgrades to a parser library invalidate stale parses automatically."""
+
+    __tablename__ = "parsed_files"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    parsed_path: Mapped[str] = mapped_column(String(1024))
+    # Relative path under <userData>/files/_parsed (just "<sha>.md" today).
+    char_count: Mapped[int] = mapped_column(Integer, default=0)
+    parser: Mapped[str] = mapped_column(String(32))
+    # 'python-docx' | 'openpyxl' | 'python-pptx' | 'pypdf' | 'stt'
+    parser_version: Mapped[str] = mapped_column(String(32), default="")
+    warning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class ExpertContextFile(Base):
+    """Permanent reference document attached to an expert. Pre-parsed via
+    ParsedFile and injected into the expert's system prompt every chat."""
+
+    __tablename__ = "expert_context_files"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    expert_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("experts.id", ondelete="CASCADE"), index=True
+    )
+    file_item_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("file_items.id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(String(20), default="reference")
+    # 'reference' | 'template'
+    sort_order: Mapped[float] = mapped_column(default=0.0)
+    char_count: Mapped[int] = mapped_column(Integer, default=0)
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

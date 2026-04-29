@@ -241,7 +241,34 @@ If any step fails, **fix the bug before merging**. Pollution from your own testi
 
 ---
 
-## 12 · Update this document
+## 12 · Media handling  *(inbound + outbound)*
+
+If your integration carries anything beyond text — voice notes, photos, documents, audio, video — route every file through the shared **MediaIngestService** (`src/files/media-ingest.ts`) and the unified **IntegrationStaging** dir (`src/files/staging.ts`). Reference implementations: Telegram (`src/telegram/bridge.ts`) and WhatsApp (`src/whatsapp/bridge.ts`).
+
+### Inbound (provider → Cerebro)
+
+1. Download the bytes to `IntegrationStaging.pathFor('<id>', '<uuid>.<ext>')` and call `staging.scheduleCleanup(absPath)` so the file self-deletes after the 30-min TTL.
+2. Hand the path to `mediaIngest.ingest({ filePath, source: '<id>-inbound' })`. The service hashes, registers a `FileItem` row, dispatches to the parsing layer (office/PDF → markdown sidecar) or STT (`/voice/stt/transcribe-file`) for audio, and returns a `ResolvedAttachment`.
+3. Concatenate `resolved.promptInjection` ahead of any caption text. Never inline the raw `@/path/to/file.docx` into the prompt — Claude Code's `Read` tool crashes on binary office docs.
+4. Voice notes get an `inlineText` short transcript that's safe to echo back to the user as a "🎙️ Heard: …" confirmation (see Telegram's `composePromptFromResolved`).
+
+### Outbound (Cerebro → provider)
+
+1. Extend the integration's `<id>-channel.ts` interface with the per-media-kind methods: `sendPhotoActionMessage`, `sendDocumentActionMessage`, `sendAudioActionMessage`, `sendVideoActionMessage`, `sendVoiceActionMessage`, `sendStickerActionMessage`, `sendLocationActionMessage`. Each returns `{ messageId, error }` mirroring `sendActionMessage`.
+2. Implement them on the bridge using the provider's media API (multipart for HTTP-style providers like Telegram; native message types for socket-style providers like Baileys/WhatsApp). Enforce allowlist + rate-limit + size cap before each send and return a structured `error: 'file_too_large'` rather than throwing.
+3. Define one `ActionDefinition` per media kind with `chatExposable: true` and the standard input shape — `{ chat_id|phone_number, file_item_id?, file_path?, caption? }`. Reuse `src/engine/actions/utils/media-resolver.ts`'s `resolveMediaInput()` helper, which prefers `file_item_id` and falls back to `file_path`.
+4. Register each action in `engine.ts`'s `createRegistry()` AND in `buildChatExposableDefs()` so the chat-action catalog (`/chat-actions/catalog`) surfaces it. Approval gating is automatic — `engine.runChatAction` hardcodes `requiresApproval: true` for every chat-action regardless of action type, so the user sees an approval card with the file size + recipient before anything leaves the machine.
+5. Make sure the action's `summary` describes *what is being sent to whom* — e.g., `"Send 4.2 MB photo (foto.jpg) to Telegram chat 1234567"` — so users approve safely.
+6. The Cerebro main-agent prose in `src/claude-code/installer.ts` already enumerates the supported media kinds in EN+ES; if your integration supports a kind that isn't listed there yet, add it (search for "**text or media**").
+
+### What MediaIngestService does NOT do
+
+- Video: passthroughs as a "[video attached]" marker. Claude vision doesn't see frames; ask the user to summarize or transcribe upstream if needed.
+- Live location streaming, polls, contact cards, reactions: out of scope for the foundation. Extend the per-bridge `extractInbound` if you wire one up.
+
+---
+
+## 13 · Update this document
 
 If your new integration introduces a wrinkle (first OAuth flow, first webhook trigger, first non-bilingual provider), **add a section here** describing the new pattern so the next person doesn't reinvent it. This file is the only document tracking the full surface area; if it goes stale, the surface area gets messier with every integration.
 

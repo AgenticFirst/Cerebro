@@ -30,6 +30,8 @@ import { ClaudeCodeRunner } from '../claude-code/stream-adapter';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
 import { getAgentNameForExpert, installAll, installExpert, expertAgentName } from '../claude-code/installer';
+import { MediaIngestService } from '../files/media-ingest';
+import type { ResolvedAttachment } from '../files/types';
 import fsSync from 'node:fs';
 import { IPC_CHANNELS } from '../types/ipc';
 import { buildSystemPrompt } from '../i18n/language-directive';
@@ -119,10 +121,16 @@ export class AgentRuntime {
    */
   private bus = new EventEmitter();
 
+  private mediaIngest: MediaIngestService;
+
   constructor(backendPort: number, dataDir: string) {
     this.backendPort = backendPort;
     this.dataDir = dataDir;
     this.terminalBufferStore = new TerminalBufferStore(dataDir);
+    this.mediaIngest = new MediaIngestService({
+      getBackendPort: () => this.backendPort,
+      transcriptDir: `${dataDir}/files/_transcripts`,
+    });
     // Allow many step actions to listen on different runs concurrently.
     this.bus.setMaxListeners(50);
   }
@@ -176,9 +184,30 @@ export class AgentRuntime {
     const isExternalWorkspace =
       isTaskRun && !!request.workspacePath && !request.workspacePath.startsWith(this.dataDir);
 
+    // Resolve any `@/abs/path` attachment refs in the user's content BEFORE
+    // we paste it into the `claude -p` argv. Office docs / PDFs / audio get
+    // pre-extracted to UTF-8 sidecars; binary files no longer reach Claude
+    // Code's Read tool, which would otherwise crash the subprocess (exit 1).
+    // The original `content` (with raw @paths) stays on `userContent` so the
+    // activity log shows what the user actually attached.
+    let resolvedContent = content;
+    let resolvedAttachments: ResolvedAttachment[] = [];
+    try {
+      const resolved = await this.mediaIngest.resolveContent(
+        content,
+        'chat-upload',
+        conversationId ?? null,
+      );
+      resolvedContent = resolved.content;
+      resolvedAttachments = resolved.attachments;
+    } catch (err) {
+      console.warn(`[AgentRuntime] media ingest failed for run ${runId}; falling back to raw content:`, err);
+    }
+
     // Build the prompt. Task runs get a structured envelope; chat runs
-    // get conversation-history context prepended.
-    let fullPrompt = content;
+    // get conversation-history context prepended. Use `resolvedContent` so
+    // every prompt template sees the attachment-rewritten string.
+    let fullPrompt = resolvedContent;
 
     if (isTaskRun && request.taskPhase === 'plan') {
       const maxQ = request.maxClarifyQuestions ?? 5;
@@ -249,7 +278,7 @@ The user sees this as an interactive checklist. Keep items short, concrete, and 
 
 ## Goal
 
-${content}
+${resolvedContent}
 ${answersSection}
 </task_plan>`;
     } else if (isTaskRun && request.taskPhase === 'follow_up') {
@@ -266,7 +295,7 @@ ${request.followUpContext ?? '(no context available)'}
 
 ## Follow-up instruction
 
-${content}
+${resolvedContent}
 
 ## Protocol
 
@@ -364,7 +393,7 @@ You previously started this task but did not finish with a \`<deliverable>\` blo
 
 ## Brief (for reference)
 
-${content}
+${resolvedContent}
 
 ## Protocol
 
@@ -402,7 +431,7 @@ You are an Expert executing a task autonomously. Your working directory is ${wor
 
 ## Brief
 
-${content}
+${resolvedContent}
 
 ## Protocol
 
@@ -476,7 +505,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         lines.push(line);
         totalChars += line.length;
       }
-      fullPrompt = `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe above is prior conversation context for reference only. Do NOT continue the conversation or generate any text on behalf of the user. Do NOT output "User:" or simulate user messages. Only provide your single assistant response to the following request.\n</instructions>\n\n${content}`;
+      fullPrompt = `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe above is prior conversation context for reference only. Do NOT continue the conversation or generate any text on behalf of the user. Do NOT output "User:" or simulate user messages. Only provide your single assistant response to the following request.\n</instructions>\n\n${resolvedContent}`;
     }
 
     const channel = `agent:event:${runId}`;
