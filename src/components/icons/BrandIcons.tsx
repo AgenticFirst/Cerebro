@@ -107,6 +107,14 @@ export function WhatsAppIcon({ size = 24, className }: IconProps) {
   );
 }
 
+export function GHLIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 4.5a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15zm0 2.25a5.25 5.25 0 1 0 0 10.5 5.25 5.25 0 0 0 0-10.5zm.75 2.25v3.19l2.53 1.46-.75 1.3-3.03-1.75V9h1.25z" />
+    </svg>
+  );
+}
+
 export function HubSpotIcon({ size = 24, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>

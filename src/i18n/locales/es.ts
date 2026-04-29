@@ -884,7 +884,27 @@ const es: TranslationKeys = {
     notion: 'Notion',
     notionDesc: 'P\u00e1ginas, bases de datos y base de conocimiento',
     slack: 'Slack',
-    slackDesc: 'Mensajer\u00eda de equipo y notificaciones',
+    slackDesc: 'Mensajería de equipo y notificaciones',
+    ghl: 'GoHighLevel',
+    ghlDesc: 'Sincroniza contactos y envía informes de inteligencia a tu CRM de GHL.',
+  },
+
+  // ── Sección de GoHighLevel ──────────────────────────────────
+  ghlSection: {
+    apiKeyLabel: 'Clave API',
+    apiKeyHelp: 'Tu clave de API de integración privada de GoHighLevel. Se encuentra en Configuración → Integraciones → Claves de API.',
+    apiKeyPlaceholder: 'ey…',
+    showKey: 'Mostrar clave API',
+    hideKey: 'Ocultar clave API',
+    replaceKey: 'Reemplazar clave',
+    locationIdLabel: 'ID de ubicación',
+    locationIdHelp: 'El ID de la subcuenta (ubicación) donde sincronizar los contactos. Encuéntralo en la URL de tu ubicación en GHL.',
+    locationIdPlaceholder: 'abc123…',
+    testConnection: 'Probar conexión',
+    disconnect: 'Desconectar',
+    saved: 'Guardado',
+    testSuccess: 'Conexión exitosa — GHL está accesible.',
+    testFailed: 'La prueba de conexión falló.',
   },
 
   // ── Secci\u00f3n de canales ──────────────────────────────────────

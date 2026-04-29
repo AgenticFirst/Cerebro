@@ -890,6 +890,26 @@ const en = {
     notionDesc: 'Pages, databases, and knowledge base',
     slack: 'Slack',
     slackDesc: 'Team messaging and notifications',
+    ghl: 'GoHighLevel',
+    ghlDesc: 'Sync contacts and push intel briefs to your GHL CRM.',
+  },
+
+  // ── GoHighLevel section ─────────────────────────────────────
+  ghlSection: {
+    apiKeyLabel: 'API Key',
+    apiKeyHelp: 'Your GoHighLevel Private Integration API key. Found in Settings → Integrations → API Keys.',
+    apiKeyPlaceholder: 'ey…',
+    showKey: 'Show API key',
+    hideKey: 'Hide API key',
+    replaceKey: 'Replace key',
+    locationIdLabel: 'Location ID',
+    locationIdHelp: 'The sub-account (location) ID to sync contacts into. Found in your GHL location URL.',
+    locationIdPlaceholder: 'abc123…',
+    testConnection: 'Test connection',
+    disconnect: 'Disconnect',
+    saved: 'Saved',
+    testSuccess: 'Connection successful — GHL is reachable.',
+    testFailed: 'Connection test failed.',
   },
 
   // ── Channels section ────────────────────────────────────────

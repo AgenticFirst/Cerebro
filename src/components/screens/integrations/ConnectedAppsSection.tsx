@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
+  GHLIcon,
   GoogleCalendarIcon,
   GmailIcon,
   HubSpotIcon,
@@ -11,6 +12,7 @@ import {
 import IntegrationCard from './IntegrationCard';
 import HubSpotSection from './HubSpotSection';
 import HubSpotConnectModal from './HubSpotConnectModal';
+import GHLSection from './GHLSection';
 import type { HubSpotStatusResponse } from '../../../types/ipc';
 
 interface Service {
@@ -142,6 +144,17 @@ export default function ConnectedAppsSection() {
           }}
         >
           <HubSpotSection key={reloadKey} />
+        </IntegrationCard>
+
+        <IntegrationCard
+          icon={GHLIcon}
+          iconBg="bg-indigo-500/15"
+          iconColor="text-indigo-400"
+          name="GoHighLevel"
+          description={t('connectedApps.ghlDesc')}
+          defaultExpanded={false}
+        >
+          <GHLSection />
         </IntegrationCard>
       </div>
 
