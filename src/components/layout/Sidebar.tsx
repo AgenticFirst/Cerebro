@@ -433,7 +433,8 @@ function ConversationRow({
 }: ConversationRowProps) {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
-  const [draft, setDraft] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const displayTitle = isUntitledConversationTitle(conv.title)
@@ -441,27 +442,28 @@ function ConversationRow({
     : conv.title;
 
   useEffect(() => {
-    if (draft !== null) {
+    if (isEditing) {
       const input = inputRef.current;
       if (input) {
         input.focus();
         input.select();
       }
     }
-  }, [draft]);
+  }, [isEditing]);
 
   const beginRename = () => {
     setDraft(isUntitledConversationTitle(conv.title) ? '' : conv.title);
+    setIsEditing(true);
   };
 
   const commitRename = () => {
-    if (draft === null) return;
+    if (!isEditing) return;
     const next = draft.trim();
     if (next) onRename(conv.id, next);
-    setDraft(null);
+    setIsEditing(false);
   };
 
-  if (draft !== null) {
+  if (isEditing) {
     return (
       <div className="relative">
         <input
@@ -476,7 +478,7 @@ function ConversationRow({
               commitRename();
             } else if (e.key === 'Escape') {
               e.preventDefault();
-              setDraft(null);
+              setIsEditing(false);
             }
           }}
           maxLength={200}
