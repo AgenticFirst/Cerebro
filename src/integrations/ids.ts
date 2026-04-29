@@ -3,7 +3,7 @@
 // code into its bundle. registry.test.ts asserts parity with the
 // manifests, so drift is caught at test time.
 
-export const KNOWN_INTEGRATION_IDS = ['telegram', 'hubspot', 'whatsapp'] as const;
+export const KNOWN_INTEGRATION_IDS = ['telegram', 'hubspot', 'whatsapp', 'ghl'] as const;
 
 export type KnownIntegrationId = (typeof KNOWN_INTEGRATION_IDS)[number];
 

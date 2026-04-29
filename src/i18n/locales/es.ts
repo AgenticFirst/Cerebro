@@ -1027,6 +1027,25 @@ const es: TranslationKeys = {
         scanQr: 'Escanea el c\u00f3digo QR que Cerebro muestra en el siguiente paso.',
       },
     },
+    ghl: {
+      name: 'GoHighLevel',
+      description: 'Sincroniza contactos y env\u00eda informes de inteligencia a tu CRM de GoHighLevel.',
+      fields: {
+        apiKey: 'Clave de API de Integraci\u00f3n Privada',
+        locationId: 'ID de ubicaci\u00f3n',
+      },
+      hints: {
+        apiKey: 'pit-\u2026 (token de Integraci\u00f3n Privada de GoHighLevel)',
+        locationId: 'El id de la subcuenta (ubicaci\u00f3n), por ejemplo abc123\u2026',
+      },
+      steps: {
+        openSettings: 'En GoHighLevel, abre Configuraci\u00f3n \u2192 Integraciones \u2192 Integraciones privadas.',
+        createPrivateApp: 'Crea una integraci\u00f3n privada con los permisos de contactos y notas (lectura + escritura).',
+        copyApiKey: 'Copia la clave de API que aparece tras crearla \u2014 empieza con pit-\u2026.',
+        copyLocationId: 'Toma el id de ubicaci\u00f3n desde la URL de GHL de la subcuenta que quieres sincronizar.',
+        pasteHere: 'Pega ambos valores en el siguiente paso. Cerebro los verifica llamando a la API de contactos de GHL.',
+      },
+    },
   },
 
   // ── Secci\u00f3n del motor ───────────────────────────────────────

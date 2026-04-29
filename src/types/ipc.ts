@@ -126,6 +126,12 @@ export const IPC_CHANNELS = {
   HUBSPOT_CLEAR_TOKEN: 'hubspot:clear-token',
   HUBSPOT_SET_DEFAULTS: 'hubspot:set-defaults',
 
+  // GoHighLevel CRM
+  GHL_VERIFY: 'ghl:verify',
+  GHL_STATUS: 'ghl:status',
+  GHL_SET_CREDENTIALS: 'ghl:set-credentials',
+  GHL_CLEAR_CREDENTIALS: 'ghl:clear-credentials',
+
   // App auto-updater (GitHub Releases)
   UPDATE_CHECK_NOW: 'update:check-now',
   UPDATE_DOWNLOAD: 'update:download',
@@ -544,6 +550,7 @@ export interface CerebroAPI {
   telegram: TelegramAPI;
   whatsapp: WhatsAppAPI;
   hubspot: HubSpotAPI;
+  ghl: GHLAPI;
   chatActions: ChatActionsAPI;
   files: FilesAPI;
   updater: UpdaterAPI;
@@ -608,6 +615,27 @@ export interface HubSpotAPI {
   setToken(token: string): Promise<{ ok: boolean; error?: string }>;
   clearToken(): Promise<{ ok: boolean; error?: string }>;
   setDefaults(defaults: { pipeline: string | null; stage: string | null }): Promise<{ ok: boolean; error?: string }>;
+}
+
+// --- GoHighLevel CRM ---
+
+export interface GHLStatusResponse {
+  hasApiKey: boolean;
+  locationId: string | null;
+  tokenBackend: 'os-keychain' | 'plaintext-fallback';
+}
+
+export interface GHLVerifyResult {
+  ok: boolean;
+  locationId?: string | null;
+  error?: string;
+}
+
+export interface GHLAPI {
+  verify(apiKey: string, locationId: string): Promise<GHLVerifyResult>;
+  status(): Promise<GHLStatusResponse>;
+  setCredentials(apiKey: string, locationId: string): Promise<{ ok: boolean; error?: string }>;
+  clearCredentials(): Promise<{ ok: boolean; error?: string }>;
 }
 
 export interface ShellStatResult {

@@ -20,6 +20,8 @@ import type {
   HubSpotStatusResponse,
   HubSpotVerifyResult,
   HubSpotPipelineSummary,
+  GHLStatusResponse,
+  GHLVerifyResult,
   IntegrationProposalEventPayload,
   UpdateInfo,
   UpdateAsset,
@@ -377,6 +379,21 @@ const api: CerebroAPI = {
     },
     setDefaults(defaults: { pipeline: string | null; stage: string | null }): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_SET_DEFAULTS, defaults);
+    },
+  },
+
+  ghl: {
+    verify(apiKey: string, locationId: string): Promise<GHLVerifyResult> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GHL_VERIFY, apiKey, locationId);
+    },
+    status(): Promise<GHLStatusResponse> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GHL_STATUS);
+    },
+    setCredentials(apiKey: string, locationId: string): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GHL_SET_CREDENTIALS, apiKey, locationId);
+    },
+    clearCredentials(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GHL_CLEAR_CREDENTIALS);
     },
   },
 

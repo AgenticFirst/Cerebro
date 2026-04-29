@@ -223,7 +223,7 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
 - \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram or WhatsApp **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
-- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, HubSpot, WhatsApp, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
+- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, HubSpot, WhatsApp, GoHighLevel, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
 - \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
 - \`summarize-conversation\` — used by routines.
 
@@ -235,7 +235,7 @@ When sending media, prefer \`file_item_id\` (referencing a file Cerebro already 
 
 ## Connecting integrations
 
-When the user asks to **set up, connect, or link** an integration ("set up Telegram", "connect HubSpot", "configura WhatsApp", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, Private App for HubSpot, QR pairing for WhatsApp). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`hubspot\`, \`whatsapp\`. Anything else — Slack, Gmail, Notion, Calendar, etc. — is on the roadmap; tell the user and stop.
+When the user asks to **set up, connect, or link** an integration ("set up Telegram", "connect HubSpot", "configura WhatsApp", "conecta GoHighLevel", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, Private App for HubSpot, QR pairing for WhatsApp, Private Integration API key for GoHighLevel). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`hubspot\`, \`whatsapp\`, \`ghl\`. Anything else — Slack, Gmail, Notion, Calendar, etc. — is on the roadmap; tell the user and stop.
 
 ### Task vs Routine vs Expert — choose the right one
 
@@ -908,14 +908,14 @@ esac
 set -euo pipefail
 
 # Asks the Cerebro UI to render an inline IntegrationSetupCard so the user
-# can connect an integration (Telegram, HubSpot, WhatsApp, …) without
-# leaving chat. The renderer owns credential entry — this script never
-# transmits secrets and the chat agent must not ask for tokens in chat.
+# can connect an integration (Telegram, HubSpot, WhatsApp, GoHighLevel, …)
+# without leaving chat. The renderer owns credential entry — this script
+# never transmits secrets and the chat agent must not ask for tokens in chat.
 #
 # Usage: bash propose-integration.sh <integration_id> [reason]
 #
 # integration_id must match a manifest in src/integrations/registry.ts.
-# Currently: telegram | hubspot | whatsapp.
+# Currently: telegram | hubspot | whatsapp | ghl.
 
 RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
 
@@ -933,7 +933,7 @@ fi
 
 INTEGRATION_ID="\${1:-}"
 if [ -z "$INTEGRATION_ID" ]; then
-  echo "ERROR: integration_id is required (e.g. telegram, hubspot, whatsapp)" >&2
+  echo "ERROR: integration_id is required (e.g. telegram, hubspot, whatsapp, ghl)" >&2
   exit 1
 fi
 REASON="\${2:-}"
@@ -1298,7 +1298,7 @@ If the output starts with \`SUCCESS:\`, tell the user the routine was saved (men
     {
       name: 'connect-integration',
       description:
-        'Open the inline setup card so the user can connect an integration (Telegram, HubSpot, WhatsApp, …) without leaving the chat. Never ask for tokens in chat — the card collects them securely.',
+        'Open the inline setup card so the user can connect an integration (Telegram, HubSpot, WhatsApp, GoHighLevel, …) without leaving the chat. Never ask for tokens in chat — the card collects them securely.',
       body: `# Connect an integration
 
 Use this skill whenever the user asks Cerebro to **connect, set up, link, or wire up** an external service — anything that needs credentials before \`run-chat-action\` or a routine can use it. Phrases that should match (English **or** Spanish):
@@ -1306,19 +1306,20 @@ Use this skill whenever the user asks Cerebro to **connect, set up, link, or wir
 - "set up Telegram", "connect Telegram", "help me set up the Telegram bot"
 - "configura HubSpot", "conecta WhatsApp", "vincula mi cuenta de HubSpot"
 - "I want to use Telegram with Cerebro", "how do I connect HubSpot"
+- "connect GoHighLevel", "set up GHL", "conecta GoHighLevel", "vincula mi CRM de GHL"
 
-Currently supported \`integration_id\` values: \`telegram\`, \`hubspot\`, \`whatsapp\`. Others — including everything listed as "coming soon" in the Integrations screen — are not yet implemented; tell the user it's on the roadmap and stop.
+Currently supported \`integration_id\` values: \`telegram\`, \`hubspot\`, \`whatsapp\`, \`ghl\`. Others — including everything listed as "coming soon" in the Integrations screen — are not yet implemented; tell the user it's on the roadmap and stop.
 
 ## Workflow
 
-1. **Confirm intent and pick the integration_id.** Match the user's wording to one of \`telegram\`, \`hubspot\`, \`whatsapp\`. If the user is ambiguous (e.g. "set up CRM"), ask one short clarifying question.
+1. **Confirm intent and pick the integration_id.** Match the user's wording to one of \`telegram\`, \`hubspot\`, \`whatsapp\`, \`ghl\`. "GoHighLevel" / "GHL" / "Lead Connector" all map to \`ghl\`. If the user is ambiguous (e.g. "set up CRM"), ask one short clarifying question (HubSpot or GoHighLevel?).
 2. **Open the setup card.** Run:
 
    \`\`\`bash
    bash "$CLAUDE_PROJECT_DIR/.claude/scripts/propose-integration.sh" INTEGRATION_ID "WHY_THIS_INTEGRATION"
    \`\`\`
 
-   Replace \`INTEGRATION_ID\` with one of \`telegram\` / \`hubspot\` / \`whatsapp\`. The reason argument is optional and shown as the card subtitle ("So you can send WhatsApp from routines").
+   Replace \`INTEGRATION_ID\` with one of \`telegram\` / \`hubspot\` / \`whatsapp\` / \`ghl\`. The reason argument is optional and shown as the card subtitle ("So you can send WhatsApp from routines").
 
 3. **Tell the user the card is ready.** One short line in their language: "I'll help you connect Telegram. Open the setup card below." Don't dump instructions — the card already shows the BotFather/Private App walkthrough.
 
@@ -1342,6 +1343,13 @@ Currently supported \`integration_id\` values: \`telegram\`, \`hubspot\`, \`what
    - Settings → **Linked devices** → **Link a device**.
    - The card shows a QR code; scan it with the phone.
    - Once paired, the card flips to "Connected".
+
+   ### GoHighLevel (Private Integration API key + Location ID)
+   - In GoHighLevel, open **Settings → Integrations → Private Integrations** in the sub-account they want to sync.
+   - Click **Create New Integration**, name it (e.g. "Cerebro"), and select the **contacts** + **notes** scopes (read + write).
+   - After creation GHL shows a Private Integration API key starting with \`pit-…\`. Copy it.
+   - The **Location ID** is the sub-account id — it appears in the GHL URL (\`/v2/location/<location-id>/…\`) and in **Settings → Business Profile**.
+   - Paste both values in the card's step 2. Cerebro verifies them by hitting GHL's contacts search API for that location.
 
 5. **Don't ask for credentials in chat.** The card's input fields collect tokens directly through the secure IPC bridge so secrets never reach the LLM context. If the user pastes a token in chat by mistake, ignore it and remind them to enter it in the card.
 

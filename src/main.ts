@@ -41,6 +41,7 @@ import { VoiceSessionManager } from './voice/session';
 import { TelegramBridge } from './telegram/bridge';
 import { WhatsAppBridge } from './whatsapp/bridge';
 import { HubSpotHolder } from './hubspot/holder';
+import { GHLHolder } from './ghl/holder';
 import { registerChannelSender, unregisterChannelSender } from './engine/actions/channel';
 import { initializeSandbox } from './sandbox/initialize';
 import { getCachedSandboxConfig, setCachedSandboxConfig } from './sandbox/config-cache';
@@ -197,6 +198,8 @@ let telegramBridge: TelegramBridge | null = null;
 let whatsAppBridge: WhatsAppBridge | null = null;
 // HubSpot credential holder
 let hubSpotHolder: HubSpotHolder | null = null;
+// GoHighLevel credential holder
+let ghlHolder: GHLHolder | null = null;
 
 // Loopback HTTP bridge for chat-triggered integration actions.
 let chatActionServer: ChatActionServer | null = null;
@@ -413,6 +416,13 @@ async function startPythonBackend(): Promise<void> {
   executionEngine.setHubSpotChannel(hubSpotHolder);
   hubSpotHolder.init().catch((err) => {
     console.error('[Cerebro] HubSpot holder init failed:', err);
+  });
+
+  // GoHighLevel holder — pulls credentials from the backend integrations
+  // config so the Sales Intel Analyst push and the Settings card share state.
+  ghlHolder = new GHLHolder({ backendPort: port });
+  ghlHolder.init().catch((err) => {
+    console.error('[Cerebro] GHL holder init failed:', err);
   });
 
   // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
@@ -1697,6 +1707,41 @@ function registerIpcHandlers(): void {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  // --- GoHighLevel ---
+
+  ipcMain.handle(IPC_CHANNELS.GHL_VERIFY, async (_event, apiKey: string, locationId: string) => {
+    if (!ghlHolder) return { ok: false, error: 'GHL holder not initialized' };
+    if (typeof apiKey !== 'string' || typeof locationId !== 'string') {
+      return { ok: false, error: 'Invalid arguments' };
+    }
+    return ghlHolder.verify(apiKey, locationId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GHL_STATUS, async () => {
+    if (!ghlHolder) {
+      return {
+        hasApiKey: false,
+        locationId: null,
+        tokenBackend: 'plaintext-fallback' as const,
+      };
+    }
+    return ghlHolder.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GHL_SET_CREDENTIALS, async (_event, apiKey: string, locationId: string) => {
+    if (!ghlHolder) return { ok: false, error: 'GHL holder not initialized' };
+    if (typeof apiKey !== 'string' || typeof locationId !== 'string') {
+      return { ok: false, error: 'Invalid arguments' };
+    }
+    return ghlHolder.setCredentials(apiKey, locationId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GHL_CLEAR_CREDENTIALS, async () => {
+    if (!ghlHolder) return { ok: false, error: 'GHL holder not initialized' };
+    await ghlHolder.clearCredentials();
+    return { ok: true };
   });
 
   // --- App auto-updater ---

@@ -1033,6 +1033,25 @@ const en = {
         scanQr: 'Scan the QR code Cerebro shows in the next step.',
       },
     },
+    ghl: {
+      name: 'GoHighLevel',
+      description: 'Sync contacts and push intel briefs to your GoHighLevel CRM.',
+      fields: {
+        apiKey: 'Private Integration API key',
+        locationId: 'Location ID',
+      },
+      hints: {
+        apiKey: 'pit-… (Private Integration token from GoHighLevel)',
+        locationId: 'The sub-account (location) id, e.g. abc123…',
+      },
+      steps: {
+        openSettings: 'In GoHighLevel, open Settings → Integrations → Private Integrations.',
+        createPrivateApp: 'Create a Private Integration with the contacts and notes scopes (read + write).',
+        copyApiKey: 'Copy the API key it shows after creation — it starts with pit-….',
+        copyLocationId: 'Grab the location id from the GHL URL of the sub-account you want to sync.',
+        pasteHere: 'Paste both values in the next step. Cerebro verifies them by hitting the GHL contacts API.',
+      },
+    },
   },
 
   // ── Engine section ──────────────────────────────────────────

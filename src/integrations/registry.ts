@@ -19,11 +19,13 @@ import type { IntegrationManifest } from '../types/integrations';
 import { telegramManifest } from './manifests/telegram';
 import { hubspotManifest } from './manifests/hubspot';
 import { whatsappManifest } from './manifests/whatsapp';
+import { ghlManifest } from './manifests/ghl';
 
 export const INTEGRATION_REGISTRY: Record<string, IntegrationManifest> = {
   [telegramManifest.id]: telegramManifest,
   [hubspotManifest.id]: hubspotManifest,
   [whatsappManifest.id]: whatsappManifest,
+  [ghlManifest.id]: ghlManifest,
 };
 
 export function listIntegrations(): IntegrationManifest[] {
