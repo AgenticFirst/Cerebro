@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -6,8 +8,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Expert, RunRecord, Task, TaskChecklistItem, TaskComment
+from models import Expert, RunRecord, Setting, Task, TaskChecklistItem, TaskComment
 from sandbox.validation import cerebro_data_dir, validate_link_path
+
+logger = logging.getLogger(__name__)
 
 from .schemas import (
     ChecklistItemCreate,
@@ -305,9 +309,41 @@ def cancel_task(task_id: str, db: Session = Depends(get_db)):
 
 TERMINAL_EVENTS = {"run_completed", "run_failed", "run_cancelled"}
 
+# Sales Intel Analyst expert — fires GHL contact sync on task completion.
+SALES_INTEL_ANALYST_ID = "91be7fc45ee045aca27e7ffb28103900"
+
+
+async def _push_to_ghl(db: Session, task: Task) -> None:
+    """Push a completed intel brief to GoHighLevel as a contact + note.
+
+    All exceptions are caught and logged. A GHL failure must never propagate
+    up and disrupt the task-completion flow.
+    """
+    try:
+        from integrations.ghl import GHLClient
+
+        api_key_row = db.get(Setting, "ghl_api_key")
+        location_id_row = db.get(Setting, "ghl_location_id")
+
+        if not api_key_row or not location_id_row:
+            logger.debug("GHL push skipped — credentials not configured")
+            return
+
+        client = GHLClient(
+            api_key=api_key_row.value,
+            location_id=location_id_row.value,
+        )
+        await client.push_intel_brief(
+            task_title=task.title,
+            brief_md=task.description_md or "",
+        )
+        logger.info("GHL push complete for task %s (%r)", task.id, task.title)
+    except Exception:
+        logger.exception("GHL push failed for task %s — continuing", task.id)
+
 
 @router.post("/{task_id}/run-event")
-def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_db)):
+async def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_db)):
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
@@ -354,6 +390,9 @@ def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_db)):
                     run.status = "completed"
                     run.completed_at = _utcnow()
             _add_system_comment(db, task.id, "Expert finished — ready for review")
+            # Fire GHL integration for the Sales Intel Analyst expert.
+            if task.expert_id == SALES_INTEL_ANALYST_ID:
+                asyncio.create_task(_push_to_ghl(db, task))
         elif event_type == "run_failed":
             task.column = "error"
             task.last_error = event.get("error", "Unknown error")

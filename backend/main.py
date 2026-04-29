@@ -30,6 +30,7 @@ from sandbox.router import router as sandbox_router
 from tasks.router import router as tasks_router
 from sync.router import router as sync_router
 from files.router import router as files_router
+from integrations.router import router as integrations_router
 
 
 @asynccontextmanager
@@ -87,6 +88,7 @@ app.include_router(sandbox_router, prefix="/sandbox")
 app.include_router(tasks_router, prefix="/tasks")
 app.include_router(sync_router, prefix="/sync")
 app.include_router(files_router, prefix="/files")
+app.include_router(integrations_router, prefix="/integrations")
 
 
 @app.get("/health")
