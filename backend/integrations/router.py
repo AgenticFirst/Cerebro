@@ -69,8 +69,7 @@ async def test_ghl_connection(db: Session = Depends(get_db)) -> dict:
     try:
         async with httpx.AsyncClient(base_url=GHL_BASE_URL, headers=headers) as client:
             resp = await client.get(
-                "/contacts/search",
-                params={"locationId": location_id, "query": "test"},
+                f"/locations/{location_id}",
                 timeout=10.0,
             )
             resp.raise_for_status()
