@@ -24,6 +24,9 @@ function TriggerNode({ data, selected }: NodeProps) {
       case 'trigger_manual': return t('triggers.manualTrigger');
       case 'trigger_webhook': return t('triggers.webhookTrigger');
       case 'trigger_telegram_message': return t('triggers.telegramMessageTrigger');
+      case 'trigger_whatsapp_message': return t('triggers.whatsappMessageTrigger');
+      case 'trigger_github_issue_opened': return t('triggers.githubIssueOpenedTrigger');
+      case 'trigger_github_pr_review_requested': return t('triggers.githubPrReviewRequestedTrigger');
       case 'trigger_app_event': return t('triggers.appEventTrigger');
       default: return t('triggers.trigger');
     }
@@ -47,6 +50,17 @@ function TriggerNode({ data, selected }: NodeProps) {
         const filterType = (d.config.filter_type as string) || 'none';
         const filterValue = ((d.config.filter_value as string) || '').trim();
         const target = chat === '*' ? 'any allowlisted chat' : chat;
+        return filterType !== 'none' && filterValue
+          ? `${target} · ${filterType}: ${filterValue}`
+          : target;
+      }
+      case 'trigger_github_issue_opened':
+      case 'trigger_github_pr_review_requested': {
+        const repo = (d.config.repo as string) || '';
+        if (!repo) return t('triggers.notConfigured');
+        const filterType = (d.config.filter_type as string) || 'none';
+        const filterValue = ((d.config.filter_value as string) || '').trim();
+        const target = repo === '*' ? 'any watched repo' : repo;
         return filterType !== 'none' && filterValue
           ? `${target} · ${filterType}: ${filterValue}`
           : target;

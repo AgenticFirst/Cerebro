@@ -25,6 +25,7 @@ export type RequiredConnection =
   | 'anthropic'
   | 'openai'
   | 'google'
+  | 'github'
   | string;
 
 export type TemplateVariableType =

@@ -211,10 +211,15 @@ const es: TranslationKeys = {
     webhook: 'Webhook',
     chat: 'Chat',
     telegramMessage: 'Mensaje de Telegram',
+    whatsappMessageTrigger: 'Disparador de mensaje de WhatsApp',
+    githubIssueOpened: 'GitHub: Issue abierto',
+    githubPrReviewRequested: 'GitHub: Revisión de PR solicitada',
     scheduleTrigger: 'Disparador programado',
     manualTrigger: 'Disparador manual',
     webhookTrigger: 'Disparador de webhook',
     telegramMessageTrigger: 'Disparador de mensaje de Telegram',
+    githubIssueOpenedTrigger: 'Disparador de issue abierto en GitHub',
+    githubPrReviewRequestedTrigger: 'Disparador de revisión de PR solicitada en GitHub',
     appEventTrigger: 'Disparador de evento de app',
     trigger: 'Disparador',
     noScheduleSet: 'Sin programaci\u00f3n definida',
@@ -654,6 +659,8 @@ const es: TranslationKeys = {
     triggerScheduledDesc: 'Ejecutar con programaci\u00f3n',
     triggerWebhookDesc: 'Ejecutar v\u00eda webhook',
     triggerTelegramDesc: 'Ejecutar cuando llega un mensaje de Telegram',
+    triggerGithubIssueOpenedDesc: 'Ejecutar cuando se abre un nuevo issue en un repo vigilado de GitHub',
+    triggerGithubPrReviewDesc: 'Ejecutar cuando se solicita una revisión de PR en GitHub',
     schedule: 'Programaci\u00f3n',
     createRoutine: 'Crear rutina',
   },
@@ -700,6 +707,8 @@ const es: TranslationKeys = {
     triggerScheduled: 'Ejecutar esta rutina en un horario',
     triggerWebhook: 'Iniciar esta rutina desde una llamada HTTP externa',
     triggerTelegram: 'Iniciar esta rutina cuando un mensaje de Telegram coincida con el filtro',
+    triggerGithubIssueOpened: 'Iniciar esta rutina cuando se abre un nuevo issue en un repo vigilado de GitHub',
+    triggerGithubPrReview: 'Iniciar esta rutina cuando alguien solicita una revisión en un PR de GitHub',
     cancel: 'Cancelar sin crear',
     create: 'Crear esta rutina y abrir el editor',
     addAction: 'Agregar un nuevo paso al lienzo',
@@ -1046,6 +1055,23 @@ const es: TranslationKeys = {
         pasteHere: 'Pega ambos valores en el siguiente paso. Cerebro los verifica llamando a la API de contactos de GHL.',
       },
     },
+    github: {
+      name: 'GitHub',
+      description: 'Gestiona issues, pull requests y revisiones de c\u00f3digo desde el chat y las rutinas.',
+      fields: {
+        personalAccessToken: 'Token de acceso personal',
+      },
+      hints: {
+        personalAccessToken: 'ghp_\u2026 (cl\u00e1sico) o github_pat_\u2026 (de grano fino)',
+      },
+      steps: {
+        openSettings: 'En GitHub, abre Settings \u2192 Developer settings \u2192 Personal access tokens.',
+        createPersonalAccessToken: 'Genera un nuevo token (cl\u00e1sico o de grano fino).',
+        grantScopes: 'Concede el scope repo (cl\u00e1sico) o Issues, Pull Requests y Contents (lectura + escritura) en los repositorios donde Cerebro deba actuar.',
+        copyToken: 'Copia el token \u2014 GitHub solo lo muestra una vez.',
+        pasteHere: 'P\u00e9galo en el siguiente paso. Cerebro lo verifica llamando a /user.',
+      },
+    },
   },
 
   // ── Secci\u00f3n del motor ───────────────────────────────────────
@@ -1086,6 +1112,8 @@ const es: TranslationKeys = {
     slackDesc: 'Mensajería de equipo y notificaciones',
     ghl: 'GoHighLevel',
     ghlDesc: 'Sincroniza contactos y envía informes de inteligencia a tu CRM de GHL.',
+    github: 'GitHub',
+    githubDesc: 'Gestiona issues, pull requests y revisiones de código desde el chat y las rutinas.',
   },
 
   // ── Sección de GoHighLevel ──────────────────────────────────
@@ -1107,6 +1135,45 @@ const es: TranslationKeys = {
   },
 
   // ── Secci\u00f3n de canales ──────────────────────────────────────
+  githubSection: {
+    title: 'GitHub',
+    description:
+      'Controla GitHub desde el chat ("revisa el PR #42", "abre un issue") y dispara rutinas con eventos entrantes (nuevo issue, revisión solicitada). Cerebro consulta los repositorios vigilados cada minuto — no hace falta una URL pública para webhooks.',
+    tokenLabel: 'Token de acceso personal',
+    tokenPlaceholder: 'ghp_… o github_pat_…',
+    tokenHelp: 'El token se cifra en disco. Permisos requeridos: repo (clásico) o Issues + Pull Requests + Contents (de grano fino).',
+    verify: 'Verificar',
+    verifying: 'Verificando…',
+    verified: 'Verificado',
+    replaceToken: 'Reemplazar',
+    clearToken: 'Desconectar',
+    cancel: 'Cancelar',
+    save: 'Guardar',
+    saved: 'Guardado',
+    connectedAs: 'Conectado como @{{login}}',
+    notConnected: 'No conectado',
+    watchedReposLabel: 'Repositorios vigilados',
+    watchedReposHelp:
+      'Las rutinas solo se disparan para repositorios de esta lista. Las acciones desde el chat pueden actuar sobre cualquier repo al que llegue tu token.',
+    addRepoPlaceholder: 'owner/repo',
+    addRepo: 'Añadir',
+    removeRepo: 'Quitar',
+    pickFromList: 'Elegir de tus repos',
+    refreshRepoList: 'Actualizar',
+    noRepos: 'No hay repositorios vigilados todavía.',
+    statusRunning: 'Sondeando',
+    statusStopped: 'Detenido',
+    lastPoll: 'Última consulta',
+    lastError: 'Último error',
+    rateLimit: 'Cuota de la API',
+    rateLimitRemaining: 'quedan {{remaining}} solicitudes/h',
+    never: 'nunca',
+    storageEncrypted:
+      'El token se cifra en disco usando el llavero del sistema operativo (Keychain en macOS, DPAPI en Windows, libsecret en Linux).',
+    storagePlaintextFallback:
+      'Tu llavero del sistema no está disponible, así que el token se guarda en texto plano. Instala libsecret (Linux) o usa una sesión de usuario normal para activar el cifrado.',
+  },
+
   channelsSection: {
     title: 'Canales',
     description:

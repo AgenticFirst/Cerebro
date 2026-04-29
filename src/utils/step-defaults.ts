@@ -149,6 +149,26 @@ export const ACTION_META: Record<string, ActionMeta> = {
     isAvailable: true,
     keywords: ['whatsapp', 'chat', 'message', 'inbound', 'support', 'trigger'],
   },
+  trigger_github_issue_opened: {
+    name: 'GitHub Issue Opened',
+    icon: Github,
+    color: 'teal',
+    colorHex: TRIGGER_TEAL,
+    description: 'Run when a new issue opens on a watched repo',
+    category: 'triggers',
+    isAvailable: true,
+    keywords: ['github', 'issue', 'opened', 'inbound', 'trigger'],
+  },
+  trigger_github_pr_review_requested: {
+    name: 'GitHub PR Review Requested',
+    icon: Github,
+    color: 'teal',
+    colorHex: TRIGGER_TEAL,
+    description: 'Run when a review is requested on a PR',
+    category: 'triggers',
+    isAvailable: true,
+    keywords: ['github', 'pr', 'pull request', 'review', 'inbound', 'trigger'],
+  },
   trigger_app_event: {
     name: 'App Event',
     icon: Zap,
@@ -325,15 +345,95 @@ export const ACTION_META: Record<string, ActionMeta> = {
     isAvailable: false,
     keywords: ['strava', 'running', 'cycling', 'fitness', 'activity'],
   },
-  integration_github: {
-    name: 'GitHub',
+  github_create_issue: {
+    name: 'GitHub: Create Issue',
     icon: Github,
     color: 'amber',
     colorHex: '#f59e0b',
-    description: 'Issues, PRs, repos',
+    description: 'Open a new issue on a repository',
     category: 'integrations',
-    isAvailable: false,
-    keywords: ['github', 'git', 'issues', 'pull requests', 'repos'],
+    isAvailable: true,
+    keywords: ['github', 'issue', 'create', 'open', 'bug', 'task'],
+  },
+  github_comment_issue: {
+    name: 'GitHub: Comment on Issue',
+    icon: Github,
+    color: 'amber',
+    colorHex: '#f59e0b',
+    description: 'Post a comment on an issue',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['github', 'issue', 'comment', 'reply'],
+  },
+  github_comment_pr: {
+    name: 'GitHub: Comment on PR',
+    icon: Github,
+    color: 'amber',
+    colorHex: '#f59e0b',
+    description: 'Post a top-level comment on a pull request',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['github', 'pr', 'pull request', 'comment'],
+  },
+  github_review_pr: {
+    name: 'GitHub: Review PR',
+    icon: Github,
+    color: 'amber',
+    colorHex: '#f59e0b',
+    description: 'Submit a PR review (comment / approve / request changes)',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['github', 'pr', 'review', 'approve', 'request changes'],
+  },
+  github_open_pr: {
+    name: 'GitHub: Open PR',
+    icon: Github,
+    color: 'amber',
+    colorHex: '#f59e0b',
+    description: 'Create a pull request from a branch',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['github', 'pr', 'pull request', 'open', 'create'],
+  },
+  github_fetch_issue: {
+    name: 'GitHub: Fetch Issue',
+    icon: Github,
+    color: 'amber',
+    colorHex: '#f59e0b',
+    description: 'Read issue body, labels, and (optionally) comments',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['github', 'issue', 'fetch', 'read', 'get'],
+  },
+  github_fetch_pr: {
+    name: 'GitHub: Fetch PR',
+    icon: Github,
+    color: 'amber',
+    colorHex: '#f59e0b',
+    description: 'Read PR metadata and diff',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['github', 'pr', 'pull request', 'fetch', 'read', 'diff'],
+  },
+  github_clone_worktree: {
+    name: 'GitHub: Clone Worktree',
+    icon: Github,
+    color: 'amber',
+    colorHex: '#f59e0b',
+    description: 'Shallow-clone a repo into a temp dir for editing',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['github', 'clone', 'worktree', 'git', 'checkout'],
+  },
+  github_commit_and_push: {
+    name: 'GitHub: Commit & Push',
+    icon: Github,
+    color: 'amber',
+    colorHex: '#f59e0b',
+    description: 'Commit changes in a worktree and push the branch',
+    category: 'integrations',
+    isAvailable: true,
+    keywords: ['github', 'commit', 'push', 'git', 'branch'],
   },
   integration_notion: {
     name: 'Notion',
@@ -649,6 +749,26 @@ export function getDefaultStepData(
       return { ...base, params: { subject: '', content: '', pipeline: '', stage: '', priority: '', contact_id: '' } };
     case 'hubspot_upsert_contact':
       return { ...base, params: { email: '', phone: '', firstname: '', lastname: '' } };
+
+    // GitHub
+    case 'github_create_issue':
+      return { requiresApproval: true, onError: 'fail' as const, params: { repo: '', title: '', body: '', labels: '', assignees: '' } };
+    case 'github_comment_issue':
+      return { requiresApproval: true, onError: 'fail' as const, params: { repo: '', issue_number: '', body: '' } };
+    case 'github_comment_pr':
+      return { requiresApproval: true, onError: 'fail' as const, params: { repo: '', pr_number: '', body: '' } };
+    case 'github_review_pr':
+      return { requiresApproval: true, onError: 'fail' as const, params: { repo: '', pr_number: '', event: 'COMMENT', body: '' } };
+    case 'github_open_pr':
+      return { requiresApproval: true, onError: 'fail' as const, params: { repo: '', base: 'main', head: '', title: '', body: '', draft: false } };
+    case 'github_fetch_issue':
+      return { ...base, params: { repo: '', issue_number: '', include_comments: false } };
+    case 'github_fetch_pr':
+      return { ...base, params: { repo: '', pr_number: '', include_diff: true, max_diff_bytes: 200000 } };
+    case 'github_clone_worktree':
+      return { ...base, params: { repo: '', base_branch: '' } };
+    case 'github_commit_and_push':
+      return { ...base, params: { worktree_path: '', branch: '', commit_message: '', author_name: '', author_email: '', cleanup: true } };
 
     case 'send_email':
       return { ...base, params: { to: '', subject: '', body: '', provider: '' } };

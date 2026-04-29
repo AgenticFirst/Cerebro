@@ -30,6 +30,7 @@ export interface ValidationContext {
   hubspotConnected?: boolean;
   whatsappConnected?: boolean;
   telegramConnected?: boolean;
+  githubConnected?: boolean;
   /** Allowlist of Claude model IDs. When set, `params.model` is validated against it. */
   knownModels?: string[];
   /** True iff the caller probed Claude Code auth before invoking the validator. */
@@ -48,6 +49,7 @@ const CONNECTION_LABEL: Record<string, string> = {
   hubspot: 'HubSpot',
   whatsapp: 'WhatsApp',
   telegram: 'Telegram',
+  github: 'GitHub',
 };
 
 export function validateDagParams(
@@ -89,6 +91,7 @@ export function validateDagParams(
               if (c === 'hubspot') return ctx.hubspotConnected === false;
               if (c === 'whatsapp') return ctx.whatsappConnected === false;
               if (c === 'telegram') return ctx.telegramConnected === false;
+              if (c === 'github') return ctx.githubConnected === false;
               return false;
             });
             if (missing.length > 0) {
@@ -147,6 +150,55 @@ export function validateDagParams(
       case 'send_whatsapp_message': {
         if (isBlank(p.phone_number)) push('phone_number', `"${name}" (WhatsApp) is missing a phone number`);
         if (isBlank(p.message)) push('message', `"${name}" (WhatsApp) is missing a message`);
+        break;
+      }
+
+      case 'github_create_issue': {
+        if (isBlank(p.repo)) push('repo', `"${name}" (GitHub Issue) is missing the repo (owner/name)`);
+        if (isBlank(p.title)) push('title', `"${name}" (GitHub Issue) is missing a title`);
+        if (ctx.githubConnected === false) push('connection', `"${name}" — connect GitHub in Integrations first`);
+        break;
+      }
+      case 'github_comment_issue': {
+        if (isBlank(p.repo)) push('repo', `"${name}" (GitHub Comment) is missing the repo`);
+        if (isBlank(String(p.issue_number ?? ''))) push('issue_number', `"${name}" (GitHub Comment) is missing the issue number`);
+        if (isBlank(p.body)) push('body', `"${name}" (GitHub Comment) is missing a body`);
+        if (ctx.githubConnected === false) push('connection', `"${name}" — connect GitHub in Integrations first`);
+        break;
+      }
+      case 'github_comment_pr': {
+        if (isBlank(p.repo)) push('repo', `"${name}" (GitHub PR Comment) is missing the repo`);
+        if (isBlank(String(p.pr_number ?? ''))) push('pr_number', `"${name}" (GitHub PR Comment) is missing the PR number`);
+        if (isBlank(p.body)) push('body', `"${name}" (GitHub PR Comment) is missing a body`);
+        if (ctx.githubConnected === false) push('connection', `"${name}" — connect GitHub in Integrations first`);
+        break;
+      }
+      case 'github_review_pr': {
+        if (isBlank(p.repo)) push('repo', `"${name}" (GitHub PR Review) is missing the repo`);
+        if (isBlank(String(p.pr_number ?? ''))) push('pr_number', `"${name}" (GitHub PR Review) is missing the PR number`);
+        if (ctx.githubConnected === false) push('connection', `"${name}" — connect GitHub in Integrations first`);
+        break;
+      }
+      case 'github_open_pr': {
+        if (isBlank(p.repo)) push('repo', `"${name}" (GitHub Open PR) is missing the repo`);
+        if (isBlank(p.base)) push('base', `"${name}" (GitHub Open PR) is missing the base branch`);
+        if (isBlank(p.head)) push('head', `"${name}" (GitHub Open PR) is missing the head branch`);
+        if (isBlank(p.title)) push('title', `"${name}" (GitHub Open PR) is missing a title`);
+        if (ctx.githubConnected === false) push('connection', `"${name}" — connect GitHub in Integrations first`);
+        break;
+      }
+      case 'github_fetch_issue':
+      case 'github_fetch_pr':
+      case 'github_clone_worktree': {
+        if (isBlank(p.repo)) push('repo', `"${name}" — repo is required (owner/name)`);
+        if (ctx.githubConnected === false) push('connection', `"${name}" — connect GitHub in Integrations first`);
+        break;
+      }
+      case 'github_commit_and_push': {
+        if (isBlank(p.worktree_path)) push('worktree_path', `"${name}" (Commit & Push) is missing the worktree path`);
+        if (isBlank(p.branch)) push('branch', `"${name}" (Commit & Push) is missing a branch name`);
+        if (isBlank(p.commit_message)) push('commit_message', `"${name}" (Commit & Push) is missing a commit message`);
+        if (ctx.githubConnected === false) push('connection', `"${name}" — connect GitHub in Integrations first`);
         break;
       }
     }

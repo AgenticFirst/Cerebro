@@ -175,6 +175,110 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
     summary: '[dry-run] Would broadcast message',
   }),
 
+  // GitHub
+  github_create_issue: () => ({
+    data: {
+      issue_number: 1,
+      issue_url: 'https://github.com/dryrun/repo/issues/1',
+      created: true,
+      error: null,
+    },
+    summary: '[dry-run] Would create GitHub issue',
+  }),
+  github_comment_issue: () => ({
+    data: {
+      comment_id: 1,
+      comment_url: 'https://github.com/dryrun/repo/issues/1#issuecomment-1',
+      created: true,
+      error: null,
+    },
+    summary: '[dry-run] Would comment on GitHub issue',
+  }),
+  github_comment_pr: () => ({
+    data: {
+      comment_id: 1,
+      comment_url: 'https://github.com/dryrun/repo/pull/1#issuecomment-1',
+      created: true,
+      error: null,
+    },
+    summary: '[dry-run] Would comment on GitHub PR',
+  }),
+  github_review_pr: (input) => {
+    const event = String((input.params as Record<string, unknown>).event ?? 'COMMENT');
+    return {
+      data: {
+        review_id: 1,
+        review_url: 'https://github.com/dryrun/repo/pull/1#pullrequestreview-1',
+        submitted: true,
+        error: null,
+      },
+      summary: `[dry-run] Would submit ${event} review`,
+    };
+  },
+  github_open_pr: () => ({
+    data: {
+      pr_number: 1,
+      pr_url: 'https://github.com/dryrun/repo/pull/1',
+      created: true,
+      error: null,
+    },
+    summary: '[dry-run] Would open GitHub PR',
+  }),
+  github_fetch_issue: (input) => ({
+    data: {
+      ok: true,
+      error: null,
+      issue_number: 1,
+      title: '[dry-run issue title]',
+      body: '[dry-run issue body]',
+      author_login: 'dryrun-user',
+      labels: [],
+      html_url: `https://github.com/${String((input.params as Record<string, unknown>).repo ?? 'dryrun/repo')}/issues/1`,
+      comments: [],
+    },
+    summary: '[dry-run] Would fetch GitHub issue',
+  }),
+  github_fetch_pr: (input) => ({
+    data: {
+      ok: true,
+      error: null,
+      pr_number: 1,
+      title: '[dry-run pr title]',
+      body: '[dry-run pr body]',
+      author_login: 'dryrun-user',
+      head_ref: 'feature/dryrun',
+      base_ref: 'main',
+      head_sha: 'deadbeef',
+      html_url: `https://github.com/${String((input.params as Record<string, unknown>).repo ?? 'dryrun/repo')}/pull/1`,
+      draft: false,
+      changed_files: 0,
+      additions: 0,
+      deletions: 0,
+      diff: '',
+      diff_truncated: false,
+    },
+    summary: '[dry-run] Would fetch GitHub PR',
+  }),
+  github_clone_worktree: () => ({
+    data: {
+      worktree_path: '/tmp/dryrun-worktree',
+      base_branch: 'main',
+      ok: true,
+      error: null,
+    },
+    summary: '[dry-run] Would clone repo into a worktree',
+  }),
+  github_commit_and_push: (input) => ({
+    data: {
+      commit_sha: 'deadbeef',
+      branch: String((input.params as Record<string, unknown>).branch ?? 'cerebro/dryrun'),
+      no_changes: false,
+      ok: true,
+      error: null,
+    },
+    summary: '[dry-run] Would commit and push branch',
+  }),
+
   // Delay — short-circuit so a routine with a 1-hour wait doesn't make the
   // dry-run sit for an hour. The real delay action would also reject
   // duration <= 0, so we accept any duration here.

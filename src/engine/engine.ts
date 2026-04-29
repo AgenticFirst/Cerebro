@@ -51,6 +51,16 @@ import type { WhatsAppChannel } from './actions/whatsapp-channel';
 import { createHubSpotCreateTicketAction } from './actions/hubspot-create-ticket';
 import { createHubSpotUpsertContactAction } from './actions/hubspot-upsert-contact';
 import type { HubSpotChannel } from './actions/hubspot-channel';
+import { createGitHubCreateIssueAction } from './actions/github-create-issue';
+import { createGitHubCommentIssueAction } from './actions/github-comment-issue';
+import { createGitHubCommentPrAction } from './actions/github-comment-pr';
+import { createGitHubReviewPrAction } from './actions/github-review-pr';
+import { createGitHubOpenPrAction } from './actions/github-open-pr';
+import { createGitHubFetchIssueAction } from './actions/github-fetch-issue';
+import { createGitHubFetchPrAction } from './actions/github-fetch-pr';
+import { createGitHubCloneWorktreeAction } from './actions/github-clone-worktree';
+import { createGitHubCommitAndPushAction } from './actions/github-commit-and-push';
+import type { GitHubChannel } from './actions/github-channel';
 import { RunScratchpad } from './scratchpad';
 import { RunEventEmitter, ENGINE_EVENT, type EngineEventContext } from './events/emitter';
 import { validateDAG } from './dag/validator';
@@ -85,6 +95,7 @@ export class ExecutionEngine {
   private telegramChannel: TelegramChannel | null = null;
   private whatsAppChannel: WhatsAppChannel | null = null;
   private hubSpotChannel: HubSpotChannel | null = null;
+  private gitHubChannel: GitHubChannel | null = null;
   private activeRuns = new Map<string, ActiveEngineRun>();
   /** Pending approval promises keyed by approvalId. */
   private pendingApprovals = new Map<string, PendingApproval>();
@@ -111,6 +122,11 @@ export class ExecutionEngine {
   /** Late-bind the HubSpot credential holder so hubspot_* actions can use it. */
   setHubSpotChannel(channel: HubSpotChannel): void {
     this.hubSpotChannel = channel;
+  }
+
+  /** Late-bind the GitHub bridge so github_* actions can use it. */
+  setGitHubChannel(channel: GitHubChannel): void {
+    this.gitHubChannel = channel;
   }
 
   /**
@@ -517,6 +533,11 @@ export class ExecutionEngine {
       createSendWhatsAppLocationAction({ getChannel: () => this.whatsAppChannel }),
       createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }),
       createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }),
+      createGitHubCreateIssueAction({ getChannel: () => this.gitHubChannel }),
+      createGitHubCommentIssueAction({ getChannel: () => this.gitHubChannel }),
+      createGitHubCommentPrAction({ getChannel: () => this.gitHubChannel }),
+      createGitHubReviewPrAction({ getChannel: () => this.gitHubChannel }),
+      createGitHubOpenPrAction({ getChannel: () => this.gitHubChannel }),
     ];
     return defs.filter((d) => d.chatExposable === true);
   }
@@ -899,6 +920,17 @@ export class ExecutionEngine {
     // HubSpot (outbound only)
     registry.register(createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }));
     registry.register(createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }));
+
+    // GitHub
+    registry.register(createGitHubCreateIssueAction({ getChannel: () => this.gitHubChannel }));
+    registry.register(createGitHubCommentIssueAction({ getChannel: () => this.gitHubChannel }));
+    registry.register(createGitHubCommentPrAction({ getChannel: () => this.gitHubChannel }));
+    registry.register(createGitHubReviewPrAction({ getChannel: () => this.gitHubChannel }));
+    registry.register(createGitHubOpenPrAction({ getChannel: () => this.gitHubChannel }));
+    registry.register(createGitHubFetchIssueAction({ getChannel: () => this.gitHubChannel }));
+    registry.register(createGitHubFetchPrAction({ getChannel: () => this.gitHubChannel }));
+    registry.register(createGitHubCloneWorktreeAction({ getChannel: () => this.gitHubChannel }));
+    registry.register(createGitHubCommitAndPushAction({ getChannel: () => this.gitHubChannel }));
 
     // Complex (depend on backend infrastructure)
     registry.register(waitForWebhookAction);

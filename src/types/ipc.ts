@@ -132,6 +132,16 @@ export const IPC_CHANNELS = {
   GHL_SET_CREDENTIALS: 'ghl:set-credentials',
   GHL_CLEAR_CREDENTIALS: 'ghl:clear-credentials',
 
+  // GitHub
+  GITHUB_VERIFY: 'github:verify',
+  GITHUB_STATUS: 'github:status',
+  GITHUB_SET_TOKEN: 'github:set-token',
+  GITHUB_CLEAR_TOKEN: 'github:clear-token',
+  GITHUB_LIST_REPOS: 'github:list-repos',
+  GITHUB_LIST_WATCHED_REPOS: 'github:list-watched-repos',
+  GITHUB_SET_WATCHED_REPOS: 'github:set-watched-repos',
+  GITHUB_STATUS_CHANGED: 'github:status-changed',
+
   // App auto-updater (GitHub Releases)
   UPDATE_CHECK_NOW: 'update:check-now',
   UPDATE_DOWNLOAD: 'update:download',
@@ -551,6 +561,7 @@ export interface CerebroAPI {
   whatsapp: WhatsAppAPI;
   hubspot: HubSpotAPI;
   ghl: GHLAPI;
+  github: GitHubAPI;
   chatActions: ChatActionsAPI;
   files: FilesAPI;
   updater: UpdaterAPI;
@@ -636,6 +647,52 @@ export interface GHLAPI {
   status(): Promise<GHLStatusResponse>;
   setCredentials(apiKey: string, locationId: string): Promise<{ ok: boolean; error?: string }>;
   clearCredentials(): Promise<{ ok: boolean; error?: string }>;
+}
+
+// --- GitHub ---
+
+export interface GitHubRepoSummary {
+  /** "owner/repo" */
+  fullName: string;
+  owner: string;
+  name: string;
+  private: boolean;
+  defaultBranch: string;
+  htmlUrl: string;
+}
+
+export interface GitHubVerifyResult {
+  ok: boolean;
+  /** Authenticated user's login (e.g. "octocat"). Used to detect review-requested events. */
+  login?: string | null;
+  error?: string;
+}
+
+export interface GitHubStatusResponse {
+  hasToken: boolean;
+  login: string | null;
+  watchedRepos: string[];
+  /** Last successful poll timestamp (ms since epoch), null if never. */
+  lastPollAt: number | null;
+  /** Last poll error (if any). */
+  lastError: string | null;
+  /** GitHub primary rate-limit remaining from the last call. */
+  rateLimitRemaining: number | null;
+  tokenBackend: 'os-keychain' | 'plaintext-fallback';
+}
+
+export interface GitHubAPI {
+  verify(token: string): Promise<GitHubVerifyResult>;
+  status(): Promise<GitHubStatusResponse>;
+  setToken(token: string): Promise<{ ok: boolean; error?: string }>;
+  clearToken(): Promise<{ ok: boolean; error?: string }>;
+  /** Enumerate repos the current token can see (for the watched-repo picker). */
+  listRepos(): Promise<{ ok: boolean; repos?: GitHubRepoSummary[]; error?: string }>;
+  /** Read the user's persisted watched-repo allowlist ("owner/repo" entries). */
+  listWatchedRepos(): Promise<{ ok: boolean; repos?: string[]; error?: string }>;
+  /** Replace the watched-repo allowlist. */
+  setWatchedRepos(repos: string[]): Promise<{ ok: boolean; error?: string }>;
+  onStatusChanged(callback: (status: GitHubStatusResponse) => void): () => void;
 }
 
 export interface ShellStatResult {

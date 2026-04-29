@@ -22,6 +22,9 @@ import type {
   HubSpotPipelineSummary,
   GHLStatusResponse,
   GHLVerifyResult,
+  GitHubStatusResponse,
+  GitHubVerifyResult,
+  GitHubRepoSummary,
   IntegrationProposalEventPayload,
   UpdateInfo,
   UpdateAsset,
@@ -394,6 +397,36 @@ const api: CerebroAPI = {
     },
     clearCredentials(): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.GHL_CLEAR_CREDENTIALS);
+    },
+  },
+
+  github: {
+    verify(token: string): Promise<GitHubVerifyResult> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GITHUB_VERIFY, token);
+    },
+    status(): Promise<GitHubStatusResponse> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GITHUB_STATUS);
+    },
+    setToken(token: string): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GITHUB_SET_TOKEN, token);
+    },
+    clearToken(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GITHUB_CLEAR_TOKEN);
+    },
+    listRepos(): Promise<{ ok: boolean; repos?: GitHubRepoSummary[]; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GITHUB_LIST_REPOS);
+    },
+    listWatchedRepos(): Promise<{ ok: boolean; repos?: string[]; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GITHUB_LIST_WATCHED_REPOS);
+    },
+    setWatchedRepos(repos: string[]): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.GITHUB_SET_WATCHED_REPOS, repos);
+    },
+    onStatusChanged(callback: (status: GitHubStatusResponse) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, data: GitHubStatusResponse) =>
+        callback(data);
+      ipcRenderer.on(IPC_CHANNELS.GITHUB_STATUS_CHANGED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.GITHUB_STATUS_CHANGED, listener);
     },
   },
 

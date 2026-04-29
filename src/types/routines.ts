@@ -1,6 +1,13 @@
 // ── Frontend types for Routines ─────────────────────────────────
 
-export type TriggerType = 'manual' | 'cron' | 'webhook' | 'telegram_message' | 'whatsapp_message';
+export type TriggerType =
+  | 'manual'
+  | 'cron'
+  | 'webhook'
+  | 'telegram_message'
+  | 'whatsapp_message'
+  | 'github_issue_opened'
+  | 'github_pr_review_requested';
 export type RoutineSource = 'user' | 'chat' | 'marketplace';
 
 export interface NotifyChannel {

@@ -42,6 +42,7 @@ import { TelegramBridge } from './telegram/bridge';
 import { WhatsAppBridge } from './whatsapp/bridge';
 import { HubSpotHolder } from './hubspot/holder';
 import { GHLHolder } from './ghl/holder';
+import { GitHubBridge } from './github/bridge';
 import { registerChannelSender, unregisterChannelSender } from './engine/actions/channel';
 import { initializeSandbox } from './sandbox/initialize';
 import { getCachedSandboxConfig, setCachedSandboxConfig } from './sandbox/config-cache';
@@ -200,6 +201,8 @@ let whatsAppBridge: WhatsAppBridge | null = null;
 let hubSpotHolder: HubSpotHolder | null = null;
 // GoHighLevel credential holder
 let ghlHolder: GHLHolder | null = null;
+// GitHub bridge (credentials + per-repo poller)
+let gitHubBridge: GitHubBridge | null = null;
 
 // Loopback HTTP bridge for chat-triggered integration actions.
 let chatActionServer: ChatActionServer | null = null;
@@ -425,6 +428,15 @@ async function startPythonBackend(): Promise<void> {
     console.error('[Cerebro] GHL holder init failed:', err);
   });
 
+  // GitHub bridge — credential lifecycle + per-repo polling for routine triggers.
+  gitHubBridge = new GitHubBridge({ backendPort: port, executionEngine });
+  executionEngine.setGitHubChannel(gitHubBridge);
+  gitHubBridge.init()
+    .then(() => { gitHubBridge?.start(); })
+    .catch((err) => {
+      console.error('[Cerebro] GitHub bridge init failed:', err);
+    });
+
   // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
   // Cerebro's project-scoped subagents and skills.
   setClaudeCodeCwd(dataDir);
@@ -468,6 +480,7 @@ async function startPythonBackend(): Promise<void> {
     voiceSession.setWebContents(windows[0].webContents);
     telegramBridge?.setWebContents(windows[0].webContents);
     whatsAppBridge?.setWebContents(windows[0].webContents);
+    gitHubBridge?.setWebContents(windows[0].webContents);
   }
 
   // Initial scheduler sync + start periodic re-sync
@@ -1742,6 +1755,56 @@ function registerIpcHandlers(): void {
     if (!ghlHolder) return { ok: false, error: 'GHL holder not initialized' };
     await ghlHolder.clearCredentials();
     return { ok: true };
+  });
+
+  // --- GitHub ---
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_VERIFY, async (_event, token: string) => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    if (typeof token !== 'string') return { ok: false, error: 'Invalid arguments' };
+    return gitHubBridge.verify(token);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_STATUS, async () => {
+    if (!gitHubBridge) {
+      return {
+        hasToken: false,
+        login: null,
+        watchedRepos: [],
+        lastPollAt: null,
+        lastError: null,
+        rateLimitRemaining: null,
+        tokenBackend: 'plaintext-fallback' as const,
+      };
+    }
+    return gitHubBridge.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_SET_TOKEN, async (_event, token: string) => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    if (typeof token !== 'string') return { ok: false, error: 'Invalid arguments' };
+    return gitHubBridge.setToken(token);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_CLEAR_TOKEN, async () => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    return gitHubBridge.clearToken();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_LIST_REPOS, async () => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    return gitHubBridge.listAccessibleRepos();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_LIST_WATCHED_REPOS, async () => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    return { ok: true, repos: gitHubBridge.getWatchedRepos() };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_SET_WATCHED_REPOS, async (_event, repos: string[]) => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    if (!Array.isArray(repos)) return { ok: false, error: 'Invalid arguments' };
+    return gitHubBridge.setWatchedRepos(repos);
   });
 
   // --- App auto-updater ---

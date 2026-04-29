@@ -7,7 +7,15 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-TriggerType = Literal["manual", "cron", "webhook", "telegram_message"]
+TriggerType = Literal[
+    "manual",
+    "cron",
+    "webhook",
+    "telegram_message",
+    "whatsapp_message",
+    "github_issue_opened",
+    "github_pr_review_requested",
+]
 
 
 class NotifyChannel(BaseModel):

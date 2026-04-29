@@ -20,12 +20,14 @@ import { telegramManifest } from './manifests/telegram';
 import { hubspotManifest } from './manifests/hubspot';
 import { whatsappManifest } from './manifests/whatsapp';
 import { ghlManifest } from './manifests/ghl';
+import { githubManifest } from './manifests/github';
 
 export const INTEGRATION_REGISTRY: Record<string, IntegrationManifest> = {
   [telegramManifest.id]: telegramManifest,
   [hubspotManifest.id]: hubspotManifest,
   [whatsappManifest.id]: whatsappManifest,
   [ghlManifest.id]: ghlManifest,
+  [githubManifest.id]: githubManifest,
 };
 
 export function listIntegrations(): IntegrationManifest[] {

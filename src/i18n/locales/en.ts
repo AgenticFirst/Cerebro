@@ -210,10 +210,15 @@ const en = {
     webhook: 'Webhook',
     chat: 'Chat',
     telegramMessage: 'Telegram Message',
+    whatsappMessageTrigger: 'WhatsApp Message Trigger',
+    githubIssueOpened: 'GitHub: Issue Opened',
+    githubPrReviewRequested: 'GitHub: PR Review Requested',
     scheduleTrigger: 'Schedule Trigger',
     manualTrigger: 'Manual Trigger',
     webhookTrigger: 'Webhook Trigger',
     telegramMessageTrigger: 'Telegram Message Trigger',
+    githubIssueOpenedTrigger: 'GitHub Issue Opened Trigger',
+    githubPrReviewRequestedTrigger: 'GitHub PR Review Requested Trigger',
     appEventTrigger: 'App Event Trigger',
     trigger: 'Trigger',
     noScheduleSet: 'No schedule set',
@@ -652,6 +657,8 @@ const en = {
     triggerScheduledDesc: 'Run on a schedule',
     triggerWebhookDesc: 'Run via webhook',
     triggerTelegramDesc: 'Run when a Telegram message arrives',
+    triggerGithubIssueOpenedDesc: 'Run when a new issue opens on a watched GitHub repo',
+    triggerGithubPrReviewDesc: 'Run when a reviewer is requested on a GitHub PR',
     schedule: 'Schedule',
     createRoutine: 'Create Routine',
   },
@@ -702,6 +709,8 @@ const en = {
     triggerScheduled: 'Run this routine on a time-based schedule',
     triggerWebhook: 'Start this routine from an external HTTP call',
     triggerTelegram: 'Start this routine when an inbound Telegram message matches the filter',
+    triggerGithubIssueOpened: 'Start this routine when a new issue opens on a watched GitHub repo',
+    triggerGithubPrReview: 'Start this routine when someone requests a review on a GitHub PR',
     cancel: 'Cancel without creating',
     create: 'Create this routine and open the editor',
     // ActionSidebar / items
@@ -1052,6 +1061,23 @@ const en = {
         pasteHere: 'Paste both values in the next step. Cerebro verifies them by hitting the GHL contacts API.',
       },
     },
+    github: {
+      name: 'GitHub',
+      description: 'Drive issues, pull requests, and code reviews from chat and routines.',
+      fields: {
+        personalAccessToken: 'Personal access token',
+      },
+      hints: {
+        personalAccessToken: 'ghp_… (classic) or github_pat_… (fine-grained)',
+      },
+      steps: {
+        openSettings: 'In GitHub, open Settings → Developer settings → Personal access tokens.',
+        createPersonalAccessToken: 'Generate a new token (classic or fine-grained).',
+        grantScopes: 'Grant the repo scope (or fine-grained Issues, Pull Requests, Contents read+write on the repos you want Cerebro to touch).',
+        copyToken: 'Copy the token — GitHub only shows it once.',
+        pasteHere: 'Paste it in the next step. Cerebro verifies it by calling /user.',
+      },
+    },
   },
 
   // ── Engine section ──────────────────────────────────────────
@@ -1091,6 +1117,8 @@ const en = {
     slackDesc: 'Team messaging and notifications',
     ghl: 'GoHighLevel',
     ghlDesc: 'Sync contacts and push intel briefs to your GHL CRM.',
+    github: 'GitHub',
+    githubDesc: 'Manage issues, pull requests, and code reviews from chat and routines.',
   },
 
   // ── GoHighLevel section ─────────────────────────────────────
@@ -1109,6 +1137,46 @@ const en = {
     saved: 'Saved',
     testSuccess: 'Connection successful — GHL is reachable.',
     testFailed: 'Connection test failed.',
+  },
+
+  // ── GitHub section (within Connected Apps) ──────────────────
+  githubSection: {
+    title: 'GitHub',
+    description:
+      'Drive GitHub from chat ("review PR #42", "open an issue") and trigger routines on inbound events (new issue, review requested). Cerebro polls watched repos every minute — no public webhook URL required.',
+    tokenLabel: 'Personal access token',
+    tokenPlaceholder: 'ghp_… or github_pat_…',
+    tokenHelp: 'Token is encrypted at rest. Required scopes: repo (classic) or Issues + Pull Requests + Contents (fine-grained).',
+    verify: 'Verify',
+    verifying: 'Verifying…',
+    verified: 'Verified',
+    replaceToken: 'Replace',
+    clearToken: 'Disconnect',
+    cancel: 'Cancel',
+    save: 'Save',
+    saved: 'Saved',
+    connectedAs: 'Connected as @{{login}}',
+    notConnected: 'Not connected',
+    watchedReposLabel: 'Watched repositories',
+    watchedReposHelp:
+      'Routines only fire for repos in this list. Outbound chat actions can target any repo your token can reach.',
+    addRepoPlaceholder: 'owner/repo',
+    addRepo: 'Add',
+    removeRepo: 'Remove',
+    pickFromList: 'Pick from your repos',
+    refreshRepoList: 'Refresh',
+    noRepos: 'No repositories watched yet.',
+    statusRunning: 'Polling',
+    statusStopped: 'Stopped',
+    lastPoll: 'Last poll',
+    lastError: 'Last error',
+    rateLimit: 'API quota',
+    rateLimitRemaining: '{{remaining}} req/hr remaining',
+    never: 'never',
+    storageEncrypted:
+      'Token is encrypted at rest using your operating system’s keychain (Keychain on macOS, DPAPI on Windows, libsecret on Linux).',
+    storagePlaintextFallback:
+      'Your OS keychain isn’t available, so the token is stored in plaintext on disk. Install libsecret (Linux) or run as a normal user session to enable encrypted storage.',
   },
 
   // ── Channels section ────────────────────────────────────────

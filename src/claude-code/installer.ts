@@ -222,20 +222,20 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`create-expert\` — create a new expert (a persistent specialist persona the user will talk to repeatedly) when the user describes a recurring need that no current expert covers. First confirm the proposed name, description, and system prompt with the user, then invoke.
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
-- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram or WhatsApp **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
-- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, HubSpot, WhatsApp, GoHighLevel, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
-- \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
+- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram or WhatsApp **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — GitHub issue/PR/comment/review, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
+- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, HubSpot, WhatsApp, GoHighLevel, GitHub, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
+- \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "when a new GitHub issue opens…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
 - \`summarize-conversation\` — used by routines.
 
 ## Integration actions
 
-When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "mándale el manual en PDF", "avísame en 30 minutos", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
+When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), open a GitHub issue, comment on a PR, submit a PR review, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "mándale el manual en PDF", "avísame en 30 minutos", "abre un issue en GitHub", "revisa el PR #42", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
 
 When sending media, prefer \`file_item_id\` (referencing a file Cerebro already has — e.g., one a previous step generated and registered). Use \`file_path\` only as an escape hatch for an absolute path Cerebro just wrote to disk.
 
 ## Connecting integrations
 
-When the user asks to **set up, connect, or link** an integration ("set up Telegram", "connect HubSpot", "configura WhatsApp", "conecta GoHighLevel", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, Private App for HubSpot, QR pairing for WhatsApp, Private Integration API key for GoHighLevel). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`hubspot\`, \`whatsapp\`, \`ghl\`. Anything else — Slack, Gmail, Notion, Calendar, etc. — is on the roadmap; tell the user and stop.
+When the user asks to **set up, connect, or link** an integration ("set up Telegram", "connect HubSpot", "configura WhatsApp", "conecta GoHighLevel", "connect GitHub", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, Private App for HubSpot, QR pairing for WhatsApp, Private Integration API key for GoHighLevel, Personal Access Token for GitHub). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`. Anything else — Slack, Gmail, Notion, Calendar, etc. — is on the roadmap; tell the user and stop.
 
 ### Task vs Routine vs Expert — choose the right one
 
@@ -915,7 +915,7 @@ set -euo pipefail
 # Usage: bash propose-integration.sh <integration_id> [reason]
 #
 # integration_id must match a manifest in src/integrations/registry.ts.
-# Currently: telegram | hubspot | whatsapp | ghl.
+# Currently: telegram | hubspot | whatsapp | ghl | github.
 
 RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
 
@@ -933,7 +933,7 @@ fi
 
 INTEGRATION_ID="\${1:-}"
 if [ -z "$INTEGRATION_ID" ]; then
-  echo "ERROR: integration_id is required (e.g. telegram, hubspot, whatsapp, ghl)" >&2
+  echo "ERROR: integration_id is required (e.g. telegram, hubspot, whatsapp, ghl, github)" >&2
   exit 1
 fi
 REASON="\${2:-}"
@@ -1134,6 +1134,11 @@ The user may speak in **English or Spanish** (or mix them). Recognize natural-la
 | "Add Maria to HubSpot" / "Agrega a María a HubSpot" | \`hubspot_upsert_contact\` |
 | "Send Pablo a Telegram" / "Envíale un Telegram a Pablo" | \`send_telegram_message\` |
 | "Send a WhatsApp to +1…" / "Envía un WhatsApp a +1…" | \`send_whatsapp_message\` |
+| "Open a GitHub issue on owner/repo titled X" / "Abre un issue de GitHub en owner/repo titulado X" | \`github_create_issue\` |
+| "Comment on issue #N in owner/repo: …" / "Comenta en el issue #N de owner/repo: …" | \`github_comment_issue\` |
+| "Comment on PR #N in owner/repo: …" / "Comenta en el PR #N de owner/repo: …" | \`github_comment_pr\` |
+| "Review PR #N in owner/repo and approve/request changes saying X" / "Revisa el PR #N en owner/repo y aprueba/pide cambios diciendo X" | \`github_review_pr\` |
+| "Open a PR on owner/repo from feat/X to main titled Y" / "Abre un PR en owner/repo desde feat/X hacia main titulado Y" | \`github_open_pr\` |
 | "Notify me in 30 minutes" / "Avísame en 30 minutos" | \`send_notification\` |
 | "GET https://… and tell me the status" | \`http_request\` |
 
@@ -1191,7 +1196,7 @@ Find these in the conversation. If anything is missing, **ask one short clarifyi
 
 - **name** — short title (3–8 words).
 - **description** — one sentence about what the routine does.
-- **trigger_type** — one of: \`manual\`, \`cron\`, \`webhook\`, \`telegram_message\`, \`whatsapp_message\`.
+- **trigger_type** — one of: \`manual\`, \`cron\`, \`webhook\`, \`telegram_message\`, \`whatsapp_message\`, \`github_issue_opened\`, \`github_pr_review_requested\`. The two GitHub triggers fire only for repos the user added to the watched-repo allowlist (Settings → Integrations → GitHub). Trigger payload (available as \`{{__trigger__.<field>}}\`): \`repo_full_name\`, \`repo_owner\`, \`repo_name\`, \`title\`, \`body\`, \`author_login\`, \`html_url\`, plus \`issue_number\` (issues) or \`pr_number\` (PRs).
 - **cron_expression** — required when \`trigger_type=cron\`. Use 5-field cron (minute hour day-of-month month day-of-week, e.g. \`0 9 * * 1\` for "every Monday at 9am").
 - **plain_english_steps** — array of human-readable step descriptions in order.
 - **DAG steps** — programmatic version of the steps. Each step is:
@@ -1208,7 +1213,9 @@ Find these in the conversation. If anything is missing, **ask one short clarifyi
   }
   \`\`\`
 
-To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`send_telegram_message\`, \`send_whatsapp_message\`, \`send_notification\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, HubSpot, WhatsApp, email).
+To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`send_telegram_message\`, \`send_whatsapp_message\`, \`send_notification\`, \`github_create_issue\`, \`github_comment_issue\`, \`github_comment_pr\`, \`github_review_pr\`, \`github_open_pr\`, \`github_fetch_issue\`, \`github_fetch_pr\`, \`github_clone_worktree\`, \`github_commit_and_push\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, HubSpot, WhatsApp, email) and for any GitHub mutation (\`github_create_issue\`, \`github_comment_*\`, \`github_review_pr\`, \`github_open_pr\`, \`github_commit_and_push\`).
+
+For the auto-fix-issue → PR pattern, the canonical DAG is: trigger \`github_issue_opened\` → \`github_fetch_issue\` (\`include_comments: true\`) → \`run_expert\` (analyze + plan) → \`github_clone_worktree\` → \`run_expert\` (write code in the worktree path) → \`github_commit_and_push\` (approval-gated) → \`github_open_pr\` (approval-gated). The expert step that writes code should pass \`workspacePath\` set to the worktree path so the file edits land in the cloned repo.
 
 ### 2. Wire steps together
 
@@ -1308,18 +1315,18 @@ Use this skill whenever the user asks Cerebro to **connect, set up, link, or wir
 - "I want to use Telegram with Cerebro", "how do I connect HubSpot"
 - "connect GoHighLevel", "set up GHL", "conecta GoHighLevel", "vincula mi CRM de GHL"
 
-Currently supported \`integration_id\` values: \`telegram\`, \`hubspot\`, \`whatsapp\`, \`ghl\`. Others — including everything listed as "coming soon" in the Integrations screen — are not yet implemented; tell the user it's on the roadmap and stop.
+Currently supported \`integration_id\` values: \`telegram\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`. Others — including everything listed as "coming soon" in the Integrations screen — are not yet implemented; tell the user it's on the roadmap and stop.
 
 ## Workflow
 
-1. **Confirm intent and pick the integration_id.** Match the user's wording to one of \`telegram\`, \`hubspot\`, \`whatsapp\`, \`ghl\`. "GoHighLevel" / "GHL" / "Lead Connector" all map to \`ghl\`. If the user is ambiguous (e.g. "set up CRM"), ask one short clarifying question (HubSpot or GoHighLevel?).
+1. **Confirm intent and pick the integration_id.** Match the user's wording to one of \`telegram\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`. "GoHighLevel" / "GHL" / "Lead Connector" all map to \`ghl\`. "GitHub" / "gh" / "git" (when context makes it clear they mean github.com) maps to \`github\`. If the user is ambiguous (e.g. "set up CRM"), ask one short clarifying question (HubSpot or GoHighLevel?).
 2. **Open the setup card.** Run:
 
    \`\`\`bash
    bash "$CLAUDE_PROJECT_DIR/.claude/scripts/propose-integration.sh" INTEGRATION_ID "WHY_THIS_INTEGRATION"
    \`\`\`
 
-   Replace \`INTEGRATION_ID\` with one of \`telegram\` / \`hubspot\` / \`whatsapp\` / \`ghl\`. The reason argument is optional and shown as the card subtitle ("So you can send WhatsApp from routines").
+   Replace \`INTEGRATION_ID\` with one of \`telegram\` / \`hubspot\` / \`whatsapp\` / \`ghl\` / \`github\`. The reason argument is optional and shown as the card subtitle ("So you can send WhatsApp from routines", "So Cerebro can drive your GitHub repos").
 
 3. **Tell the user the card is ready.** One short line in their language: "I'll help you connect Telegram. Open the setup card below." Don't dump instructions — the card already shows the BotFather/Private App walkthrough.
 
@@ -1350,6 +1357,13 @@ Currently supported \`integration_id\` values: \`telegram\`, \`hubspot\`, \`what
    - After creation GHL shows a Private Integration API key starting with \`pit-…\`. Copy it.
    - The **Location ID** is the sub-account id — it appears in the GHL URL (\`/v2/location/<location-id>/…\`) and in **Settings → Business Profile**.
    - Paste both values in the card's step 2. Cerebro verifies them by hitting GHL's contacts search API for that location.
+
+   ### GitHub (Personal Access Token)
+   - In GitHub, open **Settings → Developer settings → Personal access tokens**. Either **Tokens (classic)** or **Fine-grained tokens** works.
+   - For a **classic** token: enable the \`repo\` scope (and \`read:user\`, which is automatic). For a **fine-grained** token: select the repos Cerebro should touch and grant **Issues: read+write**, **Pull requests: read+write**, **Contents: read+write**.
+   - Generate the token. GitHub only shows it once — copy it before leaving the page.
+   - Paste it in the card's step 2. Cerebro verifies it by calling \`/user\`.
+   - After connecting, the user picks **watched repositories** (Settings → Connected Apps → GitHub). Routine triggers (\`github_issue_opened\`, \`github_pr_review_requested\`) only fire for repos in that list. Outbound chat actions can target any repo the token reaches.
 
 5. **Don't ask for credentials in chat.** The card's input fields collect tokens directly through the secure IPC bridge so secrets never reach the LLM context. If the user pastes a token in chat by mistake, ignore it and remind them to enter it in the card.
 
