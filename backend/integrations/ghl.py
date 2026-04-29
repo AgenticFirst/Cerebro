@@ -32,9 +32,9 @@ class GHLClient:
         async with httpx.AsyncClient(base_url=GHL_BASE_URL, headers=self._headers) as client:
             # 1. Search first
             try:
-                resp = await client.get(
+                resp = await client.post(
                     "/contacts/search",
-                    params={"locationId": self.location_id, "query": practice_name},
+                    json={"locationId": self.location_id, "searchAfter": [], "filters": [], "query": practice_name, "pageLimit": 1},
                     timeout=10.0,
                 )
                 resp.raise_for_status()
