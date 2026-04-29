@@ -22,13 +22,14 @@ import { useCopyMessage } from '../../hooks/useCopyMessage';
 
 interface ChatMessageProps {
   message: Message;
+  nodeRef?: (el: HTMLDivElement | null) => void;
 }
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
@@ -57,6 +58,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
   return (
     <div
+      ref={nodeRef}
       className="group animate-fade-in"
       data-testid="chat-message"
       data-role={isUser ? 'user' : 'assistant'}

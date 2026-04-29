@@ -61,7 +61,7 @@ export default function ChatView({ conversation, onSend, isStreaming, isThinking
           <span>Telegram · {telegramLabel}</span>
         </div>
       )}
-      <MessageList messages={conversation.messages} isThinking={isThinking} />
+      <MessageList messages={conversation.messages} conversationId={conversation.id} />
       <div className="px-4 pb-4">
         <div className="mx-auto max-w-3xl">
           <ChatInput ref={chatInputRef} onSend={onSend} isStreaming={isStreaming} />

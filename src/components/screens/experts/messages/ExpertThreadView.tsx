@@ -117,7 +117,7 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
           </p>
         </div>
       ) : (
-        <MessageList messages={activeConversation.messages} isThinking={isTyping} />
+        <MessageList messages={activeConversation.messages} conversationId={activeConversation.id} />
       )}
 
       <div className="px-4 pb-4 pt-2 bg-bg-base">
