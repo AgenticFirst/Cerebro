@@ -79,6 +79,48 @@ const en = {
       label: 'Help',
       tooltip: 'See what Cerebro can do',
     },
+    speedSelector: {
+      label: 'Response settings',
+      tooltipFormat: '{{tier}} · {{model}}',
+      separator: ' · ',
+      sections: {
+        speed: 'Response speed',
+        speedHint: 'How long Cerebro spends on the answer.',
+        model: 'Model',
+        modelHint: 'Which Claude model answers. Independent of speed.',
+      },
+      tiers: {
+        fast: {
+          label: 'Fast',
+          eta: '~30s',
+          description: 'One expert, one pass. Good for quick questions.',
+        },
+        medium: {
+          label: 'Medium',
+          eta: '~1–2m',
+          description: 'Team handoff, balanced depth. Default.',
+        },
+        slow: {
+          label: 'Slow',
+          eta: '~5m+',
+          description: 'Full team, deep synthesis, day-by-day detail.',
+        },
+      },
+      models: {
+        haiku: {
+          label: 'Haiku',
+          description: 'Fastest and cheapest. Good for simple questions.',
+        },
+        sonnet: {
+          label: 'Sonnet',
+          description: 'Balanced quality and cost. Default.',
+        },
+        opus: {
+          label: 'Opus',
+          description: 'Smartest, most expensive. Use for hard problems.',
+        },
+      },
+    },
   },
 
   // ── Capabilities help modal ─────────────────────────────────
@@ -103,8 +145,8 @@ const en = {
     examples: [
       'Create a HubSpot ticket: customer X can’t log in.',
       'Crea un ticket de HubSpot: el cliente X no puede iniciar sesión.',
-      'Send Pablo a Telegram saying I’m running 10 minutes late.',
-      'Envíale un Telegram a Pablo diciendo que llego 10 minutos tarde.',
+      'Send a Telegram to chat 123456789 saying I’ll be 10 minutes late.',
+      'Envía un Telegram al chat 123456789 diciendo que llegaré 10 minutos tarde.',
       'Send a WhatsApp to +14155552671 saying the package arrived.',
       'GET https://status.example.com/health and tell me if it returns 200.',
     ],
@@ -196,6 +238,8 @@ const en = {
   // ── Team run card ───────────────────────────────────────────
   teamRun: {
     completedProgress: '{{done}}/{{total}} completed',
+    elapsedSeconds: 'Running for {{seconds}}s',
+    elapsedMinutes: 'Running for {{minutes}}m {{seconds}}s',
   },
 
   // ── Expert tray ─────────────────────────────────────────────

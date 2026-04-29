@@ -70,6 +70,9 @@ export interface TeamRun {
   status: 'running' | 'completed' | 'error';
   successCount?: number;
   totalCount?: number;
+  /** Wall-clock ms when the team was announced — drives the elapsed counter
+   *  in TeamRunCard while the run is in flight. */
+  startedAt?: number;
 }
 
 export interface TeamProposalMember {

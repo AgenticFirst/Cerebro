@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ListChecks, Users, Zap, BookOpen } from 'lucide-react';
+import { ListChecks, Users, Zap, BookOpen, HelpCircle } from 'lucide-react';
+import clsx from 'clsx';
 import ChatInput, { type ChatInputHandle } from './ChatInput';
+import CapabilitiesModal from './CapabilitiesModal';
 import { useDropZone } from '../../hooks/useDropZone';
 import { useChat } from '../../context/ChatContext';
 
@@ -13,6 +15,7 @@ export default function WelcomeView({ onSend }: WelcomeViewProps) {
   const { t } = useTranslation();
   const chatInputRef = useRef<ChatInputHandle>(null);
   const { setActiveExpertId } = useChat();
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Welcome view starts a fresh Cerebro chat — ensure no expert is pinned.
   useEffect(() => {
@@ -32,6 +35,21 @@ export default function WelcomeView({ onSend }: WelcomeViewProps) {
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-4 relative" {...dropProps}>
+      {/* Floating help — top-right of welcome panel, mirrors ChatView. */}
+      <button
+        type="button"
+        onClick={() => setHelpOpen(true)}
+        className={clsx(
+          'absolute top-3 right-3 z-10 flex items-center justify-center',
+          'w-8 h-8 rounded-lg transition-all duration-150',
+          'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover',
+        )}
+        title={t('chat.helpChip.tooltip')}
+        aria-label={t('chat.helpChip.label')}
+      >
+        <HelpCircle size={16} />
+      </button>
+
       <div className="w-full max-w-2xl">
         <h1 className="text-3xl font-light text-text-primary text-center mb-3">
           {t('chat.welcomeTitle')}
@@ -65,6 +83,8 @@ export default function WelcomeView({ onSend }: WelcomeViewProps) {
           {t('chat.welcomeHint')}
         </p>
       </div>
+
+      {helpOpen && <CapabilitiesModal onClose={() => setHelpOpen(false)} />}
 
       {isDragOver && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-accent/5 border-2 border-dashed border-accent/40 rounded-xl pointer-events-none">

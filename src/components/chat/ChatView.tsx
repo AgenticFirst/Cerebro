@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { HelpCircle } from 'lucide-react';
+import clsx from 'clsx';
 import type { Conversation } from '../../types/chat';
 import MessageList from './MessageList';
 import ChatInput, { type ChatInputHandle } from './ChatInput';
+import CapabilitiesModal from './CapabilitiesModal';
 import SandboxBanner from './SandboxBanner';
 import { useDropZone } from '../../hooks/useDropZone';
 import { useChat } from '../../context/ChatContext';
@@ -16,9 +20,11 @@ interface ChatViewProps {
 }
 
 export default function ChatView({ conversation, onSend, isStreaming, isThinking }: ChatViewProps) {
+  const { t } = useTranslation();
   const chatInputRef = useRef<ChatInputHandle>(null);
   const { setActiveExpertId } = useChat();
   const [telegramUsername, setTelegramUsername] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // The main Chat screen always talks to Cerebro. If the user just came back
   // from the Experts > Messages tab, clear any expert that was pinned there.
@@ -61,12 +67,32 @@ export default function ChatView({ conversation, onSend, isStreaming, isThinking
           <span>Telegram · {telegramLabel}</span>
         </div>
       )}
+
+      {/* Floating help button — top-right of chat panel. Subtle, persistent,
+       *  out of the input row. Pattern matches Linear/Notion/ChatGPT for
+       *  contextual help that doesn't compete with primary actions. */}
+      <button
+        type="button"
+        onClick={() => setHelpOpen(true)}
+        className={clsx(
+          'absolute top-3 right-3 z-10 flex items-center justify-center',
+          'w-8 h-8 rounded-lg transition-all duration-150',
+          'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover',
+        )}
+        title={t('chat.helpChip.tooltip')}
+        aria-label={t('chat.helpChip.label')}
+      >
+        <HelpCircle size={16} />
+      </button>
+
       <MessageList messages={conversation.messages} conversationId={conversation.id} />
       <div className="px-4 pb-4">
         <div className="mx-auto max-w-3xl">
           <ChatInput ref={chatInputRef} onSend={onSend} isStreaming={isStreaming} />
         </div>
       </div>
+
+      {helpOpen && <CapabilitiesModal onClose={() => setHelpOpen(false)} />}
 
       {isDragOver && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-accent/5 border-2 border-dashed border-accent/40 rounded-xl pointer-events-none">

@@ -33,6 +33,15 @@ export const IPC_CHANNELS = {
   /** Main → renderer: chat agent proposed an integration setup card.
    *  Payload: IntegrationProposalEventPayload. */
   INTEGRATION_PROPOSAL: 'chat-actions:integration-proposal',
+  /** Main → renderer: chat agent announced a team run starting. The renderer
+   *  populates the TeamRunCard with members in `queued` so the user has a
+   *  live status surface during the (potentially multi-minute) run.
+   *  Payload: TeamRunAnnouncedEventPayload. */
+  TEAM_RUN_ANNOUNCED: 'chat-actions:team-run-announced',
+  /** Main → renderer: per-member status update emitted by the team
+   *  coordinator subprocess as it starts/finishes each member.
+   *  Payload: TeamMemberUpdateEventPayload. */
+  TEAM_MEMBER_UPDATE: 'chat-actions:team-member-update',
 
   // Scheduler
   SCHEDULER_SYNC: 'scheduler:sync',
@@ -213,6 +222,15 @@ export interface MessageSnapshot {
   content: string;
 }
 
+export const QUALITY_TIERS = ['fast', 'medium', 'slow'] as const;
+export type QualityTier = typeof QUALITY_TIERS[number];
+
+export const RESPONSE_MODELS = ['haiku', 'sonnet', 'opus'] as const;
+export type ResponseModel = typeof RESPONSE_MODELS[number];
+
+export const TEAM_MEMBER_STATUSES = ['running', 'completed', 'error'] as const;
+export type TeamMemberStatus = typeof TEAM_MEMBER_STATUSES[number];
+
 export interface AgentRunRequest {
   conversationId: string;
   content: string;
@@ -232,6 +250,13 @@ export interface AgentRunRequest {
   clarificationAnswers?: string;
   model?: string;
   followUpContext?: string;
+  /** UI language code ("es"). Forwarded by ChatContext to drive the
+   *  language directive appended to the system prompt. */
+  language?: string;
+  /** Quality vs. speed tier picked from the chat input chip. Drives default
+   *  model + maxTurns and a system-prompt suffix that branches Cerebro vs
+   *  expert behavior. Untouched explicit `model`/`maxTurns` overrides win. */
+  qualityTier?: QualityTier;
 }
 
 export type RendererAgentEvent =
@@ -529,6 +554,33 @@ export interface IntegrationProposalEventPayload {
   conversationId?: string;
 }
 
+export interface TeamRunAnnouncedMember {
+  memberId: string;
+  memberName: string;
+  role: string;
+}
+
+export interface TeamRunAnnouncedEventPayload {
+  teamId: string;
+  teamName: string;
+  strategy: string;
+  members: TeamRunAnnouncedMember[];
+  /** Conversation the chat agent was running in. When omitted, the
+   *  renderer falls back to the active conversation. */
+  conversationId?: string;
+}
+
+export interface TeamMemberUpdateEventPayload {
+  teamId: string;
+  memberId: string;
+  status: TeamMemberStatus;
+  /** Optional one-line message when status === 'error'. */
+  errorMessage?: string;
+  /** Conversation the chat agent was running in. When omitted, the
+   *  renderer falls back to the active conversation. */
+  conversationId?: string;
+}
+
 export interface ChatActionsAPI {
   /** Returns the chat-exposable action catalog with current availability.
    *  Lang controls localization of label/description/examples (en|es). */
@@ -538,6 +590,16 @@ export interface ChatActionsAPI {
    *  function. */
   onIntegrationProposal(
     callback: (payload: IntegrationProposalEventPayload) => void,
+  ): () => void;
+  /** Subscribe to team-run announcements emitted by Cerebro before it
+   *  invokes a team via the Agent tool. Returns unsubscribe. */
+  onTeamRunAnnounced(
+    callback: (payload: TeamRunAnnouncedEventPayload) => void,
+  ): () => void;
+  /** Subscribe to per-member status updates emitted by the team
+   *  coordinator. Returns unsubscribe. */
+  onTeamMemberUpdate(
+    callback: (payload: TeamMemberUpdateEventPayload) => void,
   ): () => void;
 }
 

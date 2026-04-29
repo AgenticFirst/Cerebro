@@ -510,7 +510,8 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
 
     const channel = `agent:event:${runId}`;
 
-    // Resolve maxTurns: plan=15, execute/follow_up=request.maxTurns or 30, chat=15
+    // Resolve maxTurns: plan=15, execute/follow_up=request.maxTurns or 30,
+    // chat=tier-based (fast=8, medium=15, slow=25) when no explicit override.
     let maxTurns = 15;
     if (isTaskRun) {
       if (request.taskPhase === 'plan') {
@@ -520,6 +521,10 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       }
     } else if (request.maxTurns) {
       maxTurns = request.maxTurns;
+    } else if (request.qualityTier === 'fast') {
+      maxTurns = 8;
+    } else if (request.qualityTier === 'slow') {
+      maxTurns = 25;
     }
 
     // All task phases run inside the task workspace: plan writes PLAN.md
@@ -886,6 +891,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         maxTurns,
         model: request.model,
         language: request.language,
+        qualityTier: request.qualityTier,
       });
     }
 

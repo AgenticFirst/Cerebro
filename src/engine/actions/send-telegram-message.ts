@@ -32,8 +32,8 @@ export function createSendTelegramAction(deps: { getChannel: () => TelegramChann
     },
     chatExamples: [
       {
-        en: "Send Pablo a Telegram saying I'm running 10 minutes late.",
-        es: 'Envíale un Telegram a Pablo diciéndole que llegaré 10 minutos tarde.',
+        en: "Send a Telegram to chat 123456789 saying I'll be 10 minutes late.",
+        es: 'Envía un Telegram al chat 123456789 diciendo que llegaré 10 minutos tarde.',
       },
     ],
     availabilityCheck: () => {

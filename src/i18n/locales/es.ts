@@ -80,6 +80,48 @@ const es: TranslationKeys = {
       label: 'Ayuda',
       tooltip: 'Ver lo que Cerebro puede hacer',
     },
+    speedSelector: {
+      label: 'Ajustes de respuesta',
+      tooltipFormat: '{{tier}} · {{model}}',
+      separator: ' · ',
+      sections: {
+        speed: 'Velocidad de respuesta',
+        speedHint: 'Cuánto tiempo dedica Cerebro a la respuesta.',
+        model: 'Modelo',
+        modelHint: 'Qué modelo Claude responde. Independiente de la velocidad.',
+      },
+      tiers: {
+        fast: {
+          label: 'Rápido',
+          eta: '~30s',
+          description: 'Un experto, una pasada. Para preguntas rápidas.',
+        },
+        medium: {
+          label: 'Medio',
+          eta: '~1–2m',
+          description: 'Equipo con relevo, profundidad equilibrada. Por defecto.',
+        },
+        slow: {
+          label: 'Lento',
+          eta: '~5m+',
+          description: 'Equipo completo, síntesis profunda, detalle día a día.',
+        },
+      },
+      models: {
+        haiku: {
+          label: 'Haiku',
+          description: 'El más rápido y económico. Para preguntas sencillas.',
+        },
+        sonnet: {
+          label: 'Sonnet',
+          description: 'Equilibrio entre calidad y coste. Por defecto.',
+        },
+        opus: {
+          label: 'Opus',
+          description: 'El más inteligente, más costoso. Para problemas difíciles.',
+        },
+      },
+    },
   },
 
   // \u2500\u2500 Modal de capacidades \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -104,8 +146,8 @@ const es: TranslationKeys = {
     examples: [
       'Crea un ticket de HubSpot: el cliente X no puede iniciar sesi\u00f3n.',
       'Create a HubSpot ticket: customer X can\u2019t log in.',
-      'Env\u00edale un Telegram a Pablo diciendo que llego 10 minutos tarde.',
-      'Send Pablo a Telegram saying I\u2019m running 10 minutes late.',
+      'Env\u00eda un Telegram al chat 123456789 diciendo que llegar\u00e9 10 minutos tarde.',
+      'Send a Telegram to chat 123456789 saying I\u2019ll be 10 minutes late.',
       'Env\u00eda un WhatsApp a +14155552671 diciendo que el paquete lleg\u00f3.',
       'Haz un GET a https://status.example.com/health y dime si responde 200.',
     ],
@@ -197,6 +239,8 @@ const es: TranslationKeys = {
   // ── Tarjeta de ejecuci\u00f3n de equipo ─────────────────────────
   teamRun: {
     completedProgress: '{{done}}/{{total}} completados',
+    elapsedSeconds: 'En ejecución hace {{seconds}}s',
+    elapsedMinutes: 'En ejecución hace {{minutes}}m {{seconds}}s',
   },
 
   // ── Bandeja de expertos ─────────────────────────────────────

@@ -26,6 +26,8 @@ import type {
   GitHubVerifyResult,
   GitHubRepoSummary,
   IntegrationProposalEventPayload,
+  TeamRunAnnouncedEventPayload,
+  TeamMemberUpdateEventPayload,
   UpdateInfo,
   UpdateAsset,
   UpdateDownloadProgress,
@@ -441,6 +443,22 @@ const api: CerebroAPI = {
         callback(payload);
       ipcRenderer.on(IPC_CHANNELS.INTEGRATION_PROPOSAL, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.INTEGRATION_PROPOSAL, listener);
+    },
+    onTeamRunAnnounced(
+      callback: (payload: TeamRunAnnouncedEventPayload) => void,
+    ): () => void {
+      const listener = (_event: unknown, payload: TeamRunAnnouncedEventPayload) =>
+        callback(payload);
+      ipcRenderer.on(IPC_CHANNELS.TEAM_RUN_ANNOUNCED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAM_RUN_ANNOUNCED, listener);
+    },
+    onTeamMemberUpdate(
+      callback: (payload: TeamMemberUpdateEventPayload) => void,
+    ): () => void {
+      const listener = (_event: unknown, payload: TeamMemberUpdateEventPayload) =>
+        callback(payload);
+      ipcRenderer.on(IPC_CHANNELS.TEAM_MEMBER_UPDATE, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAM_MEMBER_UPDATE, listener);
     },
   },
 

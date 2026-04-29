@@ -28,7 +28,18 @@ import type { WebContents } from 'electron';
 import type { ExecutionEngine } from '../engine/engine';
 import type { DAGDefinition } from '../engine/dag/types';
 import { isKnownIntegrationId } from '../integrations/ids';
-import { IPC_CHANNELS } from '../types/ipc';
+import { IPC_CHANNELS, TEAM_MEMBER_STATUSES, type TeamMemberStatus } from '../types/ipc';
+
+/** Read a non-empty string field from a JSON body. Returns the value or null. */
+function readStringField(body: unknown, key: string): string | null {
+  const raw = (body as Record<string, unknown> | null)?.[key];
+  return typeof raw === 'string' && raw ? raw : null;
+}
+
+function readOptionalString(body: unknown, key: string): string | undefined {
+  const raw = (body as Record<string, unknown> | null)?.[key];
+  return typeof raw === 'string' && raw ? raw : undefined;
+}
 
 export interface ChatActionServerDeps {
   engine: ExecutionEngine;
@@ -105,6 +116,14 @@ export class ChatActionServer {
 
       if (req.method === 'POST' && url.pathname === '/chat-actions/propose-integration') {
         return this.handleProposeIntegration(req, res);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/chat-actions/announce-team-run') {
+        return this.handleAnnounceTeamRun(req, res);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/chat-actions/team-member-update') {
+        return this.handleTeamMemberUpdate(req, res);
       }
 
       this.respondJson(res, 404, { error: 'not_found' });
@@ -239,6 +258,91 @@ export class ChatActionServer {
       ok: true,
       integration_id: integrationIdRaw,
     });
+  }
+
+  // ── /announce-team-run ────────────────────────────────────────
+
+  private async handleAnnounceTeamRun(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJsonBody(req);
+    if (!body || typeof body !== 'object') {
+      return this.respondJson(res, 400, { error: 'body_must_be_json' });
+    }
+
+    const teamId = readStringField(body, 'team_id');
+    if (!teamId) return this.respondJson(res, 400, { error: 'missing_team_id' });
+    const teamName = readStringField(body, 'team_name');
+    if (!teamName) return this.respondJson(res, 400, { error: 'missing_team_name' });
+    const strategy = readStringField(body, 'strategy');
+    if (!strategy) return this.respondJson(res, 400, { error: 'missing_strategy' });
+
+    const membersRaw = (body as { members?: unknown }).members;
+    if (!Array.isArray(membersRaw) || membersRaw.length === 0) {
+      return this.respondJson(res, 400, { error: 'missing_members' });
+    }
+
+    const members: Array<{ memberId: string; memberName: string; role: string }> = [];
+    for (const m of membersRaw) {
+      if (!m || typeof m !== 'object') {
+        return this.respondJson(res, 400, { error: 'invalid_member_shape' });
+      }
+      const memberId = readStringField(m, 'member_id');
+      const memberName = readStringField(m, 'member_name');
+      const role = readStringField(m, 'role');
+      if (!memberId) return this.respondJson(res, 400, { error: 'missing_member_id' });
+      if (!memberName) return this.respondJson(res, 400, { error: 'missing_member_name' });
+      if (!role) return this.respondJson(res, 400, { error: 'missing_member_role' });
+      members.push({ memberId, memberName, role });
+    }
+
+    const wc = this.deps.getMainWebContents();
+    if (!wc) {
+      return this.respondJson(res, 503, { error: 'main_window_not_ready' });
+    }
+
+    wc.send(IPC_CHANNELS.TEAM_RUN_ANNOUNCED, {
+      teamId,
+      teamName,
+      strategy,
+      members,
+      conversationId: readOptionalString(body, 'conversation_id'),
+    });
+
+    this.respondJson(res, 200, { ok: true, team_id: teamId });
+  }
+
+  // ── /team-member-update ───────────────────────────────────────
+
+  private async handleTeamMemberUpdate(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJsonBody(req);
+    if (!body || typeof body !== 'object') {
+      return this.respondJson(res, 400, { error: 'body_must_be_json' });
+    }
+
+    const teamId = readStringField(body, 'team_id');
+    if (!teamId) return this.respondJson(res, 400, { error: 'missing_team_id' });
+    const memberId = readStringField(body, 'member_id');
+    if (!memberId) return this.respondJson(res, 400, { error: 'missing_member_id' });
+
+    const statusRaw = (body as { status?: unknown }).status;
+    if (typeof statusRaw !== 'string' || !(TEAM_MEMBER_STATUSES as readonly string[]).includes(statusRaw)) {
+      return this.respondJson(res, 400, { error: 'invalid_status' });
+    }
+    const status = statusRaw as TeamMemberStatus;
+
+    const wc = this.deps.getMainWebContents();
+    if (!wc) {
+      return this.respondJson(res, 503, { error: 'main_window_not_ready' });
+    }
+
+    wc.send(IPC_CHANNELS.TEAM_MEMBER_UPDATE, {
+      teamId,
+      memberId,
+      status,
+      errorMessage: readOptionalString(body, 'error_message'),
+      conversationId: readOptionalString(body, 'conversation_id'),
+    });
+
+    this.respondJson(res, 200, { ok: true });
   }
 
   // ── Helpers ───────────────────────────────────────────────────

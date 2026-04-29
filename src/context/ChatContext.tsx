@@ -13,10 +13,13 @@ import type {
   IntegrationSetupProposal,
   Message,
   Screen,
+  TeamRun,
+  TeamRunMember,
   ToolCall,
 } from '../types/chat';
 import type { BackendResponse, RendererAgentEvent } from '../types/ipc';
 import { useProviders } from './ProviderContext';
+import { useQualityTier } from './QualityContext';
 import { useRoutines } from './RoutineContext';
 import i18n from '../i18n';
 import type { DAGDefinition } from '../engine/dag/types';
@@ -27,6 +30,7 @@ import {
   toApiProposal,
   toApiExpertProposal,
   toApiTeamProposal,
+  toApiTeamRun,
   toApiIntegrationProposal,
   resolveNewChatTarget,
   apiPatchMessageMetadata,
@@ -128,9 +132,29 @@ function apiDeleteConversation(id: string): Promise<unknown> {
   });
 }
 
+/** Flip every still-open member to a terminal status without disturbing
+ *  members that already finished. Used as a safety-net sweep when the
+ *  parent Agent tool returns or a run finalizes — coordinators sometimes
+ *  skip per-member status calls under turn pressure. */
+function sweepOpenMembers(
+  members: TeamRunMember[],
+  toStatus: 'completed' | 'error',
+): TeamRunMember[] {
+  return members.map((mem) =>
+    mem.status === 'completed' || mem.status === 'error'
+      ? mem
+      : { ...mem, status: toStatus },
+  );
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { claudeCodeInfo } = useProviders();
   const { registerRunCallback } = useRoutines();
+  const { tier: qualityTier, model: responseModel } = useQualityTier();
+  const qualityTierRef = useRef(qualityTier);
+  qualityTierRef.current = qualityTier;
+  const responseModelRef = useRef(responseModel);
+  responseModelRef.current = responseModel;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -490,6 +514,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             routineProposals: routineProposals.length > 0 ? routineProposals : undefined,
             expertProposals: expertProposals.length > 0 ? expertProposals : undefined,
             language: i18n.language !== 'en' ? i18n.language : undefined,
+            qualityTier: qualityTierRef.current,
+            model: responseModelRef.current,
           });
 
           // Keep isThinking true and message.isThinking true until first content arrives
@@ -502,6 +528,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           let accRoutineProposal: import('../types/chat').RoutineProposal | undefined;
           let accExpertProposal: import('../types/chat').ExpertProposal | undefined;
           let accTeamProposal: import('../types/chat').TeamProposal | undefined;
+          // teamRun state is owned by the chat-actions HTTP listeners below;
+          // the on-Agent-end branch in tool_end below sweeps any still-open
+          // members as a safety net.
           // Paths the assistant produced via Write/Edit. Surfaced as Slack-style
           // attachment chips below the reply on `done`. Deduped by absolute path.
           const accFileRefs = new Set<string>();
@@ -603,6 +632,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     }
                   } catch { /* not valid JSON, treat as normal result */ }
                 }
+                // Agent tool finishing means a team (or single subagent)
+                // returned. If the announce listener pre-populated a teamRun,
+                // sweep any still-queued/running members to completed and
+                // mark the run completed — defensive against coordinators
+                // that skipped per-member team-member-update.sh calls.
+                if (resolvedToolName === 'Agent') {
+                  const conv = conversationsRef.current.find((c) => c.id === convId);
+                  const msg = conv?.messages.find((m) => m.id === assistantId);
+                  const teamRun = msg?.teamRun;
+                  if (teamRun && teamRun.status === 'running') {
+                    const sweptMembers = sweepOpenMembers(teamRun.members, event.isError ? 'error' : 'completed');
+                    updateMessage(convId!, assistantId, {
+                      teamRun: {
+                        ...teamRun,
+                        members: sweptMembers,
+                        status: event.isError ? 'error' : 'completed',
+                        successCount: sweptMembers.filter((m) => m.status === 'completed').length,
+                        totalCount: sweptMembers.length,
+                      },
+                    });
+                  }
+                }
                 break;
               }
 
@@ -641,6 +692,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 if (accRoutineProposal) doneMetadata.routine_proposal = toApiProposal(accRoutineProposal);
                 if (accExpertProposal) doneMetadata.expert_proposal = toApiExpertProposal(accExpertProposal);
                 if (accTeamProposal) doneMetadata.team_proposal = toApiTeamProposal(accTeamProposal);
+                {
+                  // Safety-net for the case where Cerebro announced a team
+                  // run but the parent Agent tool_end never fired — without
+                  // this, the card persists in a phantom 'running' state.
+                  const conv = conversationsRef.current.find((c) => c.id === convId);
+                  const msg = conv?.messages.find((m) => m.id === assistantId);
+                  if (msg?.teamRun) {
+                    let finalTeamRun = msg.teamRun;
+                    if (finalTeamRun.status === 'running') {
+                      const sweptMembers = sweepOpenMembers(finalTeamRun.members, 'completed');
+                      finalTeamRun = {
+                        ...finalTeamRun,
+                        members: sweptMembers,
+                        status: 'completed',
+                        successCount: sweptMembers.filter((m) => m.status === 'completed').length,
+                        totalCount: sweptMembers.length,
+                      };
+                      updateMessage(convId!, assistantId, { teamRun: finalTeamRun });
+                    }
+                    doneMetadata.team_run = toApiTeamRun(finalTeamRun);
+                  }
+                }
                 // Persist final message — chained so it runs after the
                 // conversation/user-message inserts have committed.
                 chainWrite(convId!, () =>
@@ -734,6 +807,87 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     registerRunCallback(runRoutineFromUi);
   }, [registerRunCallback, runRoutineFromUi]);
+
+  // ── Team-run live status listeners ──────────────────────────────
+  //
+  // The chat agent calls announce-team-run.sh BEFORE invoking a team via
+  // the Agent tool, then the team coordinator subprocess calls
+  // team-member-update.sh at each member start/end. Both flow through the
+  // chat-actions HTTP server and arrive here as IPC events.
+  //
+  // We attach team-run state to the latest assistant message in the active
+  // conversation. The on-Agent-tool-end sweep in `sendMessage` is a safety
+  // net for coordinators that skip the per-member calls.
+  useEffect(() => {
+    const findLatestAssistantMessageId = (convId: string): string | null => {
+      const conv = conversationsRef.current.find((c) => c.id === convId);
+      if (!conv) return null;
+      for (let i = conv.messages.length - 1; i >= 0; i--) {
+        if (conv.messages[i].role === 'assistant') return conv.messages[i].id;
+      }
+      return null;
+    };
+
+    const unsubAnnounce = window.cerebro.chatActions.onTeamRunAnnounced((payload) => {
+      const targetConvId = payload.conversationId ?? activeConversationIdRef.current;
+      if (!targetConvId) return;
+      const msgId = findLatestAssistantMessageId(targetConvId);
+      if (!msgId) return;
+      const teamRun: TeamRun = {
+        teamId: payload.teamId,
+        teamName: payload.teamName,
+        strategy: payload.strategy,
+        status: 'running',
+        startedAt: Date.now(),
+        members: payload.members.map((m) => ({
+          memberId: m.memberId,
+          memberName: m.memberName,
+          role: m.role,
+          status: 'queued',
+        })),
+      };
+      updateMessage(targetConvId, msgId, { teamRun });
+      apiPatchMessageMetadata(targetConvId, msgId, {
+        team_run: toApiTeamRun(teamRun),
+      }).catch(console.error);
+    });
+
+    const unsubMember = window.cerebro.chatActions.onTeamMemberUpdate((payload) => {
+      const targetConvId = payload.conversationId ?? activeConversationIdRef.current;
+      if (!targetConvId) return;
+      const conv = conversationsRef.current.find((c) => c.id === targetConvId);
+      if (!conv) return;
+      let target: Message | undefined;
+      for (let i = conv.messages.length - 1; i >= 0; i--) {
+        const m = conv.messages[i];
+        if (m.role === 'assistant' && m.teamRun?.teamId === payload.teamId) {
+          target = m;
+          break;
+        }
+      }
+      if (!target?.teamRun) return;
+      const existing = target.teamRun.members.find((m) => m.memberId === payload.memberId);
+      // Guard against duplicate or out-of-order updates — coordinators sometimes
+      // double-fire the same status, and a no-op PATCH is wasted bandwidth.
+      if (existing && existing.status === payload.status && !payload.errorMessage) return;
+
+      const updatedMembers = target.teamRun.members.map((mem) =>
+        mem.memberId === payload.memberId
+          ? { ...mem, status: payload.status, response: payload.errorMessage ?? mem.response }
+          : mem,
+      );
+      const next: TeamRun = { ...target.teamRun, members: updatedMembers };
+      updateMessage(targetConvId, target.id, { teamRun: next });
+      apiPatchMessageMetadata(targetConvId, target.id, {
+        team_run: toApiTeamRun(next),
+      }).catch(console.error);
+    });
+
+    return () => {
+      unsubAnnounce();
+      unsubMember();
+    };
+  }, [updateMessage]);
 
   // Listen once for integration setup proposals fired by the chat-actions
   // HTTP server when the chat agent runs propose-integration.sh. The

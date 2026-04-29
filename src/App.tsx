@@ -12,6 +12,7 @@ import { VoiceProvider } from './context/VoiceContext';
 import { SandboxProvider } from './context/SandboxContext';
 import { FeatureFlagsProvider } from './context/FeatureFlagsContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { QualityProvider } from './context/QualityContext';
 import { UIPreferencesProvider } from './context/UIPreferencesContext';
 import { MarkdownDocumentProvider } from './context/MarkdownDocumentContext';
 import { FilesProvider } from './context/FilesContext';
@@ -26,6 +27,7 @@ function App() {
     <ToastProvider>
       <OnboardingProvider>
       <ThemeProvider>
+      <QualityProvider>
       <UIPreferencesProvider>
       <UpdateProvider>
       <ProviderProvider>
@@ -58,6 +60,7 @@ function App() {
       </ProviderProvider>
       </UpdateProvider>
       </UIPreferencesProvider>
+      </QualityProvider>
       </ThemeProvider>
       </OnboardingProvider>
       <ToastContainer />

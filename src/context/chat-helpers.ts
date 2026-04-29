@@ -4,6 +4,7 @@ import type {
   RoutineProposal,
   ExpertProposal,
   TeamProposal,
+  TeamRun,
   IntegrationSetupProposal,
 } from '../types/chat';
 
@@ -219,6 +220,7 @@ export function fromApiMessage(m: ApiMessage): Message {
         status: (raw.status as 'running' | 'completed' | 'error') ?? 'completed',
         successCount: raw.success_count as number | undefined,
         totalCount: raw.total_count as number | undefined,
+        startedAt: typeof raw.started_at === 'number' ? (raw.started_at as number) : undefined,
         members: members.map((mem) => ({
           memberId: mem.member_id as string,
           memberName: mem.member_name as string,
@@ -292,6 +294,25 @@ export function toApiIntegrationProposal(
     integration_id: p.integrationId,
     reason: p.reason,
     status: p.status,
+  };
+}
+
+export function toApiTeamRun(r: TeamRun): Record<string, unknown> {
+  return {
+    team_id: r.teamId,
+    team_name: r.teamName,
+    strategy: r.strategy,
+    status: r.status,
+    success_count: r.successCount,
+    total_count: r.totalCount,
+    started_at: r.startedAt,
+    members: r.members.map((m) => ({
+      member_id: m.memberId,
+      member_name: m.memberName,
+      role: m.role,
+      status: m.status,
+      response: m.response,
+    })),
   };
 }
 

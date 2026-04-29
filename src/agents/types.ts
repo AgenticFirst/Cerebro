@@ -63,6 +63,10 @@ export interface AgentRunRequest {
   followUpContext?: string;
   /** UI language code (e.g. "es"). When set and not "en", the AI is instructed to respond in that language. */
   language?: string;
+  /** Speed/quality tier from the chat input chip. Drives default `model` and
+   *  `maxTurns` (when not explicitly set) and a tier directive appended to
+   *  the system prompt. */
+  qualityTier?: 'fast' | 'medium' | 'slow';
   /** Initial terminal dimensions for task PTY (matches xterm viewport). */
   cols?: number;
   rows?: number;

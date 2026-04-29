@@ -13,6 +13,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import type { RendererAgentEvent } from '../agents/types';
+import type { QualityTier } from '../types/ipc';
 import { getCachedClaudeCodeInfo } from './detector';
 import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
 import { buildSystemPrompt } from '../i18n/language-directive';
@@ -34,6 +35,10 @@ export interface ClaudeCodeRunOptions {
   model?: string;
   /** UI language code (e.g. "es"). When set and not "en", a language directive is appended to the system prompt. */
   language?: string;
+  /** Quality vs. speed tier picked from the chat input chip. Drives a
+   *  tier directive appended to the system prompt — flavored for Cerebro
+   *  vs. a focused expert based on `agentName`. */
+  qualityTier?: QualityTier;
 }
 
 /**
@@ -96,7 +101,7 @@ export class ClaudeCodeRunner extends EventEmitter {
       '--verbose',
       '--max-turns', String(options.maxTurns ?? 15),
       '--dangerously-skip-permissions',
-      '--append-system-prompt', buildSystemPrompt(options.language),
+      '--append-system-prompt', buildSystemPrompt(options.language, options.qualityTier, options.agentName),
     ];
 
     args.push('--model', options.model || 'sonnet');

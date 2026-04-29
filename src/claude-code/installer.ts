@@ -197,7 +197,15 @@ function buildCerebroBody(memoryDir: string, skillsDir: string, teamsEnabled: bo
   const teamsBlock = teamsEnabled
     ? `
 
-Some subagents are **teams** — orchestrators that delegate to multiple member experts and synthesize their work into a single deliverable. Pick a team when the user's request spans multiple disciplines (e.g. "research and ship", "review across security/frontend/backend"). Teams take longer than a single expert but produce end-to-end artifacts. Their names usually end in "Team".`
+Some subagents are **teams** — orchestrators that delegate to multiple member experts and synthesize their work into a single deliverable. Pick a team when the user's request spans multiple disciplines (e.g. "research and ship", "review across security/frontend/backend"). Teams take longer than a single expert but produce end-to-end artifacts. Their names usually end in "Team".
+
+**Before invoking any team via the Agent tool, you MUST first announce it so the user can see who is working** — without this, the user stares at a blank screen for the entire (potentially multi-minute) run. Use \`list-experts\` (or your existing knowledge of the team) to discover the team's id, name, strategy, and member list, then run:
+
+\`\`\`
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/announce-team-run.sh" <team_id> "<team_name>" "<strategy>" '<members_json>'
+\`\`\`
+
+Where \`<members_json>\` is a JSON array like \`[{"member_id":"abc123","member_name":"Running Coach","role":"coach"}, ...]\`. Then proceed with the \`Agent\` tool call. The team coordinator will emit per-member status updates on its own.`
     : '';
 
   return `You are **Cerebro**, the user's personal AI assistant.
@@ -262,9 +270,9 @@ function buildTeamBody(
     const agentName = agentNameById[m.expert_id];
     const displayName = memberNamesById[m.expert_id] || m.role;
     if (!agentName) {
-      return `${idx + 1}. **${displayName}** — _${m.role}_ — \`[unavailable — skip and note in your final reply]\``;
+      return `${idx + 1}. **${displayName}** — _${m.role}_ — member_id=\`${m.expert_id}\` — \`[unavailable — skip and note in your final reply]\``;
     }
-    return `${idx + 1}. **${displayName}** — _${m.role}_ — invoke via Agent tool with subagent name \`${agentName}\``;
+    return `${idx + 1}. **${displayName}** — _${m.role}_ — member_id=\`${m.expert_id}\` — invoke via Agent tool with subagent name \`${agentName}\``;
   });
   const memberBlock = memberLines.join('\n');
 
@@ -285,15 +293,51 @@ Invoke members **strictly in the order listed above**, one Agent call per member
 
   const handoffBlock = `## Handoff Discipline
 
-- Members write their full artifacts (specs, code, reports) to disk via the \`Write\` tool at \`./team-run/{member-role}.md\` (or appropriate file paths for code).
-- Members return a **<500-word summary** for handoff — not the full artifact.
-- The synthesizer (final member) reads the on-disk artifacts via \`Read\` before producing the final deliverable.
-- Keep your own coordinator output focused on routing and synthesis — do **not** restate full member outputs in your own reply.`;
+The depth of this run is driven by a \`[QUALITY_TIER=fast|medium|slow]\` marker that Cerebro prepends to the prompt it sends you (look at the first line). When the marker is absent, treat it as \`medium\`.
+
+**\`[QUALITY_TIER=slow]\`** — the user wants depth and is willing to wait:
+- Each member writes their full artifact to disk at \`./team-run/{member-role}.md\` (or appropriate file paths for code) AND returns the FULL artifact text inline to you (no word cap).
+- Before composing the final deliverable, you MUST \`Read\` every member's artifact file and confirm the inline text matches.
+- Preserve day-by-day detail, embedded links (instructional videos, illustrated guides, references), and per-section depth from the members. Do not condense.
+- When concrete reference media (instructional videos, illustrated guides, links) would help the user, include them in the artifact.
+- The final deliverable MUST be at least as long as the longest individual member artifact.
+
+**\`[QUALITY_TIER=medium]\`** (default) — balanced depth:
+- Members write their full artifacts to disk AND return a **<500-word handoff summary**.
+- Before composing the final deliverable, you MUST \`Read\` every member's artifact via the \`Read\` tool. Synthesizing from the 500-word summaries alone is a contract violation — full detail lives in the on-disk files.
+
+**\`[QUALITY_TIER=fast]\`** — the user wants speed:
+- Cap the team to the first 2 members listed in **Members**; skip the rest.
+- Members return inline summaries only — no disk writes required.
+- Synthesize quickly; concise output is fine.
+
+## Live status reporting
+
+Cerebro is showing the user a live status card listing every member with a queued/running/completed indicator. You MUST emit per-member status updates so the card stays current — without these calls the user sees a frozen card for the entire run.
+
+- **At each member's start** (right before invoking the \`Agent\` tool for that member), run:
+  \`\`\`
+  bash "$CLAUDE_PROJECT_DIR/.claude/scripts/team-member-update.sh" <team_id> <member_id> running
+  \`\`\`
+- **At each member's completion** (right after the Agent tool returns):
+  \`\`\`
+  bash "$CLAUDE_PROJECT_DIR/.claude/scripts/team-member-update.sh" <team_id> <member_id> completed
+  \`\`\`
+- **If a member fails**, pass \`error\` plus a one-line message as a fourth argument:
+  \`\`\`
+  bash "$CLAUDE_PROJECT_DIR/.claude/scripts/team-member-update.sh" <team_id> <member_id> error "Brief reason"
+  \`\`\`
+
+The \`<team_id>\` is your team_id (\`${expert.id}\`) shown at the top of this prompt. The \`<member_id>\` is the \`member_id\` value listed for each entry in **Members** below.
+
+Keep your own coordinator output focused on routing and synthesis — do **not** restate full member outputs in your own reply (they will be surfaced separately).`;
 
   const coordinatorPrompt = (expert.coordinator_prompt || '').trim();
   const coordinatorBlock = coordinatorPrompt ? `## Coordinator Instructions\n\n${coordinatorPrompt}` : '';
 
   return `You are the **${expert.name}**, a Cerebro orchestrator team.${domainLine} You do not do the work yourself — you delegate to your member experts via the \`Agent\` tool and synthesize their outputs.
+
+Your **team_id** is \`${expert.id}\`. Use this verbatim when calling \`team-member-update.sh\` (see "Live status reporting" below).
 
 ## Mandatory Delegation Policy (read this before anything else)
 
@@ -961,6 +1005,150 @@ if [ "$HTTP_CODE" = "200" ]; then
 fi
 ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
 echo "ERROR: \${ERROR:-Could not open setup card} (HTTP $HTTP_CODE)" >&2
+exit 1
+`,
+    },
+    {
+      name: 'announce-team-run.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-populates the live TeamRunCard in the chat UI with the team and its
+# members in 'queued' state, so the user has visibility for the duration
+# of a (potentially multi-minute) team run. Cerebro must call this BEFORE
+# invoking the team via the Agent tool.
+#
+# Usage: bash announce-team-run.sh <team_id> <team_name> <strategy> <members_json>
+#
+# members_json is a JSON array of {member_id, member_name, role}, e.g.
+#   '[{"member_id":"abc","member_name":"Running Coach","role":"coach"}]'
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running" >&2
+  exit 1
+fi
+
+TEAM_ID="\${1:-}"
+TEAM_NAME="\${2:-}"
+STRATEGY="\${3:-}"
+MEMBERS_JSON="\${4:-}"
+if [ -z "$TEAM_ID" ] || [ -z "$TEAM_NAME" ] || [ -z "$STRATEGY" ] || [ -z "$MEMBERS_JSON" ]; then
+  echo "Usage: announce-team-run.sh <team_id> <team_name> <strategy> <members_json>" >&2
+  exit 1
+fi
+
+# Validate that members is parseable JSON.
+if ! echo "$MEMBERS_JSON" | jq -e 'type == "array"' >/dev/null 2>&1; then
+  echo "ERROR: <members_json> must be a JSON array" >&2
+  exit 1
+fi
+
+BODY=$(jq -n \\
+  --arg team_id "$TEAM_ID" \\
+  --arg team_name "$TEAM_NAME" \\
+  --arg strategy "$STRATEGY" \\
+  --argjson members "$MEMBERS_JSON" \\
+  '{team_id: $team_id, team_name: $team_name, strategy: $strategy, members: $members}')
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/announce-team-run" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d "$BODY") || {
+  echo "ERROR: Cannot reach chat-actions server on port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" = "200" ]; then
+  echo "SUCCESS: Announced team run for $TEAM_NAME"
+  exit 0
+fi
+ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
+echo "ERROR: \${ERROR:-Could not announce team run} (HTTP $HTTP_CODE)" >&2
+exit 1
+`,
+    },
+    {
+      name: 'team-member-update.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Flips the status of a single team member in the live TeamRunCard. The
+# team coordinator subprocess calls this at each member's start and end
+# so the user can see which expert is currently working.
+#
+# Usage: bash team-member-update.sh <team_id> <member_id> <status> [error_message]
+#
+# status: running | completed | error
+# error_message: optional one-line message when status=error
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running" >&2
+  exit 1
+fi
+
+TEAM_ID="\${1:-}"
+MEMBER_ID="\${2:-}"
+STATUS="\${3:-}"
+ERROR_MESSAGE="\${4:-}"
+if [ -z "$TEAM_ID" ] || [ -z "$MEMBER_ID" ] || [ -z "$STATUS" ]; then
+  echo "Usage: team-member-update.sh <team_id> <member_id> <status> [error_message]" >&2
+  exit 1
+fi
+
+case "$STATUS" in
+  running|completed|error) ;;
+  *)
+    echo "ERROR: status must be running, completed, or error (got: $STATUS)" >&2
+    exit 1
+    ;;
+esac
+
+BODY=$(jq -n \\
+  --arg team_id "$TEAM_ID" \\
+  --arg member_id "$MEMBER_ID" \\
+  --arg status "$STATUS" \\
+  --arg error_message "$ERROR_MESSAGE" \\
+  '{team_id: $team_id, member_id: $member_id, status: $status} + (if $error_message == "" then {} else {error_message: $error_message} end)')
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/team-member-update" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d "$BODY") || {
+  echo "ERROR: Cannot reach chat-actions server on port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" = "200" ]; then
+  exit 0
+fi
+ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
+echo "ERROR: \${ERROR:-Could not update team member status} (HTTP $HTTP_CODE)" >&2
 exit 1
 `,
     },

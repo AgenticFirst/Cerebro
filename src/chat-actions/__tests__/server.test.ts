@@ -254,6 +254,103 @@ describe('ChatActionServer', () => {
     expect(mockSend).not.toHaveBeenCalled();
   });
 
+  it('emits a team-run-announced event when given a valid payload', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/announce-team-run',
+      token,
+      body: {
+        team_id: 'fitness-team-abc',
+        team_name: 'Fitness Team',
+        strategy: 'sequential',
+        members: [
+          { member_id: 'coach', member_name: 'Running Coach', role: 'coach' },
+          { member_id: 'nutri', member_name: 'Nutritionist', role: 'nutritionist' },
+        ],
+        conversation_id: 'conv-1',
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(mockSend).toHaveBeenCalledWith(
+      IPC_CHANNELS.TEAM_RUN_ANNOUNCED,
+      expect.objectContaining({
+        teamId: 'fitness-team-abc',
+        teamName: 'Fitness Team',
+        strategy: 'sequential',
+        conversationId: 'conv-1',
+        members: [
+          { memberId: 'coach', memberName: 'Running Coach', role: 'coach' },
+          { memberId: 'nutri', memberName: 'Nutritionist', role: 'nutritionist' },
+        ],
+      }),
+    );
+  });
+
+  it('rejects announce-team-run with empty members array', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/announce-team-run',
+      token,
+      body: { team_id: 't', team_name: 'T', strategy: 'sequential', members: [] },
+    });
+    expect(res.status).toBe(400);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('rejects announce-team-run with malformed member entries', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/announce-team-run',
+      token,
+      body: {
+        team_id: 't',
+        team_name: 'T',
+        strategy: 'sequential',
+        members: [{ member_id: 'a' /* missing member_name */ }],
+      },
+    });
+    expect(res.status).toBe(400);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it('emits a team-member-update event for valid statuses', async () => {
+    for (const status of ['running', 'completed', 'error'] as const) {
+      mockSend.mockClear();
+      const res = await request(port, {
+        method: 'POST',
+        path: '/chat-actions/team-member-update',
+        token,
+        body: {
+          team_id: 't',
+          member_id: 'm',
+          status,
+          ...(status === 'error' ? { error_message: 'boom' } : {}),
+        },
+      });
+      expect(res.status).toBe(200);
+      expect(mockSend).toHaveBeenCalledWith(
+        IPC_CHANNELS.TEAM_MEMBER_UPDATE,
+        expect.objectContaining({
+          teamId: 't',
+          memberId: 'm',
+          status,
+          ...(status === 'error' ? { errorMessage: 'boom' } : {}),
+        }),
+      );
+    }
+  });
+
+  it('rejects team-member-update with an invalid status', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/team-member-update',
+      token,
+      body: { team_id: 't', member_id: 'm', status: 'wat' },
+    });
+    expect(res.status).toBe(400);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
   it('returns ok=false (still 200) when dry-run reports a step failure', async () => {
     mockEngineDryRun.mockResolvedValueOnce({
       ok: false,
