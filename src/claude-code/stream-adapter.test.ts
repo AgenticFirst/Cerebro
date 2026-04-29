@@ -218,3 +218,79 @@ describe('ClaudeCodeRunner happy path', () => {
     expect(textDeltas[0].payload.delta).toBe('Hello!');
   });
 });
+
+describe('ClaudeCodeRunner idle watchdog', () => {
+  beforeEach(() => {
+    currentChild = null;
+    spawnCalls.length = 0;
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('kills the subprocess after 60s of total silence with the auth-hint error', () => {
+    const { events } = startRunner();
+    vi.advanceTimersByTime(60_001);
+    const errorEvents = events.filter((e) => e.type === 'error');
+    expect(errorEvents).toHaveLength(1);
+    expect(errorEvents[0].payload.error).toMatch(/produced no output for 60 seconds/);
+    expect(errorEvents[0].payload.error).toMatch(/isn't authenticated/);
+  });
+
+  it('does not kill at 60s while a tool_use is in flight', () => {
+    const { events } = startRunner();
+    const toolUse = {
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: 'tool-1', name: 'Bash', input: {} }] },
+    };
+    currentChild!.stdout.write(JSON.stringify(toolUse) + '\n');
+    // Drain the 'data' microtask so handleJsonLine runs.
+    vi.advanceTimersByTime(0);
+
+    vi.advanceTimersByTime(120_000); // 2 minutes — well past the 60s idle ceiling
+    const errorEvents = events.filter((e) => e.type === 'error');
+    expect(errorEvents).toHaveLength(0);
+  });
+
+  it('kills at the tool ceiling (1800s) with a tool-aware error message', () => {
+    const { events } = startRunner();
+    const toolUse = {
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: 'tool-1', name: 'Bash', input: {} }] },
+    };
+    currentChild!.stdout.write(JSON.stringify(toolUse) + '\n');
+    vi.advanceTimersByTime(0);
+
+    vi.advanceTimersByTime(1_800_001);
+    const errorEvents = events.filter((e) => e.type === 'error');
+    expect(errorEvents).toHaveLength(1);
+    expect(errorEvents[0].payload.error).toMatch(/waiting on tool 'Bash'/);
+    expect(errorEvents[0].payload.error).toMatch(/approval-gated/);
+    expect(errorEvents[0].payload.error).not.toMatch(/isn't authenticated/);
+  });
+
+  it('reverts to the 60s idle ceiling after tool_result returns', () => {
+    const { events } = startRunner();
+    const toolUse = {
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: 'tool-1', name: 'Bash', input: {} }] },
+    };
+    currentChild!.stdout.write(JSON.stringify(toolUse) + '\n');
+    vi.advanceTimersByTime(0);
+
+    // Tool returned — drop back to 60s mode.
+    const toolResult = {
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: 'tool-1', content: 'ok' }] },
+    };
+    currentChild!.stdout.write(JSON.stringify(toolResult) + '\n');
+    vi.advanceTimersByTime(0);
+
+    vi.advanceTimersByTime(60_001);
+    const errorEvents = events.filter((e) => e.type === 'error');
+    expect(errorEvents).toHaveLength(1);
+    expect(errorEvents[0].payload.error).toMatch(/produced no output for 60 seconds/);
+  });
+});

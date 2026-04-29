@@ -51,6 +51,12 @@ export interface ClaudeCodeRunOptions {
  */
 const IDLE_WARNING_MS = 30_000;
 const IDLE_TIMEOUT_MS = 60_000;
+// While a tool call is in flight, the subprocess is legitimately silent —
+// it can't write the next stream-json line until the tool returns. The chat
+// agent's `run-chat-action` skill blocks on human approval via a curl with
+// `--max-time 1800`, so we mirror that ceiling here. The 60s idle policy is
+// still right for "no tool open and the model has gone quiet" hangs.
+const IDLE_TOOL_TIMEOUT_MS = 1_800_000;
 
 export class ClaudeCodeRunner extends EventEmitter {
   private process: ChildProcess | null = null;
@@ -65,6 +71,8 @@ export class ClaudeCodeRunner extends EventEmitter {
   private idleWarningTimer: ReturnType<typeof setTimeout> | null = null;
   private idleKillTimer: ReturnType<typeof setTimeout> | null = null;
   private idleWarned = false;
+  private openToolCount = 0;
+  private lastOpenToolName = '';
 
   start(options: ClaudeCodeRunOptions): void {
     const { runId, prompt, agentName, cwd } = options;
@@ -258,11 +266,16 @@ export class ClaudeCodeRunner extends EventEmitter {
     });
   }
 
-  /** Arm both idle timers from the current moment. */
+  /** Arm both idle timers from the current moment. The kill ceiling is
+   *  IDLE_TIMEOUT_MS when no tool is in flight, IDLE_TOOL_TIMEOUT_MS while
+   *  the subprocess is waiting on a tool result. The warning timer always
+   *  fires at IDLE_WARNING_MS for visibility. */
   private armIdleTimers(runId: string): void {
     this.clearIdleTimers();
     this.idleWarned = false;
     this.idleStartedAt = Date.now();
+    const toolOpen = this.openToolCount > 0;
+    const killAt = toolOpen ? IDLE_TOOL_TIMEOUT_MS : IDLE_TIMEOUT_MS;
     this.idleWarningTimer = setTimeout(() => {
       if (this.killed || this.closeHandled || this.idleWarned) return;
       this.idleWarned = true;
@@ -278,11 +291,21 @@ export class ClaudeCodeRunner extends EventEmitter {
       this.clearIdleTimers();
       const ctx = this.agentNameUsed ? ` (agent='${this.agentNameUsed}')` : '';
       const stderrHint = this.stderrTail ? `\n\nLast stderr:\n${this.stderrTail.slice(-300)}` : '';
-      const detail =
-        `Claude Code subprocess produced no output for ${Math.round(IDLE_TIMEOUT_MS / 1000)} seconds${ctx} and was killed. ` +
-        `The most common cause is that Claude Code isn't authenticated — run \`claude\` in your terminal to check, then re-run this routine. ` +
-        `If \`claude\` works fine, the model may be unavailable or the agent file may be malformed.` +
-        stderrHint;
+      const seconds = Math.round(killAt / 1000);
+      let detail: string;
+      if (toolOpen) {
+        const toolHint = this.lastOpenToolName ? ` '${this.lastOpenToolName}'` : '';
+        detail =
+          `Claude Code subprocess was killed after ${seconds}s waiting on tool${toolHint}${ctx} to return. ` +
+          `The tool either hung or — for approval-gated chat actions — no human responded in time.` +
+          stderrHint;
+      } else {
+        detail =
+          `Claude Code subprocess produced no output for ${seconds} seconds${ctx} and was killed. ` +
+          `The most common cause is that Claude Code isn't authenticated — run \`claude\` in your terminal to check, then re-run this routine. ` +
+          `If \`claude\` works fine, the model may be unavailable or the agent file may be malformed.` +
+          stderrHint;
+      }
       // Try graceful first, then force.
       if (this.process && !this.process.killed) {
         this.process.kill('SIGTERM');
@@ -292,7 +315,7 @@ export class ClaudeCodeRunner extends EventEmitter {
       }
       this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
       this.emit('error', detail);
-    }, IDLE_TIMEOUT_MS);
+    }, killAt);
   }
 
   /** Reset idle timers — call from every stdout/stderr chunk. */
@@ -310,7 +333,10 @@ export class ClaudeCodeRunner extends EventEmitter {
     return this.accumulatedText;
   }
 
-  private emitToolEnd(toolCallId: string, toolName: string, content: unknown, isError: boolean): void {
+  private emitToolEnd(runId: string, toolCallId: string, toolName: string, content: unknown, isError: boolean): void {
+    if (this.openToolCount > 0) this.openToolCount -= 1;
+    if (this.openToolCount === 0) this.lastOpenToolName = '';
+    this.armIdleTimers(runId);
     let result = '';
     if (typeof content === 'string') {
       result = content;
@@ -356,6 +382,9 @@ export class ClaudeCodeRunner extends EventEmitter {
               delta: block.text,
             } as RendererAgentEvent);
           } else if (block.type === 'tool_use') {
+            this.openToolCount += 1;
+            if (block.name) this.lastOpenToolName = block.name;
+            this.armIdleTimers(runId);
             this.emit('event', {
               type: 'tool_start',
               toolCallId: block.id,
@@ -405,12 +434,12 @@ export class ClaudeCodeRunner extends EventEmitter {
       // Top-level tool result (forward-compatibility path)
       const toolCallId = parsed.tool_use_id || parsed.id || '';
       const toolName = parsed.name || parsed.tool_name || '';
-      this.emitToolEnd(toolCallId, toolName, parsed.content, parsed.is_error === true);
+      this.emitToolEnd(runId, toolCallId, toolName, parsed.content, parsed.is_error === true);
     } else if (type === 'user' && parsed.message?.content && Array.isArray(parsed.message.content)) {
       // Tool results nested inside user messages
       for (const block of parsed.message.content) {
         if (block.type === 'tool_result') {
-          this.emitToolEnd(block.tool_use_id || '', '', block.content, block.is_error === true);
+          this.emitToolEnd(runId, block.tool_use_id || '', '', block.content, block.is_error === true);
         }
       }
     } else if (type) {

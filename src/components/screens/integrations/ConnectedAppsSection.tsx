@@ -134,6 +134,17 @@ export default function ConnectedAppsSection() {
 
       <div className="mt-6 space-y-2">
         <IntegrationCard
+          icon={GitHubIcon}
+          iconBg="bg-zinc-500/15"
+          iconColor="text-text-primary"
+          name="GitHub"
+          description={t('connectedApps.githubDesc')}
+          defaultExpanded={false}
+        >
+          <GitHubSection />
+        </IntegrationCard>
+
+        <IntegrationCard
           icon={HubSpotIcon}
           iconBg="bg-orange-500/15"
           iconColor="text-orange-400"
@@ -157,17 +168,6 @@ export default function ConnectedAppsSection() {
           defaultExpanded={false}
         >
           <GHLSection />
-        </IntegrationCard>
-
-        <IntegrationCard
-          icon={GitHubIcon}
-          iconBg="bg-zinc-500/15"
-          iconColor="text-text-primary"
-          name="GitHub"
-          description={t('connectedApps.githubDesc')}
-          defaultExpanded={false}
-        >
-          <GitHubSection />
         </IntegrationCard>
       </div>
 
