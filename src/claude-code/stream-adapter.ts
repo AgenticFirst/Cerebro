@@ -44,6 +44,14 @@ export interface ClaudeCodeRunOptions {
  *  - 'done'   (messageContent: string)
  *  - 'error'  (error: string)
  */
+/**
+ * Idle-watchdog timing. Without this, a hung subprocess (e.g., Claude Code
+ * not authenticated) waits forever — the only safety net is the engine's
+ * 5-minute step timeout, which produces a UUID-only error with no diagnosis.
+ */
+const IDLE_WARNING_MS = 30_000;
+const IDLE_TIMEOUT_MS = 60_000;
+
 export class ClaudeCodeRunner extends EventEmitter {
   private process: ChildProcess | null = null;
   private accumulatedText = '';
@@ -53,6 +61,10 @@ export class ClaudeCodeRunner extends EventEmitter {
   private cwdUsed = '';
   private killed = false;
   private closeHandled = false;
+  private idleStartedAt = 0;
+  private idleWarningTimer: ReturnType<typeof setTimeout> | null = null;
+  private idleKillTimer: ReturnType<typeof setTimeout> | null = null;
+  private idleWarned = false;
 
   start(options: ClaudeCodeRunOptions): void {
     const { runId, prompt, agentName, cwd } = options;
@@ -96,9 +108,17 @@ export class ClaudeCodeRunner extends EventEmitter {
       env,
     });
 
+    // Start idle watchdog as soon as the subprocess is alive. The chat
+    // path used to wait indefinitely for output; if the CLI hangs (most
+    // commonly because the user isn't authenticated), no event would
+    // ever fire. Now: 30s warns, 60s kills with a structured error.
+    this.idleStartedAt = Date.now();
+    this.armIdleTimers(runId);
+
     let buffer = '';
 
     this.process.stdout?.on('data', (chunk: Buffer) => {
+      this.resetIdleTimers(runId);
       buffer += chunk.toString();
       const lines = buffer.split('\n');
       // Keep last potentially incomplete line
@@ -112,15 +132,29 @@ export class ClaudeCodeRunner extends EventEmitter {
     });
 
     this.process.stderr?.on('data', (data: Buffer) => {
-      const text = data.toString().trim();
-      console.log(`[ClaudeCode:${runId.slice(0, 8)}] ${text}`);
+      this.resetIdleTimers(runId);
+      const text = data.toString();
+      console.log(`[ClaudeCode:${runId.slice(0, 8)}] ${text.trim()}`);
       // Keep last ~500 chars of stderr so we can surface the actual error
       this.stderrTail = (this.stderrTail + '\n' + text).slice(-500).trim();
+      // Stream each non-empty stderr line as a structured event so the
+      // Activity panel's live feed shows what the subprocess is saying
+      // (e.g., auth prompts, model errors, sandbox issues).
+      for (const raw of text.split('\n')) {
+        const line = raw.trim();
+        if (!line) continue;
+        this.emit('event', {
+          type: 'subprocess_stderr',
+          runId,
+          line,
+        } as RendererAgentEvent);
+      }
     });
 
     this.process.on('close', (code, signal) => {
       if (this.closeHandled) return;
       this.closeHandled = true;
+      this.clearIdleTimers();
 
       // Process remaining buffer
       if (buffer.trim()) {
@@ -207,6 +241,7 @@ export class ClaudeCodeRunner extends EventEmitter {
 
   abort(): void {
     this.killed = true;
+    this.clearIdleTimers();
     if (!this.process || this.process.killed) return;
 
     this.process.kill('SIGTERM');
@@ -221,6 +256,54 @@ export class ClaudeCodeRunner extends EventEmitter {
     this.process.once('exit', () => {
       clearTimeout(forceTimer);
     });
+  }
+
+  /** Arm both idle timers from the current moment. */
+  private armIdleTimers(runId: string): void {
+    this.clearIdleTimers();
+    this.idleWarned = false;
+    this.idleStartedAt = Date.now();
+    this.idleWarningTimer = setTimeout(() => {
+      if (this.killed || this.closeHandled || this.idleWarned) return;
+      this.idleWarned = true;
+      this.emit('event', {
+        type: 'agent_idle_warning',
+        runId,
+        elapsedMs: Date.now() - this.idleStartedAt,
+      } as RendererAgentEvent);
+    }, IDLE_WARNING_MS);
+    this.idleKillTimer = setTimeout(() => {
+      if (this.killed || this.closeHandled) return;
+      this.killed = true;
+      this.clearIdleTimers();
+      const ctx = this.agentNameUsed ? ` (agent='${this.agentNameUsed}')` : '';
+      const stderrHint = this.stderrTail ? `\n\nLast stderr:\n${this.stderrTail.slice(-300)}` : '';
+      const detail =
+        `Claude Code subprocess produced no output for ${Math.round(IDLE_TIMEOUT_MS / 1000)} seconds${ctx} and was killed. ` +
+        `The most common cause is that Claude Code isn't authenticated — run \`claude\` in your terminal to check, then re-run this routine. ` +
+        `If \`claude\` works fine, the model may be unavailable or the agent file may be malformed.` +
+        stderrHint;
+      // Try graceful first, then force.
+      if (this.process && !this.process.killed) {
+        this.process.kill('SIGTERM');
+        setTimeout(() => {
+          if (this.process && !this.process.killed) this.process.kill('SIGKILL');
+        }, 2000);
+      }
+      this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
+      this.emit('error', detail);
+    }, IDLE_TIMEOUT_MS);
+  }
+
+  /** Reset idle timers — call from every stdout/stderr chunk. */
+  private resetIdleTimers(runId: string): void {
+    if (this.killed || this.closeHandled) return;
+    this.armIdleTimers(runId);
+  }
+
+  private clearIdleTimers(): void {
+    if (this.idleWarningTimer) { clearTimeout(this.idleWarningTimer); this.idleWarningTimer = null; }
+    if (this.idleKillTimer) { clearTimeout(this.idleKillTimer); this.idleKillTimer = null; }
   }
 
   getAccumulatedText(): string {

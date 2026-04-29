@@ -13,6 +13,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 import { ipcMain } from 'electron';
 import type { AgentRunRequest, ActiveRunInfo, RendererAgentEvent } from './types';
 
@@ -29,6 +30,8 @@ import { ClaudeCodeRunner } from '../claude-code/stream-adapter';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
 import { getAgentNameForExpert, installAll, installExpert, expertAgentName } from '../claude-code/installer';
+import { MediaIngestService } from '../files/media-ingest';
+import type { ResolvedAttachment } from '../files/types';
 import fsSync from 'node:fs';
 import { IPC_CHANNELS } from '../types/ipc';
 import { buildSystemPrompt } from '../i18n/language-directive';
@@ -106,10 +109,45 @@ export class AgentRuntime {
   private syncChain: Promise<void> = Promise.resolve();
   public terminalBufferStore: TerminalBufferStore;
 
+  /**
+   * Main-process event bus. The Claude Code chat runner emits events to
+   * the renderer via `webContents.send`, but main-process consumers (the
+   * `expert_step` action in particular) cannot observe those — its
+   * `webContents.ipc.on` only fires for renderer→main messages. Without
+   * this bridge, every `run_expert` step in a routine waits forever for a
+   * `done` event that never arrives, and only the dag executor's 5-min
+   * wall clock frees the run. Subscribe via `runtime.on('event:<runId>',
+   * cb)` to receive every agent event in main.
+   */
+  private bus = new EventEmitter();
+
+  private mediaIngest: MediaIngestService;
+
   constructor(backendPort: number, dataDir: string) {
     this.backendPort = backendPort;
     this.dataDir = dataDir;
     this.terminalBufferStore = new TerminalBufferStore(dataDir);
+    this.mediaIngest = new MediaIngestService({
+      getBackendPort: () => this.backendPort,
+      transcriptDir: `${dataDir}/files/_transcripts`,
+    });
+    // Allow many step actions to listen on different runs concurrently.
+    this.bus.setMaxListeners(50);
+  }
+
+  /** Subscribe to agent events for a specific run from main-process code. */
+  onAgentEvent(runId: string, listener: (event: RendererAgentEvent) => void): () => void {
+    const channel = `event:${runId}`;
+    this.bus.on(channel, listener);
+    return () => this.bus.off(channel, listener);
+  }
+
+  /** Internal: emit a single agent event on both the main bus and the renderer channel. */
+  private deliverEvent(runId: string, webContents: AgentEventSink, event: RendererAgentEvent): void {
+    this.bus.emit(`event:${runId}`, event);
+    if (!webContents.isDestroyed()) {
+      webContents.send(`agent:event:${runId}`, event);
+    }
   }
 
   /**
@@ -146,9 +184,30 @@ export class AgentRuntime {
     const isExternalWorkspace =
       isTaskRun && !!request.workspacePath && !request.workspacePath.startsWith(this.dataDir);
 
+    // Resolve any `@/abs/path` attachment refs in the user's content BEFORE
+    // we paste it into the `claude -p` argv. Office docs / PDFs / audio get
+    // pre-extracted to UTF-8 sidecars; binary files no longer reach Claude
+    // Code's Read tool, which would otherwise crash the subprocess (exit 1).
+    // The original `content` (with raw @paths) stays on `userContent` so the
+    // activity log shows what the user actually attached.
+    let resolvedContent = content;
+    let resolvedAttachments: ResolvedAttachment[] = [];
+    try {
+      const resolved = await this.mediaIngest.resolveContent(
+        content,
+        'chat-upload',
+        conversationId ?? null,
+      );
+      resolvedContent = resolved.content;
+      resolvedAttachments = resolved.attachments;
+    } catch (err) {
+      console.warn(`[AgentRuntime] media ingest failed for run ${runId}; falling back to raw content:`, err);
+    }
+
     // Build the prompt. Task runs get a structured envelope; chat runs
-    // get conversation-history context prepended.
-    let fullPrompt = content;
+    // get conversation-history context prepended. Use `resolvedContent` so
+    // every prompt template sees the attachment-rewritten string.
+    let fullPrompt = resolvedContent;
 
     if (isTaskRun && request.taskPhase === 'plan') {
       const maxQ = request.maxClarifyQuestions ?? 5;
@@ -219,7 +278,7 @@ The user sees this as an interactive checklist. Keep items short, concrete, and 
 
 ## Goal
 
-${content}
+${resolvedContent}
 ${answersSection}
 </task_plan>`;
     } else if (isTaskRun && request.taskPhase === 'follow_up') {
@@ -236,7 +295,7 @@ ${request.followUpContext ?? '(no context available)'}
 
 ## Follow-up instruction
 
-${content}
+${resolvedContent}
 
 ## Protocol
 
@@ -334,7 +393,7 @@ You previously started this task but did not finish with a \`<deliverable>\` blo
 
 ## Brief (for reference)
 
-${content}
+${resolvedContent}
 
 ## Protocol
 
@@ -372,7 +431,7 @@ You are an Expert executing a task autonomously. Your working directory is ${wor
 
 ## Brief
 
-${content}
+${resolvedContent}
 
 ## Protocol
 
@@ -446,7 +505,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         lines.push(line);
         totalChars += line.length;
       }
-      fullPrompt = `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe above is prior conversation context for reference only. Do NOT continue the conversation or generate any text on behalf of the user. Do NOT output "User:" or simulate user messages. Only provide your single assistant response to the following request.\n</instructions>\n\n${content}`;
+      fullPrompt = `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe above is prior conversation context for reference only. Do NOT continue the conversation or generate any text on behalf of the user. Do NOT output "User:" or simulate user messages. Only provide your single assistant response to the following request.\n</instructions>\n\n${resolvedContent}`;
     }
 
     const channel = `agent:event:${runId}`;
@@ -490,22 +549,26 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     // bogus slug and surface the generic "Claude Code exited unexpectedly" to
     // the user.
     if (agentResolutionError) {
-      if (!webContents.isDestroyed()) {
-        webContents.send(channel, { type: 'run_start', runId } as RendererAgentEvent);
-        webContents.send(channel, {
-          type: 'error',
-          runId,
-          error: agentResolutionError,
-        } as RendererAgentEvent);
-      }
+      this.deliverEvent(runId, webContents, { type: 'run_start', runId } as RendererAgentEvent);
+      this.deliverEvent(runId, webContents, {
+        type: 'error',
+        runId,
+        error: agentResolutionError,
+      } as RendererAgentEvent);
       this.finalizeRun(runId, 'error', '', agentResolutionError);
       return runId;
     }
 
     // Persist agent_runs row (fire-and-forget — non-critical).
-    // For task runs the run_records row is already minted by POST /tasks/{id}/run,
-    // so we skip creating a duplicate.
-    if (!isTaskRun) {
+    // - Task runs already have a run_records row minted by POST /tasks/{id}/run.
+    // - Engine-spawned runs (run_expert step) use a synthetic conversation_id
+    //   like `engine-run:<run-id>` that doesn't match any row in the
+    //   `conversations` table, so the agent_runs.conversation_id FK fails
+    //   with `IntegrityError: FOREIGN KEY constraint failed`. Engine runs
+    //   are tracked by step_records + execution_events anyway, so the
+    //   agent_runs row would be redundant.
+    const isEngineRun = typeof conversationId === 'string' && conversationId.startsWith('engine-run:');
+    if (!isTaskRun && !isEngineRun) {
       this.backendPost('/agent-runs', {
         id: runId,
         expert_id: expertId || null,
@@ -516,9 +579,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     }
 
     // Emit run_start
-    if (!webContents.isDestroyed()) {
-      webContents.send(channel, { type: 'run_start', runId } as RendererAgentEvent);
-    }
+    this.deliverEvent(runId, webContents, { type: 'run_start', runId } as RendererAgentEvent);
 
     // Task runs use the PTY for authentic terminal output. ANSI-stripped text
     // is bridged as text_delta events so the stream parser can extract tags.
@@ -789,24 +850,30 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         if (event.type === 'text_delta') {
           activeRun.accumulatedText += event.delta;
         }
-        if (!webContents.isDestroyed()) {
-          webContents.send(channel, event);
-        }
+        // Deliver to both the renderer (chat UI streaming) AND the
+        // main-process bus (engine actions like expert_step).
+        this.deliverEvent(runId, webContents, event);
       });
 
       runner.on('done', (messageContent: string) => {
+        // Bridge the bare 'done' from the runner to a structured event so
+        // main-process subscribers (expert_step's collectAgentResults)
+        // see it on the same channel as everything else.
+        this.deliverEvent(runId, webContents, {
+          type: 'done',
+          runId,
+          messageContent,
+        } as RendererAgentEvent);
         this.finalizeRun(runId, 'completed', messageContent);
         this.postRunSync(webContents);
       });
 
       runner.on('error', (error: string) => {
-        if (!webContents.isDestroyed()) {
-          webContents.send(channel, {
-            type: 'error',
-            runId,
-            error,
-          } as RendererAgentEvent);
-        }
+        this.deliverEvent(runId, webContents, {
+          type: 'error',
+          runId,
+          error,
+        } as RendererAgentEvent);
         this.finalizeRun(runId, 'error', activeRun.accumulatedText, error);
         this.postRunSync(webContents);
       });
@@ -883,7 +950,10 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     const taskId = isTaskRun ? run.conversationId : null;
     this.activeRuns.delete(runId);
 
-    if (!isTaskRun) {
+    // Engine-spawned runs were never INSERT'd (see startRun) so don't PATCH
+    // either — the row doesn't exist.
+    const isEngineRun = typeof run.conversationId === 'string' && run.conversationId.startsWith('engine-run:');
+    if (!isTaskRun && !isEngineRun) {
       this.backendRequest('PATCH', `/agent-runs/${runId}`, {
         status,
         completed_at: new Date().toISOString(),

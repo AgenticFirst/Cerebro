@@ -37,6 +37,14 @@ import { runClaudeCodeAction } from './actions/run-claude-code';
 import { waitForWebhookAction } from './actions/wait-for-webhook';
 import { runScriptAction } from './actions/run-script';
 import { createSendTelegramAction } from './actions/send-telegram-message';
+import {
+  createSendTelegramMediaActions,
+  createSendTelegramLocationAction,
+} from './actions/send-telegram-media';
+import {
+  createSendWhatsAppMediaActions,
+  createSendWhatsAppLocationAction,
+} from './actions/send-whatsapp-media';
 import type { TelegramChannel } from './actions/telegram-channel';
 import { createSendWhatsAppAction } from './actions/send-whatsapp-message';
 import type { WhatsAppChannel } from './actions/whatsapp-channel';
@@ -44,11 +52,13 @@ import { createHubSpotCreateTicketAction } from './actions/hubspot-create-ticket
 import { createHubSpotUpsertContactAction } from './actions/hubspot-upsert-contact';
 import type { HubSpotChannel } from './actions/hubspot-channel';
 import { RunScratchpad } from './scratchpad';
-import { RunEventEmitter } from './events/emitter';
+import { RunEventEmitter, ENGINE_EVENT, type EngineEventContext } from './events/emitter';
 import { validateDAG } from './dag/validator';
 import { DAGExecutor, StepFailedError, StepDeniedError } from './dag/executor';
 import type { ExecutionEvent } from './events/types';
-import type { StepDefinition } from './dag/types';
+import type { StepDefinition, DAGDefinition } from './dag/types';
+import type { ActionDefinition, ChatActionAvailability } from './actions/types';
+import { wrapForDryRun } from './dry-run-stubs';
 
 interface ActiveEngineRun {
   runId: string;
@@ -111,8 +121,11 @@ export class ExecutionEngine {
     const runId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
     const abortController = new AbortController();
 
-    // Build registry with all built-in actions
-    const registry = this.createRegistry(webContents);
+    // Build registry with all built-in actions. In dry-run mode, every
+    // side-effecty action is wrapped to return synthetic success so we
+    // exercise the executor end-to-end without real API calls.
+    const baseRegistry = this.createRegistry(webContents);
+    const registry = request.dryRun ? this.toDryRunRegistry(baseRegistry) : baseRegistry;
 
     // Sanitize the incoming DAG: drop dependsOn / inputMappings entries that
     // reference non-step ids (steps that were deleted after the mapping was
@@ -176,7 +189,7 @@ export class ExecutionEngine {
     const runPersisted: Promise<unknown> = this.backendRequest('POST', '/engine/runs', {
       id: runId,
       routine_id: request.routineId ?? null,
-      run_type: 'routine',
+      run_type: request.runType ?? 'routine',
       trigger: request.triggerSource ?? 'manual',
       dag_json: JSON.stringify(request.dag),
       total_steps: request.dag.steps.length,
@@ -210,8 +223,13 @@ export class ExecutionEngine {
       stepPatchPromises.push(patch);
     };
 
-    // Approval callback: pauses run and waits for user decision
-    const onApprovalRequired = (step: StepDefinition): Promise<boolean> => {
+    // In dry-run mode, every approval gate auto-passes. The skill that
+    // proposed the routine has already gathered explicit user consent
+    // before invoking us, so we don't want to block the test run waiting
+    // for clicks on every gate the routine declares.
+    const onApprovalRequired = request.dryRun
+      ? () => Promise.resolve(true)
+      : (step: StepDefinition): Promise<boolean> => {
       return new Promise<boolean>((resolvePromise) => {
         const approvalId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
 
@@ -470,6 +488,349 @@ export class ExecutionEngine {
     return this.eventBuffers.get(runId) ?? [];
   }
 
+  // ── Chat action helpers ──────────────────────────────────────────
+
+  /**
+   * Build the list of chat-exposable action definitions. Reuses the same
+   * factories as `createRegistry`, so channel-bound actions (HubSpot,
+   * Telegram, WhatsApp) read from the live channel singletons. Built on
+   * demand and not cached: availability can change between calls.
+   *
+   * Note: skips actions that need a `WebContents` (e.g. expert_step) — none
+   * of them are chat-exposable today.
+   */
+  private buildChatExposableDefs(): ActionDefinition[] {
+    const defs: ActionDefinition[] = [
+      httpRequestAction,
+      sendNotificationAction,
+      createSendTelegramAction({ getChannel: () => this.telegramChannel }),
+      ...createSendTelegramMediaActions({
+        getChannel: () => this.telegramChannel,
+        backendPort: () => this.backendPort,
+      }),
+      createSendTelegramLocationAction({ getChannel: () => this.telegramChannel }),
+      createSendWhatsAppAction({ getChannel: () => this.whatsAppChannel }),
+      ...createSendWhatsAppMediaActions({
+        getChannel: () => this.whatsAppChannel,
+        backendPort: () => this.backendPort,
+      }),
+      createSendWhatsAppLocationAction({ getChannel: () => this.whatsAppChannel }),
+      createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }),
+      createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }),
+    ];
+    return defs.filter((d) => d.chatExposable === true);
+  }
+
+  /**
+   * Returns the chat-action catalog the chat skill and Help modal render.
+   * `lang` selects the locale of `label`/`description`/`examples`.
+   */
+  getChatActionCatalog(lang: 'en' | 'es' = 'en'): Array<{
+    type: string;
+    label: string;
+    description: string;
+    examples: string[];
+    availability: ChatActionAvailability;
+    group: string;
+    setupHref?: string;
+    inputSchema: Record<string, unknown>;
+  }> {
+    return this.buildChatExposableDefs().map((def) => ({
+      type: def.type,
+      label: def.chatLabel?.[lang] ?? def.name,
+      description: def.chatDescription?.[lang] ?? def.description,
+      examples: (def.chatExamples ?? []).map((e) => e[lang]),
+      availability: def.availabilityCheck?.() ?? 'available',
+      group: def.chatGroup ?? 'other',
+      setupHref: def.setupHref,
+      inputSchema: def.inputSchema,
+    }));
+  }
+
+  /**
+   * Run a single chat-triggered action through the routine engine. Always
+   * gates on approval (per product decision). Resolves when the underlying
+   * run reaches a terminal state. Long-running by design: the chat subprocess
+   * holds the HTTP connection open until this returns.
+   */
+  async runChatAction(
+    webContents: WebContents,
+    options: {
+      type: string;
+      params: Record<string, unknown>;
+      conversationId?: string;
+    },
+  ): Promise<{
+    status: 'succeeded' | 'failed' | 'denied' | 'cancelled' | 'unavailable';
+    runId?: string;
+    approvalId?: string;
+    summary?: string;
+    data?: Record<string, unknown>;
+    error?: string;
+  }> {
+    const def = this.buildChatExposableDefs().find((d) => d.type === options.type);
+    if (!def) {
+      return { status: 'failed', error: `Unknown chat action: ${options.type}` };
+    }
+    const availability = def.availabilityCheck?.() ?? 'available';
+    if (availability !== 'available') {
+      return { status: 'unavailable', error: `Action "${def.name}" is not connected.` };
+    }
+
+    const stepId = 'step_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+    const dag = {
+      steps: [
+        {
+          id: stepId,
+          name: def.chatLabel?.en ?? def.name,
+          actionType: def.type,
+          params: options.params,
+          dependsOn: [],
+          inputMappings: [],
+          requiresApproval: true,
+          onError: 'fail' as const,
+        },
+      ],
+    };
+
+    let runId: string;
+    try {
+      runId = await this.startRun(webContents, {
+        dag,
+        triggerSource: 'chat',
+        runType: 'chat_action',
+      });
+    } catch (err) {
+      return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
+    }
+
+    return new Promise((resolve) => {
+      let approvalId: string | undefined;
+      let resolved = false;
+
+      const cleanup = () => {
+        if (this.sharedBus) {
+          this.sharedBus.off(ENGINE_EVENT, listener);
+        }
+      };
+
+      const finish = (
+        result: Awaited<ReturnType<ExecutionEngine['runChatAction']>>,
+      ) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve(result);
+      };
+
+      const listener = (event: ExecutionEvent, ctx: EngineEventContext) => {
+        if (ctx.runId !== runId) return;
+        if (event.type === 'approval_requested') {
+          approvalId = event.approvalId;
+          return;
+        }
+        if (event.type === 'run_completed') {
+          // Step output lives on the persisted step record. Fetch it so we can
+          // return structured data (ticket_id, message_id, etc.) to the chat.
+          this.fetchStepOutput(event.runId, stepId)
+            .then((step) => {
+              finish({
+                status: 'succeeded',
+                runId: event.runId,
+                approvalId,
+                summary: step?.summary ?? 'Action completed.',
+                data: step?.data ?? {},
+              });
+            })
+            .catch(() => {
+              finish({ status: 'succeeded', runId: event.runId, approvalId, summary: 'Action completed.' });
+            });
+          return;
+        }
+        if (event.type === 'run_cancelled') {
+          finish({
+            status: 'denied',
+            runId: event.runId,
+            approvalId,
+            error: event.reason ?? 'Action was cancelled.',
+          });
+          return;
+        }
+        if (event.type === 'run_failed') {
+          finish({
+            status: 'failed',
+            runId: event.runId,
+            approvalId,
+            error: event.error,
+          });
+        }
+      };
+
+      if (this.sharedBus) {
+        this.sharedBus.on(ENGINE_EVENT, listener);
+      }
+    });
+  }
+
+  /**
+   * Run a candidate routine DAG end-to-end with side-effecty actions stubbed.
+   * Used to verify that a Cerebro-proposed routine wires correctly before we
+   * persist it. Returns per-step status so the caller can show the user
+   * exactly which step failed and why.
+   *
+   * Long-running by design (a routine with many LLM-shaped or HTTP steps can
+   * take a minute or two even with stubs); the chat skill that calls us is
+   * expected to tell the user "this can take a couple of minutes".
+   */
+  async dryRunRoutine(
+    webContents: WebContents,
+    options: {
+      dag: DAGDefinition;
+      triggerPayload?: Record<string, unknown>;
+    },
+  ): Promise<{
+    ok: boolean;
+    runId: string;
+    error?: string;
+    failedStepId?: string;
+    steps: Array<{
+      stepId: string;
+      stepName: string;
+      actionType: string;
+      status: 'completed' | 'failed' | 'skipped' | 'pending';
+      summary?: string;
+      error?: string;
+      durationMs?: number;
+    }>;
+  }> {
+    const stepEvents = new Map<
+      string,
+      {
+        stepId: string;
+        stepName: string;
+        actionType: string;
+        status: 'completed' | 'failed' | 'skipped' | 'pending';
+        summary?: string;
+        error?: string;
+        durationMs?: number;
+      }
+    >();
+    for (const s of options.dag.steps) {
+      stepEvents.set(s.id, {
+        stepId: s.id,
+        stepName: s.name,
+        actionType: s.actionType,
+        status: 'pending',
+      });
+    }
+
+    let runId: string;
+    try {
+      runId = await this.startRun(webContents, {
+        dag: options.dag,
+        triggerSource: 'manual',
+        runType: 'preview',
+        triggerPayload: options.triggerPayload,
+        dryRun: true,
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        runId: '',
+        error: err instanceof Error ? err.message : String(err),
+        steps: Array.from(stepEvents.values()),
+      };
+    }
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const cleanup = () => {
+        if (this.sharedBus) this.sharedBus.off(ENGINE_EVENT, listener);
+      };
+
+      const finish = (ok: boolean, error?: string, failedStepId?: string) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve({
+          ok,
+          runId,
+          error,
+          failedStepId,
+          steps: options.dag.steps.map((s) => stepEvents.get(s.id)!),
+        });
+      };
+
+      const listener = (event: ExecutionEvent, ctx: EngineEventContext) => {
+        if (ctx.runId !== runId) return;
+        if (event.type === 'step_started') {
+          const slot = stepEvents.get(event.stepId);
+          if (slot) slot.actionType = event.actionType;
+        } else if (event.type === 'step_completed') {
+          const slot = stepEvents.get(event.stepId);
+          if (slot) {
+            slot.status = 'completed';
+            slot.summary = event.summary;
+            slot.durationMs = event.durationMs;
+          }
+        } else if (event.type === 'step_failed') {
+          const slot = stepEvents.get(event.stepId);
+          if (slot) {
+            slot.status = 'failed';
+            slot.error = event.error;
+          }
+        } else if (event.type === 'step_skipped') {
+          const slot = stepEvents.get(event.stepId);
+          if (slot) {
+            slot.status = 'skipped';
+            slot.error = event.reason;
+          }
+        } else if (event.type === 'run_completed') {
+          finish(true);
+        } else if (event.type === 'run_failed') {
+          finish(false, event.error, event.failedStepId);
+        } else if (event.type === 'run_cancelled') {
+          finish(false, event.reason ?? 'Dry-run was cancelled');
+        }
+      };
+
+      if (this.sharedBus) this.sharedBus.on(ENGINE_EVENT, listener);
+    });
+  }
+
+  /** Helper for runChatAction — read a step record's output and summary. */
+  private async fetchStepOutput(
+    runId: string,
+    stepId: string,
+  ): Promise<{ data: Record<string, unknown>; summary: string } | null> {
+    const run = await this.backendRequest<{
+      steps?: Array<{ step_id: string; output_json: string | null; summary: string | null }>;
+    }>('GET', `/engine/runs/${runId}`, null);
+    if (!run?.steps) return null;
+    const step = run.steps.find((s) => s.step_id === stepId);
+    if (!step) return null;
+    let data: Record<string, unknown> = {};
+    if (step.output_json) {
+      try {
+        data = JSON.parse(step.output_json) as Record<string, unknown>;
+      } catch {
+        data = {};
+      }
+    }
+    return { data, summary: step.summary ?? '' };
+  }
+
+  /** Wrap every action in a registry with the dry-run stub. Actions that
+   *  don't have a stub (control-flow: condition, loop, delay, transformer)
+   *  pass through unchanged so we still exercise the routine's real logic. */
+  private toDryRunRegistry(source: ActionRegistry): ActionRegistry {
+    const wrapped = new ActionRegistry();
+    for (const def of source.list()) {
+      wrapped.register(wrapForDryRun(def));
+    }
+    return wrapped;
+  }
+
   /** Create an ActionRegistry populated with all built-in actions. */
   private createRegistry(webContents: WebContents): ActionRegistry {
     const registry = new ActionRegistry();
@@ -519,7 +880,21 @@ export class ExecutionEngine {
     // after registry construction still works, and so each run picks up the
     // currently-bound bridge instance.
     registry.register(createSendTelegramAction({ getChannel: () => this.telegramChannel }));
+    for (const action of createSendTelegramMediaActions({
+      getChannel: () => this.telegramChannel,
+      backendPort: () => this.backendPort,
+    })) {
+      registry.register(action);
+    }
+    registry.register(createSendTelegramLocationAction({ getChannel: () => this.telegramChannel }));
     registry.register(createSendWhatsAppAction({ getChannel: () => this.whatsAppChannel }));
+    for (const action of createSendWhatsAppMediaActions({
+      getChannel: () => this.whatsAppChannel,
+      backendPort: () => this.backendPort,
+    })) {
+      registry.register(action);
+    }
+    registry.register(createSendWhatsAppLocationAction({ getChannel: () => this.whatsAppChannel }));
 
     // HubSpot (outbound only)
     registry.register(createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }));
@@ -535,17 +910,20 @@ export class ExecutionEngine {
   /** Fire-and-forget HTTP request to the backend. */
   private backendRequest<T>(method: string, path: string, body: unknown): Promise<T | null> {
     return new Promise((resolve) => {
-      const bodyStr = JSON.stringify(body);
+      const hasBody = body !== null && body !== undefined;
+      const bodyStr = hasBody ? JSON.stringify(body) : '';
+      const headers: Record<string, string> = {};
+      if (hasBody) {
+        headers['Content-Type'] = 'application/json';
+        headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
+      }
       const req = http.request(
         {
           hostname: '127.0.0.1',
           port: this.backendPort,
           path,
           method,
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(bodyStr).toString(),
-          },
+          headers,
           timeout: 10_000,
         },
         (res) => {
@@ -567,7 +945,7 @@ export class ExecutionEngine {
         req.destroy();
         resolve(null);
       });
-      req.write(bodyStr);
+      if (hasBody) req.write(bodyStr);
       req.end();
     });
   }

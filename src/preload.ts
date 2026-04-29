@@ -20,6 +20,7 @@ import type {
   HubSpotStatusResponse,
   HubSpotVerifyResult,
   HubSpotPipelineSummary,
+  IntegrationProposalEventPayload,
   UpdateInfo,
   UpdateAsset,
   UpdateDownloadProgress,
@@ -27,6 +28,7 @@ import type {
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
+import type { ClaudeCodeInstallResult, ClaudeCodeProbeResult } from './types/ipc';
 import type { VoiceSessionEvent } from './voice/types';
 
 const api: CerebroAPI = {
@@ -133,6 +135,19 @@ const api: CerebroAPI = {
     },
     getStatus(): Promise<ClaudeCodeInfo> {
       return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_STATUS);
+    },
+    install(onLog: (line: string) => void): Promise<ClaudeCodeInstallResult> {
+      const listener = (_event: Electron.IpcRendererEvent, line: string) => onLog(line);
+      ipcRenderer.on(IPC_CHANNELS.CLAUDE_CODE_INSTALL_LOG, listener);
+      return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_INSTALL).finally(() => {
+        ipcRenderer.removeListener(IPC_CHANNELS.CLAUDE_CODE_INSTALL_LOG, listener);
+      });
+    },
+    cancelInstall(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_INSTALL_CANCEL);
+    },
+    probeAuth(): Promise<ClaudeCodeProbeResult> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH);
     },
   },
 
@@ -362,6 +377,20 @@ const api: CerebroAPI = {
     },
     setDefaults(defaults: { pipeline: string | null; stage: string | null }): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_SET_DEFAULTS, defaults);
+    },
+  },
+
+  chatActions: {
+    catalog(lang: 'en' | 'es') {
+      return ipcRenderer.invoke(IPC_CHANNELS.CHAT_ACTIONS_CATALOG, lang);
+    },
+    onIntegrationProposal(
+      callback: (payload: IntegrationProposalEventPayload) => void,
+    ): () => void {
+      const listener = (_event: unknown, payload: IntegrationProposalEventPayload) =>
+        callback(payload);
+      ipcRenderer.on(IPC_CHANNELS.INTEGRATION_PROPOSAL, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.INTEGRATION_PROPOSAL, listener);
     },
   },
 

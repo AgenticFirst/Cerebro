@@ -48,6 +48,9 @@ import {
   type TelegramStatus,
   type TelegramVerifyResult,
 } from './types';
+import { MediaIngestService } from '../files/media-ingest';
+import type { ResolvedAttachment } from '../files/types';
+import { IntegrationStaging } from '../files/staging';
 
 // ── Tunables ──────────────────────────────────────────────────────
 
@@ -462,8 +465,16 @@ export class TelegramBridge implements TelegramChannel {
    *  Required for routine dispatch (the engine forwards step events here). */
   private webContents: WebContents | null = null;
 
+  private mediaIngest: MediaIngestService;
+  private staging: IntegrationStaging;
+
   constructor(deps: TelegramBridgeDeps) {
     this.deps = deps;
+    this.mediaIngest = new MediaIngestService({
+      getBackendPort: () => this.deps.backendPort,
+      transcriptDir: path.join(this.deps.dataDir, 'files', '_transcripts'),
+    });
+    this.staging = new IntegrationStaging(this.deps.dataDir);
   }
 
   /** Late-bind the engine for routine dispatch. The engine is constructed before
@@ -675,6 +686,118 @@ export class TelegramBridge implements TelegramChannel {
     }
   }
 
+  // ── Outbound media (chat-action surface) ─────────────────────
+  // All seven methods share the same allowlist + rate-limit + numeric-id
+  // checks as `sendActionMessage`. The TelegramApi multipart helpers handle
+  // size-cap rejection (50 MB) and surface as a structured error here so the
+  // chat agent can apologize cleanly instead of throwing.
+
+  async sendPhotoActionMessage(
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendPhoto', chatId, filePath, caption);
+  }
+
+  async sendDocumentActionMessage(
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendDocument', chatId, filePath, caption);
+  }
+
+  async sendAudioActionMessage(
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendAudio', chatId, filePath, caption);
+  }
+
+  async sendVideoActionMessage(
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendVideo', chatId, filePath, caption);
+  }
+
+  async sendVoiceActionMessage(
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendVoice', chatId, filePath, caption);
+  }
+
+  async sendStickerActionMessage(
+    chatId: string,
+    filePath: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendSticker', chatId, filePath);
+  }
+
+  async sendLocationActionMessage(
+    chatId: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    const guard = this.outboundGuard(chatId);
+    if (guard.error || guard.numericChatId === null) return { messageId: null, error: guard.error };
+    try {
+      const sent = await this.api!.sendLocation(guard.numericChatId, latitude, longitude);
+      return { messageId: sent.message_id, error: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { messageId: null, error: scrubTokenish(msg) };
+    }
+  }
+
+  /** Common gates for outbound: bridge ready + allowlist + rate-limit + numeric chat id. */
+  private outboundGuard(chatId: string): {
+    numericChatId: number | null;
+    error: string | null;
+  } {
+    if (!this.api || !this.polling) {
+      return { numericChatId: null, error: 'Telegram bridge not running' };
+    }
+    const recipient = String(chatId).trim();
+    if (!this.isAllowlisted(recipient)) {
+      return { numericChatId: null, error: `chat_id ${recipient} not in allowlist` };
+    }
+    if (!this.proactiveRateLimiter.allow(recipient)) {
+      return { numericChatId: null, error: `chat_id ${recipient} rate-limited` };
+    }
+    const numericChatId = Number(recipient);
+    if (!Number.isFinite(numericChatId)) {
+      return { numericChatId: null, error: `chat_id ${recipient} is not a numeric Telegram id` };
+    }
+    return { numericChatId, error: null };
+  }
+
+  private async sendMediaWithFile(
+    method: 'sendPhoto' | 'sendDocument' | 'sendAudio' | 'sendVideo' | 'sendVoice' | 'sendSticker',
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    const guard = this.outboundGuard(chatId);
+    if (guard.error || guard.numericChatId === null) return { messageId: null, error: guard.error };
+    if (!fs.existsSync(filePath)) return { messageId: null, error: `file not found: ${filePath}` };
+    try {
+      const safeCaption = caption ? this.redactForChat(caption) : undefined;
+      const sent = method === 'sendSticker'
+        ? await this.api![method](guard.numericChatId, filePath)
+        : await this.api![method](guard.numericChatId, filePath, safeCaption);
+      return { messageId: sent.message_id, error: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { messageId: null, error: scrubTokenish(msg) };
+    }
+  }
+
   /**
    * Send a proactive message from a routine's `channel` action.
    * Returns summary counts so the step record has useful output.
@@ -870,6 +993,12 @@ export class TelegramBridge implements TelegramChannel {
   /** True if a token is configured (without revealing the value). */
   hasToken(): boolean {
     return Boolean(this.settings.token);
+  }
+
+  /** True if the bridge is actively polling Telegram (token configured,
+   *  enabled, and started successfully). Used by the chat-actions catalog. */
+  isConnected(): boolean {
+    return this.polling && this.api !== null && this.settings.enabled === true;
   }
 
   private async persistLastUpdateId(id: number): Promise<void> {
@@ -1440,58 +1569,81 @@ export class TelegramBridge implements TelegramChannel {
   ): Promise<{ prompt: string; attachmentNote?: string }> {
     if (!this.api) return { prompt: text };
 
-    // Voice → transcribe
+    // Pick the single attachment Telegram sent. We don't combine — Telegram's
+    // message model is one media object per message (voice OR photo OR document
+    // OR audio). Caption text comes in via `text`.
+    let downloaded: { path: string; isVoice: boolean } | null = null;
+
     if (msg.voice) {
-      const filePath = await this.downloadAttachment(msg.voice.file_id, 'audio/ogg', msg.voice.file_size);
-      if (!filePath) return { prompt: text || '(voice note could not be downloaded)' };
-      const transcript = await this.transcribeAudio(filePath);
+      const p = await this.downloadAttachment(msg.voice.file_id, 'audio/ogg', msg.voice.file_size);
+      if (p) downloaded = { path: p, isVoice: true };
+    } else if (msg.photo && msg.photo.length > 0) {
+      const largest = msg.photo[msg.photo.length - 1];
+      const p = await this.downloadAttachment(largest.file_id, 'image/jpeg', largest.file_size);
+      if (p) downloaded = { path: p, isVoice: false };
+    } else if (msg.document) {
+      const mime = msg.document.mime_type ?? 'application/octet-stream';
+      const p = await this.downloadAttachment(msg.document.file_id, mime, msg.document.file_size);
+      if (p) downloaded = { path: p, isVoice: false };
+    } else if (msg.audio) {
+      const mime = msg.audio.mime_type ?? 'audio/mpeg';
+      const p = await this.downloadAttachment(msg.audio.file_id, mime, msg.audio.file_size);
+      if (p) downloaded = { path: p, isVoice: false };
+    }
+
+    if (!downloaded) return { prompt: text };
+
+    // Route through MediaIngestService — same path as chat uploads. Office
+    // docs / PDFs get pre-extracted to markdown sidecars; images and text
+    // pass through; audio is transcribed via /voice/stt/transcribe-file.
+    let resolved: ResolvedAttachment;
+    try {
+      resolved = await this.mediaIngest.ingest({
+        filePath: downloaded.path,
+        source: 'telegram-inbound',
+      });
+    } catch (err) {
+      logError('media ingest failed', err instanceof Error ? err.message : String(err));
+      return { prompt: `[attachment at ${downloaded.path}]${text ? `\n\n${text}` : ''}` };
+    }
+
+    return this.composePromptFromResolved(resolved, text, downloaded.isVoice);
+  }
+
+  private composePromptFromResolved(
+    att: ResolvedAttachment,
+    text: string,
+    isVoice: boolean,
+  ): { prompt: string; attachmentNote?: string } {
+    const trailingText = text ? `\n\n${text}` : '';
+
+    // Voice notes / audio: transcript IS the message. Echo a confirmation back
+    // to the Telegram user so they know we heard them, and let the agent see
+    // both the transcript and any caption the user typed.
+    if (att.category === 'audio') {
+      const transcript = att.inlineText ?? '';
       if (transcript) {
         return {
-          prompt: transcript + (text ? `\n\n${text}` : ''),
-          attachmentNote: `🎙️ Heard: ${transcript.length > 200 ? transcript.slice(0, 200) + '…' : transcript}`,
+          prompt: transcript + trailingText,
+          attachmentNote: `${isVoice ? '🎙️' : '🎵'} ${this.snippet(transcript)}`,
         };
       }
       return {
-        prompt: `[voice note: ${filePath}]${text ? `\n\n${text}` : ''}`,
-        attachmentNote: '🎙️ Could not transcribe automatically — passing the audio file to the agent.',
+        prompt: att.promptInjection + trailingText,
+        attachmentNote: isVoice
+          ? '🎙️ Could not transcribe automatically — passing the audio file to the agent.'
+          : '🎵 Could not transcribe automatically — passing the audio file to the agent.',
       };
     }
 
-    // Photo → pick largest variant, download, inline path
-    if (msg.photo && msg.photo.length > 0) {
-      const largest = msg.photo[msg.photo.length - 1];
-      const filePath = await this.downloadAttachment(largest.file_id, 'image/jpeg', largest.file_size);
-      if (filePath) {
-        return { prompt: `[image attached at ${filePath}]${text ? `\n\n${text}` : ''}` };
-      }
-    }
+    // Office / PDF / image / text / unknown all flow the same: paste the
+    // injection (which is either an @sidecar or a safe descriptive marker)
+    // and append the user's caption.
+    return { prompt: att.promptInjection + trailingText };
+  }
 
-    // Document
-    if (msg.document) {
-      const mime = msg.document.mime_type ?? 'application/octet-stream';
-      const filePath = await this.downloadAttachment(msg.document.file_id, mime, msg.document.file_size);
-      if (filePath) {
-        return { prompt: `[document attached at ${filePath}]${text ? `\n\n${text}` : ''}` };
-      }
-    }
-
-    // Audio (non-voice)
-    if (msg.audio) {
-      const mime = msg.audio.mime_type ?? 'audio/mpeg';
-      const filePath = await this.downloadAttachment(msg.audio.file_id, mime, msg.audio.file_size);
-      if (filePath) {
-        const transcript = await this.transcribeAudio(filePath);
-        if (transcript) {
-          return {
-            prompt: transcript + (text ? `\n\n${text}` : ''),
-            attachmentNote: `🎙️ Heard: ${transcript.length > 200 ? transcript.slice(0, 200) + '…' : transcript}`,
-          };
-        }
-        return { prompt: `[audio attached at ${filePath}]${text ? `\n\n${text}` : ''}` };
-      }
-    }
-
-    return { prompt: text };
+  private snippet(s: string): string {
+    return s.length > 200 ? s.slice(0, 200) + '…' : s;
   }
 
   private async downloadAttachment(
@@ -1538,27 +1690,6 @@ export class TelegramBridge implements TelegramChannel {
     return dest;
   }
 
-  private async transcribeAudio(filePath: string): Promise<string | null> {
-    // Ensure the STT model is loaded. /voice/stt/transcribe-file lazy-loads too
-    // but the explicit load keeps errors on our side surface-able.
-    const status = await backendRequest<{ stt: string }>(this.deps.backendPort, 'GET', '/voice/status');
-    if (status.data?.stt !== 'ready') {
-      await backendRequest(this.deps.backendPort, 'POST', '/voice/stt/load');
-    }
-
-    const res = await backendRequest<{ text: string }>(
-      this.deps.backendPort,
-      'POST',
-      '/voice/stt/transcribe-file',
-      { file_path: filePath },
-    );
-    if (!res.ok || !res.data) {
-      logError('transcribe-file failed', res.status);
-      return null;
-    }
-    const text = (res.data.text ?? '').trim();
-    return text || null;
-  }
 
   private redactForChat(text: string): string {
     return redactForChat(text, this.deps.dataDir);
@@ -1579,7 +1710,7 @@ export class TelegramBridge implements TelegramChannel {
   }
 
   private tempDir(): string {
-    return path.join(this.deps.dataDir, 'telegram-tmp');
+    return this.staging.dirFor('telegram');
   }
 }
 

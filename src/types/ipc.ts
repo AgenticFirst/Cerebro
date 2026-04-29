@@ -28,12 +28,24 @@ export const IPC_CHANNELS = {
   ENGINE_ANY_EVENT: 'engine:any-event',
   engineEvent: (runId: string) => `engine:event:${runId}`,
 
+  // Chat actions catalog (renderer → main; the run path is HTTP from the chat subprocess)
+  CHAT_ACTIONS_CATALOG: 'chat-actions:catalog',
+  /** Main → renderer: chat agent proposed an integration setup card.
+   *  Payload: IntegrationProposalEventPayload. */
+  INTEGRATION_PROPOSAL: 'chat-actions:integration-proposal',
+
   // Scheduler
   SCHEDULER_SYNC: 'scheduler:sync',
 
   // Claude Code
   CLAUDE_CODE_DETECT: 'claude-code:detect',
   CLAUDE_CODE_STATUS: 'claude-code:status',
+  CLAUDE_CODE_INSTALL: 'claude-code:install',
+  CLAUDE_CODE_INSTALL_CANCEL: 'claude-code:install-cancel',
+  /** Main → renderer: live stdout/stderr lines from the running install
+   *  script. One event per buffered chunk. */
+  CLAUDE_CODE_INSTALL_LOG: 'claude-code:install-log',
+  CLAUDE_CODE_PROBE_AUTH: 'claude-code:probe-auth',
 
   // Voice
   VOICE_START: 'voice:start',
@@ -280,9 +292,43 @@ export interface SchedulerAPI {
 
 // --- Claude Code ---
 
+export interface ClaudeCodeInstallResult {
+  /** True iff the script exited 0 AND post-install detection found `claude`. */
+  ok: boolean;
+  /** Process exit code (or -1 if killed). */
+  exitCode: number;
+  /** Last ~2 KB of combined stderr/stdout, useful for inline error display. */
+  outputTail: string;
+  /** Detection result run AFTER the install attempt. */
+  info: ClaudeCodeInfo;
+}
+
+export interface ClaudeCodeProbeResult {
+  ok: boolean;
+  /** When ok=false, why we think the probe failed. Populated from stderr or
+   *  a "timed out" sentinel — purely diagnostic. */
+  reason?: string;
+}
+
 export interface ClaudeCodeAPI {
   detect(): Promise<ClaudeCodeInfo>;
   getStatus(): Promise<ClaudeCodeInfo>;
+  /** Spawns Anthropic's official curl install script in a login bash shell.
+   *  Streams output lines via `onLog` until the script exits, then resolves
+   *  with the install result + a fresh detection. */
+  install(onLog: (line: string) => void): Promise<ClaudeCodeInstallResult>;
+  /** Sends SIGTERM to the running install (no-op if none in flight). */
+  cancelInstall(): Promise<void>;
+  /**
+   * Runtime auth probe — distinct from `detect()`'s binary-availability
+   * check. Spawns `claude -p ping --max-turns 1` with a hard 5s timeout.
+   * If the CLI emits stream-json within the deadline, it's authenticated;
+   * otherwise we surface a `reason` (stderr tail, "timed out", etc.) so
+   * the validator can warn the user before they kick off a routine.
+   * Result is cached in main-process memory for 60s to avoid spawning a
+   * subprocess per click.
+   */
+  probeAuth(): Promise<ClaudeCodeProbeResult>;
 }
 
 // --- Installer ---
@@ -448,6 +494,37 @@ export interface UpdaterAPI {
 
 // --- Preload API exposed on window.cerebro ---
 
+export interface ChatActionCatalogEntry {
+  type: string;
+  label: string;
+  description: string;
+  examples: string[];
+  availability: 'available' | 'not_connected' | 'unavailable';
+  group: string;
+  setupHref?: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface IntegrationProposalEventPayload {
+  integrationId: string;
+  reason?: string;
+  /** Conversation the chat agent was running in. When omitted, the
+   *  renderer falls back to the active conversation. */
+  conversationId?: string;
+}
+
+export interface ChatActionsAPI {
+  /** Returns the chat-exposable action catalog with current availability.
+   *  Lang controls localization of label/description/examples (en|es). */
+  catalog(lang: 'en' | 'es'): Promise<ChatActionCatalogEntry[]>;
+  /** Subscribe to integration-setup proposal events fired when the chat
+   *  agent calls the propose-integration script. Returns an unsubscribe
+   *  function. */
+  onIntegrationProposal(
+    callback: (payload: IntegrationProposalEventPayload) => void,
+  ): () => void;
+}
+
 export interface CerebroAPI {
   invoke<T = unknown>(request: BackendRequest): Promise<BackendResponse<T>>;
   getStatus(): Promise<BackendStatus>;
@@ -467,6 +544,7 @@ export interface CerebroAPI {
   telegram: TelegramAPI;
   whatsapp: WhatsAppAPI;
   hubspot: HubSpotAPI;
+  chatActions: ChatActionsAPI;
   files: FilesAPI;
   updater: UpdaterAPI;
 }

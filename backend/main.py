@@ -31,6 +31,8 @@ from tasks.router import router as tasks_router
 from sync.router import router as sync_router
 from files.router import router as files_router
 from integrations.router import router as integrations_router
+from files_parsing.router import router as files_parsing_router
+from expert_context.router import router as expert_context_router
 
 
 @asynccontextmanager
@@ -39,6 +41,11 @@ async def lifespan(application: FastAPI):
     os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
     init_db(db_path)
     print(f"[Cerebro] Database initialized at {db_path}")
+
+    parsed_files_dir = getattr(application.state, "parsed_files_dir", None)
+    if parsed_files_dir:
+        os.makedirs(parsed_files_dir, exist_ok=True)
+        print(f"[Cerebro] Parsed files cache: {parsed_files_dir}")
 
     agent_memory_dir = getattr(application.state, "agent_memory_dir", None)
     if agent_memory_dir:
@@ -89,6 +96,8 @@ app.include_router(tasks_router, prefix="/tasks")
 app.include_router(sync_router, prefix="/sync")
 app.include_router(files_router, prefix="/files")
 app.include_router(integrations_router, prefix="/integrations")
+app.include_router(files_parsing_router, prefix="/files")
+app.include_router(expert_context_router, prefix="/experts")
 
 
 @app.get("/health")
@@ -342,5 +351,6 @@ if __name__ == "__main__":
     app.state.agent_memory_dir = os.path.abspath(args.agent_memory_dir)
     app.state.voice_models_dir = os.path.abspath(args.voice_models_dir)
     app.state.files_dir = os.path.abspath(args.files_dir)
+    app.state.parsed_files_dir = os.path.join(app.state.files_dir, "_parsed")
 
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="info")

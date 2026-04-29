@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-RunType = Literal["routine", "preview", "ad_hoc", "orchestration", "task"]
+RunType = Literal["routine", "preview", "ad_hoc", "orchestration", "task", "chat_action"]
 RunTrigger = Literal["manual", "scheduled", "webhook", "chat"]
 
 

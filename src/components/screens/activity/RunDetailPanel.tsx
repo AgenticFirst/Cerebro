@@ -3,10 +3,52 @@ import { useTranslation } from 'react-i18next';
 import { X, Loader2, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import type { RunRecord, EventRecord, RunListResponse } from './types';
-import { formatDuration, formatTimestamp, STATUS_CONFIG } from './helpers';
+import { formatDuration, formatTimestamp, humanizeRunError, STATUS_CONFIG } from './helpers';
 import StatusDot from './StatusDot';
 import StepTimeline from './StepTimeline';
 import EventLog from './EventLog';
+import RunLogs from './RunLogs';
+import type { ExecutionEvent } from '../../../engine/events/types';
+
+// Step state-changing event types — when one of these arrives via IPC we
+// kick a silent run-only refetch so the Steps tab transitions (queued →
+// running → completed/failed/skipped, plus durations) update instantly
+// instead of waiting for the 5-second poll.
+const STEP_STATE_EVENTS = new Set([
+  'step_started',
+  'step_completed',
+  'step_failed',
+  'step_skipped',
+  'run_completed',
+  'run_failed',
+  'run_cancelled',
+  'approval_requested',
+  'approval_granted',
+  'approval_denied',
+]);
+
+/**
+ * Translate a live engine event (from `engine.onAnyEvent`) into the
+ * `EventRecord` shape that the persisted `/engine/runs/<id>/events`
+ * endpoint returns. The id is synthetic; the next poll will replace
+ * this row with the real persisted version (matched by timestamp +
+ * type + step_id during merge below).
+ */
+function liveEventToRecord(event: ExecutionEvent, runId: string, seq: number): EventRecord {
+  const stepId = 'stepId' in event ? (event.stepId as string) : null;
+  const timestamp = 'timestamp' in event && typeof event.timestamp === 'string'
+    ? event.timestamp
+    : new Date().toISOString();
+  return {
+    id: `live:${runId}:${seq}`,
+    run_id: runId,
+    seq: -1, // sentinel: live events sort by timestamp, not seq
+    event_type: event.type,
+    step_id: stepId,
+    payload_json: JSON.stringify(event),
+    timestamp,
+  };
+}
 
 // ── Section helper ─────────���────────────────────────────────────
 
@@ -23,7 +65,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 
 // ── Tabs ──────────────���─────────────────────────────────────────
 
-type Tab = 'steps' | 'events' | 'children';
+type Tab = 'steps' | 'events' | 'children' | 'logs';
 
 // ── Component ───────��──────────────────────────────────────────
 
@@ -43,8 +85,14 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
   const [loadError, setLoadError] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('steps');
 
-  const fetchDetail = useCallback(async (id: string, signal: { cancelled: boolean }) => {
-    setLoading(true);
+  /**
+   * `silent: true` skips toggling the loading flag — used by the live-poll
+   * interval so the panel content doesn't unmount/remount every 5 seconds
+   * and lose user expansion state. Initial mount and the manual refresh
+   * button still flash the spinner.
+   */
+  const fetchDetail = useCallback(async (id: string, signal: { cancelled: boolean }, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     setLoadError(false);
     try {
       const [runRes, eventsRes, childrenRes] = await Promise.allSettled([
@@ -59,7 +107,25 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
       const childrenOk = childrenRes.status === 'fulfilled' && childrenRes.value.ok;
 
       if (runOk) setRun(runRes.value.data);
-      if (eventsOk) setEvents(eventsRes.value.data);
+      if (eventsOk) {
+        // Merge: server events are the source of truth, but keep any
+        // live-arrived events that the server hasn't persisted yet so
+        // the user doesn't see them flicker out and back in.
+        const serverEvents = eventsRes.value.data;
+        setEvents((prev) => {
+          const liveOnly = prev.filter((e) => {
+            if (!e.id.startsWith('live:')) return false;
+            const persistedExists = serverEvents.some(
+              (s) =>
+                s.event_type === e.event_type &&
+                s.timestamp === e.timestamp &&
+                s.step_id === e.step_id,
+            );
+            return !persistedExists;
+          });
+          return [...serverEvents, ...liveOnly];
+        });
+      }
       if (childrenOk) setChildren(childrenRes.value.data.runs);
 
       // Only show error if all three failed
@@ -67,7 +133,7 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
     } catch {
       if (!signal.cancelled) setLoadError(true);
     } finally {
-      if (!signal.cancelled) setLoading(false);
+      if (!signal.cancelled && !opts?.silent) setLoading(false);
     }
   }, []);
 
@@ -79,7 +145,9 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
     return () => { signal.cancelled = true; };
   }, [runId, fetchDetail]);
 
-  // Live refresh for running/paused runs (5s)
+  // Live refresh for running/paused runs (5s) — silent so the panel
+  // doesn't flash the loading spinner and unmount the Steps tab every
+  // poll. The user keeps whatever they had expanded.
   const isLive = run?.status === 'running' || run?.status === 'paused';
   const runIdRef = useRef(runId);
   runIdRef.current = runId;
@@ -87,9 +155,66 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
   useEffect(() => {
     if (!isLive) return;
     const id = setInterval(() => {
-      fetchDetail(runIdRef.current, { cancelled: false });
+      fetchDetail(runIdRef.current, { cancelled: false }, { silent: true });
     }, 5000);
     return () => clearInterval(id);
+  }, [isLive, fetchDetail]);
+
+  /**
+   * Real-time event subscription. The Electron main process broadcasts
+   * every engine event on `ENGINE_ANY_EVENT`; we filter to our run and
+   * append matches to local state with a synthetic id. The 5s poll
+   * then replaces the synthetic rows with persisted ones (de-duped by
+   * timestamp + event_type + step_id below). This makes the Events
+   * and Logs tabs update with sub-100ms latency instead of waiting up
+   * to 5 seconds per chunk.
+   *
+   * Step state changes (started/completed/failed/skipped, approvals,
+   * run termination) also kick a silent run-only refetch so the Steps
+   * tab status badges and live-elapsed counters move with the events.
+   */
+  const liveSeqRef = useRef(0);
+  const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!isLive) return;
+
+    const unsubscribe = window.cerebro.engine.onAnyEvent((event: ExecutionEvent) => {
+      // Filter to events for this run only.
+      if (!('runId' in event) || event.runId !== runIdRef.current) return;
+
+      const record = liveEventToRecord(event, runIdRef.current, ++liveSeqRef.current);
+      setEvents((prev) => {
+        // De-dup against any persisted record that may have just arrived
+        // from a poll race: same type + same timestamp + same step_id is
+        // the same event. Drop the live duplicate in that case.
+        const isDup = prev.some(
+          (e) =>
+            e.event_type === record.event_type &&
+            e.timestamp === record.timestamp &&
+            e.step_id === record.step_id &&
+            !e.id.startsWith('live:'),
+        );
+        if (isDup) return prev;
+        return [...prev, record];
+      });
+
+      // Step / run state transitions → re-fetch the run record so the
+      // Steps tab badges flip immediately. Coalesce multiple events
+      // arriving in the same tick into a single network call.
+      if (STEP_STATE_EVENTS.has(event.type)) {
+        if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+        refetchTimerRef.current = setTimeout(() => {
+          refetchTimerRef.current = null;
+          fetchDetail(runIdRef.current, { cancelled: false }, { silent: true });
+        }, 150);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
+    };
   }, [isLive, fetchDetail]);
 
   const cfg = run ? (STATUS_CONFIG[run.status] ?? STATUS_CONFIG.created) : STATUS_CONFIG.created;
@@ -100,6 +225,7 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
     { key: 'steps', label: t('activity.tabSteps'), show: true },
     { key: 'events', label: t('activity.tabEvents'), show: true },
     { key: 'children', label: t('activity.tabChildren'), show: hasChildren },
+    { key: 'logs', label: t('activity.tabLogs'), show: true },
   ];
 
   return (
@@ -169,7 +295,9 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
                 </div>
                 {run.status === 'failed' && run.error && (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5">
-                    <p className="text-[11px] text-red-400 leading-relaxed">{run.error}</p>
+                    <p className="text-[11px] text-red-400 leading-relaxed">
+                      {humanizeRunError(run.error, run.steps) ?? run.error}
+                    </p>
                   </div>
                 )}
               </div>
@@ -195,7 +323,15 @@ export default function RunDetailPanel({ runId, routineName, onClose, onSelectRu
 
             {/* Tab content */}
             {activeTab === 'steps' && (
-              <StepTimeline steps={run.steps ?? []} events={events} />
+              <StepTimeline
+                steps={run.steps ?? []}
+                events={events}
+                dagJson={run.dag_json}
+                onOpenLogs={() => setActiveTab('logs')}
+              />
+            )}
+            {activeTab === 'logs' && (
+              <RunLogs run={run} events={events} />
             )}
             {activeTab === 'events' && (
               <EventLog events={events} />

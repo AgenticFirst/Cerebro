@@ -19,11 +19,13 @@ import type {
   BackendStatus,
   StreamRequest,
   StreamEvent,
+  ClaudeCodeProbeResult,
 } from './types/ipc';
 import { AgentRuntime } from './agents';
 import type { AgentRunRequest } from './agents';
 import { ExecutionEngine } from './engine/engine';
 import type { EngineRunRequest } from './engine/dag/types';
+import { ChatActionServer } from './chat-actions/server';
 import { RoutineScheduler } from './scheduler/scheduler';
 import { TaskReconciler } from './scheduler/task-reconciler';
 import { detectClaudeCode, getCachedClaudeCodeInfo } from './claude-code/detector';
@@ -51,6 +53,19 @@ import {
   ackUpdateBanner,
 } from './updater';
 import type { UpdateAsset } from './types/ipc';
+
+// Stdio EPIPE guard. When the Electron main process is launched under a
+// shell pipeline (`tail -f /dev/null | npm start`, electron-forge dev,
+// detached background tasks, etc.) and the consumer of stdout/stderr is
+// closed for any reason, the next `console.log` throws EPIPE — which
+// crashes the app. We swallow EPIPE and any pipe errors silently so the
+// app stays alive even when its log destination goes away.
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE' || err.code === 'EBADF') return;
+});
+process.stderr.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE' || err.code === 'EBADF') return;
+});
 
 // Voice session manager (initialized after backend is healthy)
 let voiceSession: VoiceSessionManager | null = null;
@@ -182,6 +197,10 @@ let telegramBridge: TelegramBridge | null = null;
 let whatsAppBridge: WhatsAppBridge | null = null;
 // HubSpot credential holder
 let hubSpotHolder: HubSpotHolder | null = null;
+
+// Loopback HTTP bridge for chat-triggered integration actions.
+let chatActionServer: ChatActionServer | null = null;
+let chatActionServerInfo: { port: number; token: string } | null = null;
 
 // --- Utility functions ---
 
@@ -400,8 +419,26 @@ async function startPythonBackend(): Promise<void> {
   // Cerebro's project-scoped subagents and skills.
   setClaudeCodeCwd(dataDir);
 
+  // Stand up the loopback chat-actions HTTP server before writing the
+  // runtime info file so the port + token are recorded for the chat skill
+  // to discover.
+  try {
+    chatActionServer = new ChatActionServer({
+      engine: executionEngine,
+      getMainWebContents: () => {
+        const wins = BrowserWindow.getAllWindows();
+        return wins.length > 0 ? wins[0].webContents : null;
+      },
+    });
+    chatActionServerInfo = await chatActionServer.start();
+    console.log(`[Cerebro] chat-actions server on port ${chatActionServerInfo.port}`);
+  } catch (err) {
+    console.error('[Cerebro] Failed to start chat-actions server:', err);
+    chatActionServerInfo = null;
+  }
+
   // Refresh the runtime info file (skill scripts read this for the port).
-  writeRuntimeInfo(dataDir, port);
+  writeRuntimeInfo(dataDir, port, chatActionServerInfo ?? undefined);
 
   // Sync project-scoped subagents and skills under <dataDir>/.claude/.
   // Requires Claude Code detection to have run first (handled in `app.on('ready')`).
@@ -930,6 +967,14 @@ function registerIpcHandlers(): void {
     return executionEngine.resolveApproval(approvalId, false, reason);
   });
 
+  // --- Chat actions catalog (renderer-side discovery) ---
+
+  ipcMain.handle(IPC_CHANNELS.CHAT_ACTIONS_CATALOG, async (_event, lang?: string) => {
+    if (!executionEngine) return [];
+    const safeLang: 'en' | 'es' = lang === 'es' ? 'es' : 'en';
+    return executionEngine.getChatActionCatalog(safeLang);
+  });
+
   // --- Scheduler ---
 
   ipcMain.handle(IPC_CHANNELS.SCHEDULER_SYNC, async () => {
@@ -947,6 +992,149 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_STATUS, async () => {
     return getCachedClaudeCodeInfo();
+  });
+
+  // Anthropic's official curl install script. We spawn it in a login bash
+  // shell (`bash -lc`) so it picks up the user's full PATH from their shell
+  // rc files — Electron started from Finder on macOS otherwise misses
+  // homebrew/nvm/custom npm prefixes. The script installs `claude` to
+  // ~/.local/bin which is user-writable, so no sudo prompt.
+  let activeInstall: ChildProcess | null = null;
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_INSTALL, async (event) => {
+    if (activeInstall) {
+      // Refuse concurrent installs — caller should cancel first.
+      return {
+        ok: false,
+        exitCode: -1,
+        outputTail: 'Install already in progress.',
+        info: getCachedClaudeCodeInfo(),
+      };
+    }
+    const sender = event.sender;
+    const installCmd = 'curl -fsSL https://claude.ai/install.sh | bash';
+    const child = spawn('bash', ['-lc', installCmd], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    activeInstall = child;
+
+    // Ring-buffer the last ~2 KB of combined output for inline error display.
+    let outputTail = '';
+    const appendTail = (chunk: string) => {
+      outputTail = (outputTail + chunk).slice(-2048);
+    };
+
+    const sendLine = (line: string) => {
+      if (!sender.isDestroyed()) {
+        sender.send(IPC_CHANNELS.CLAUDE_CODE_INSTALL_LOG, line);
+      }
+    };
+
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (data: string) => {
+      appendTail(data);
+      for (const line of data.split('\n')) {
+        if (line.length > 0) sendLine(line);
+      }
+    });
+    child.stderr?.on('data', (data: string) => {
+      appendTail(data);
+      for (const line of data.split('\n')) {
+        if (line.length > 0) sendLine(line);
+      }
+    });
+
+    const exitCode: number = await new Promise((resolve) => {
+      child.on('close', (code, signal) => {
+        resolve(typeof code === 'number' ? code : signal ? -1 : 0);
+      });
+      child.on('error', (err) => {
+        appendTail(`spawn error: ${err.message}`);
+        resolve(-1);
+      });
+    });
+    activeInstall = null;
+
+    // Re-detect so the cache reflects post-install state for every other
+    // surface (Engine section, ChatContext block-modal, etc.) immediately.
+    const info = await detectClaudeCode();
+    return {
+      ok: exitCode === 0 && info.status === 'available',
+      exitCode,
+      outputTail,
+      info,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_INSTALL_CANCEL, async () => {
+    if (!activeInstall) return;
+    const child = activeInstall;
+    child.kill('SIGTERM');
+    // Force-kill if it doesn't exit within 2 s (mirrors the single-shot pattern).
+    setTimeout(() => {
+      if (!child.killed) child.kill('SIGKILL');
+    }, 2000);
+  });
+
+  // Runtime auth probe. The detector tells us whether the binary exists;
+  // this tells us whether it's *usable*. Silent 5-min hangs in run_expert
+  // are most often Claude Code waiting on an auth that isn't there. We
+  // spawn a tiny `claude -p` and watch for the first stream-json line
+  // within 5 seconds. Result is cached for 60s so back-to-back routine
+  // runs don't keep spawning probe subprocesses.
+  let probeCache: { value: ClaudeCodeProbeResult; expiresAt: number } | null = null;
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH, async (): Promise<ClaudeCodeProbeResult> => {
+    if (probeCache && probeCache.expiresAt > Date.now()) return probeCache.value;
+    const info = getCachedClaudeCodeInfo();
+    if (info.status !== 'available' || !info.path) {
+      const value: ClaudeCodeProbeResult = { ok: false, reason: 'Claude Code binary not found' };
+      probeCache = { value, expiresAt: Date.now() + 60_000 };
+      return value;
+    }
+
+    const result = await new Promise<ClaudeCodeProbeResult>((resolve) => {
+      const child = spawn(
+        info.path!,
+        ['-p', 'ping', '--max-turns', '1', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      let resolved = false;
+      let stderrTail = '';
+      const settle = (v: ClaudeCodeProbeResult) => {
+        if (resolved) return;
+        resolved = true;
+        if (!child.killed) {
+          child.kill('SIGTERM');
+          setTimeout(() => { if (!child.killed) child.kill('SIGKILL'); }, 1000);
+        }
+        resolve(v);
+      };
+      const timer = setTimeout(() => settle({ ok: false, reason: 'Probe timed out (5s) — Claude Code may not be authenticated.' }), 5000);
+
+      child.stdout?.on('data', (chunk: Buffer) => {
+        const line = chunk.toString().trim();
+        if (line) {
+          clearTimeout(timer);
+          settle({ ok: true });
+        }
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderrTail = (stderrTail + chunk.toString()).slice(-300);
+      });
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        settle({ ok: false, reason: `Spawn error: ${err.message}` });
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        settle({
+          ok: false,
+          reason: stderrTail.trim() || `Subprocess exited (code ${code}) before producing output.`,
+        });
+      });
+    });
+    probeCache = { value: result, expiresAt: Date.now() + 60_000 };
+    return result;
   });
 
   // --- Installer sync (called by renderer after expert CRUD) ---
@@ -1764,6 +1952,9 @@ app.on('before-quit', async () => {
   if (telegramBridge) {
     try { await telegramBridge.stop(); } catch { /* ignore */ }
     unregisterChannelSender('telegram');
+  }
+  if (chatActionServer) {
+    try { await chatActionServer.stop(); } catch { /* ignore */ }
   }
   await stopPythonBackend();
 });

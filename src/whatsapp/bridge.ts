@@ -46,6 +46,9 @@ import {
   type WhatsAppTriggerPayload,
   type WhatsAppTriggerRoutine,
 } from './types';
+import crypto from 'node:crypto';
+import { MediaIngestService } from '../files/media-ingest';
+import { IntegrationStaging } from '../files/staging';
 
 // ── Tunables ────────────────────────────────────────────────────
 
@@ -122,9 +125,19 @@ export class WhatsAppBridge implements WhatsAppChannel {
   private pairingRequested = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+  private mediaIngest: MediaIngestService;
+  private staging: IntegrationStaging;
+  // Lazily-cached Baileys helper for downloading inbound media bytes.
+  private downloadMedia: ((msg: any) => Promise<Buffer>) | null = null;
+
   constructor(deps: BridgeDeps) {
     this.deps = deps;
     this.sessionDir = path.join(deps.dataDir, 'whatsapp-session');
+    this.mediaIngest = new MediaIngestService({
+      getBackendPort: () => this.deps.backendPort,
+      transcriptDir: path.join(this.deps.dataDir, 'files', '_transcripts'),
+    });
+    this.staging = new IntegrationStaging(this.deps.dataDir);
   }
 
   setWebContents(wc: WebContents): void {
@@ -258,6 +271,10 @@ export class WhatsAppBridge implements WhatsAppChannel {
     return isAllowed(phoneOrJid, this.settings.allowlist);
   }
 
+  isConnected(): boolean {
+    return this.sock !== null && this.state.state === 'connected';
+  }
+
   async sendActionMessage(
     phoneOrJid: string,
     text: string,
@@ -283,6 +300,131 @@ export class WhatsAppBridge implements WhatsAppChannel {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logError('sendMessage failed:', msg);
+      return { messageId: null, error: msg };
+    }
+  }
+
+  // ── Outbound media (chat-action surface) ─────────────────────
+  // All seven share the same pre-flight (`outboundGuard`). Baileys sends
+  // media synchronously on the WhatsApp Web socket — long-lived uploads can
+  // drop on multi-MB sends, so callers should treat send errors as recoverable
+  // and let the chat agent retry with permission.
+
+  async sendPhotoActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, (jid) => ({
+      image: { url: filePath },
+      caption,
+    }));
+  }
+
+  async sendDocumentActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+    caption?: string,
+    fileName?: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, () => ({
+      document: { url: filePath },
+      caption,
+      fileName: fileName ?? path.basename(filePath),
+    }));
+  }
+
+  async sendAudioActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, () => ({
+      audio: { url: filePath },
+      mimetype: 'audio/mpeg',
+    }));
+  }
+
+  async sendVideoActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, () => ({
+      video: { url: filePath },
+      caption,
+    }));
+  }
+
+  async sendVoiceActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, () => ({
+      audio: { url: filePath },
+      ptt: true,
+      mimetype: 'audio/ogg; codecs=opus',
+    }));
+  }
+
+  async sendStickerActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, () => ({
+      sticker: { url: filePath },
+    }));
+  }
+
+  async sendLocationActionMessage(
+    phoneOrJid: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    const guard = this.outboundGuard(phoneOrJid);
+    if (guard.error || !guard.jid) return { messageId: null, error: guard.error };
+    try {
+      const result = await this.sock.sendMessage(guard.jid, {
+        location: { degreesLatitude: latitude, degreesLongitude: longitude },
+      });
+      return { messageId: result?.key?.id ?? null, error: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { messageId: null, error: msg };
+    }
+  }
+
+  /** Common pre-flight for outbound: socket connected + allowlist + rate-limit. */
+  private outboundGuard(phoneOrJid: string): { jid: string | null; digits: string | null; error: string | null } {
+    if (!this.sock || this.state.state !== 'connected') {
+      return { jid: null, digits: null, error: 'WhatsApp bridge is not connected.' };
+    }
+    const digits = normalizePhone(phoneOrJid);
+    if (!digits) return { jid: null, digits: null, error: 'Invalid phone number.' };
+    if (!this.outboundLimiter.allow(digits)) {
+      return { jid: null, digits: null, error: 'Rate limit exceeded for this number.' };
+    }
+    return { jid: toUserJid(digits), digits, error: null };
+  }
+
+  /** Build the Baileys payload via a callback so each media kind can supply
+   * its own field (`image`/`document`/etc.), then send + persist. */
+  private async sendBaileysMedia(
+    phoneOrJid: string,
+    filePath: string,
+    buildPayload: (jid: string) => Record<string, unknown>,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    const guard = this.outboundGuard(phoneOrJid);
+    if (guard.error || !guard.jid) return { messageId: null, error: guard.error };
+    if (!fs.existsSync(filePath)) {
+      return { messageId: null, error: `file not found: ${filePath}` };
+    }
+    try {
+      const payload = buildPayload(guard.jid);
+      const result = await this.sock.sendMessage(guard.jid, payload);
+      return { messageId: result?.key?.id ?? null, error: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError('sendMedia failed:', msg);
       return { messageId: null, error: msg };
     }
   }
@@ -315,7 +457,9 @@ export class WhatsAppBridge implements WhatsAppChannel {
       useMultiFileAuthState,
       DisconnectReason,
       fetchLatestBaileysVersion,
+      downloadMediaMessage,
     } = baileys;
+    this.downloadMedia = downloadMediaMessage as (msg: any) => Promise<Buffer>;
 
     await fs.promises.mkdir(this.sessionDir, { recursive: true });
     const { state: authState, saveCreds } = await useMultiFileAuthState(this.sessionDir);
@@ -418,8 +562,11 @@ export class WhatsAppBridge implements WhatsAppChannel {
     const remoteJid: string | undefined = msg.key?.remoteJid;
     if (!remoteJid || !remoteJid.endsWith('@s.whatsapp.net')) return;
 
-    const text = extractMessageText(msg);
-    if (!text) return;
+    const inbound = extractInbound(msg);
+    let text = inbound.text;
+
+    // If there's no text AND no media, nothing for us to do.
+    if (!text && !inbound.media) return;
 
     const phone = normalizePhone(remoteJid);
     if (!phone) return;
@@ -428,6 +575,24 @@ export class WhatsAppBridge implements WhatsAppChannel {
       log(`ignoring message from non-allowlisted ${phone}`);
       return;
     }
+
+    // Download + ingest media (if present) BEFORE we persist or dispatch.
+    // Concatenates the resolved attachment's prompt injection ahead of any
+    // caption so the agent sees image/document context first, then the
+    // user's typed words.
+    if (inbound.media) {
+      const ingested = await this.ingestInboundMedia(msg, inbound.media);
+      if (ingested) {
+        text = text ? `${ingested}\n\n${text}` : ingested;
+      } else if (!text) {
+        // Media download failed AND no caption — bail rather than start a run
+        // with empty content.
+        log('media ingest failed and no caption — skipping');
+        return;
+      }
+    }
+
+    if (!text) return;
 
     const pushName: string | undefined = msg.pushName;
     if (pushName && pushName !== this.settings.phoneUsernames[phone]) {
@@ -493,6 +658,54 @@ export class WhatsAppBridge implements WhatsAppChannel {
       } catch (err) {
         logError(`routine ${routine.name} failed to start:`, err);
       }
+    }
+  }
+
+  // ── Inbound media ────────────────────────────────────────────
+
+  /** Download a Baileys media message to staging, route through MediaIngestService,
+   *  return the attachment's prompt injection. Returns null on any failure
+   *  (no media downloader, write fail, ingest fail). */
+  private async ingestInboundMedia(
+    msg: any,
+    media: { kind: string; mime: string | null; filename: string | null },
+  ): Promise<string | null> {
+    if (!this.downloadMedia) {
+      logError('Baileys not connected — cannot download inbound media');
+      return null;
+    }
+    let bytes: Buffer;
+    try {
+      bytes = await this.downloadMedia(msg);
+    } catch (err) {
+      logError('downloadMediaMessage failed:', err instanceof Error ? err.message : String(err));
+      return null;
+    }
+    if (!bytes || bytes.length === 0) return null;
+
+    const ext = media.filename
+      ? path.extname(media.filename).replace(/^\./, '').toLowerCase()
+      : extForMime(media.mime ?? '', media.kind);
+    const fname = `${crypto.randomUUID()}.${ext || 'bin'}`;
+    const dest = this.staging.pathFor('whatsapp', fname);
+    try {
+      await fs.promises.writeFile(dest, bytes);
+    } catch (err) {
+      logError('failed to write inbound media:', err instanceof Error ? err.message : String(err));
+      return null;
+    }
+    // TTL cleanup mirrors Telegram (30 min).
+    this.staging.scheduleCleanup(dest);
+
+    try {
+      const resolved = await this.mediaIngest.ingest({
+        filePath: dest,
+        source: 'whatsapp-inbound',
+      });
+      return resolved.promptInjection;
+    } catch (err) {
+      logError('media ingest failed:', err instanceof Error ? err.message : String(err));
+      return `[attachment at ${dest}]`;
     }
   }
 
@@ -630,22 +843,125 @@ export class WhatsAppBridge implements WhatsAppChannel {
   }
 }
 
-// ── Message-extraction helper ───────────────────────────────────
+// ── Message-extraction helpers ──────────────────────────────────
+
+interface InboundMedia {
+  /** Baileys media kind, drives ext + outbound display. */
+  kind: 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker';
+  mime: string | null;
+  /** Suggested filename (documents) or null — we'll synthesize one. */
+  filename: string | null;
+  /** Caption that came with the media (also returned in `text`). */
+  caption: string;
+}
+
+interface InboundMessage {
+  /** Plain text the user typed, OR a media caption. Empty if no text and no caption. */
+  text: string;
+  /** Single inbound media descriptor — WhatsApp sends one media kind per message. */
+  media: InboundMedia | null;
+}
 
 function extractMessageText(msg: any): string {
+  // Backwards-compat shim retained for any external callers; new code should
+  // use extractInbound() to also see media.
+  return extractInbound(msg).text;
+}
+
+function extForMime(mime: string, fallbackKind: string): string {
+  const map: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'audio/ogg': 'ogg',
+    'audio/mpeg': 'mp3',
+    'audio/mp4': 'm4a',
+    'audio/wav': 'wav',
+    'video/mp4': 'mp4',
+    'video/quicktime': 'mov',
+    'application/pdf': 'pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  };
+  if (map[mime]) return map[mime];
+  // Fall back to a kind-based guess for media WhatsApp doesn't mime-tag well.
+  const kindFallback: Record<string, string> = {
+    image: 'jpg',
+    voice: 'ogg',
+    audio: 'mp3',
+    video: 'mp4',
+    document: 'bin',
+    sticker: 'webp',
+  };
+  return kindFallback[fallbackKind] || 'bin';
+}
+
+export function extractInbound(msg: any): InboundMessage {
   const m = msg?.message;
-  if (!m) return '';
-  if (typeof m.conversation === 'string' && m.conversation.trim()) return m.conversation;
-  if (typeof m.extendedTextMessage?.text === 'string') return m.extendedTextMessage.text;
-  if (typeof m.imageMessage?.caption === 'string') return m.imageMessage.caption;
-  if (typeof m.videoMessage?.caption === 'string') return m.videoMessage.caption;
-  if (typeof m.documentMessage?.caption === 'string') return m.documentMessage.caption;
-  // Buttons / list responses — take the selected row title if present.
+  if (!m) return { text: '', media: null };
+
+  if (typeof m.conversation === 'string' && m.conversation.trim()) {
+    return { text: m.conversation, media: null };
+  }
+  if (typeof m.extendedTextMessage?.text === 'string') {
+    return { text: m.extendedTextMessage.text, media: null };
+  }
+  if (m.imageMessage) {
+    const caption = (m.imageMessage.caption ?? '') as string;
+    return {
+      text: caption,
+      media: { kind: 'image', mime: m.imageMessage.mimetype ?? 'image/jpeg', filename: null, caption },
+    };
+  }
+  if (m.videoMessage) {
+    const caption = (m.videoMessage.caption ?? '') as string;
+    return {
+      text: caption,
+      media: { kind: 'video', mime: m.videoMessage.mimetype ?? 'video/mp4', filename: null, caption },
+    };
+  }
+  if (m.documentMessage) {
+    const caption = (m.documentMessage.caption ?? '') as string;
+    return {
+      text: caption,
+      media: {
+        kind: 'document',
+        mime: m.documentMessage.mimetype ?? 'application/octet-stream',
+        filename: m.documentMessage.fileName ?? null,
+        caption,
+      },
+    };
+  }
+  if (m.audioMessage) {
+    const isVoice = !!m.audioMessage.ptt;
+    return {
+      text: '',
+      media: {
+        kind: isVoice ? 'voice' : 'audio',
+        mime: m.audioMessage.mimetype ?? (isVoice ? 'audio/ogg' : 'audio/mpeg'),
+        filename: null,
+        caption: '',
+      },
+    };
+  }
+  if (m.stickerMessage) {
+    return {
+      text: '',
+      media: {
+        kind: 'sticker',
+        mime: m.stickerMessage.mimetype ?? 'image/webp',
+        filename: null,
+        caption: '',
+      },
+    };
+  }
   if (typeof m.buttonsResponseMessage?.selectedDisplayText === 'string') {
-    return m.buttonsResponseMessage.selectedDisplayText;
+    return { text: m.buttonsResponseMessage.selectedDisplayText, media: null };
   }
   if (typeof m.listResponseMessage?.title === 'string') {
-    return m.listResponseMessage.title;
+    return { text: m.listResponseMessage.title, media: null };
   }
-  return '';
+  return { text: '', media: null };
 }

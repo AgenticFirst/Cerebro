@@ -32,6 +32,30 @@ export function createHubSpotCreateTicketAction(deps: {
     name: 'HubSpot: Create Ticket',
     description: 'Create a support ticket in HubSpot Service Hub.',
 
+    chatExposable: true,
+    chatGroup: 'hubspot',
+    chatLabel: { en: 'Create HubSpot ticket', es: 'Crear ticket de HubSpot' },
+    chatDescription: {
+      en: 'Open a new support ticket in HubSpot Service Hub. Requires subject; content is optional but recommended.',
+      es: 'Abre un nuevo ticket de soporte en HubSpot Service Hub. El asunto es obligatorio; el contenido es opcional pero recomendado.',
+    },
+    chatExamples: [
+      {
+        en: "Create a HubSpot ticket: customer X can't log in.",
+        es: 'Crea un ticket de HubSpot: el cliente X no puede iniciar sesión.',
+      },
+      {
+        en: 'Open a HubSpot ticket about the failed payment for order 1234.',
+        es: 'Abre un ticket de HubSpot sobre el pago fallido del pedido 1234.',
+      },
+    ],
+    availabilityCheck: () => {
+      const ch = deps.getChannel();
+      if (!ch) return 'not_connected';
+      return ch.isConnected() ? 'available' : 'not_connected';
+    },
+    setupHref: 'integrations#hubspot',
+
     inputSchema: {
       type: 'object',
       properties: {

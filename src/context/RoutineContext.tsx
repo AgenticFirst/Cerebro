@@ -11,8 +11,12 @@ import type { BackendResponse } from '../types/ipc';
 import type { Routine, ApiRoutine, CreateRoutineInput } from '../types/routines';
 import type { DAGDefinition } from '../engine/dag/types';
 import { toRoutine, toApiBody } from '../types/routines';
-import { validateDagParams } from '../utils/step-validation';
+import { validateDagParams, type ValidationContext } from '../utils/step-validation';
+import { resolveActionType } from '../utils/step-defaults';
+import { CLAUDE_MODELS } from '../utils/claude-models';
+import { fetchConnectionStatus, type ConnectionId } from '../lib/connection-status';
 import { useToast } from './ToastContext';
+import { useExperts } from './ExpertContext';
 
 // ── Context ────────────────────────────────────────────────────
 
@@ -51,6 +55,9 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
   const routinesRef = useRef<Routine[]>(routines);
   routinesRef.current = routines;
   const { addToast } = useToast();
+  const { experts } = useExperts();
+  const expertsRef = useRef(experts);
+  expertsRef.current = experts;
 
   const registerRunCallback = useCallback((cb: RunRoutineCallback) => {
     runCallbackRef.current = cb;
@@ -172,11 +179,77 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const issues = validateDagParams(dag);
+    // Build live-resource context. We only spend on async checks (IPC
+    // round-trips, subprocess probe) when the DAG actually has a step
+    // that benefits from them.
+    const usesHubspot = dag.steps.some((s) => {
+      const r = resolveActionType(s.actionType);
+      return r === 'hubspot_create_ticket' || r === 'hubspot_upsert_contact';
+    });
+
+    // Experts an the DAG references via run_expert. Decide which
+    // connections need live status checks based on the union of those
+    // experts' requiredConnections plus action-type-implied connections.
+    const referencedExperts = dag.steps
+      .filter((s) => resolveActionType(s.actionType) === 'run_expert')
+      .map((s) => expertsRef.current.find((e) => e.id === String(s.params?.expertId ?? '')))
+      .filter((e): e is NonNullable<typeof e> => Boolean(e));
+    const expertConnectionNeeds = new Set<ConnectionId>();
+    for (const expert of referencedExperts) {
+      for (const conn of expert.requiredConnections ?? []) {
+        if (conn === 'hubspot' || conn === 'whatsapp' || conn === 'telegram') {
+          expertConnectionNeeds.add(conn);
+        }
+      }
+    }
+    const connectionsToCheck: ConnectionId[] = [];
+    if (usesHubspot || expertConnectionNeeds.has('hubspot')) connectionsToCheck.push('hubspot');
+    if (expertConnectionNeeds.has('whatsapp')) connectionsToCheck.push('whatsapp');
+    if (expertConnectionNeeds.has('telegram')) connectionsToCheck.push('telegram');
+
+    const usesClaudeCode = dag.steps.some((s) => {
+      const r = resolveActionType(s.actionType);
+      return r === 'run_expert' || r === 'ask_ai' || r === 'run_claude_code';
+    });
+
+    const validationCtx: ValidationContext = {
+      experts: expertsRef.current.map((e) => ({
+        id: e.id,
+        isEnabled: e.isEnabled,
+        requiredConnections: e.requiredConnections,
+      })),
+      knownModels: CLAUDE_MODELS.map((m) => m.id),
+    };
+
+    if (connectionsToCheck.length > 0) {
+      const conns = await fetchConnectionStatus(connectionsToCheck);
+      validationCtx.hubspotConnected = conns.hubspot;
+      validationCtx.whatsappConnected = conns.whatsapp;
+      validationCtx.telegramConnected = conns.telegram;
+    }
+
+    if (usesClaudeCode) {
+      try {
+        const probe = await window.cerebro.claudeCode.probeAuth();
+        validationCtx.claudeCodeAuthChecked = true;
+        validationCtx.claudeCodeAuthOk = probe.ok;
+        validationCtx.claudeCodeAuthReason = probe.reason;
+      } catch {
+        // Probe IPC unavailable — skip; the engine's idle timeout still
+        // catches a hung subprocess in 60s.
+      }
+    }
+
+    const issues = validateDagParams(dag, validationCtx);
     if (issues.length > 0) {
-      const summary = issues.length === 1
-        ? issues[0].message
-        : `${issues.length} steps need attention: ${issues.map((i) => i.stepName).join(', ')}`;
+      let summary: string;
+      if (issues.length === 1) {
+        summary = issues[0].message;
+      } else if (issues.length <= 3) {
+        summary = issues.map((i) => i.message).join('; ');
+      } else {
+        summary = `${issues.length} steps need attention: ${issues.map((i) => i.stepName).join(', ')}`;
+      }
       addToast(`Can't run "${routine.name}" — ${summary}`, 'error');
       return;
     }

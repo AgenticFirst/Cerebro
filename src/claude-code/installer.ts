@@ -94,16 +94,25 @@ function ensureSettings(paths: InstallerPaths): void {
 
 /**
  * Write the runtime info file every time the backend port changes.
- * Skill scripts read this to discover the current backend port.
+ * Skill scripts read this to discover the current backend port and the
+ * loopback chat-actions server (port + bearer token) when it's available.
  */
-export function writeRuntimeInfo(dataDir: string, backendPort: number): void {
+export function writeRuntimeInfo(
+  dataDir: string,
+  backendPort: number,
+  chatActions?: { port: number; token: string },
+): void {
   const paths = resolvePaths(dataDir);
   fs.mkdirSync(paths.claudeDir, { recursive: true });
-  const info = {
+  const info: Record<string, unknown> = {
     backend_port: backendPort,
     data_dir: dataDir,
     updated_at: new Date().toISOString(),
   };
+  if (chatActions) {
+    info.chat_actions_port = chatActions.port;
+    info.chat_actions_token = chatActions.token;
+  }
   fs.writeFileSync(paths.runtimeInfoPath, JSON.stringify(info, null, 2), 'utf-8');
 }
 
@@ -213,12 +222,25 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`create-expert\` — create a new expert (a persistent specialist persona the user will talk to repeatedly) when the user describes a recurring need that no current expert covers. First confirm the proposed name, description, and system prompt with the user, then invoke.
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
+- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram or WhatsApp **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
+- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, HubSpot, WhatsApp, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
+- \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
 - \`summarize-conversation\` — used by routines.
+
+## Integration actions
+
+When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "mándale el manual en PDF", "avísame en 30 minutos", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
+
+When sending media, prefer \`file_item_id\` (referencing a file Cerebro already has — e.g., one a previous step generated and registered). Use \`file_path\` only as an escape hatch for an absolute path Cerebro just wrote to disk.
+
+## Connecting integrations
+
+When the user asks to **set up, connect, or link** an integration ("set up Telegram", "connect HubSpot", "configura WhatsApp", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, Private App for HubSpot, QR pairing for WhatsApp). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`hubspot\`, \`whatsapp\`. Anything else — Slack, Gmail, Notion, Calendar, etc. — is on the roadmap; tell the user and stop.
 
 ### Task vs Routine vs Expert — choose the right one
 
 - **Task** = a card on the Kanban board, assigned to an Expert who executes it autonomously. Use \`create-task\` when the user wants something tracked, owned, and queued — not just answered in chat.
-- **Routine** = same steps repeating on a schedule or trigger ("every morning…", "on every push…"). Managed in the Routines screen — never \`create-task\`.
+- **Routine** = same steps repeating on a schedule or trigger ("every morning…", "on every push…", "cada lunes…"). Use the \`propose-routine\` skill, which always proposes first → confirms with the user → dry-runs end-to-end (a couple of minutes) → saves only on a clean test.
 - **Expert** = a persistent persona the user returns to ("I need a fitness coach"). Use \`create-expert\`.
 - A plain question or chat → answer directly or delegate to an existing expert via the \`Agent\` tool.
 
@@ -299,7 +321,65 @@ ${coordinatorBlock}
 `;
 }
 
-function buildExpertBody(expert: ExpertData, memoryDir: string, skills: SkillData[] = []): string {
+/** Per-file cap on injected context (chars). Reference docs ride EVERY chat
+ * turn's system prompt, so we cap lower than the per-attachment cap on
+ * one-shot uploads (60k) to keep total context predictable. */
+const MAX_CONTEXT_FILE_CHARS_PER_FILE = 40_000;
+/** Aggregate cap across all reference docs for one expert. */
+const MAX_CONTEXT_FILE_TOTAL_CHARS = 120_000;
+
+function renderExpertContextSection(
+  contextFiles: ContextFileData[] = [],
+): string {
+  if (contextFiles.length === 0) return '';
+
+  const blocks: string[] = [];
+  let totalChars = 0;
+  for (const cf of contextFiles) {
+    let body = '';
+    let footer = '';
+    if (cf.parsed_text_path && fs.existsSync(cf.parsed_text_path)) {
+      try {
+        body = fs.readFileSync(cf.parsed_text_path, 'utf-8');
+      } catch {
+        body = '';
+      }
+    }
+    if (!body) {
+      // Image / text-passthrough / parse-failed: surface the file path so the
+      // expert can Read it on its own (safe for images and plain text).
+      body = `(File preserved at \`${cf.file_storage_path}\`. Use the Read tool only for text/image formats — never on binary office docs.)`;
+    } else {
+      if (body.length > MAX_CONTEXT_FILE_CHARS_PER_FILE) {
+        body = body.slice(0, MAX_CONTEXT_FILE_CHARS_PER_FILE)
+          + `\n\n[truncated — original was ${body.length} chars; raise expert.token_budget or split the file]`;
+      }
+      if (totalChars + body.length > MAX_CONTEXT_FILE_TOTAL_CHARS) {
+        footer = `\n\n[remaining reference files omitted — aggregate context cap of ${MAX_CONTEXT_FILE_TOTAL_CHARS} chars reached]`;
+        blocks.push(footer);
+        break;
+      }
+      totalChars += body.length;
+    }
+    const kindLabel = cf.kind === 'template' ? ' (TEMPLATE — always follow this format)' : '';
+    blocks.push(`### ${cf.file_name}${kindLabel}\n\n${body.trim()}`);
+  }
+
+  return (
+    '\n## Reference documents\n\n'
+    + 'These files were attached by the user as permanent reference for every turn. '
+    + 'Use them as authoritative context. When a file is marked TEMPLATE, your output MUST follow its structure (headings, sections, formatting) exactly.\n\n'
+    + blocks.join('\n\n')
+    + '\n'
+  );
+}
+
+function buildExpertBody(
+  expert: ExpertData,
+  memoryDir: string,
+  skills: SkillData[] = [],
+  contextFiles: ContextFileData[] = [],
+): string {
   const domainLine = expert.domain ? ` Domain: ${expert.domain}.` : '';
   let body = `You are **${expert.name}**, a Cerebro specialist expert.${domainLine}
 
@@ -312,6 +392,8 @@ ${turnProtocol(memoryDir)}
       body += `### ${skill.name}\n\n${skill.instructions.trimEnd()}\n\n`;
     }
   }
+
+  body += renderExpertContextSection(contextFiles);
 
   return body;
 }
@@ -608,6 +690,280 @@ else
 fi
 `,
     },
+    {
+      name: 'dry-run-routine.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Tests a candidate routine end-to-end with side-effects stubbed so we can
+# tell the user "it works" before persisting. Long-poll: blocks until the
+# engine completes the dry-run (a couple of minutes on a heavy routine).
+#
+# Usage: bash dry-run-routine.sh <json-file>
+#   JSON body: { "dag": { "steps": [...] }, "trigger_payload"?: {...} }
+#
+# Exit codes:
+#   0 — dry-run completed (caller MUST inspect .ok in the body)
+#   1 — transport / validation error before the run started
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  exit 1
+fi
+
+curl -sf --max-time 600 \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/dry-run-routine" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE"
+`,
+    },
+    {
+      name: 'save-routine.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Persists a routine via the backend API. Use this AFTER dry-run-routine.sh
+# has returned ok=true.
+#
+# Usage: bash save-routine.sh <json-file>
+#   JSON body matches POST /routines: { name, description?, plain_english_steps?,
+#                                       dag_json (string), trigger_type, ... }
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
+  echo "ERROR: backend not running" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  exit 1
+fi
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" -X POST "http://127.0.0.1:$PORT/routines" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  ROUTINE_NAME=$(echo "$BODY_RESPONSE" | jq -r '.name // "unknown"')
+  ROUTINE_ID=$(echo "$BODY_RESPONSE" | jq -r '.id // "unknown"')
+  echo "SUCCESS: Saved routine '$ROUTINE_NAME' (id: $ROUTINE_ID)"
+  echo "$BODY_RESPONSE" | jq .
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2
+  echo "$BODY_RESPONSE" >&2
+  exit 1
+fi
+`,
+    },
+    {
+      name: 'list-chat-actions.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Lists every chat-exposable action with current availability ("available"
+# vs "not_connected") so Cerebro knows which integrations the user has
+# wired up before trying to invoke one.
+#
+# Usage: bash list-chat-actions.sh [en|es]
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat_actions_port/token missing from $RUNTIME_JSON (server not started?)" >&2
+  exit 1
+fi
+
+LANG_CODE="\${1:-en}"
+
+curl -sf "http://127.0.0.1:$PORT/chat-actions/catalog?lang=$LANG_CODE" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  | jq '.actions'
+`,
+    },
+    {
+      name: 'run-chat-action.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Runs a single chat-triggered integration action through Cerebro's routine
+# engine. Always pauses for human approval before the action executes — the
+# call below blocks until the user clicks Approve or Deny in the Approvals
+# tab, then prints the structured result.
+#
+# Usage: bash run-chat-action.sh <json-file>
+#
+# JSON body shape:
+#   { "type": "hubspot_create_ticket",
+#     "params": { "subject": "...", "content": "..." } }
+#
+# Exit codes:
+#   0   success — action executed and returned a result
+#   3   approval denied
+#   4   integration not connected
+#   1   any other failure (network, validation, runtime error)
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running (no chat_actions_port/token in $RUNTIME_JSON)" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  echo "Usage: bash run-chat-action.sh <json-file>" >&2
+  exit 1
+fi
+
+# Long-poll: this curl call sits open until the user resolves the approval
+# (or the underlying run reaches a terminal state). Increase max-time to 30
+# minutes so a slow human reviewer doesn't trip the curl timeout.
+RESPONSE=$(curl -s --max-time 1800 -w "\\n%{http_code}" \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/run" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE" 2>&1) || {
+  echo "ERROR: Cannot reach chat-actions server on port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+STATUS=$(echo "$BODY_RESPONSE" | jq -r '.status // ""')
+SUMMARY=$(echo "$BODY_RESPONSE" | jq -r '.summary // ""')
+ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
+
+case "$STATUS" in
+  succeeded)
+    echo "SUCCESS: $SUMMARY"
+    echo "$BODY_RESPONSE" | jq '.data // {}'
+    exit 0
+    ;;
+  denied)
+    echo "DENIED: \${ERROR:-Approval denied}"
+    exit 3
+    ;;
+  unavailable)
+    echo "NOT_CONNECTED: \${ERROR:-Integration is not connected.}"
+    exit 4
+    ;;
+  *)
+    echo "ERROR: \${ERROR:-Run did not complete successfully} (HTTP $HTTP_CODE)" >&2
+    echo "$BODY_RESPONSE" >&2
+    exit 1
+    ;;
+esac
+`,
+    },
+    {
+      name: 'propose-integration.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Asks the Cerebro UI to render an inline IntegrationSetupCard so the user
+# can connect an integration (Telegram, HubSpot, WhatsApp, …) without
+# leaving chat. The renderer owns credential entry — this script never
+# transmits secrets and the chat agent must not ask for tokens in chat.
+#
+# Usage: bash propose-integration.sh <integration_id> [reason]
+#
+# integration_id must match a manifest in src/integrations/registry.ts.
+# Currently: telegram | hubspot | whatsapp.
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running" >&2
+  exit 1
+fi
+
+INTEGRATION_ID="\${1:-}"
+if [ -z "$INTEGRATION_ID" ]; then
+  echo "ERROR: integration_id is required (e.g. telegram, hubspot, whatsapp)" >&2
+  exit 1
+fi
+REASON="\${2:-}"
+
+BODY=$(jq -n \\
+  --arg integration_id "$INTEGRATION_ID" \\
+  --arg reason "$REASON" \\
+  '{integration_id: $integration_id} + (if $reason == "" then {} else {reason: $reason} end)')
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/propose-integration" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d "$BODY") || {
+  echo "ERROR: Cannot reach chat-actions server on port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" = "200" ]; then
+  echo "SUCCESS: Setup card opened for $INTEGRATION_ID"
+  exit 0
+fi
+ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
+echo "ERROR: \${ERROR:-Could not open setup card} (HTTP $HTTP_CODE)" >&2
+exit 1
+`,
+    },
   ];
 }
 
@@ -763,6 +1119,244 @@ If the output says **SUCCESS**, tell the user the task was created in the **Back
 If the output says **ERROR**, report the error to the user.
 `,
     },
+    {
+      name: 'run-chat-action',
+      description: 'Invoke a connected integration action (HubSpot, Telegram, WhatsApp, …) directly from chat. Always pauses for human approval.',
+      body: `# Run chat action
+
+Use this skill whenever the user asks Cerebro to **do** something through a connected integration — anything that touches an external service (HubSpot, Telegram, WhatsApp, HTTP endpoints, desktop notifications, and any future integrations like GitHub or iMessage).
+
+The user may speak in **English or Spanish** (or mix them). Recognize natural-language intents and map them to the correct action \`type\`:
+
+| User says (EN / ES) | Action type |
+| --- | --- |
+| "Create a HubSpot ticket about X" / "Crea un ticket de HubSpot sobre X" | \`hubspot_create_ticket\` |
+| "Add Maria to HubSpot" / "Agrega a María a HubSpot" | \`hubspot_upsert_contact\` |
+| "Send Pablo a Telegram" / "Envíale un Telegram a Pablo" | \`send_telegram_message\` |
+| "Send a WhatsApp to +1…" / "Envía un WhatsApp a +1…" | \`send_whatsapp_message\` |
+| "Notify me in 30 minutes" / "Avísame en 30 minutos" | \`send_notification\` |
+| "GET https://… and tell me the status" | \`http_request\` |
+
+## Workflow
+
+1. **List what's available.** Run \`list-chat-actions\` to see the current catalog and which integrations are connected. If the action the user wants shows \`availability: "not_connected"\`, tell them which integration to wire up (point to **Connections** / **Integrations**) and stop.
+2. **Gather parameters.** Inspect the action's \`inputSchema\` from the catalog and ask the user for any required fields you don't already have. Keep it conversational — don't dump JSON at them.
+3. **Confirm before invoking.** Restate what you're about to do in one sentence ("I'll create a HubSpot ticket with subject _X_ and body _Y_ — confirm?"). These actions are visible to other people, so the user must agree.
+4. **Invoke.** Write the request body to a tmp file and call \`run-chat-action.sh\`:
+
+\`\`\`bash
+jq -n \\
+  --arg type "ACTION_TYPE" \\
+  --argjson params 'PARAMS_JSON' \\
+  '{type: $type, params: $params}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/chat-action.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/run-chat-action.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/chat-action.json"
+\`\`\`
+
+5. **Tell the user the run is paused for approval.** The script blocks until the user clicks Approve or Deny in the **Approvals** tab. While you're waiting, do not start another action.
+
+## Interpreting the result
+
+- \`SUCCESS:\` — the action ran. Restate the outcome in natural language using the printed JSON (\`ticket_id\`, \`message_id\`, \`status\`, etc.). Reply in the user's language.
+- \`DENIED:\` — the user declined. Acknowledge briefly; do not retry without new instructions.
+- \`NOT_CONNECTED:\` — the integration was disconnected between catalog fetch and run. Tell the user and link to Connections.
+- \`ERROR:\` — surface the error message verbatim and offer next steps.
+
+## What this skill does NOT do
+
+- Skip approval. Every action runs through the human approval gate by design.
+- Compose multi-step workflows. Use **Routines** for anything that should run more than once.
+- Read or modify the file system, run code, or call experts — pick a different tool for that.
+`,
+    },
+    {
+      name: 'propose-routine',
+      description: 'Draft a Cerebro Routine from a natural-language request, confirm it with the user, dry-run it end-to-end (with side-effects stubbed), then save it on success.',
+      body: `# Propose routine
+
+Use this skill whenever the user asks for **recurring or triggered work** — anything they want Cerebro to run more than once on a schedule, on an inbound message, or by clicking Run. Phrases that should match (English **or** Spanish):
+
+- "every Monday morning…", "daily at 8…", "cada lunes…", "todos los días…"
+- "when a Telegram message arrives from…", "cuando llegue un WhatsApp…"
+- "any time someone emails X, do Y", "set up a workflow that…"
+- "make a routine that…", "crea una rutina que…"
+
+For one-off work, use \`run-chat-action\` instead. For tracked tasks, use \`create-task\`.
+
+## Workflow (always in this order)
+
+### 1. Gather what you need
+
+Find these in the conversation. If anything is missing, **ask one short clarifying question at a time** — don't dump a checklist.
+
+- **name** — short title (3–8 words).
+- **description** — one sentence about what the routine does.
+- **trigger_type** — one of: \`manual\`, \`cron\`, \`webhook\`, \`telegram_message\`, \`whatsapp_message\`.
+- **cron_expression** — required when \`trigger_type=cron\`. Use 5-field cron (minute hour day-of-month month day-of-week, e.g. \`0 9 * * 1\` for "every Monday at 9am").
+- **plain_english_steps** — array of human-readable step descriptions in order.
+- **DAG steps** — programmatic version of the steps. Each step is:
+  \`\`\`json
+  {
+    "id": "stable-id-1",
+    "name": "Fetch order from HubSpot",
+    "actionType": "<action_type>",
+    "params": { /* per-action inputs */ },
+    "dependsOn": [],
+    "inputMappings": [],
+    "requiresApproval": false,
+    "onError": "fail"
+  }
+  \`\`\`
+
+To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`send_telegram_message\`, \`send_whatsapp_message\`, \`send_notification\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, HubSpot, WhatsApp, email).
+
+### 2. Wire steps together
+
+Use \`inputMappings\` to feed an upstream step's output into a downstream step. Mapping shape:
+\`\`\`json
+{ "sourceStepId": "step-1", "sourceField": "result", "targetField": "input_field" }
+\`\`\`
+Use Mustache templates inside string params to read wired inputs: \`{{input_field}}\`.
+
+For triggered routines, the inbound payload is exposed as a synthetic step \`__trigger__\`. Example for a Telegram trigger:
+\`\`\`json
+{ "sourceStepId": "__trigger__", "sourceField": "chat_id", "targetField": "trigger.chat_id" }
+\`\`\`
+
+### 3. Propose the routine to the user — do NOT save anything yet
+
+Restate the routine in plain English with this structure:
+
+\`\`\`
+Here's the routine I'd build:
+
+**Name:** <name>
+**Trigger:** <human description, e.g. "Every Monday at 9 AM" or "When a Telegram message arrives from chat 123456">
+**Steps:**
+  1. <step 1 description>
+  2. <step 2 description>
+  …
+
+Want me to test and save this, or change something first?
+\`\`\`
+
+Then **wait for the user's reply**. Only continue once they say "yes / save / go ahead / sounds good / ship it" (or the Spanish equivalent). If they ask for changes, regenerate the proposal and ask again.
+
+### 4. Tell the user testing will take a moment
+
+Before you run the dry-run, say something like:
+
+> Testing the routine end-to-end now — this can take a couple of minutes while I exercise every step with safe stand-ins for the real integrations.
+
+### 5. Run the dry-run
+
+Build the dag JSON, write it to a tmp file, then test it:
+
+\`\`\`bash
+jq -n --argjson dag 'DAG_JSON' '{dag: $dag}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/dry-run-routine.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/dry-run-routine.sh" \\
+  "$CLAUDE_PROJECT_DIR/.claude/tmp/dry-run-routine.json"
+\`\`\`
+
+The script blocks until the engine finishes and prints a JSON object with \`{ok, runId, error?, failedStepId?, steps: [...] }\`. Inspect:
+
+- **\`ok: true\`** → every step completed (with side-effects stubbed). Move on to step 6.
+- **\`ok: false\`** → tell the user *which* step failed (look up the failed step in \`.steps\` by \`failedStepId\`) and what the error said. Offer to amend and re-run, or stop. **Never persist a routine that fails its dry-run.**
+
+### 6. Save the routine
+
+Build the final body. \`dag_json\` MUST be a JSON-encoded **string**, not an object. Then:
+
+\`\`\`bash
+jq -n \\
+  --arg name "ROUTINE_NAME" \\
+  --arg description "ROUTINE_DESCRIPTION" \\
+  --arg trigger_type "TRIGGER_TYPE" \\
+  --arg cron_expression "CRON_OR_EMPTY" \\
+  --arg dag_json "DAG_AS_JSON_STRING" \\
+  --argjson plain_english_steps 'PLAIN_STEPS_ARRAY' \\
+  --argjson required_connections 'CONNECTIONS_ARRAY' \\
+  --argjson approval_gates 'APPROVAL_STEP_IDS_ARRAY' \\
+  '{name: $name, description: $description, trigger_type: $trigger_type, cron_expression: (if $cron_expression == "" then null else $cron_expression end), dag_json: $dag_json, plain_english_steps: $plain_english_steps, required_connections: $required_connections, approval_gates: $approval_gates, source: "user"}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/save-routine.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/save-routine.sh" \\
+  "$CLAUDE_PROJECT_DIR/.claude/tmp/save-routine.json"
+\`\`\`
+
+If the output starts with \`SUCCESS:\`, tell the user the routine was saved (mention the name) and that it appears in the Routines screen. If it starts with \`ERROR:\`, surface the error and stop.
+
+## Hard rules
+
+- **Always propose first, then test, then save.** Skipping the proposal step is a contract violation.
+- **Never save a routine that failed dry-run.** Tell the user what broke and offer to fix it.
+- **Always tell the user testing takes a couple of minutes** before kicking off the dry-run.
+- **For external-facing actions** (Telegram, WhatsApp, HubSpot, email, run_command), **add an \`approval_gate\` step or set \`requiresApproval: true\`** on the action step so real runs pause for the user.
+- Reply in the user's language (English or Spanish) throughout.
+`,
+    },
+    {
+      name: 'connect-integration',
+      description:
+        'Open the inline setup card so the user can connect an integration (Telegram, HubSpot, WhatsApp, …) without leaving the chat. Never ask for tokens in chat — the card collects them securely.',
+      body: `# Connect an integration
+
+Use this skill whenever the user asks Cerebro to **connect, set up, link, or wire up** an external service — anything that needs credentials before \`run-chat-action\` or a routine can use it. Phrases that should match (English **or** Spanish):
+
+- "set up Telegram", "connect Telegram", "help me set up the Telegram bot"
+- "configura HubSpot", "conecta WhatsApp", "vincula mi cuenta de HubSpot"
+- "I want to use Telegram with Cerebro", "how do I connect HubSpot"
+
+Currently supported \`integration_id\` values: \`telegram\`, \`hubspot\`, \`whatsapp\`. Others — including everything listed as "coming soon" in the Integrations screen — are not yet implemented; tell the user it's on the roadmap and stop.
+
+## Workflow
+
+1. **Confirm intent and pick the integration_id.** Match the user's wording to one of \`telegram\`, \`hubspot\`, \`whatsapp\`. If the user is ambiguous (e.g. "set up CRM"), ask one short clarifying question.
+2. **Open the setup card.** Run:
+
+   \`\`\`bash
+   bash "$CLAUDE_PROJECT_DIR/.claude/scripts/propose-integration.sh" INTEGRATION_ID "WHY_THIS_INTEGRATION"
+   \`\`\`
+
+   Replace \`INTEGRATION_ID\` with one of \`telegram\` / \`hubspot\` / \`whatsapp\`. The reason argument is optional and shown as the card subtitle ("So you can send WhatsApp from routines").
+
+3. **Tell the user the card is ready.** One short line in their language: "I'll help you connect Telegram. Open the setup card below." Don't dump instructions — the card already shows the BotFather/Private App walkthrough.
+
+4. **Answer follow-up questions conversationally.** While the card is open, the user may ask things like "what's BotFather?", "where do I find scopes in HubSpot?", "do I need WhatsApp Business?". Use this prose as your source of truth so you don't make things up:
+
+   ### Telegram (BotFather)
+   - Open Telegram and start a chat with **@BotFather** (the @ matters — confirm exactly that handle).
+   - Send \`/newbot\` and follow the prompts to name your bot and pick a unique username (must end in \`bot\`).
+   - BotFather replies with a token like \`123456789:AABBccDD…\`. Copy it.
+   - Paste the token in the card's step 2. Cerebro verifies it against Telegram's getMe API and stores it encrypted in the OS keychain.
+
+   ### HubSpot (Private App access token)
+   - In HubSpot, open **Settings → Integrations → Private Apps** (also reachable via the Legacy Apps shortcut).
+   - Click **Create a private app**, name it (e.g. "Cerebro"), and click **Scopes**.
+   - Enable read+write on **tickets**, **contacts**, and **pipelines** (CRM scopes).
+   - Click **Create app**, then **Show token** and copy the \`pat-na1-…\` value.
+   - Paste the token in the card's step 2. Cerebro verifies it via the HubSpot account-info API.
+
+   ### WhatsApp (QR pairing)
+   - Open WhatsApp on the user's phone (regular or Business).
+   - Settings → **Linked devices** → **Link a device**.
+   - The card shows a QR code; scan it with the phone.
+   - Once paired, the card flips to "Connected".
+
+5. **Don't ask for credentials in chat.** The card's input fields collect tokens directly through the secure IPC bridge so secrets never reach the LLM context. If the user pastes a token in chat by mistake, ignore it and remind them to enter it in the card.
+
+## Interpreting the script output
+
+- \`SUCCESS:\` — card opened. Tell the user.
+- \`ERROR:\` — surface the message verbatim. Common causes: unknown \`integration_id\`, chat-actions server not running, main window not ready.
+
+## What this skill does NOT do
+
+- Walk the user through setup in plain text. The card owns the walkthrough.
+- Collect, store, or even read credentials. The card does that.
+- Connect integrations not in the registry yet. If the user asks for Slack / Gmail / Notion / Calendar, say it's on the roadmap and stop.
+`,
+    },
   ];
 }
 
@@ -814,6 +1408,27 @@ async function fetchExpertSkills(
   return (result?.skills ?? [])
     .filter((s) => s.is_active)
     .map((s) => s.skill);
+}
+
+interface ContextFileData {
+  id: string;
+  file_name: string;
+  file_ext: string;
+  kind: string;
+  parsed_text_path: string | null;
+  file_storage_path: string;
+  truncated: boolean;
+}
+
+async function fetchExpertContextFiles(
+  backendPort: number,
+  expertId: string,
+): Promise<ContextFileData[]> {
+  const result = await fetchJson<ContextFileData[]>(
+    backendPort,
+    `/experts/${expertId}/context-files`,
+  );
+  return result ?? [];
 }
 
 // ── Public API ───────────────────────────────────────────────────
@@ -876,10 +1491,17 @@ export async function installAll(options: InstallerOptions): Promise<void> {
   const regulars = experts.filter((e) => (e.type ?? 'expert') !== 'team');
   const teams = experts.filter((e) => e.type === 'team');
 
-  // Fetch skills only for regular experts (teams don't carry skills).
-  const regularSkillSets = await Promise.all(
-    regulars.map((expert) => fetchExpertSkills(options.backendPort, expert.id)),
-  );
+  // Fetch skills + context files for each regular expert (teams don't carry either).
+  const [regularSkillSets, regularContextSets] = await Promise.all([
+    Promise.all(
+      regulars.map((expert) => fetchExpertSkills(options.backendPort, expert.id)),
+    ),
+    Promise.all(
+      regulars.map((expert) =>
+        fetchExpertContextFiles(options.backendPort, expert.id),
+      ),
+    ),
+  ]);
 
   const agentNameById: Record<string, string> = {};
   const memberNamesById: Record<string, string> = {};
@@ -888,7 +1510,13 @@ export async function installAll(options: InstallerOptions): Promise<void> {
     const expert = regulars[i];
     const agentName = expertAgentName(expert.id, expert.name);
     seen.add(agentName);
-    writeExpertAgent(paths, expert, agentName, regularSkillSets[i]);
+    writeExpertAgent(
+      paths,
+      expert,
+      agentName,
+      regularSkillSets[i],
+      regularContextSets[i],
+    );
     index.experts[expert.id] = agentName;
     agentNameById[expert.id] = agentName;
     memberNamesById[expert.id] = expert.name;
@@ -957,8 +1585,11 @@ export async function installExpert(options: InstallerOptions, expert: ExpertDat
     }
     writeTeamAgent(paths, expert, agentName, agentNameById, memberNamesById);
   } else {
-    const skills = await fetchExpertSkills(options.backendPort, expert.id);
-    writeExpertAgent(paths, expert, agentName, skills);
+    const [skills, contextFiles] = await Promise.all([
+      fetchExpertSkills(options.backendPort, expert.id),
+      fetchExpertContextFiles(options.backendPort, expert.id),
+    ]);
+    writeExpertAgent(paths, expert, agentName, skills, contextFiles);
   }
   index.experts[expert.id] = agentName;
   writeIndex(paths.indexPath, index);
@@ -1210,6 +1841,7 @@ function writeExpertAgent(
   expert: ExpertData,
   agentName: string,
   skills: SkillData[] = [],
+  contextFiles: ContextFileData[] = [],
 ): void {
   const memoryDir = path.join(paths.memoryRoot, agentName);
   fs.mkdirSync(memoryDir, { recursive: true });
@@ -1222,7 +1854,7 @@ function writeExpertAgent(
     name: agentName,
     description: expert.description || expert.name,
     tools: allTools,
-    body: buildExpertBody(expert, memoryDir, skills),
+    body: buildExpertBody(expert, memoryDir, skills, contextFiles),
   };
   fs.writeFileSync(
     path.join(paths.agentsDir, `${agentName}.md`),

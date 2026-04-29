@@ -3619,25 +3619,37 @@ function SendWhatsAppParams({ params, onChange, step, sourceSteps, onAddMapping 
 function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
   const paramsRef = useRef(params);
   paramsRef.current = params;
-  const subject = (params.subject as string) ?? '';
-  const content = (params.content as string) ?? '';
-  const pipeline = (params.pipeline as string) ?? '';
-  const stage = (params.stage as string) ?? '';
+
+  // Local state for every text input. The parent debounces `onChange` by
+  // 150ms; binding the input's `value` directly to `params` would let any
+  // inter-keystroke re-render snap the DOM back to the stale prop value
+  // (the "have to type fast keystrokes twice" symptom). Local state stays
+  // synchronous with what the user typed regardless of when the upstream
+  // params actually update.
+  const [subject, setSubject] = useState((params.subject as string) ?? '');
+  const [content, setContent] = useState((params.content as string) ?? '');
+  const [pipeline, setPipeline] = useState((params.pipeline as string) ?? '');
+  const [stage, setStage] = useState((params.stage as string) ?? '');
+  const [contactId, setContactId] = useState((params.contact_id as string) ?? '');
   const priority = (params.priority as string) ?? '';
-  const contactId = (params.contact_id as string) ?? '';
 
   const contentRef = useRef<HTMLTextAreaElement>(null);
 
   const set = (patch: Record<string, unknown>) => onChange({ ...paramsRef.current, ...patch });
 
+  const handleSubject = (v: string) => { setSubject(v); set({ subject: v }); };
+  const handleContent = (v: string) => { setContent(v); set({ content: v }); };
+  const handlePipeline = (v: string) => { setPipeline(v); set({ pipeline: v }); };
+  const handleStage = (v: string) => { setStage(v); set({ stage: v }); };
+  const handleContactId = (v: string) => { setContactId(v); set({ contact_id: v }); };
+
   const insertAtCursor = (token: string) => {
     const el = contentRef.current;
     if (!el) return;
-    const current = content;
-    const start = el.selectionStart ?? current.length;
-    const end = el.selectionEnd ?? current.length;
-    const next = current.slice(0, start) + token + current.slice(end);
-    set({ content: next });
+    const start = el.selectionStart ?? content.length;
+    const end = el.selectionEnd ?? content.length;
+    const next = content.slice(0, start) + token + content.slice(end);
+    handleContent(next);
     requestAnimationFrame(() => { el.focus(); const pos = start + token.length; el.setSelectionRange(pos, pos); });
   };
 
@@ -3647,7 +3659,7 @@ function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddM
         <FieldLabel text="Subject" />
         <input
           value={subject}
-          onChange={(e) => set({ subject: e.target.value })}
+          onChange={(e) => handleSubject(e.target.value)}
           placeholder="{{extract_fields.issue_summary}}"
           className={inputCls}
         />
@@ -3657,7 +3669,7 @@ function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddM
         <textarea
           ref={contentRef}
           value={content}
-          onChange={(e) => set({ content: e.target.value })}
+          onChange={(e) => handleContent(e.target.value)}
           rows={4}
           placeholder="Customer: {{customer_name}}. Issue: {{issue_summary}}."
           className={textareaCls}
@@ -3666,11 +3678,11 @@ function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddM
       <div className="grid grid-cols-2 gap-3">
         <div>
           <FieldLabel text="Pipeline id (optional)" />
-          <input value={pipeline} onChange={(e) => set({ pipeline: e.target.value })} placeholder="uses default" className={inputCls} />
+          <input value={pipeline} onChange={(e) => handlePipeline(e.target.value)} placeholder="uses default" className={inputCls} />
         </div>
         <div>
           <FieldLabel text="Stage id (optional)" />
-          <input value={stage} onChange={(e) => set({ stage: e.target.value })} placeholder="uses default" className={inputCls} />
+          <input value={stage} onChange={(e) => handleStage(e.target.value)} placeholder="uses default" className={inputCls} />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -3685,7 +3697,7 @@ function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddM
         </div>
         <div>
           <FieldLabel text="Contact id (optional)" />
-          <input value={contactId} onChange={(e) => set({ contact_id: e.target.value })} placeholder="{{upsert_contact.contact_id}}" className={inputCls} />
+          <input value={contactId} onChange={(e) => handleContactId(e.target.value)} placeholder="{{upsert_contact.contact_id}}" className={inputCls} />
         </div>
       </div>
       <p className="text-[11px] text-text-tertiary">
@@ -3704,37 +3716,47 @@ function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddM
 function HubSpotUpsertContactParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
   const paramsRef = useRef(params);
   paramsRef.current = params;
-  const email = (params.email as string) ?? '';
-  const phone = (params.phone as string) ?? '';
-  const firstname = (params.firstname as string) ?? '';
-  const lastname = (params.lastname as string) ?? '';
-  const lifecyclestage = (params.lifecyclestage as string) ?? '';
+
+  // See HubSpotCreateTicketParams for why local state is required here.
+  const [email, setEmail] = useState((params.email as string) ?? '');
+  const [phone, setPhone] = useState((params.phone as string) ?? '');
+  const [firstname, setFirstname] = useState((params.firstname as string) ?? '');
+  const [lastname, setLastname] = useState((params.lastname as string) ?? '');
+  const [lifecyclestage, setLifecyclestage] = useState((params.lifecyclestage as string) ?? '');
+
   const set = (patch: Record<string, unknown>) => onChange({ ...paramsRef.current, ...patch });
+
+  const handleEmail = (v: string) => { setEmail(v); set({ email: v }); };
+  const handlePhone = (v: string) => { setPhone(v); set({ phone: v }); };
+  const handleFirstname = (v: string) => { setFirstname(v); set({ firstname: v }); };
+  const handleLastname = (v: string) => { setLastname(v); set({ lastname: v }); };
+  const handleLifecyclestage = (v: string) => { setLifecyclestage(v); set({ lifecyclestage: v }); };
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div>
           <FieldLabel text="Email" />
-          <input value={email} onChange={(e) => set({ email: e.target.value })} placeholder="{{extract_fields.customer_email}}" className={inputCls} />
+          <input value={email} onChange={(e) => handleEmail(e.target.value)} placeholder="{{extract_fields.customer_email}}" className={inputCls} />
         </div>
         <div>
           <FieldLabel text="Phone" />
-          <input value={phone} onChange={(e) => set({ phone: e.target.value })} placeholder="{{__trigger__.phone_number}}" className={inputCls} />
+          <input value={phone} onChange={(e) => handlePhone(e.target.value)} placeholder="{{__trigger__.phone_number}}" className={inputCls} />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <FieldLabel text="First name" />
-          <input value={firstname} onChange={(e) => set({ firstname: e.target.value })} placeholder="{{customer_name}}" className={inputCls} />
+          <input value={firstname} onChange={(e) => handleFirstname(e.target.value)} placeholder="{{customer_name}}" className={inputCls} />
         </div>
         <div>
           <FieldLabel text="Last name" />
-          <input value={lastname} onChange={(e) => set({ lastname: e.target.value })} className={inputCls} />
+          <input value={lastname} onChange={(e) => handleLastname(e.target.value)} className={inputCls} />
         </div>
       </div>
       <div>
         <FieldLabel text="Lifecycle stage" />
-        <input value={lifecyclestage} onChange={(e) => set({ lifecyclestage: e.target.value })} placeholder="customer" className={inputCls} />
+        <input value={lifecyclestage} onChange={(e) => handleLifecyclestage(e.target.value)} placeholder="customer" className={inputCls} />
       </div>
       <p className="text-[11px] text-text-tertiary">
         At least one of email or phone is required. The action searches by that value and updates if a match exists, creates otherwise.
