@@ -34,6 +34,8 @@ import {
   toApiIntegrationProposal,
   resolveNewChatTarget,
   apiPatchMessageMetadata,
+  apiPatchMessage,
+  apiDeleteMessagesAfter,
   type ApiConversationList,
 } from './chat-helpers';
 
@@ -69,6 +71,8 @@ interface ChatActions {
   deleteConversation: (id: string) => void;
   setActiveScreen: (screen: Screen) => void;
   sendMessage: (content: string) => void;
+  stopMessage: () => Promise<void>;
+  regenerateFromUserMessage: (messageId: string, newContent?: string) => Promise<void>;
   setActiveExpertId: (id: string | null) => void;
   dismissChatError: () => void;
   getConversationsForExpert: (expertId: string) => Conversation[];
@@ -168,6 +172,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Keep ref in sync so async callbacks always see latest state
   conversationsRef.current = conversations;
+
+  // The currently-streaming agent run, exposed so the stop button can reach it.
+  // The closure inside runAgentForMessage mutates `state` so stopMessage can
+  // read the latest accumulated text and tool calls when finalizing the UI.
+  type ActiveRun = {
+    runId: string;
+    unsub: () => void;
+    conversationId: string;
+    assistantId: string;
+    state: { accumulated: string; toolCalls: ToolCall[] };
+  };
+  const activeRunRef = useRef<ActiveRun | null>(null);
 
   const activeConversationIdRef = useRef<string | null>(null);
   activeConversationIdRef.current = activeConversationId;
@@ -406,6 +422,345 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [createConversation]);
 
+  // Internal helper: launches an agent run for an existing user-message turn.
+  // Used by both sendMessage (after appending a fresh user message) and
+  // regenerateFromUserMessage (after truncating and reusing the edited one).
+  const runAgentForMessage = useCallback(
+    (
+      convId: string,
+      assistantId: string,
+      userContent: string,
+      expertId: string | null | undefined,
+    ) => {
+      const runAgent = async () => {
+        try {
+          // Wait for the conversation row + user message insert to commit before
+          // spawning the agent run. The runtime persists an `agent_runs` row with
+          // a FK to `conversation_id`, so the conversation must exist first or
+          // the insert fails with a FK violation.
+          await waitForConversation(convId);
+
+          // Collect conversation context so the LLM has multi-turn awareness.
+          const conv = conversationsRef.current.find((c) => c.id === convId);
+          const allMessages = conv?.messages ?? [];
+
+          // Recent messages — gives the LLM conversational continuity across turns.
+          // Note: React batches state updates, so conversationsRef still has the
+          // pre-addMessage state here. No need to exclude the just-added message.
+          const MAX_RECENT = 10;
+          const recentMessages = allMessages
+            .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isThinking)
+            .slice(-MAX_RECENT)
+            .map((m) => {
+              let enrichedContent = m.content;
+              // Enrich assistant messages with successful tool call outputs
+              if (m.role === 'assistant' && m.toolCalls?.length) {
+                for (const tc of m.toolCalls) {
+                  if (tc.status === 'success' && tc.output) {
+                    const truncatedOutput = tc.output.length > 200
+                      ? tc.output.slice(0, 200) + '...'
+                      : tc.output;
+                    enrichedContent += `\n[Used ${tc.name}: ${truncatedOutput}]`;
+                  }
+                }
+              }
+              return { role: m.role as 'user' | 'assistant', content: enrichedContent };
+            });
+
+          // Routine proposal snapshots — so the LLM knows what it proposed and what happened.
+          const routineProposals = allMessages
+            .filter((m) => m.routineProposal)
+            .map((m) => ({
+              name: m.routineProposal!.name,
+              status: m.routineProposal!.status,
+            }));
+
+          // Expert proposal snapshots — so the LLM knows what it proposed and what happened.
+          const expertProposals = allMessages
+            .filter((m) => m.expertProposal)
+            .map((m) => ({
+              name: m.expertProposal!.name,
+              status: m.expertProposal!.status,
+            }));
+
+          const runId = await window.cerebro.agent.run({
+            conversationId: convId,
+            content: userContent,
+            expertId,
+            recentMessages: recentMessages.length > 0 ? recentMessages : undefined,
+            routineProposals: routineProposals.length > 0 ? routineProposals : undefined,
+            expertProposals: expertProposals.length > 0 ? expertProposals : undefined,
+            language: i18n.language !== 'en' ? i18n.language : undefined,
+            qualityTier: qualityTierRef.current,
+            model: responseModelRef.current,
+          });
+
+          // Keep isThinking true and message.isThinking true until first content arrives
+          setIsStreaming(true);
+
+          // Lifted into a single object so stopMessage can read the latest
+          // accumulated text and tool-call list when finalizing the UI.
+          const state: { accumulated: string; toolCalls: ToolCall[] } = {
+            accumulated: '',
+            toolCalls: [],
+          };
+          let thinkingCleared = false;
+          let accEngineRunId: string | undefined;
+          let accRoutineProposal: import('../types/chat').RoutineProposal | undefined;
+          let accExpertProposal: import('../types/chat').ExpertProposal | undefined;
+          let accTeamProposal: import('../types/chat').TeamProposal | undefined;
+          // teamRun state is owned by the chat-actions HTTP listeners below;
+          // the on-Agent-end branch in tool_end below sweeps any still-open
+          // members as a safety net.
+          // Paths the assistant produced via Write/Edit. Surfaced as Slack-style
+          // attachment chips below the reply on `done`. Deduped by absolute path.
+          const accFileRefs = new Set<string>();
+
+          const clearThinking = () => {
+            if (!thinkingCleared) {
+              thinkingCleared = true;
+              setIsThinking(false);
+              updateMessage(convId, assistantId, { isThinking: false, isStreaming: true });
+            }
+          };
+
+          const unsub = window.cerebro.agent.onEvent(runId, (event: RendererAgentEvent) => {
+            switch (event.type) {
+              case 'text_delta':
+                clearThinking();
+                state.accumulated += event.delta;
+                updateMessage(convId, assistantId, { content: state.accumulated });
+                break;
+
+              case 'tool_start':
+                clearThinking();
+                state.toolCalls.push({
+                  id: event.toolCallId,
+                  name: event.toolName,
+                  description: event.toolName,
+                  arguments: event.args as Record<string, unknown>,
+                  status: 'running',
+                  startedAt: new Date(),
+                });
+                updateMessage(convId, assistantId, { toolCalls: [...state.toolCalls] });
+                break;
+
+              case 'tool_end': {
+                const tc = state.toolCalls.find((t) => t.id === event.toolCallId);
+                if (tc) {
+                  tc.status = event.isError ? 'error' : 'success';
+                  tc.output = event.result;
+                  tc.completedAt = new Date();
+                  updateMessage(convId, assistantId, { toolCalls: [...state.toolCalls] });
+                }
+                // Resolve tool name: prefer event (may be empty for nested tool_result), fallback to tc
+                const resolvedToolName = event.toolName || tc?.name || '';
+                // Capture file paths from Write/Edit so we can render them as
+                // attachment chips. Only absolute paths — we don't resolve cwd.
+                if (!event.isError && (resolvedToolName === 'Write' || resolvedToolName === 'Edit')) {
+                  const p = tc?.arguments?.file_path;
+                  if (typeof p === 'string' && p.startsWith('/')) {
+                    accFileRefs.add(p);
+                  }
+                }
+                // Detect run_routine tool result and attach engineRunId
+                if (resolvedToolName === 'run_routine' && !event.isError) {
+                  const marker = event.result.match(/\[ENGINE_RUN_ID:([^\]]+)\]/);
+                  if (marker) {
+                    accEngineRunId = marker[1];
+                    updateMessage(convId, assistantId, { engineRunId: marker[1] });
+                  }
+                }
+                // Detect propose_routine tool result and attach proposal to message
+                if (resolvedToolName === 'propose_routine' && !event.isError) {
+                  try {
+                    const parsed = JSON.parse(event.result);
+                    if (parsed.type === 'routine_proposal') {
+                      accRoutineProposal = {
+                        name: parsed.name,
+                        description: parsed.description ?? '',
+                        steps: parsed.steps,
+                        triggerType: parsed.triggerType,
+                        cronExpression: parsed.cronExpression,
+                        defaultRunnerId: parsed.defaultRunnerId,
+                        requiredConnections: parsed.requiredConnections ?? [],
+                        approvalGates: parsed.approvalGates ?? [],
+                        status: 'proposed',
+                      };
+                      updateMessage(convId, assistantId, {
+                        routineProposal: accRoutineProposal,
+                      });
+                    }
+                  } catch { /* not valid JSON, treat as normal result */ }
+                }
+                // Detect propose_expert tool result and attach proposal to message
+                if (resolvedToolName === 'propose_expert' && !event.isError) {
+                  try {
+                    const parsed = JSON.parse(event.result);
+                    if (parsed.type === 'expert_proposal') {
+                      accExpertProposal = {
+                        name: parsed.name,
+                        description: parsed.description ?? '',
+                        domain: parsed.domain ?? '',
+                        systemPrompt: parsed.systemPrompt ?? '',
+                        toolAccess: parsed.toolAccess ?? [],
+                        suggestedContextFile: parsed.suggestedContextFile,
+                        status: 'proposed',
+                      };
+                      updateMessage(convId, assistantId, {
+                        expertProposal: accExpertProposal,
+                      });
+                    }
+                  } catch { /* not valid JSON, treat as normal result */ }
+                }
+                // Agent tool finishing means a team (or single subagent)
+                // returned. If the announce listener pre-populated a teamRun,
+                // sweep any still-queued/running members to completed and
+                // mark the run completed — defensive against coordinators
+                // that skipped per-member team-member-update.sh calls.
+                if (resolvedToolName === 'Agent') {
+                  const conv = conversationsRef.current.find((c) => c.id === convId);
+                  const msg = conv?.messages.find((m) => m.id === assistantId);
+                  const teamRun = msg?.teamRun;
+                  if (teamRun && teamRun.status === 'running') {
+                    const sweptMembers = sweepOpenMembers(teamRun.members, event.isError ? 'error' : 'completed');
+                    updateMessage(convId, assistantId, {
+                      teamRun: {
+                        ...teamRun,
+                        members: sweptMembers,
+                        status: event.isError ? 'error' : 'completed',
+                        successCount: sweptMembers.filter((m) => m.status === 'completed').length,
+                        totalCount: sweptMembers.length,
+                      },
+                    });
+                  }
+                }
+                break;
+              }
+
+              case 'done': {
+                unsub();
+                if (activeRunRef.current?.runId === runId) activeRunRef.current = null;
+                clearThinking();
+                setIsStreaming(false);
+                // Safety net: force-complete any tool calls still running
+                for (const tc of state.toolCalls) {
+                  if (tc.status === 'running') {
+                    tc.status = 'success';
+                    tc.completedAt = new Date();
+                  }
+                }
+                // Compose the final message content. If the expert produced any
+                // files, append them as trailing `@/absolute/path` lines so
+                // parseTrailingFileRefs surfaces them as attachment chips.
+                const baseContent = event.messageContent || state.accumulated;
+                const trailingRefs = [...accFileRefs]
+                  .filter((p) => !baseContent.includes(`@${p}`)) // don't duplicate refs the model already wrote
+                  .map((p) => `@${p}`)
+                  .join('\n');
+                const finalContent = trailingRefs
+                  ? `${baseContent.trimEnd()}\n\n${trailingRefs}`
+                  : baseContent;
+                updateMessage(convId, assistantId, {
+                  content: finalContent,
+                  isThinking: false,
+                  isStreaming: false,
+                  agentRunId: runId,
+                  toolCalls: [...state.toolCalls],
+                });
+                // Build metadata for persistence
+                const doneMetadata: Record<string, unknown> = {};
+                if (accEngineRunId) doneMetadata.engine_run_id = accEngineRunId;
+                if (accRoutineProposal) doneMetadata.routine_proposal = toApiProposal(accRoutineProposal);
+                if (accExpertProposal) doneMetadata.expert_proposal = toApiExpertProposal(accExpertProposal);
+                if (accTeamProposal) doneMetadata.team_proposal = toApiTeamProposal(accTeamProposal);
+                {
+                  // Safety-net for the case where Cerebro announced a team
+                  // run but the parent Agent tool_end never fired — without
+                  // this, the card persists in a phantom 'running' state.
+                  const conv = conversationsRef.current.find((c) => c.id === convId);
+                  const msg = conv?.messages.find((m) => m.id === assistantId);
+                  if (msg?.teamRun) {
+                    let finalTeamRun = msg.teamRun;
+                    if (finalTeamRun.status === 'running') {
+                      const sweptMembers = sweepOpenMembers(finalTeamRun.members, 'completed');
+                      finalTeamRun = {
+                        ...finalTeamRun,
+                        members: sweptMembers,
+                        status: 'completed',
+                        successCount: sweptMembers.filter((m) => m.status === 'completed').length,
+                        totalCount: sweptMembers.length,
+                      };
+                      updateMessage(convId, assistantId, { teamRun: finalTeamRun });
+                    }
+                    doneMetadata.team_run = toApiTeamRun(finalTeamRun);
+                  }
+                }
+                // Persist final message — chained so it runs after the
+                // conversation/user-message inserts have committed.
+                chainWrite(convId, () =>
+                  apiCreateMessage(convId, {
+                    id: assistantId,
+                    role: 'assistant',
+                    content: finalContent,
+                    expert_id: expertId ?? undefined,
+                    agent_run_id: runId,
+                    metadata: Object.keys(doneMetadata).length > 0 ? doneMetadata : undefined,
+                  }),
+                ).catch(console.error);
+                break;
+              }
+
+              case 'error': {
+                unsub();
+                if (activeRunRef.current?.runId === runId) activeRunRef.current = null;
+                clearThinking();
+                setIsStreaming(false);
+                // Safety net: mark any still-running tool calls as errored
+                for (const tc of state.toolCalls) {
+                  if (tc.status === 'running') {
+                    tc.status = 'error';
+                    tc.output = tc.output || 'Interrupted';
+                    tc.completedAt = new Date();
+                  }
+                }
+                updateMessage(convId, assistantId, {
+                  content: `Error: ${event.error}`,
+                  isThinking: false,
+                  isStreaming: false,
+                  toolCalls: [...state.toolCalls],
+                });
+                break;
+              }
+            }
+          });
+
+          activeRunRef.current = {
+            runId,
+            unsub,
+            conversationId: convId,
+            assistantId,
+            state,
+          };
+        } catch (e) {
+          const errorMsg =
+            e instanceof Error ? e.message : 'An error occurred while starting the agent.';
+          activeRunRef.current = null;
+          setIsStreaming(false);
+          setIsThinking(false);
+          updateMessage(convId, assistantId, {
+            content: `Error: ${errorMsg}`,
+            isThinking: false,
+            isStreaming: false,
+          });
+        }
+      };
+
+      runAgent();
+    },
+    [updateMessage, chainWrite, waitForConversation],
+  );
+
   const sendMessage = useCallback(
     (content: string) => {
       // ── Guard: require Claude Code to be detected ──
@@ -454,319 +809,138 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         ),
       );
 
-      // Route through agent system
-      const runAgent = async () => {
+      runAgentForMessage(convId, assistantId, content, expertId);
+    },
+    [activeConversationId, activeExpertId, createConversation, addMessage, runAgentForMessage],
+  );
+
+  const stopMessage = useCallback(async () => {
+    const active = activeRunRef.current;
+    if (!active) return;
+    // Detach the listener BEFORE killing so a late event from the dying
+    // subprocess can't double-post after we've reset the message.
+    active.unsub();
+    activeRunRef.current = null;
+
+    try {
+      await window.cerebro.agent.cancel(active.runId);
+    } catch (err) {
+      console.warn('[chat] Failed to cancel agent run:', err);
+    }
+
+    setIsStreaming(false);
+    setIsThinking(false);
+
+    // Mark any still-running tool call as 'stopped' so the card freezes with
+    // a neutral indicator rather than a misleading success/error.
+    const stoppedToolCalls = active.state.toolCalls.map((tc) =>
+      tc.status === 'running' || tc.status === 'pending'
+        ? { ...tc, status: 'stopped' as const, completedAt: new Date() }
+        : tc,
+    );
+
+    const stoppedMarker = i18n.t('chat.stoppedMarker');
+    const partial = active.state.accumulated;
+    const finalContent = partial
+      ? `${partial.trimEnd()}\n\n${stoppedMarker}`
+      : stoppedMarker;
+
+    updateMessage(active.conversationId, active.assistantId, {
+      content: finalContent,
+      isThinking: false,
+      isStreaming: false,
+      toolCalls: stoppedToolCalls,
+    });
+
+    // Persist the stopped reply so it survives reload — agent.cancel() does
+    // not emit a renderer event after killing the subprocess, so the regular
+    // `done` persist path won't fire.
+    chainWrite(active.conversationId, () =>
+      apiCreateMessage(active.conversationId, {
+        id: active.assistantId,
+        role: 'assistant',
+        content: finalContent,
+      }),
+    ).catch(console.error);
+  }, [updateMessage, chainWrite]);
+
+  const regenerateFromUserMessage = useCallback(
+    async (messageId: string, newContent?: string) => {
+      if (claudeCodeInfoRef.current.status !== 'available') {
+        setChatError({
+          title: 'Claude Code not detected',
+          message:
+            'Cerebro uses the Claude Code CLI as its engine. Install it and re-detect from Integrations.',
+          navigateTo: 'integrations',
+        });
+        return;
+      }
+      if (isStreamingRef.current) return;
+
+      const convId = activeConversationIdRef.current;
+      if (!convId) return;
+      const conv = conversationsRef.current.find((c) => c.id === convId);
+      if (!conv) return;
+      const target = conv.messages.find((m) => m.id === messageId);
+      if (!target || target.role !== 'user') return;
+
+      const trimmed = (newContent ?? target.content).trim();
+      if (!trimmed) return;
+      const contentChanged = trimmed !== target.content;
+
+      // Patch the stored content first so reload mirrors what's on screen.
+      if (contentChanged) {
         try {
-          // Wait for the conversation row + user message insert to commit before
-          // spawning the agent run. The runtime persists an `agent_runs` row with
-          // a FK to `conversation_id`, so the conversation must exist first or
-          // the insert fails with a FK violation.
-          await waitForConversation(convId!);
-
-          // Collect conversation context so the LLM has multi-turn awareness.
-          const conv = conversationsRef.current.find((c) => c.id === convId);
-          const allMessages = conv?.messages ?? [];
-
-          // Recent messages — gives the LLM conversational continuity across turns.
-          // Note: React batches state updates, so conversationsRef still has the
-          // pre-addMessage state here. No need to exclude the just-added message.
-          const MAX_RECENT = 10;
-          const recentMessages = allMessages
-            .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isThinking)
-            .slice(-MAX_RECENT)
-            .map((m) => {
-              let enrichedContent = m.content;
-              // Enrich assistant messages with successful tool call outputs
-              if (m.role === 'assistant' && m.toolCalls?.length) {
-                for (const tc of m.toolCalls) {
-                  if (tc.status === 'success' && tc.output) {
-                    const truncatedOutput = tc.output.length > 200
-                      ? tc.output.slice(0, 200) + '...'
-                      : tc.output;
-                    enrichedContent += `\n[Used ${tc.name}: ${truncatedOutput}]`;
-                  }
-                }
-              }
-              return { role: m.role as 'user' | 'assistant', content: enrichedContent };
-            });
-
-          // Routine proposal snapshots — so the LLM knows what it proposed and what happened.
-          const routineProposals = allMessages
-            .filter((m) => m.routineProposal)
-            .map((m) => ({
-              name: m.routineProposal!.name,
-              status: m.routineProposal!.status,
-            }));
-
-          // Expert proposal snapshots — so the LLM knows what it proposed and what happened.
-          const expertProposals = allMessages
-            .filter((m) => m.expertProposal)
-            .map((m) => ({
-              name: m.expertProposal!.name,
-              status: m.expertProposal!.status,
-            }));
-
-          const runId = await window.cerebro.agent.run({
-            conversationId: convId!,
-            content,
-            expertId,
-            recentMessages: recentMessages.length > 0 ? recentMessages : undefined,
-            routineProposals: routineProposals.length > 0 ? routineProposals : undefined,
-            expertProposals: expertProposals.length > 0 ? expertProposals : undefined,
-            language: i18n.language !== 'en' ? i18n.language : undefined,
-            qualityTier: qualityTierRef.current,
-            model: responseModelRef.current,
-          });
-
-          // Keep isThinking true and message.isThinking true until first content arrives
-          setIsStreaming(true);
-
-          let accumulated = '';
-          let thinkingCleared = false;
-          const toolCalls: ToolCall[] = [];
-          let accEngineRunId: string | undefined;
-          let accRoutineProposal: import('../types/chat').RoutineProposal | undefined;
-          let accExpertProposal: import('../types/chat').ExpertProposal | undefined;
-          let accTeamProposal: import('../types/chat').TeamProposal | undefined;
-          // teamRun state is owned by the chat-actions HTTP listeners below;
-          // the on-Agent-end branch in tool_end below sweeps any still-open
-          // members as a safety net.
-          // Paths the assistant produced via Write/Edit. Surfaced as Slack-style
-          // attachment chips below the reply on `done`. Deduped by absolute path.
-          const accFileRefs = new Set<string>();
-
-          const clearThinking = () => {
-            if (!thinkingCleared) {
-              thinkingCleared = true;
-              setIsThinking(false);
-              updateMessage(convId!, assistantId, { isThinking: false, isStreaming: true });
-            }
-          };
-
-          const unsub = window.cerebro.agent.onEvent(runId, (event: RendererAgentEvent) => {
-            switch (event.type) {
-              case 'text_delta':
-                clearThinking();
-                accumulated += event.delta;
-                updateMessage(convId!, assistantId, { content: accumulated });
-                break;
-
-              case 'tool_start':
-                clearThinking();
-                toolCalls.push({
-                  id: event.toolCallId,
-                  name: event.toolName,
-                  description: event.toolName,
-                  arguments: event.args as Record<string, unknown>,
-                  status: 'running',
-                  startedAt: new Date(),
-                });
-                updateMessage(convId!, assistantId, { toolCalls: [...toolCalls] });
-                break;
-
-              case 'tool_end': {
-                const tc = toolCalls.find((t) => t.id === event.toolCallId);
-                if (tc) {
-                  tc.status = event.isError ? 'error' : 'success';
-                  tc.output = event.result;
-                  tc.completedAt = new Date();
-                  updateMessage(convId!, assistantId, { toolCalls: [...toolCalls] });
-                }
-                // Resolve tool name: prefer event (may be empty for nested tool_result), fallback to tc
-                const resolvedToolName = event.toolName || tc?.name || '';
-                // Capture file paths from Write/Edit so we can render them as
-                // attachment chips. Only absolute paths — we don't resolve cwd.
-                if (!event.isError && (resolvedToolName === 'Write' || resolvedToolName === 'Edit')) {
-                  const p = tc?.arguments?.file_path;
-                  if (typeof p === 'string' && p.startsWith('/')) {
-                    accFileRefs.add(p);
-                  }
-                }
-                // Detect run_routine tool result and attach engineRunId
-                if (resolvedToolName === 'run_routine' && !event.isError) {
-                  const marker = event.result.match(/\[ENGINE_RUN_ID:([^\]]+)\]/);
-                  if (marker) {
-                    accEngineRunId = marker[1];
-                    updateMessage(convId!, assistantId, { engineRunId: marker[1] });
-                  }
-                }
-                // Detect propose_routine tool result and attach proposal to message
-                if (resolvedToolName === 'propose_routine' && !event.isError) {
-                  try {
-                    const parsed = JSON.parse(event.result);
-                    if (parsed.type === 'routine_proposal') {
-                      accRoutineProposal = {
-                        name: parsed.name,
-                        description: parsed.description ?? '',
-                        steps: parsed.steps,
-                        triggerType: parsed.triggerType,
-                        cronExpression: parsed.cronExpression,
-                        defaultRunnerId: parsed.defaultRunnerId,
-                        requiredConnections: parsed.requiredConnections ?? [],
-                        approvalGates: parsed.approvalGates ?? [],
-                        status: 'proposed',
-                      };
-                      updateMessage(convId!, assistantId, {
-                        routineProposal: accRoutineProposal,
-                      });
-                    }
-                  } catch { /* not valid JSON, treat as normal result */ }
-                }
-                // Detect propose_expert tool result and attach proposal to message
-                if (resolvedToolName === 'propose_expert' && !event.isError) {
-                  try {
-                    const parsed = JSON.parse(event.result);
-                    if (parsed.type === 'expert_proposal') {
-                      accExpertProposal = {
-                        name: parsed.name,
-                        description: parsed.description ?? '',
-                        domain: parsed.domain ?? '',
-                        systemPrompt: parsed.systemPrompt ?? '',
-                        toolAccess: parsed.toolAccess ?? [],
-                        suggestedContextFile: parsed.suggestedContextFile,
-                        status: 'proposed',
-                      };
-                      updateMessage(convId!, assistantId, {
-                        expertProposal: accExpertProposal,
-                      });
-                    }
-                  } catch { /* not valid JSON, treat as normal result */ }
-                }
-                // Agent tool finishing means a team (or single subagent)
-                // returned. If the announce listener pre-populated a teamRun,
-                // sweep any still-queued/running members to completed and
-                // mark the run completed — defensive against coordinators
-                // that skipped per-member team-member-update.sh calls.
-                if (resolvedToolName === 'Agent') {
-                  const conv = conversationsRef.current.find((c) => c.id === convId);
-                  const msg = conv?.messages.find((m) => m.id === assistantId);
-                  const teamRun = msg?.teamRun;
-                  if (teamRun && teamRun.status === 'running') {
-                    const sweptMembers = sweepOpenMembers(teamRun.members, event.isError ? 'error' : 'completed');
-                    updateMessage(convId!, assistantId, {
-                      teamRun: {
-                        ...teamRun,
-                        members: sweptMembers,
-                        status: event.isError ? 'error' : 'completed',
-                        successCount: sweptMembers.filter((m) => m.status === 'completed').length,
-                        totalCount: sweptMembers.length,
-                      },
-                    });
-                  }
-                }
-                break;
-              }
-
-              case 'done': {
-                unsub();
-                clearThinking();
-                setIsStreaming(false);
-                // Safety net: force-complete any tool calls still running
-                for (const tc of toolCalls) {
-                  if (tc.status === 'running') {
-                    tc.status = 'success';
-                    tc.completedAt = new Date();
-                  }
-                }
-                // Compose the final message content. If the expert produced any
-                // files, append them as trailing `@/absolute/path` lines so
-                // parseTrailingFileRefs surfaces them as attachment chips.
-                const baseContent = event.messageContent || accumulated;
-                const trailingRefs = [...accFileRefs]
-                  .filter((p) => !baseContent.includes(`@${p}`)) // don't duplicate refs the model already wrote
-                  .map((p) => `@${p}`)
-                  .join('\n');
-                const finalContent = trailingRefs
-                  ? `${baseContent.trimEnd()}\n\n${trailingRefs}`
-                  : baseContent;
-                updateMessage(convId!, assistantId, {
-                  content: finalContent,
-                  isThinking: false,
-                  isStreaming: false,
-                  agentRunId: runId,
-                  toolCalls: [...toolCalls],
-                });
-                // Build metadata for persistence
-                const doneMetadata: Record<string, unknown> = {};
-                if (accEngineRunId) doneMetadata.engine_run_id = accEngineRunId;
-                if (accRoutineProposal) doneMetadata.routine_proposal = toApiProposal(accRoutineProposal);
-                if (accExpertProposal) doneMetadata.expert_proposal = toApiExpertProposal(accExpertProposal);
-                if (accTeamProposal) doneMetadata.team_proposal = toApiTeamProposal(accTeamProposal);
-                {
-                  // Safety-net for the case where Cerebro announced a team
-                  // run but the parent Agent tool_end never fired — without
-                  // this, the card persists in a phantom 'running' state.
-                  const conv = conversationsRef.current.find((c) => c.id === convId);
-                  const msg = conv?.messages.find((m) => m.id === assistantId);
-                  if (msg?.teamRun) {
-                    let finalTeamRun = msg.teamRun;
-                    if (finalTeamRun.status === 'running') {
-                      const sweptMembers = sweepOpenMembers(finalTeamRun.members, 'completed');
-                      finalTeamRun = {
-                        ...finalTeamRun,
-                        members: sweptMembers,
-                        status: 'completed',
-                        successCount: sweptMembers.filter((m) => m.status === 'completed').length,
-                        totalCount: sweptMembers.length,
-                      };
-                      updateMessage(convId!, assistantId, { teamRun: finalTeamRun });
-                    }
-                    doneMetadata.team_run = toApiTeamRun(finalTeamRun);
-                  }
-                }
-                // Persist final message — chained so it runs after the
-                // conversation/user-message inserts have committed.
-                chainWrite(convId!, () =>
-                  apiCreateMessage(convId!, {
-                    id: assistantId,
-                    role: 'assistant',
-                    content: finalContent,
-                    expert_id: expertId ?? undefined,
-                    agent_run_id: runId,
-                    metadata: Object.keys(doneMetadata).length > 0 ? doneMetadata : undefined,
-                  }),
-                ).catch(console.error);
-                break;
-              }
-
-              case 'error': {
-                unsub();
-                clearThinking();
-                setIsStreaming(false);
-                // Safety net: mark any still-running tool calls as errored
-                for (const tc of toolCalls) {
-                  if (tc.status === 'running') {
-                    tc.status = 'error';
-                    tc.output = tc.output || 'Interrupted';
-                    tc.completedAt = new Date();
-                  }
-                }
-                updateMessage(convId!, assistantId, {
-                  content: `Error: ${event.error}`,
-                  isThinking: false,
-                  isStreaming: false,
-                  toolCalls: [...toolCalls],
-                });
-                break;
-              }
-            }
-          });
-        } catch (e) {
-          const errorMsg =
-            e instanceof Error ? e.message : 'An error occurred while starting the agent.';
-          setIsStreaming(false);
-          setIsThinking(false);
-          updateMessage(convId!, assistantId, {
-            content: `Error: ${errorMsg}`,
-            isThinking: false,
-            isStreaming: false,
-          });
+          await chainWrite(convId, () => apiPatchMessage(convId, messageId, { content: trimmed }));
+        } catch (err) {
+          console.error('[chat] Failed to patch user message content:', err);
+          return;
         }
+      }
+
+      // Drop everything after this user message, both locally and on the server.
+      try {
+        await chainWrite(convId, () => apiDeleteMessagesAfter(convId, messageId));
+      } catch (err) {
+        console.error('[chat] Failed to truncate messages after edit:', err);
+        return;
+      }
+
+      const expertId = target.expertId ?? conv.expertId ?? null;
+
+      const assistantId = generateId();
+      const thinkingMessage: Message = {
+        id: assistantId,
+        conversationId: convId,
+        role: 'assistant',
+        content: '',
+        expertId: expertId ?? undefined,
+        createdAt: new Date(),
+        isThinking: true,
       };
 
-      runAgent();
+      setIsThinking(true);
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== convId) return c;
+          // Apply both the edited user content and the truncation in a single
+          // setState so the placeholder doesn't render against stale messages.
+          const pivotIdx = c.messages.findIndex((m) => m.id === messageId);
+          if (pivotIdx === -1) return c;
+          const kept = c.messages.slice(0, pivotIdx + 1).map((m) =>
+            m.id === messageId && contentChanged ? { ...m, content: trimmed } : m,
+          );
+          return {
+            ...c,
+            messages: [...kept, thinkingMessage],
+            updatedAt: new Date(),
+          };
+        }),
+      );
+
+      runAgentForMessage(convId, assistantId, trimmed, expertId);
     },
-    [activeConversationId, activeExpertId, createConversation, addMessage, updateMessage, chainWrite, waitForConversation],
+    [chainWrite, runAgentForMessage],
   );
 
   // ── Run routine from UI (triggered via "Run Now" button) ────────
@@ -973,6 +1147,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         deleteConversation,
         setActiveScreen,
         sendMessage,
+        stopMessage,
+        regenerateFromUserMessage,
         setActiveExpertId,
         dismissChatError,
         getConversationsForExpert,

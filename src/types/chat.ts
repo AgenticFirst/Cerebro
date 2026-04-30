@@ -15,7 +15,7 @@ export type Screen =
   | 'settings'
   | 'call';
 
-export type ToolCallStatus = 'pending' | 'running' | 'success' | 'error';
+export type ToolCallStatus = 'pending' | 'running' | 'success' | 'error' | 'stopped';
 
 export interface ToolCall {
   id: string;

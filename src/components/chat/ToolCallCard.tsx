@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, Search, Brain, Zap, Globe, CheckCircle2, XCircle, Loader2, Users, FileText, Pencil, FilePlus, Terminal, FolderSearch, Code, Clock } from 'lucide-react';
+import { ChevronRight, Search, Brain, Zap, Globe, CheckCircle2, XCircle, Loader2, Users, FileText, Pencil, FilePlus, Terminal, FolderSearch, Code, Clock, Square } from 'lucide-react';
 import clsx from 'clsx';
 import type { ToolCall } from '../../types/chat';
 
@@ -39,6 +39,7 @@ function StatusDot({ status }: { status: ToolCall['status'] }) {
         status === 'success' && 'bg-green-500',
         status === 'error' && 'bg-red-500',
         status === 'pending' && 'bg-zinc-400',
+        status === 'stopped' && 'bg-zinc-400',
       )}
     />
   );
@@ -48,6 +49,7 @@ function StatusIcon({ status }: { status: ToolCall['status'] }) {
   if (status === 'running') return <Loader2 size={12} className="animate-spin text-yellow-500" />;
   if (status === 'success') return <CheckCircle2 size={12} className="text-green-500" />;
   if (status === 'error') return <XCircle size={12} className="text-red-500" />;
+  if (status === 'stopped') return <Square size={11} className="text-text-tertiary" strokeWidth={2.5} />;
   return null;
 }
 
@@ -180,6 +182,14 @@ export default function ToolCallCard({ toolCall }: ToolCallCardProps) {
               {isDelegation && expertName
                 ? t('toolCall.waitingFor', { name: expertName })
                 : elapsed > 0 ? t('toolCall.runningElapsed', { seconds: elapsed }) : t('toolCall.running')}
+            </div>
+          )}
+
+          {/* Stopped indicator — neutral, no error styling */}
+          {toolCall.status === 'stopped' && !toolCall.output && (
+            <div className="flex items-center gap-2 text-xs text-text-tertiary py-1">
+              <Square size={11} strokeWidth={2.5} />
+              {t('toolCall.stopped')}
             </div>
           )}
         </div>

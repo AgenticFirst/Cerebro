@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Copy, Check } from 'lucide-react';
+import { Loader2, Copy, Check, Pencil } from 'lucide-react';
 import clsx from 'clsx';
 import type { Message } from '../../types/chat';
 import MarkdownContent from './MarkdownContent';
@@ -19,6 +19,7 @@ import {
   getCopyableContent,
 } from '../../lib/message-content';
 import { useCopyMessage } from '../../hooks/useCopyMessage';
+import { useChat } from '../../context/ChatContext';
 
 interface ChatMessageProps {
   message: Message;
@@ -33,6 +34,34 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
+  const { isStreaming: chatIsStreaming, regenerateFromUserMessage } = useChat();
+
+  const [isEditing, setIsEditing] = useState(false);
+  // Edit drafts hold the bare text without trailing @file refs — those are
+  // attachments, not user prose. Only the editable prose is shown in the
+  // textarea so saving a small typo fix doesn't blow the chip layout away.
+  const editableContent = useMemo(() => {
+    if (!isUser) return message.content;
+    return parseFileRefs(message.content).text;
+  }, [isUser, message.content]);
+  const [draft, setDraft] = useState(editableContent);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // If the message content changes externally (e.g. another reload/patch),
+  // sync the draft when not actively editing.
+  useEffect(() => {
+    if (!isEditing) setDraft(editableContent);
+  }, [editableContent, isEditing]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.focus();
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight, 6 * 24)}px`;
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  }, [isEditing]);
 
   // Parsing is O(N) per render and streaming re-renders this every chunk, so
   // cache on the content string.
@@ -149,7 +178,7 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
       )}
 
       {/* Message content */}
-      {hasContent && (
+      {hasContent && !isEditing && (
         <div
           className={clsx(
             'rounded-xl px-4 py-3',
@@ -161,6 +190,72 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
           ) : (
             <MarkdownContent content={displayContent} />
           )}
+        </div>
+      )}
+
+      {/* Edit mode — user messages only */}
+      {isUser && isEditing && (
+        <div className="rounded-xl bg-accent-muted px-3 py-2">
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              const ta = e.currentTarget;
+              ta.style.height = 'auto';
+              ta.style.height = `${Math.min(ta.scrollHeight, 6 * 24)}px`;
+            }}
+            onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setDraft(editableContent);
+                setIsEditing(false);
+              } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                const trimmed = draft.trim();
+                if (!trimmed) return;
+                setIsEditing(false);
+                if (trimmed === editableContent.trim()) return;
+                regenerateFromUserMessage(message.id, trimmed).catch(console.error);
+              }
+            }}
+            placeholder={t('chat.editPlaceholder')}
+            className={clsx(
+              'w-full resize-none bg-transparent text-sm text-text-primary',
+              'leading-relaxed outline-none placeholder-text-tertiary',
+            )}
+            rows={1}
+          />
+          <div className="mt-2 flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(editableContent);
+                setIsEditing(false);
+              }}
+              className="px-2.5 py-1 rounded-md text-xs text-text-secondary hover:bg-bg-hover transition-colors"
+            >
+              {t('chat.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const trimmed = draft.trim();
+                if (!trimmed) return;
+                setIsEditing(false);
+                if (trimmed === editableContent.trim()) return;
+                regenerateFromUserMessage(message.id, trimmed).catch(console.error);
+              }}
+              disabled={!draft.trim()}
+              className={clsx(
+                'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+                'bg-accent text-bg-base hover:bg-accent-hover',
+                'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent',
+              )}
+            >
+              {t('chat.save')}
+            </button>
+          </div>
         </div>
       )}
 
@@ -188,10 +283,8 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
         </div>
       )}
 
-      {/* Actions row — hover-reveal, mirrors bubble alignment. Copy is the only
-          action today; the row is structured so regenerate/thumbs can slot in
-          later without re-plumbing hover state. */}
-      {canCopy && (
+      {/* Actions row — hover-reveal, mirrors bubble alignment. */}
+      {canCopy && !isEditing && (
         <div
           className={clsx(
             'mt-1.5 flex items-center gap-0.5 opacity-0 transition-opacity duration-150',
@@ -212,6 +305,25 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
               <Copy size={13} strokeWidth={2} />
             )}
           </button>
+          {isUser && (
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(editableContent);
+                setIsEditing(true);
+              }}
+              disabled={chatIsStreaming}
+              className={clsx(
+                'flex items-center justify-center w-7 h-7 rounded-md transition-colors',
+                'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover',
+                'disabled:opacity-30 disabled:hover:text-text-tertiary disabled:hover:bg-transparent disabled:cursor-not-allowed',
+              )}
+              title={t('chat.edit')}
+              aria-label={t('chat.edit')}
+            >
+              <Pencil size={13} strokeWidth={2} />
+            </button>
+          )}
         </div>
       )}
     </div>

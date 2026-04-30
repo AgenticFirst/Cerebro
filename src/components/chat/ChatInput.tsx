@@ -9,6 +9,7 @@ import { generateId } from '../../context/chat-helpers';
 
 interface ChatInputProps {
   onSend: (content: string) => void;
+  onStop?: () => void;
   isStreaming?: boolean;
   placeholder?: string;
 }
@@ -18,7 +19,7 @@ export interface ChatInputHandle {
 }
 
 const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
-  function ChatInput({ onSend, isStreaming = false, placeholder }, ref) {
+  function ChatInput({ onSend, onStop, isStreaming = false, placeholder }, ref) {
     const { t } = useTranslation();
     const [value, setValue] = useState('');
     const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
@@ -153,13 +154,15 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             <Paperclip size={15} />
           </button>
           <button
-            onClick={isStreaming ? undefined : handleSend}
+            onClick={isStreaming ? onStop : handleSend}
             disabled={!hasContent && !isStreaming}
+            title={isStreaming ? t('chat.stop') : t('chat.send')}
+            aria-label={isStreaming ? t('chat.stop') : t('chat.send')}
             className={clsx(
               'flex-shrink-0 flex items-center justify-center',
               'w-8 h-8 rounded-lg transition-all duration-150',
               isStreaming
-                ? 'bg-text-secondary/20 text-text-secondary cursor-default'
+                ? 'bg-text-secondary/20 text-text-primary hover:bg-text-secondary/30 cursor-pointer'
                 : hasContent
                   ? 'bg-accent text-bg-base hover:bg-accent-hover cursor-pointer'
                   : 'bg-bg-hover text-text-tertiary cursor-default',

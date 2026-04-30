@@ -25,6 +25,7 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
     setActiveConversation,
     setActiveExpertId,
     sendMessage,
+    stopMessage,
     getConversationsForExpert,
   } = useChat();
 
@@ -125,6 +126,7 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
           <ChatInput
             ref={chatInputRef}
             onSend={handleSend}
+            onStop={stopMessage}
             isStreaming={isStreaming}
             placeholder={expert.type === 'team' ? t('experts.teamMessageComposer') : undefined}
           />

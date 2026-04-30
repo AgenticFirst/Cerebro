@@ -334,14 +334,37 @@ export function toApiTeamProposal(p: TeamProposal): Record<string, unknown> {
   };
 }
 
+export interface MessagePatch {
+  content?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export function apiPatchMessage(
+  convId: string,
+  msgId: string,
+  body: MessagePatch,
+): Promise<unknown> {
+  return window.cerebro.invoke({
+    method: 'PATCH',
+    path: `/conversations/${convId}/messages/${msgId}`,
+    body,
+  });
+}
+
 export function apiPatchMessageMetadata(
   convId: string,
   msgId: string,
   metadata: Record<string, unknown>,
 ): Promise<unknown> {
+  return apiPatchMessage(convId, msgId, { metadata });
+}
+
+export function apiDeleteMessagesAfter(
+  convId: string,
+  msgId: string,
+): Promise<unknown> {
   return window.cerebro.invoke({
-    method: 'PATCH',
-    path: `/conversations/${convId}/messages/${msgId}`,
-    body: { metadata },
+    method: 'DELETE',
+    path: `/conversations/${convId}/messages/after/${msgId}`,
   });
 }

@@ -144,6 +144,7 @@ class MessageCreate(BaseModel):
 
 
 class MessageUpdate(BaseModel):
+    content: str | None = None
     metadata: dict | None = None
 
 
@@ -280,13 +281,41 @@ def patch_message(conv_id: str, msg_id: str, body: MessageUpdate, db=Depends(get
     msg = db.query(Message).filter(Message.id == msg_id, Message.conversation_id == conv_id).first()
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
+    touched = False
+    if body.content is not None:
+        msg.content = body.content
+        touched = True
     if body.metadata is not None:
         existing = msg.metadata_parsed or {}
         merged = {**existing, **body.metadata}
         msg.metadata_json = json.dumps(merged)
+        touched = True
+    if touched:
+        conv = db.get(Conversation, conv_id)
+        if conv:
+            conv.updated_at = models._utcnow()
     db.commit()
     db.refresh(msg)
     return msg
+
+
+@app.delete("/conversations/{conv_id}/messages/after/{msg_id}", status_code=204)
+def delete_messages_after(conv_id: str, msg_id: str, db=Depends(get_db)):
+    pivot = db.query(Message).filter(Message.id == msg_id, Message.conversation_id == conv_id).first()
+    if not pivot:
+        raise HTTPException(status_code=404, detail="Message not found")
+    # Strictly-after by created_at; tie-break by id so the pivot itself is never
+    # deleted when sub-second timestamps collide on fast reruns.
+    db.query(Message).filter(
+        Message.conversation_id == conv_id,
+        Message.created_at >= pivot.created_at,
+        Message.id != pivot.id,
+    ).delete(synchronize_session=False)
+    conv = db.get(Conversation, conv_id)
+    if conv:
+        conv.updated_at = models._utcnow()
+    db.commit()
+    return Response(status_code=204)
 
 
 @app.patch("/conversations/{conv_id}", response_model=ConversationResponse)

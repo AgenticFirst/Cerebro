@@ -22,7 +22,7 @@ interface ChatViewProps {
 export default function ChatView({ conversation, onSend, isStreaming, isThinking }: ChatViewProps) {
   const { t } = useTranslation();
   const chatInputRef = useRef<ChatInputHandle>(null);
-  const { setActiveExpertId } = useChat();
+  const { setActiveExpertId, stopMessage } = useChat();
   const [telegramUsername, setTelegramUsername] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -88,7 +88,7 @@ export default function ChatView({ conversation, onSend, isStreaming, isThinking
       <MessageList messages={conversation.messages} conversationId={conversation.id} />
       <div className="px-4 pb-4">
         <div className="mx-auto max-w-3xl">
-          <ChatInput ref={chatInputRef} onSend={onSend} isStreaming={isStreaming} />
+          <ChatInput ref={chatInputRef} onSend={onSend} onStop={stopMessage} isStreaming={isStreaming} />
         </div>
       </div>
 
