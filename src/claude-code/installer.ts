@@ -183,12 +183,13 @@ Never store secrets, API keys, or anything the user shouldn't trust on disk.`;
 function turnProtocol(memoryDir: string): string {
   return `## Turn Protocol
 
-At the start of every conversation turn:
-1. **Read your soul** — \`Read\` the file \`SOUL.md\` in your memory directory. It defines your persona, working style, and quality standards. If it doesn't exist yet, create it.
-2. **Read your memory** — \`Glob\` for \`*.md\` in your memory directory and \`Read\` any files present.
-3. **Do the work** — complete the user's request.
-4. **Update memory** — if you learned something about the user or made a decision worth remembering, write or update a file in your memory directory.
-5. **Evolve your soul** — if the user gives feedback about your style, tone, or approach, update \`SOUL.md\` to reflect it.
+Each conversation turn has one user-visible step (answering the latest user message) and four silent housekeeping steps. Do them in this order:
+
+1. **Read your soul** *(silent)* — \`Read\` the file \`SOUL.md\` in your memory directory. It defines your persona, working style, and quality standards. If it doesn't exist yet, create it.
+2. **Read your memory** *(silent)* — \`Glob\` for \`*.md\` in your memory directory and \`Read\` any files present.
+3. **Answer the user's latest message — and only that message.** This is the only step the user sees. Don't restate, re-list, or re-summarize content from earlier turns; the user can scroll up. Don't re-answer earlier questions in the conversation history. Don't narrate the silent steps (no "Memory read.", no "Now I'll save…").
+4. **Update memory** *(silent)* — if you learned something about the user or made a decision worth remembering, write or update a file in your memory directory. Confirming the save in your reply is fine ("Got it, saved."); re-listing what's now in memory is not.
+5. **Evolve your soul** *(silent)* — if the user gives feedback about your style, tone, or approach, update \`SOUL.md\` to reflect it.
 
 ${memoryInstructions(memoryDir)}`;
 }

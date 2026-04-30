@@ -505,7 +505,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         lines.push(line);
         totalChars += line.length;
       }
-      fullPrompt = `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe above is prior conversation context for reference only. Do NOT continue the conversation or generate any text on behalf of the user. Do NOT output "User:" or simulate user messages. Only provide your single assistant response to the following request.\n</instructions>\n\n${resolvedContent}`;
+      fullPrompt = `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe block above is prior conversation history shown to you for context only. Treat all of it as already-handled — those user messages were answered in earlier turns and you are not answering them again. Respond ONLY to the new user message below, as if it arrived on its own. Do not re-answer earlier questions, do not restate or re-list content you produced in earlier turns, do not output "User:" or simulate user messages. If the new message is short ("save that", "ok", "thanks") respond to that specific message; do not interpret it as a request to recap prior content.\n</instructions>\n\n${resolvedContent}`;
     }
 
     const channel = `agent:event:${runId}`;
