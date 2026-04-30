@@ -12,11 +12,15 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import path from 'node:path';
+import { app } from 'electron';
 import type { RendererAgentEvent } from '../agents/types';
 import type { QualityTier } from '../types/ipc';
 import { getCachedClaudeCodeInfo } from './detector';
 import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
 import { buildSystemPrompt } from '../i18n/language-directive';
+import { resolveBackendPythonBinDir, resolveBackendVirtualEnvRoot } from '../python/venv';
 
 export interface ClaudeCodeRunOptions {
   runId: string;
@@ -29,7 +33,12 @@ export interface ClaudeCodeRunOptions {
    * .claude/skills/, and .claude/settings.json.
    */
   cwd: string;
-  /** Override --max-turns (default 15). */
+  /**
+   * Cap on the number of turns the agent may take. Omitted from the
+   * subprocess invocation when undefined, matching plain `claude -p`
+   * (no cap). Callers that need a bounded operation — single-shot
+   * distillations, routine steps — should pass an explicit value.
+   */
   maxTurns?: number;
   /** Override the model (e.g. "sonnet", "opus", "claude-sonnet-4-6"). */
   model?: string;
@@ -68,8 +77,19 @@ export class ClaudeCodeRunner extends EventEmitter {
   private accumulatedText = '';
   private stderrTail = '';
   private stdoutTail = '';
+  /**
+   * Last `result.is_error: true` payload emitted on stdout as stream-json.
+   * The CLI surfaces max-turns hits and per-turn API errors here rather
+   * than on stderr, so capturing it lets the close handler produce a
+   * legible message instead of falling through to "code 1".
+   */
+  private resultErrorTail = '';
   private agentNameUsed = '';
   private cwdUsed = '';
+  private modelUsed = '';
+  private maxTurnsUsed: number | null = null;
+  private logStream: fs.WriteStream | null = null;
+  private logPath = '';
   private killed = false;
   private closeHandled = false;
   private idleStartedAt = 0;
@@ -99,16 +119,32 @@ export class ClaudeCodeRunner extends EventEmitter {
       '--agent', agentName,
       '--output-format', 'stream-json',
       '--verbose',
-      '--max-turns', String(options.maxTurns ?? 15),
       '--dangerously-skip-permissions',
       '--append-system-prompt', buildSystemPrompt(options.language, options.qualityTier, options.agentName),
     ];
 
+    if (typeof options.maxTurns === 'number') {
+      args.push('--max-turns', String(options.maxTurns));
+    }
+    this.maxTurnsUsed = options.maxTurns ?? null;
+
     args.push('--model', options.model || 'sonnet');
+    this.modelUsed = options.model || 'sonnet';
 
     // Build env: inherit process.env but strip CLAUDECODE to avoid nested session error
     const env = { ...process.env } as Record<string, string>;
     delete env.CLAUDECODE;
+
+    // Make the bundled / dev backend Python visible to the subprocess so the
+    // agent's Bash tool can `import docx`, `import openpyxl`, etc. without a
+    // setup step. Packages are pre-installed per backend/requirements.txt.
+    const pyBin = resolveBackendPythonBinDir();
+    if (pyBin) {
+      env.PATH = `${pyBin}${path.delimiter}${env.PATH ?? ''}`;
+      const venvRoot = resolveBackendVirtualEnvRoot();
+      if (venvRoot) env.VIRTUAL_ENV = venvRoot;
+      delete env.PYTHONHOME; // safety against host-Python bleed
+    }
 
     const wrapped = wrapClaudeSpawn({ claudeBinary: info.path, claudeArgs: args });
     if (wrapped.sandboxed) {
@@ -120,6 +156,12 @@ export class ClaudeCodeRunner extends EventEmitter {
       cwd,
       env,
     });
+
+    // Open a per-run log file before any stdio handlers fire so that even
+    // an early crash leaves a debuggable artifact on disk. The chat error
+    // surface only retains the last 500 chars of stderr in memory; this
+    // file keeps the full transcript.
+    this.openRunLog(runId, wrapped.binary, wrapped.args);
 
     // Start idle watchdog as soon as the subprocess is alive. The chat
     // path used to wait indefinitely for output; if the CLI hangs (most
@@ -148,6 +190,7 @@ export class ClaudeCodeRunner extends EventEmitter {
       this.resetIdleTimers(runId);
       const text = data.toString();
       console.log(`[ClaudeCode:${runId.slice(0, 8)}] ${text.trim()}`);
+      this.appendLog('stderr', text);
       // Keep last ~500 chars of stderr so we can surface the actual error
       this.stderrTail = (this.stderrTail + '\n' + text).slice(-500).trim();
       // Stream each non-empty stderr line as a structured event so the
@@ -197,17 +240,34 @@ export class ClaudeCodeRunner extends EventEmitter {
             : `Claude Code was killed by ${signal}`;
         } else if (this.stderrTail) {
           detail = `Claude Code error (code ${code}): ${this.stderrTail}`;
+        } else if (this.resultErrorTail) {
+          // Max-turns hits and per-turn API errors come through stream-json
+          // as `result.is_error: true` rather than on stderr. Surface the
+          // CLI's own message instead of the generic "exited unexpectedly".
+          detail = `Claude Code error (code ${code}): ${this.resultErrorTail}`;
         } else if (this.stdoutTail) {
           // stderr was empty but stdout had a non-JSON line before exit —
           // that's almost always the actual error (e.g. "Unknown agent 'foo'").
           detail = `Claude Code error (code ${code}): ${this.stdoutTail}`;
         } else {
-          const ctx = this.agentNameUsed ? ` — agent '${this.agentNameUsed}' in ${this.cwdUsed}` : '';
-          detail = `Claude Code exited unexpectedly (code ${code})${ctx}`;
+          // Last-resort fallback: emit everything we know about the run so
+          // the user (and support) can debug without a transcript dump.
+          const lines = [
+            `Claude Code exited unexpectedly (code ${code}, no output)`,
+            `  agent: ${this.agentNameUsed || '(unset)'}, model: ${this.modelUsed || '(unset)'}${this.maxTurnsUsed != null ? `, max-turns: ${this.maxTurnsUsed}` : ''}`,
+            `  cwd: ${this.cwdUsed}`,
+          ];
+          if (this.logPath) lines.push(`  log: ${this.logPath}`);
+          detail = lines.join('\n');
         }
+        if (this.logPath && !detail.includes(this.logPath)) {
+          detail += `\n\n(Details: ${this.logPath})`;
+        }
+        this.closeRunLog(`[exit] code=${code} signal=${signal ?? ''} detail=${detail.replace(/\n/g, ' ¶ ')}`);
         this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
         this.emit('error', detail);
       } else {
+        this.closeRunLog(`[exit] code=${code} signal=${signal ?? ''} ok`);
         this.emit('event', {
           type: 'done',
           runId,
@@ -226,10 +286,13 @@ export class ClaudeCodeRunner extends EventEmitter {
           const realSignal = signal && String(signal) !== '0' ? signal : null;
           const isError = (code !== 0 && code !== null) || realSignal != null;
           if (isError) {
-            const detail = `Claude Code exited (code ${code}, signal ${signal})`;
+            let detail = `Claude Code exited (code ${code}, signal ${signal})`;
+            if (this.logPath) detail += `\n\n(Details: ${this.logPath})`;
+            this.closeRunLog(`[exit-fallback] code=${code} signal=${signal ?? ''}`);
             this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
             this.emit('error', detail);
           } else {
+            this.closeRunLog(`[exit-fallback] code=${code} signal=${signal ?? ''} ok`);
             this.emit('event', {
               type: 'done',
               runId,
@@ -243,18 +306,22 @@ export class ClaudeCodeRunner extends EventEmitter {
 
     this.process.on('error', (err) => {
       if (this.killed) return;
+      let detail = err.message;
+      if (this.logPath) detail += `\n\n(Details: ${this.logPath})`;
+      this.closeRunLog(`[spawn-error] ${err.message}`);
       this.emit('event', {
         type: 'error',
         runId,
-        error: err.message,
+        error: detail,
       } as RendererAgentEvent);
-      this.emit('error', err.message);
+      this.emit('error', detail);
     });
   }
 
   abort(): void {
     this.killed = true;
     this.clearIdleTimers();
+    this.closeRunLog('[abort] user cancelled');
     if (!this.process || this.process.killed) return;
 
     this.process.kill('SIGTERM');
@@ -269,6 +336,86 @@ export class ClaudeCodeRunner extends EventEmitter {
     this.process.once('exit', () => {
       clearTimeout(forceTimer);
     });
+  }
+
+  /**
+   * Open <userData>/logs/claude-code/<runId>.log for the lifetime of this
+   * run. We tee stderr and non-JSON stdout into it so that even when the
+   * 500-char in-memory tails are empty at exit, the user has a real
+   * artifact to share. Best-effort: failures to open are swallowed so a
+   * disk issue can never break a chat run.
+   */
+  private openRunLog(runId: string, binary: string, args: readonly string[]): void {
+    try {
+      const userData = app.getPath('userData');
+      const logDir = path.join(userData, 'logs', 'claude-code');
+      fs.mkdirSync(logDir, { recursive: true });
+      this.logPath = path.join(logDir, `${runId}.log`);
+      this.logStream = fs.createWriteStream(this.logPath, { flags: 'w' });
+      const ts = new Date().toISOString();
+      // Redact --append-system-prompt body (can be long and is reproducible
+      // from the same agent name); other args are short and safe.
+      const safeArgs = args.map((a, i) => (args[i - 1] === '--append-system-prompt' ? '<system-prompt>' : a));
+      this.logStream.write(`[${ts}] [start] ${binary} ${safeArgs.join(' ')}\n`);
+      this.pruneOldLogs(logDir);
+    } catch (err) {
+      this.logStream = null;
+      this.logPath = '';
+      console.warn(`[ClaudeCode:${runId.slice(0, 8)}] could not open run log: ${(err as Error).message}`);
+    }
+  }
+
+  private appendLog(channel: 'stdout' | 'stderr', text: string): void {
+    if (!this.logStream) return;
+    try {
+      this.logStream.write(`[${channel}] ${text.endsWith('\n') ? text : text + '\n'}`);
+    } catch {
+      // Disk full / EBADF — give up on this run's log silently.
+      this.logStream = null;
+    }
+  }
+
+  private closeRunLog(footer: string): void {
+    if (!this.logStream) return;
+    try {
+      this.logStream.write(`[${new Date().toISOString()}] ${footer}\n`);
+      this.logStream.end();
+    } catch {
+      /* swallow */
+    }
+    this.logStream = null;
+  }
+
+  /**
+   * Keep at most 50 run logs on disk. Logs are named `<runId>.log` and
+   * sorted by mtime; oldest are unlinked. Best-effort, swallows errors.
+   */
+  private pruneOldLogs(logDir: string): void {
+    try {
+      const entries = fs
+        .readdirSync(logDir)
+        .filter((name) => name.endsWith('.log'))
+        .map((name) => {
+          const full = path.join(logDir, name);
+          let mtime = 0;
+          try {
+            mtime = fs.statSync(full).mtimeMs;
+          } catch {
+            /* ignore */
+          }
+          return { full, mtime };
+        })
+        .sort((a, b) => b.mtime - a.mtime);
+      for (const stale of entries.slice(50)) {
+        try {
+          fs.unlinkSync(stale.full);
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   /** Arm both idle timers from the current moment. The kill ceiling is
@@ -369,6 +516,7 @@ export class ClaudeCodeRunner extends EventEmitter {
       // CLI crashed. Keep the last ~500 chars so the close handler can surface
       // it instead of the generic "exited unexpectedly" fallback.
       this.stdoutTail = (this.stdoutTail + '\n' + line).slice(-500).trim();
+      this.appendLog('stdout', line + '\n');
       console.debug(`[ClaudeCode:stream] non-JSON line: ${line.slice(0, 100)}`);
       return;
     }
@@ -415,6 +563,22 @@ export class ClaudeCodeRunner extends EventEmitter {
         if (!this.accumulatedText && typeof parsed.result === 'string') {
           this.accumulatedText = parsed.result;
         }
+      }
+      if (parsed.is_error === true) {
+        // The CLI surfaces max-turns hits and per-turn API errors here
+        // rather than on stderr. Capture the human-readable bits so the
+        // close handler can produce a legible error message.
+        const subtype = typeof parsed.subtype === 'string' ? parsed.subtype : '';
+        const message =
+          (typeof parsed.result === 'string' && parsed.result) ||
+          (typeof parsed.error === 'string' && parsed.error) ||
+          (typeof parsed.message === 'string' && parsed.message) ||
+          subtype ||
+          'unknown error';
+        this.resultErrorTail =
+          subtype && !message.toLowerCase().includes(subtype.toLowerCase())
+            ? `${subtype}: ${message}`
+            : message;
       }
       this.emit('event', {
         type: 'system',

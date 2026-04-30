@@ -50,7 +50,13 @@ export function useChatFilePreview(attachment: AttachmentInfo | null): ChatFileP
   const [textContent, setTextContent] = useState<string | null>(null);
   const [parsedMarkdown, setParsedMarkdown] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
-  const [loading, setLoading] = useState(false);
+  // Start in the loading state so the modal's first render shows a spinner
+  // instead of falling through to FilePreviewBody with kind='binary' (which
+  // briefly flashes the "No preview available for .DOCX" body before the
+  // useEffect below has a chance to kick off the parse). Office files
+  // especially: previewKindFor returns 'binary' for them — the markdown-
+  // mapped effectiveKind only flips after parseFileViaBackend resolves.
+  const [loading, setLoading] = useState(attachment !== null);
   const [loadError, setLoadError] = useState<LoadErrorKind | null>(null);
   const [loadErrorDetail, setLoadErrorDetail] = useState<string | null>(null);
   const [view, setViewState] = useState<'native' | 'extracted'>('native');

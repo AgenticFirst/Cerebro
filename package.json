@@ -1,7 +1,7 @@
 {
   "name": "cerebro",
   "productName": "Cerebro",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Open-source AI studio for solopreneurs and small teams — ship like a 50-person team, on your own machine.",
   "main": ".vite/build/main.js",
   "private": true,

@@ -38,6 +38,19 @@ vi.mock('../sandbox/wrap-spawn', () => ({
   }),
 }));
 
+vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getAppPath: () => '/fake/app/path',
+    getPath: (_kind: string) => '/tmp/fake-userdata',
+  },
+}));
+
+vi.mock('../python/venv', () => ({
+  resolveBackendPythonBinDir: () => null,
+  resolveBackendVirtualEnvRoot: () => null,
+}));
+
 // Import AFTER mocks are registered
 import { ClaudeCodeRunner } from './stream-adapter';
 
@@ -68,16 +81,40 @@ describe('ClaudeCodeRunner error mapping', () => {
     vi.useRealTimers();
   });
 
-  it('emits generic "exited unexpectedly" when code 1 and stderr is empty', async () => {
+  it('falls back to an enriched diagnostic when stderr/stdout/result are all empty', async () => {
     const { events, errors } = startRunner();
     currentChild!.emit('close', 1, null);
     await Promise.resolve();
 
     const errorEvents = events.filter((e) => e.type === 'error');
     expect(errorEvents).toHaveLength(1);
-    // Locks the current behavior so any fix is visible as a behavior change.
-    expect(errorEvents[0].payload.error).toContain('Claude Code exited unexpectedly (code 1)');
-    expect(errors[0]).toContain('Claude Code exited unexpectedly (code 1)');
+    // Generic phrase still present, but now includes agent / cwd / log path
+    // so the user (or support) has something to debug.
+    const msg: string = errorEvents[0].payload.error;
+    expect(msg).toMatch(/Claude Code exited unexpectedly \(code 1, no output\)/);
+    expect(msg).toMatch(/agent: design-expert-xyz/);
+    expect(msg).toMatch(/cwd: \/tmp\/cerebro-data/);
+    expect(errors[0]).toBe(msg);
+  });
+
+  it('surfaces a stream-json result.is_error message instead of the generic fallback', async () => {
+    // Max-turns hits and per-turn API errors come back as stream-json
+    // `{ type: "result", is_error: true, ... }` rather than on stderr.
+    // Before the fix this fell through to "exited unexpectedly (code 1)";
+    // now it produces a legible message.
+    const { errors } = startRunner();
+    const resultErr = {
+      type: 'result',
+      is_error: true,
+      subtype: 'error_max_turns',
+      result: 'Reached maximum turns (15) without completing.',
+    };
+    currentChild!.stdout.write(JSON.stringify(resultErr) + '\n');
+    await new Promise((r) => setImmediate(r));
+    currentChild!.emit('close', 1, null);
+    await Promise.resolve();
+    expect(errors[0]).toMatch(/Reached maximum turns/);
+    expect(errors[0]).toMatch(/code 1/);
   });
 
   it('maps stderr "max turns" to a reached-max-turns message', async () => {

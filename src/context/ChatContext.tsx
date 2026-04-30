@@ -23,6 +23,7 @@ import { useQualityTier } from './QualityContext';
 import { useRoutines } from './RoutineContext';
 import i18n from '../i18n';
 import type { DAGDefinition } from '../engine/dag/types';
+import { extractAbsolutePathsFromBashCommand } from '../lib/extract-paths';
 import {
   generateId,
   titleFromContent,
@@ -561,6 +562,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   const p = tc?.arguments?.file_path;
                   if (typeof p === 'string' && p.startsWith('/')) {
                     accFileRefs.add(p);
+                  }
+                }
+                // Bash is how the agent produces binary files (.docx via
+                // python-docx, .xlsx via openpyxl, etc.) — Write only handles
+                // UTF-8 text. Sniff the command for absolute paths ending in a
+                // known file extension and treat them as candidate refs. The
+                // chip renders missing files as dimmed, so a false positive is
+                // visually quiet; a false negative is a missing chip.
+                if (!event.isError && resolvedToolName === 'Bash') {
+                  const cmd = tc?.arguments?.command;
+                  if (typeof cmd === 'string') {
+                    for (const p of extractAbsolutePathsFromBashCommand(cmd)) {
+                      accFileRefs.add(p);
+                    }
                   }
                 }
                 // Detect run_routine tool result and attach engineRunId

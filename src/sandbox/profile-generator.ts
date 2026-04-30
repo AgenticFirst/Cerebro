@@ -17,9 +17,53 @@
  * validation list) rather than hardcoded here — a single source of truth.
  */
 
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { SandboxConfig } from './types';
+
+/**
+ * Standard package-manager and language-toolchain dirs the agent needs to
+ * write into so that `pip install --user`, `npm i -g`, `brew install`,
+ * `cargo install`, etc. behave the same as in the user's own terminal.
+ *
+ * We add the path to the sandbox profile only when it actually exists on
+ * disk — keeps the generated profile compact and avoids confusing
+ * `sandbox-exec` with paths that the user has never used.
+ *
+ * Each entry is relative to $HOME unless it begins with `/`. Order is
+ * irrelevant; the profile sorts alphabetically.
+ */
+const TOOLCHAIN_WRITE_PATHS = [
+  // Python
+  'Library/Python',
+  '.pyenv',
+  // JS / TS
+  '.npm',
+  '.npm-global',
+  '.yarn',
+  '.config/yarn',
+  '.nvm',
+  '.bun',
+  '.deno',
+  // Rust
+  '.cargo',
+  '.rustup',
+  // Go
+  'go',
+  // XDG-style caches and configs many CLIs write into
+  '.cache',
+  '.config',
+  '.local/share',
+  // Homebrew (Apple Silicon default location)
+  '/opt/homebrew/var',
+  '/opt/homebrew/Cellar',
+  '/opt/homebrew/etc',
+  '/opt/homebrew/lib',
+  // Homebrew (Intel default location)
+  '/usr/local/var/homebrew',
+  '/usr/local/Cellar',
+];
 
 function quoteSubpath(kind: 'subpath' | 'literal', value: string): string {
   // Seatbelt string literals don't support backslash escaping. Refuse anything
@@ -61,6 +105,22 @@ export function generateProfile(inputs: ProfileInputs): string {
     if (link.mode === 'write') {
       writeTargets.add(path.resolve(link.path));
     }
+  }
+
+  // Package-manager and toolchain dirs — only included if present on disk,
+  // so the generated profile stays compact. The agent needs these so that
+  // `pip install --user`, `npm i -g`, `brew install`, `cargo install`, etc.
+  // behave the same as in a normal shell. Existing per-user secrets/config
+  // (e.g. `~/.gnupg`, `~/.ssh`) remain protected by the deny rules below.
+  for (const entry of TOOLCHAIN_WRITE_PATHS) {
+    const resolved = entry.startsWith('/') ? entry : path.join(home, entry);
+    let exists = false;
+    try {
+      exists = fs.existsSync(resolved);
+    } catch {
+      exists = false;
+    }
+    if (exists) writeTargets.add(resolved);
   }
 
   const writeLines = [...writeTargets]
