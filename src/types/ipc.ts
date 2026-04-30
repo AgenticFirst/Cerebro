@@ -102,6 +102,8 @@ export const IPC_CHANNELS = {
   SHELL_STAT_PATH: 'shell:stat-path',
   SHELL_DOWNLOAD_TO_DOWNLOADS: 'shell:download-to-downloads',
   SHELL_READ_TEXT_FILE: 'shell:read-text-file',
+  SHELL_PREVIEW_URL_FOR_PATH: 'shell:preview-url-for-path',
+  SHELL_IS_PATH_PREVIEWABLE: 'shell:is-path-previewable',
 
   // Telegram bridge
   TELEGRAM_VERIFY: 'telegram:verify',
@@ -776,6 +778,14 @@ export interface ShellAPI {
   /** Read a UTF-8 text file from disk. Refuses files larger than the main-process
    *  size guard (currently 2 MB) so the renderer can surface a friendly toast. */
   readTextFile(filePath: string): Promise<string>;
+  /** Build a `cerebro-chat://path/<base64url>` URL for an arbitrary absolute path.
+   *  The protocol handler re-validates the path against a SAFE-ROOTS allowlist
+   *  (userData / downloads / documents / desktop / tmp). Throws 'outside-safe-roots'
+   *  for anything outside; 'not-absolute' if the input isn't absolute. */
+  previewUrlForPath(absolutePath: string): Promise<string>;
+  /** True when the absolute path lives inside the chat-preview SAFE-ROOTS list.
+   *  Used to pick the binary fallback before issuing a forbidden fetch. */
+  isPathPreviewable(absolutePath: string): Promise<boolean>;
 }
 
 export interface TaskTerminalAPI {

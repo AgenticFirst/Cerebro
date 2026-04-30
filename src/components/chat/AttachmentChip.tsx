@@ -1,26 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { X, Download, FolderOpen, Folder, Check, Loader2, Save } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { AttachmentInfo } from '../../types/attachments';
 import { useToast } from '../../context/ToastContext';
-import { useMarkdownDocument } from '../../context/MarkdownDocumentContext';
 import { useFiles } from '../../context/FilesContext';
-
-const EXT_LABELS: Record<string, string> = {
-  ts: 'TS', tsx: 'TX', js: 'JS', jsx: 'JX',
-  py: 'PY', rs: 'RS', go: 'GO', rb: 'RB',
-  json: '{}', md: 'MD', txt: 'TXT', html: '<>',
-  css: 'CS', yaml: 'YM', yml: 'YM', toml: 'TM',
-  sh: 'SH', sql: 'SQ', pdf: 'PF', swift: 'SW',
-  java: 'JA', c: 'C', cpp: 'C+', h: 'H',
-};
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+import { useChatFilePreviewModal } from '../../context/ChatFilePreviewContext';
+import { labelForExt, formatFileSize } from '../../lib/file-ext-labels';
 
 interface AttachmentChipProps {
   attachment: AttachmentInfo;
@@ -37,7 +23,7 @@ interface AttachmentChipProps {
 export default function AttachmentChip({ attachment, onRemove, source = 'user', conversationId, messageId }: AttachmentChipProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
-  const { open: openMarkdown } = useMarkdownDocument();
+  const { open: openPreview } = useChatFilePreviewModal();
   const { saveExternalToFiles } = useFiles();
   const isAssistant = source === 'assistant';
   const [saveState, setSaveState] = useState<'idle' | 'running' | 'done'>('idle');
@@ -71,7 +57,7 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user', 
     return () => { cancelled = true; };
   }, [attachment.filePath, attachment.isDirectory, isAssistant]);
 
-  const extLabel = EXT_LABELS[attachment.extension] || attachment.extension.slice(0, 2).toUpperCase() || '?';
+  const extLabel = labelForExt(attachment.extension);
 
   const handleReveal = () => {
     window.cerebro.shell.revealPath(attachment.filePath).catch(() => undefined);
@@ -80,28 +66,15 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user', 
     // Opens the directory itself in Finder/Explorer.
     window.cerebro.shell.openPath(attachment.filePath).catch(() => undefined);
   };
-  const isMarkdown =
-    isAssistant &&
-    isDirectory === false &&
-    !missing &&
-    attachment.extension === 'md';
 
-  const handleOpenMarkdown = async () => {
-    try {
-      const content = await window.cerebro.shell.readTextFile(attachment.filePath);
-      openMarkdown({
-        title: attachment.fileName,
-        subtitle: attachment.filePath,
-        content,
-        readOnly: true,
-        filePath: attachment.filePath,
-      });
-    } catch (err) {
-      const message = err instanceof Error && err.message.includes('too large')
-        ? t('markdown.loadTooLarge')
-        : t('markdown.loadFailed');
-      addToast(message, 'error');
-    }
+  const isPreviewable = isDirectory === false && !missing;
+  const handleOpenPreview = () => {
+    if (!isPreviewable) return;
+    openPreview(attachment, { conversationId, messageId, source });
+  };
+  const stopAndRun = (fn: () => void) => (e: MouseEvent) => {
+    e.stopPropagation();
+    fn();
   };
 
   const handleSaveToFiles = async () => {
@@ -169,7 +142,7 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user', 
     );
   }
 
-  // ── File chip — download primary, reveal secondary ───────────────
+  // ── File chip — clicking the body opens an inline preview modal ──
   const bodyContent = (
     <>
       <span
@@ -182,7 +155,7 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user', 
       </span>
       <span className="max-w-[140px] truncate">{attachment.fileName}</span>
       {fileSize > 0 && (
-        <span className="text-text-tertiary text-[10px]">{formatSize(fileSize)}</span>
+        <span className="text-text-tertiary text-[10px]">{formatFileSize(fileSize)}</span>
       )}
     </>
   );
@@ -198,12 +171,12 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user', 
       )}
       title={missing ? t('experts.attachmentMissing') : undefined}
     >
-      {isMarkdown ? (
+      {isPreviewable ? (
         <button
           type="button"
-          onClick={handleOpenMarkdown}
+          onClick={handleOpenPreview}
           className="flex items-center gap-1.5 cursor-pointer hover:text-text-primary transition-colors"
-          title={t('markdown.expand')}
+          title={t('files.chatPreviewOpen')}
         >
           {bodyContent}
         </button>
@@ -212,7 +185,7 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user', 
       )}
       {isAssistant && !missing && isDirectory === false && (
         <button
-          onClick={handleSaveToFiles}
+          onClick={stopAndRun(handleSaveToFiles)}
           disabled={saveState === 'running'}
           className={clsx(
             'w-5 h-5 flex items-center justify-center rounded flex-shrink-0 transition-all',
@@ -234,7 +207,7 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user', 
       {isAssistant && !missing && (
         <>
           <button
-            onClick={handleDownload}
+            onClick={stopAndRun(handleDownload)}
             disabled={downloadState === 'running'}
             className={clsx(
               'w-5 h-5 flex items-center justify-center rounded flex-shrink-0 transition-all',
@@ -253,7 +226,7 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user', 
             )}
           </button>
           <button
-            onClick={handleReveal}
+            onClick={stopAndRun(handleReveal)}
             className="w-5 h-5 flex items-center justify-center rounded flex-shrink-0 opacity-70 hover:opacity-100 hover:bg-bg-hover transition-all"
             title={t('experts.revealInFolder')}
           >
@@ -263,7 +236,7 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user', 
       )}
       {onRemove && (
         <button
-          onClick={() => onRemove(attachment.id)}
+          onClick={stopAndRun(() => onRemove(attachment.id))}
           className={clsx(
             'w-4 h-4 flex items-center justify-center rounded flex-shrink-0',
             'opacity-0 group-hover:opacity-100 hover:bg-bg-hover',

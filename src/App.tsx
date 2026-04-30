@@ -15,6 +15,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { QualityProvider } from './context/QualityContext';
 import { UIPreferencesProvider } from './context/UIPreferencesContext';
 import { MarkdownDocumentProvider } from './context/MarkdownDocumentContext';
+import { ChatFilePreviewProvider } from './context/ChatFilePreviewContext';
 import { FilesProvider } from './context/FilesContext';
 import { UpdateProvider } from './context/UpdateContext';
 import { OnboardingProvider } from './context/OnboardingContext';
@@ -43,8 +44,10 @@ function App() {
                         <FilesProvider>
                           <VoiceProvider>
                             <MarkdownDocumentProvider>
-                              <AppLayout />
-                              <OnboardingTour />
+                              <ChatFilePreviewProvider>
+                                <AppLayout />
+                                <OnboardingTour />
+                              </ChatFilePreviewProvider>
                             </MarkdownDocumentProvider>
                           </VoiceProvider>
                         </FilesProvider>

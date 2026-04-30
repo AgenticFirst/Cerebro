@@ -270,6 +270,12 @@ const api: CerebroAPI = {
     readTextFile(filePath: string): Promise<string> {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL_READ_TEXT_FILE, filePath);
     },
+    previewUrlForPath(absolutePath: string): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL_PREVIEW_URL_FOR_PATH, absolutePath);
+    },
+    isPathPreviewable(absolutePath: string): Promise<boolean> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL_IS_PATH_PREVIEWABLE, absolutePath);
+    },
   },
 
   sandbox: {

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, protocol, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { spawn, ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import http from 'node:http';
@@ -86,6 +87,7 @@ if (started) {
 // Register privileged schemes BEFORE app is ready.
 // - cerebro-workspace:// serves files from per-task workspaces for live preview.
 // - cerebro-files://     serves managed bucket files (image thumbnails, html previews).
+// - cerebro-chat://      serves arbitrary chat-attached files within SAFE-ROOTS.
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'cerebro-workspace',
@@ -98,6 +100,15 @@ protocol.registerSchemesAsPrivileged([
   },
   {
     scheme: 'cerebro-files',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+  {
+    scheme: 'cerebro-chat',
     privileges: {
       standard: true,
       secure: true,
@@ -126,6 +137,27 @@ function resolveManagedPath(relPath: string): string {
     throw new Error(`Refusing path outside files root: ${relPath}`);
   }
   return abs;
+}
+
+// Roots the chat preview pipe is allowed to read from. Anything else gets a
+// 403 from the cerebro-chat:// protocol handler. Resolved on each call so
+// app.getPath returns its post-ready value.
+function getChatPreviewSafeRoots(): string[] {
+  const roots = [
+    app.getPath('userData'),
+    app.getPath('downloads'),
+    app.getPath('documents'),
+    app.getPath('desktop'),
+    os.tmpdir(),
+  ];
+  return roots.map((r) => path.normalize(r));
+}
+
+function isInsideSafeRoot(absPath: string): boolean {
+  const normalized = path.normalize(absPath);
+  return getChatPreviewSafeRoots().some(
+    (root) => normalized === root || normalized.startsWith(root + path.sep),
+  );
 }
 
 // Minimal MIME-type map for files served via cerebro-workspace://
@@ -1311,6 +1343,36 @@ function registerIpcHandlers(): void {
     },
   );
 
+  // Cheap pre-check the chat preview hook uses to decide between the binary
+  // body and the "outside previewable area" fallback.
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_IS_PATH_PREVIEWABLE,
+    async (_event, absolutePath: string) => {
+      if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
+        return false;
+      }
+      return isInsideSafeRoot(path.normalize(absolutePath));
+    },
+  );
+
+  // Build a cerebro-chat:// URL for an arbitrary absolute path. The protocol
+  // handler re-validates the path against the same safe-root list, so even a
+  // forged URL can't escape the allowlist.
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_PREVIEW_URL_FOR_PATH,
+    async (_event, absolutePath: string) => {
+      if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
+        throw new Error('not-absolute');
+      }
+      const normalized = path.normalize(absolutePath);
+      if (!isInsideSafeRoot(normalized)) {
+        throw new Error('outside-safe-roots');
+      }
+      const encoded = Buffer.from(normalized, 'utf8').toString('base64url');
+      return `cerebro-chat://path/${encoded}`;
+    },
+  );
+
   // Copy a file emitted by an expert into the user's OS Downloads folder,
   // auto-deduping the destination name on collision. Returns the final path.
   ipcMain.handle(
@@ -2005,6 +2067,59 @@ app.on('ready', async () => {
       });
     } catch (err) {
       console.error(`[cerebro-files] handler error for ${filePath}:`, err);
+      return new Response(`Error: ${(err as Error).message ?? err}`, {
+        status: 500,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
+  });
+
+  // Serve chat-attached files via cerebro-chat://path/<base64url-of-abs-path>.
+  // Re-validates against the SAFE-ROOTS list so a forged URL can't escape.
+  protocol.handle('cerebro-chat', async (request) => {
+    let filePath = '<unresolved>';
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== 'path') {
+        return new Response('Bad host', { status: 400 });
+      }
+      const segments = decodeURIComponent(url.pathname || '/').split('/').filter(Boolean);
+      if (segments.length !== 1) {
+        return new Response('Bad path', { status: 400 });
+      }
+      let decoded: string;
+      try {
+        decoded = Buffer.from(segments[0], 'base64url').toString('utf8');
+      } catch {
+        return new Response('Bad encoding', { status: 400 });
+      }
+      filePath = path.normalize(decoded);
+      if (!path.isAbsolute(filePath)) {
+        return new Response('Not absolute', { status: 400 });
+      }
+      if (!isInsideSafeRoot(filePath)) {
+        return new Response('Forbidden', { status: 403 });
+      }
+      let stat: fs.Stats;
+      try {
+        stat = await fs.promises.stat(filePath);
+      } catch {
+        return new Response(`Not found: ${path.basename(filePath)}`, {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
+      if (stat.isDirectory()) {
+        return new Response('Is a directory', { status: 400 });
+      }
+      const data = await fs.promises.readFile(filePath);
+      const body = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': mimeFor(filePath) },
+      });
+    } catch (err) {
+      console.error(`[cerebro-chat] handler error for ${filePath}:`, err);
       return new Response(`Error: ${(err as Error).message ?? err}`, {
         status: 500,
         headers: { 'Content-Type': 'text/plain; charset=utf-8' },
