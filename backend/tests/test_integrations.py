@@ -315,3 +315,93 @@ def test_imd_auto_score_response_shape(client):
     body = resp.json()
     for key in ("d1_score", "d2_score", "d1_breakdown", "d2_breakdown", "total_auto"):
         assert key in body, f"missing required field '{key}' in /imd/auto-score response"
+
+
+# ── GHL custom fields ─────────────────────────────────────────────────────────
+
+
+def test_get_custom_fields_requires_credentials(client):
+    """GET /integrations/ghl/custom-fields returns 400 without stored credentials."""
+    resp = client.get("/integrations/ghl/custom-fields")
+    assert resp.status_code == 400
+    assert "credentials" in resp.json()["detail"].lower()
+
+
+def test_get_custom_fields_returns_fields_shape(client):
+    """With credentials set, custom-fields returns {fields: list, count: int}.
+
+    The real GHL network call will fail (fake credentials), but the endpoint
+    must still return 200 with the expected shape (empty list on network error).
+    """
+    client.put(
+        "/integrations/ghl/config",
+        json={"api_key": "fake-key", "location_id": "fake-loc"},
+    )
+    resp = client.get("/integrations/ghl/custom-fields")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "fields" in body
+    assert "count" in body
+    assert isinstance(body["fields"], list)
+    assert isinstance(body["count"], int)
+    assert body["count"] == len(body["fields"])
+
+
+# ── IMD field config ──────────────────────────────────────────────────────────
+
+
+def test_set_and_get_imd_field_config(client):
+    """PUT then GET round-trips the IMD field config including pipeline_id."""
+    payload = {
+        "field_d1": "field-id-d1",
+        "field_d2": "field-id-d2",
+        "field_d3": None,
+        "field_d4": None,
+        "field_d5": None,
+        "field_d6": None,
+        "field_total": "field-id-total",
+        "field_classification": "field-id-class",
+    }
+    put_resp = client.put("/integrations/ghl/imd-field-config", json=payload)
+    assert put_resp.status_code == 200
+    assert put_resp.json().get("ok") is True
+
+    get_resp = client.get("/integrations/ghl/imd-field-config")
+    assert get_resp.status_code == 200
+    body = get_resp.json()
+    assert body["field_d1"] == "field-id-d1"
+    assert body["field_d2"] == "field-id-d2"
+    assert body["field_d3"] is None
+    assert body["field_total"] == "field-id-total"
+    assert body["field_classification"] == "field-id-class"
+
+
+# ── Push IMD scores ───────────────────────────────────────────────────────────
+
+
+def test_push_imd_scores_requires_credentials(client):
+    """POST /integrations/ghl/push-imd-scores returns 400 without credentials."""
+    resp = client.post(
+        "/integrations/ghl/push-imd-scores",
+        json={"contact_id": "contact-xyz", "d1": 15.0, "d2": 12.0},
+    )
+    assert resp.status_code == 400
+    assert "credentials" in resp.json()["detail"].lower()
+
+
+def test_push_imd_scores_no_fields_configured(client):
+    """With credentials but no field config, returns ok=False or fields_updated=0."""
+    client.put(
+        "/integrations/ghl/config",
+        json={"api_key": "fake-key", "location_id": "fake-loc"},
+    )
+    # No IMD field config stored — all field_* values are None
+    resp = client.post(
+        "/integrations/ghl/push-imd-scores",
+        json={"contact_id": "contact-xyz", "d1": 15.0, "d2": 12.0},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "ok" in body
+    # When no fields are configured, either ok=False or ok=True with fields_updated=0
+    assert body["ok"] is False or body.get("fields_updated", 0) == 0

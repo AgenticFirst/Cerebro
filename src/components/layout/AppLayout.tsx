@@ -19,6 +19,7 @@ import SkillsLibraryScreen from '../screens/SkillsLibraryScreen';
 import CallScreen from '../screens/CallScreen';
 import TasksScreen from '../screens/TasksScreen';
 import FilesScreen from '../screens/FilesScreen';
+import IMDPipelineScreen from '../screens/IMDPipelineScreen';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
 
@@ -60,6 +61,9 @@ export default function AppLayout() {
     }
     if (activeScreen === 'tasks') {
       return <TasksScreen />;
+    }
+    if (activeScreen === 'pipeline') {
+      return <IMDPipelineScreen />;
     }
     if (activeScreen === 'files') {
       return <FilesScreen />;

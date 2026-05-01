@@ -273,3 +273,93 @@ class GHLClient:
     async def trigger_call(self, contact_id: str, language: str = "en") -> bool:
         tag = "ready-for-cold-call-en" if language == "en" else "ready-for-cold-call-es"
         return await self.add_tags(contact_id, [tag])
+
+    async def get_custom_fields(self) -> list:
+        """Return list of custom field dicts for the configured location.
+
+        Returns an empty list on any error so callers can degrade gracefully.
+        """
+        async with httpx.AsyncClient(base_url=GHL_BASE_URL, headers=self._headers) as client:
+            try:
+                resp = await client.get(
+                    f"/locations/{self.location_id}/customFields",
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                raw_fields = data.get("customFields", [])
+                result = []
+                for f in raw_fields:
+                    result.append({
+                        "id": f.get("id"),
+                        "name": f.get("name"),
+                        "fieldKey": f.get("fieldKey"),
+                        "dataType": f.get("dataType"),
+                        "position": f.get("position"),
+                    })
+                return result
+            except Exception as exc:
+                logger.error("GHL: failed to fetch custom fields: %s", exc)
+                return []
+
+    async def update_contact_custom_fields(self, contact_id: str, field_values: list) -> bool:
+        """PUT custom field values onto an existing GHL contact.
+
+        ``field_values`` is a list of ``{"id": "<field_id>", "value": "<string>"}``.
+        Returns True on success, False on any error.
+        """
+        async with httpx.AsyncClient(base_url=GHL_BASE_URL, headers=self._headers) as client:
+            try:
+                resp = await client.put(
+                    f"/contacts/{contact_id}",
+                    json={"customFields": field_values},
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+                logger.info("GHL: custom fields updated on contact %s", contact_id)
+                return True
+            except Exception as exc:
+                logger.error("GHL: failed to update custom fields on contact %s: %s", contact_id, exc)
+                return False
+
+    async def push_imd_scores_to_fields(
+        self,
+        contact_id: str,
+        scores: dict,
+        field_config: dict,
+    ) -> bool:
+        """Push IMD dimension scores to GHL contact custom fields.
+
+        ``scores`` keys: d1, d2, d3, d4, d5, d6, total, classification.
+        ``field_config`` keys: field_d1 … field_d6, field_total, field_classification
+        — values are GHL custom field IDs (``None`` / missing means skip that dimension).
+
+        Returns True when the update call succeeded, False if no fields were
+        configured or the update failed.
+        """
+        score_key_to_config_key = {
+            "d1": "field_d1",
+            "d2": "field_d2",
+            "d3": "field_d3",
+            "d4": "field_d4",
+            "d5": "field_d5",
+            "d6": "field_d6",
+            "total": "field_total",
+            "classification": "field_classification",
+        }
+
+        field_values = []
+        for score_key, config_key in score_key_to_config_key.items():
+            field_id = field_config.get(config_key)
+            if not field_id:
+                continue
+            score_value = scores.get(score_key)
+            if score_value is None:
+                continue
+            field_values.append({"id": field_id, "value": str(score_value)})
+
+        if not field_values:
+            logger.debug("GHL: push_imd_scores_to_fields — no fields configured, skipping update")
+            return False
+
+        return await self.update_contact_custom_fields(contact_id, field_values)

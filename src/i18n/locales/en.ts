@@ -32,6 +32,7 @@ const en = {
     activity: 'Activity',
     approvals: 'Approvals',
     integrations: 'Integrations',
+    pipeline: 'Pipeline',
     skills: 'Skills',
     settings: 'Settings',
     newChat: 'New Chat',

@@ -33,6 +33,7 @@ const es: TranslationKeys = {
     activity: 'Actividad',
     approvals: 'Aprobaciones',
     integrations: 'Integraciones',
+    pipeline: 'Pipeline',
     skills: 'Habilidades',
     settings: 'Ajustes',
     newChat: 'Nuevo chat',

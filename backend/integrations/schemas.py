@@ -97,3 +97,21 @@ class IMDAutoScoreResponse(BaseModel):
     d2_breakdown: dict
     total_auto: float
     error: Optional[str] = None
+
+
+class GHLIMDFieldConfig(BaseModel):
+    field_d1: Optional[str] = None
+    field_d2: Optional[str] = None
+    field_d3: Optional[str] = None
+    field_d4: Optional[str] = None
+    field_d5: Optional[str] = None
+    field_d6: Optional[str] = None
+    field_total: Optional[str] = None
+    field_classification: Optional[str] = None
+
+
+class GHLCustomField(BaseModel):
+    id: str
+    name: str
+    field_key: Optional[str] = None
+    data_type: Optional[str] = None

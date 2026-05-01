@@ -5,9 +5,11 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -19,6 +21,7 @@ from .schemas import (
     CallOutcomePayload,
     GHLConfig,
     GHLConfigResponse,
+    GHLIMDFieldConfig,
     GHLPipelineConfig,
     IGDMSentRequest,
     IGResponseLogRequest,
@@ -62,6 +65,18 @@ def _log_dir() -> str:
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ── GHL client helper ─────────────────────────────────────────────────────────
+
+
+def _require_ghl_client(db: Session) -> GHLClient:
+    """Return a GHLClient using stored credentials, or raise 400."""
+    api_key = _get_setting(db, "ghl_api_key")
+    location_id = _get_setting(db, "ghl_location_id")
+    if not api_key or not location_id:
+        raise HTTPException(status_code=400, detail="GHL credentials not configured")
+    return GHLClient(api_key=api_key, location_id=location_id)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -300,6 +315,118 @@ def call_outcome_webhook(body: CallOutcomePayload) -> dict:
     except Exception as exc:
         logger.error("call_outcome_webhook: failed to write log: %s", exc)
     return {"ok": True}
+
+
+# ── GHL custom fields ────────────────────────────────────────────────────────
+
+
+@router.get("/ghl/custom-fields")
+async def list_ghl_custom_fields(db: Session = Depends(get_db)) -> dict:
+    """Fetch all custom fields defined in the GHL location."""
+    client = _require_ghl_client(db)
+    fields = await client.get_custom_fields()
+    return {"fields": fields, "count": len(fields)}
+
+
+# ── IMD field config ──────────────────────────────────────────────────────────
+
+_IMD_FIELD_CONFIG_KEY = "ghl_imd_field_config_json"
+
+
+@router.get("/ghl/imd-field-config")
+def get_imd_field_config(db: Session = Depends(get_db)) -> dict:
+    """Read stored IMD field-to-GHL-custom-field mapping from settings."""
+    raw = _get_setting(db, _IMD_FIELD_CONFIG_KEY)
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            pass
+    return GHLIMDFieldConfig().model_dump()
+
+
+@router.put("/ghl/imd-field-config")
+def put_imd_field_config(body: GHLIMDFieldConfig, db: Session = Depends(get_db)) -> dict:
+    """Persist IMD field-to-GHL-custom-field mapping in settings."""
+    _upsert_setting(db, _IMD_FIELD_CONFIG_KEY, json.dumps(body.model_dump()))
+    db.commit()
+    return {"ok": True}
+
+
+# ── Push IMD scores ───────────────────────────────────────────────────────────
+
+
+class PushIMDScoresRequest(BaseModel):
+    contact_id: str
+    d1: Optional[float] = None
+    d2: Optional[float] = None
+    d3: Optional[float] = None
+    d4: Optional[float] = None
+    d5: Optional[float] = None
+    d6: Optional[float] = None
+
+
+@router.post("/ghl/push-imd-scores")
+async def push_imd_scores(body: PushIMDScoresRequest, db: Session = Depends(get_db)) -> dict:
+    """Compute totals/classification and push IMD scores to a GHL contact."""
+    client = _require_ghl_client(db)
+
+    # Read field mapping from settings
+    raw = _get_setting(db, _IMD_FIELD_CONFIG_KEY)
+    field_config: dict = {}
+    if raw:
+        try:
+            field_config = json.loads(raw)
+        except Exception:
+            field_config = {}
+
+    # Collect dimension values
+    dimension_values = [
+        v for v in (body.d1, body.d2, body.d3, body.d4, body.d5, body.d6)
+        if v is not None
+    ]
+    total = sum(dimension_values)
+
+    if total >= 96:
+        classification = "Líder"
+    elif total >= 80:
+        classification = "Avanzado"
+    elif total >= 60:
+        classification = "Intermedio"
+    else:
+        classification = "Básico"
+
+    scores: dict = {
+        "d1": body.d1,
+        "d2": body.d2,
+        "d3": body.d3,
+        "d4": body.d4,
+        "d5": body.d5,
+        "d6": body.d6,
+        "total": total,
+        "classification": classification,
+    }
+
+    ok = await client.push_imd_scores_to_fields(body.contact_id, scores, field_config)
+
+    # Count how many fields were configured and had values
+    score_key_to_config_key = {
+        "d1": "field_d1",
+        "d2": "field_d2",
+        "d3": "field_d3",
+        "d4": "field_d4",
+        "d5": "field_d5",
+        "d6": "field_d6",
+        "total": "field_total",
+        "classification": "field_classification",
+    }
+    fields_updated = sum(
+        1
+        for score_key, config_key in score_key_to_config_key.items()
+        if field_config.get(config_key) and scores.get(score_key) is not None
+    )
+
+    return {"ok": ok, "fields_updated": fields_updated}
 
 
 # ── IMD auto-score ────────────────────────────────────────────────────────────
