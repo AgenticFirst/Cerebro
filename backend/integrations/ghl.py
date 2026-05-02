@@ -322,6 +322,21 @@ class GHLClient:
                 logger.error("GHL: failed to update custom fields on contact %s: %s", contact_id, exc)
                 return False
 
+    async def enroll_in_workflow(self, contact_id: str, workflow_id: str) -> bool:
+        """Enroll a contact in a GHL workflow by ID. Returns True on success."""
+        async with httpx.AsyncClient(base_url=GHL_BASE_URL, headers=self._headers) as client:
+            try:
+                resp = await client.post(
+                    f"/contacts/{contact_id}/workflow/{workflow_id}",
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+                logger.info("GHL: contact %s enrolled in workflow %s", contact_id, workflow_id)
+                return True
+            except Exception as exc:
+                logger.error("GHL: failed to enroll contact %s in workflow %s: %s", contact_id, workflow_id, exc)
+                return False
+
     async def push_imd_scores_to_fields(
         self,
         contact_id: str,

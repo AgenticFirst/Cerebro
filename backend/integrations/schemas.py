@@ -115,3 +115,49 @@ class GHLCustomField(BaseModel):
     name: str
     field_key: Optional[str] = None
     data_type: Optional[str] = None
+
+
+class GHLWorkflowConfig(BaseModel):
+    workflow_basico: Optional[str] = None      # workflow ID for Básico classification
+    workflow_intermedio: Optional[str] = None   # workflow ID for Intermedio
+    workflow_avanzado: Optional[str] = None     # workflow ID for Avanzado
+    workflow_lider: Optional[str] = None        # workflow ID for Líder
+
+
+class EnrollWorkflowRequest(BaseModel):
+    contact_id: str
+    classification: str  # Básico | Intermedio | Avanzado | Líder
+
+
+# ── Google Places lead research ───────────────────────────────────────────────
+
+
+class PlacesSearchRequest(BaseModel):
+    query: str           # e.g. "plastic surgery" or "medspa"
+    city: str            # e.g. "Fort Lauderdale"
+    state: str = "FL"
+    limit: int = 20      # max 20
+    industry: str = "aesthetic-medicine"
+    language: str = "en"
+    create_audits: bool = False  # if True, save results to imd_audits table
+
+
+class PlacesSearchResult(BaseModel):
+    name: str
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    rating: Optional[float] = None
+    review_count: Optional[int] = None
+    google_place_id: Optional[str] = None
+    google_maps_url: Optional[str] = None
+    audit_id: Optional[str] = None  # set if create_audits=True
+
+
+class PlacesSearchResponse(BaseModel):
+    ok: bool
+    results: list[PlacesSearchResult]
+    count: int
+    query_used: str
+    error: Optional[str] = None

@@ -1,6 +1,7 @@
 """FastAPI router for outbound integration config endpoints — /integrations/*."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -13,20 +14,26 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Setting, _utcnow
+from models import IMDAudit, Setting, _utcnow, _uuid_hex
 
 from .ghl import GHLClient
 from .imd_scorer import auto_score as _imd_auto_score
+from .places import search_businesses as _places_search
 from .schemas import (
     CallOutcomePayload,
+    EnrollWorkflowRequest,
     GHLConfig,
     GHLConfigResponse,
     GHLIMDFieldConfig,
     GHLPipelineConfig,
+    GHLWorkflowConfig,
     IGDMSentRequest,
     IGResponseLogRequest,
     IMDAutoScoreRequest,
     IMDAutoScoreResponse,
+    PlacesSearchRequest,
+    PlacesSearchResponse,
+    PlacesSearchResult,
     PushLeadRequest,
     PushLeadResponse,
     TriggerCallRequest,
@@ -188,6 +195,23 @@ async def push_lead(body: PushLeadRequest, db: Session = Depends(get_db)) -> Pus
         )
         if contact_id is None:
             return PushLeadResponse(ok=False, error="Could not resolve or create GHL contact")
+
+        # Auto-enroll in workflow based on classification
+        if contact_id and tags_applied:
+            classification_map = {
+                "imd-basico": "Básico",
+                "imd-intermedio": "Intermedio",
+                "imd-avanzado": "Avanzado",
+                "imd-lider": "Líder",
+            }
+            classification_tag = next((t for t in tags_applied if t in classification_map), None)
+            if classification_tag:
+                cls = classification_map[classification_tag]
+                cls_key = cls.lower().replace("á", "a").replace("é", "e").replace("í", "i")
+                wf_id = _get_setting(db, f"ghl_wf_{cls_key}")
+                if wf_id:
+                    asyncio.create_task(client.enroll_in_workflow(contact_id, wf_id))
+
         return PushLeadResponse(
             ok=True,
             contact_id=contact_id,
@@ -427,6 +451,162 @@ async def push_imd_scores(body: PushIMDScoresRequest, db: Session = Depends(get_
     )
 
     return {"ok": ok, "fields_updated": fields_updated}
+
+
+# ── Workflow config ───────────────────────────────────────────────────────────
+
+_WORKFLOW_FIELDS = {
+    "workflow_basico": "ghl_wf_basico",
+    "workflow_intermedio": "ghl_wf_intermedio",
+    "workflow_avanzado": "ghl_wf_avanzado",
+    "workflow_lider": "ghl_wf_lider",
+}
+
+
+@router.get("/ghl/workflow-config")
+def get_workflow_config(db: Session = Depends(get_db)) -> dict:
+    """Read stored workflow ID mappings from settings."""
+    return {
+        "ghl_wf_basico": _get_setting(db, "ghl_wf_basico"),
+        "ghl_wf_intermedio": _get_setting(db, "ghl_wf_intermedio"),
+        "ghl_wf_avanzado": _get_setting(db, "ghl_wf_avanzado"),
+        "ghl_wf_lider": _get_setting(db, "ghl_wf_lider"),
+    }
+
+
+@router.put("/ghl/workflow-config")
+def put_workflow_config(body: GHLWorkflowConfig, db: Session = Depends(get_db)) -> dict:
+    """Store each non-None workflow ID as an individual Setting row."""
+    for attr, setting_key in _WORKFLOW_FIELDS.items():
+        value = getattr(body, attr)
+        if value is not None:
+            _upsert_setting(db, setting_key, value)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/ghl/enroll-workflow")
+async def enroll_workflow(body: EnrollWorkflowRequest, db: Session = Depends(get_db)) -> dict:
+    """Enroll a contact in a GHL workflow based on their classification."""
+    client = _require_ghl_client(db)
+
+    classification_to_key = {
+        "Básico": "ghl_wf_basico",
+        "Intermedio": "ghl_wf_intermedio",
+        "Avanzado": "ghl_wf_avanzado",
+        "Líder": "ghl_wf_lider",
+    }
+    setting_key = classification_to_key.get(body.classification)
+    workflow_id = _get_setting(db, setting_key) if setting_key else None
+
+    if not workflow_id:
+        return {"ok": False, "reason": "no_workflow_configured"}
+
+    ok = await client.enroll_in_workflow(body.contact_id, workflow_id)
+    return {"ok": ok, "workflow_id": workflow_id}
+
+
+# ── Google Places lead research ───────────────────────────────────────────────
+
+
+@router.get("/places/config")
+def get_places_config(db: Session = Depends(get_db)) -> dict:
+    """Return whether the Google Places API key is configured."""
+    key = _get_setting(db, "google_places_api_key")
+    return {"api_key_set": bool(key)}
+
+
+class _PlacesConfigBody(BaseModel):
+    api_key: str
+
+
+@router.put("/places/config")
+def put_places_config(body: _PlacesConfigBody, db: Session = Depends(get_db)) -> dict:
+    """Store the Google Places API key in settings."""
+    if body.api_key:
+        _upsert_setting(db, "google_places_api_key", body.api_key)
+        db.commit()
+    return {"ok": True}
+
+
+@router.post("/places/search", response_model=PlacesSearchResponse)
+async def places_search(body: PlacesSearchRequest, db: Session = Depends(get_db)) -> PlacesSearchResponse:
+    """Search Google Places for businesses and return enriched lead data.
+
+    Optionally creates IMD audit records when create_audits=True.
+    Never raises 5xx — all exceptions are returned as ok=False in the body.
+    """
+    query_used = f"{body.query} {body.city} {body.state}"
+    try:
+        api_key = _get_setting(db, "google_places_api_key")
+        if not api_key:
+            raise HTTPException(status_code=400, detail="Google Places API key not configured")
+
+        raw_results = await _places_search(
+            query=body.query,
+            city=body.city,
+            state=body.state,
+            limit=body.limit,
+            api_key=api_key,
+        )
+
+        results: list[PlacesSearchResult] = []
+
+        for result in raw_results:
+            audit_id: Optional[str] = None
+
+            if body.create_audits:
+                new_id = _uuid_hex()
+                audit = IMDAudit(
+                    id=new_id,
+                    business_name=result["name"],
+                    phone=result.get("phone"),
+                    website=result.get("website"),
+                    city=result.get("city"),
+                    industry=body.industry,
+                    language=body.language,
+                    pipeline_stage="raw",
+                )
+                db.add(audit)
+                db.flush()
+                audit_id = new_id
+
+            results.append(
+                PlacesSearchResult(
+                    name=result["name"],
+                    phone=result.get("phone"),
+                    website=result.get("website"),
+                    address=result.get("address"),
+                    city=result.get("city"),
+                    rating=result.get("rating"),
+                    review_count=result.get("review_count"),
+                    google_place_id=result.get("google_place_id"),
+                    google_maps_url=result.get("google_maps_url"),
+                    audit_id=audit_id,
+                )
+            )
+
+        if body.create_audits:
+            db.commit()
+
+        return PlacesSearchResponse(
+            ok=True,
+            results=results,
+            count=len(results),
+            query_used=query_used,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("places_search failed: %s", exc)
+        return PlacesSearchResponse(
+            ok=False,
+            results=[],
+            count=0,
+            query_used=query_used,
+            error=str(exc),
+        )
 
 
 # ── IMD auto-score ────────────────────────────────────────────────────────────

@@ -405,3 +405,87 @@ def test_push_imd_scores_no_fields_configured(client):
     assert "ok" in body
     # When no fields are configured, either ok=False or ok=True with fields_updated=0
     assert body["ok"] is False or body.get("fields_updated", 0) == 0
+
+
+# ── Workflow config ───────────────────────────────────────────────────────────
+
+
+def test_get_workflow_config_empty(client):
+    """GET /integrations/ghl/workflow-config returns all null fields on fresh DB."""
+    resp = client.get("/integrations/ghl/workflow-config")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ghl_wf_basico"] is None
+    assert body["ghl_wf_intermedio"] is None
+    assert body["ghl_wf_avanzado"] is None
+    assert body["ghl_wf_lider"] is None
+
+
+def test_set_and_get_workflow_config(client):
+    """PUT then GET round-trips workflow IDs correctly."""
+    put_resp = client.put(
+        "/integrations/ghl/workflow-config",
+        json={
+            "workflow_basico": "wf-basico-id",
+            "workflow_intermedio": "wf-intermedio-id",
+            "workflow_avanzado": None,
+            "workflow_lider": "wf-lider-id",
+        },
+    )
+    assert put_resp.status_code == 200
+    assert put_resp.json().get("ok") is True
+
+    get_resp = client.get("/integrations/ghl/workflow-config")
+    assert get_resp.status_code == 200
+    body = get_resp.json()
+    assert body["ghl_wf_basico"] == "wf-basico-id"
+    assert body["ghl_wf_intermedio"] == "wf-intermedio-id"
+    assert body["ghl_wf_avanzado"] is None
+    assert body["ghl_wf_lider"] == "wf-lider-id"
+
+
+def test_enroll_workflow_requires_credentials(client):
+    """POST /integrations/ghl/enroll-workflow returns 400 without credentials."""
+    resp = client.post(
+        "/integrations/ghl/enroll-workflow",
+        json={"contact_id": "contact-xyz", "classification": "Básico"},
+    )
+    assert resp.status_code == 400
+    assert "credentials" in resp.json()["detail"].lower()
+
+
+def test_enroll_workflow_no_config(client):
+    """With credentials but no workflow set, returns {ok: false, reason: no_workflow_configured}."""
+    client.put(
+        "/integrations/ghl/config",
+        json={"api_key": "fake-key", "location_id": "fake-loc"},
+    )
+    resp = client.post(
+        "/integrations/ghl/enroll-workflow",
+        json={"contact_id": "contact-xyz", "classification": "Básico"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["reason"] == "no_workflow_configured"
+
+
+def test_enroll_workflow_with_credentials(client):
+    """With credentials and workflow configured, calls GHL and returns {ok: bool}."""
+    client.put(
+        "/integrations/ghl/config",
+        json={"api_key": "fake-key", "location_id": "fake-loc"},
+    )
+    client.put(
+        "/integrations/ghl/workflow-config",
+        json={"workflow_basico": "wf-basico-id"},
+    )
+    resp = client.post(
+        "/integrations/ghl/enroll-workflow",
+        json={"contact_id": "contact-xyz", "classification": "Básico"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "ok" in body
+    assert isinstance(body["ok"], bool)
+    assert body.get("workflow_id") == "wf-basico-id"
