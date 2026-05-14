@@ -30,7 +30,7 @@ export default function MessageList({ messages, conversationId }: MessageListPro
     const len = messages.length;
 
     const conversationChanged = prevConvId !== conversationId;
-    const appended = !conversationChanged && len === prevLen + 1;
+    const appended = !conversationChanged && len > prevLen;
 
     if (conversationChanged) {
       if (container) container.scrollTop = container.scrollHeight;
