@@ -101,6 +101,13 @@ export interface IntegrationSetupProposal {
   status: 'proposed' | 'connecting' | 'connected' | 'dismissed';
 }
 
+export interface EscalationNotice {
+  attempt: number;
+  model: string;
+  tier: 'fast' | 'medium' | 'slow';
+  reason: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -119,6 +126,10 @@ export interface Message {
   teamProposal?: TeamProposal;
   teamRun?: TeamRun;
   integrationProposal?: IntegrationSetupProposal;
+  /** Auto-escalation notices appended by AgentRuntime when an attempt
+   *  was retried on a stronger model/tier. Surfaced inline in the
+   *  assistant bubble so the user sees why and what changed. */
+  escalations?: EscalationNotice[];
 }
 
 export type ConversationSource = 'cerebro' | 'telegram';

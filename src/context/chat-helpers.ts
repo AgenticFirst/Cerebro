@@ -238,6 +238,16 @@ export function fromApiMessage(m: ApiMessage): Message {
         m.metadata.integration_proposal as Record<string, unknown>,
       );
     }
+    if (Array.isArray(m.metadata.escalations)) {
+      msg.escalations = (m.metadata.escalations as Array<Record<string, unknown>>)
+        .map((e) => ({
+          attempt: Number(e.attempt ?? 0),
+          model: String(e.model ?? ''),
+          tier: (e.tier as 'fast' | 'medium' | 'slow') ?? 'medium',
+          reason: String(e.reason ?? ''),
+        }))
+        .filter((e) => e.model);
+    }
   }
 
   return msg;

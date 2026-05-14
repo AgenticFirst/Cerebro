@@ -26,7 +26,7 @@ export interface AgentEventSink {
   send(channel: string, ...args: unknown[]): void;
   isDestroyed(): boolean;
 }
-import { ClaudeCodeRunner } from '../claude-code/stream-adapter';
+import { ClaudeCodeRunner, type RunnerErrorClass } from '../claude-code/stream-adapter';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
 import { getAgentNameForExpert, installAll, installExpert, expertAgentName } from '../claude-code/installer';
@@ -38,6 +38,60 @@ import { buildSystemPrompt } from '../i18n/language-directive';
 
 /** Cap concurrent runs to prevent spawning a wall of subprocesses. */
 const MAX_CONCURRENT_RUNS = 5;
+
+// ── Auto-escalation ladder ──────────────────────────────────────
+// When a chat run fails with a structured "model fell short" signal
+// (max-turns, context exhausted, transient overload), we retry on a
+// stronger rung. Cheapest path first: bump the model up the size
+// ladder, only then bump the tier (which mostly affects maxTurns and
+// the system-prompt directive). Capped at 3 total attempts.
+
+type QualityTier = 'fast' | 'medium' | 'slow';
+type ResponseModel = 'haiku' | 'sonnet' | 'opus';
+
+const MODEL_LADDER: ResponseModel[] = ['haiku', 'sonnet', 'opus'];
+const TIER_LADDER: QualityTier[] = ['fast', 'medium', 'slow'];
+const MAX_ESCALATION_ATTEMPTS = 3;
+
+/** Map a model id passed through `--model` back to a ladder rung. Falls
+ *  back to 'sonnet' for unknown strings so escalation still has a sensible
+ *  starting point. */
+function normalizeModel(model: string | undefined): ResponseModel {
+  if (!model) return 'sonnet';
+  const lower = model.toLowerCase();
+  if (lower.includes('haiku')) return 'haiku';
+  if (lower.includes('opus')) return 'opus';
+  return 'sonnet';
+}
+
+/** Default per-tier maxTurns matching the inline logic at runtime ~line 514. */
+function maxTurnsForTier(tier: QualityTier): number {
+  if (tier === 'fast') return 8;
+  if (tier === 'slow') return 25;
+  return 15;
+}
+
+/** Whether a runner error class warrants an automatic retry. */
+function isEscalatable(cls: RunnerErrorClass): boolean {
+  return cls === 'max_turns' || cls === 'context' || cls === 'overload';
+}
+
+/** Pick the next (model, tier) rung. Returns null when we're already at
+ *  the top of both ladders — caller should stop retrying. */
+function nextRung(
+  model: ResponseModel,
+  tier: QualityTier,
+): { model: ResponseModel; tier: QualityTier } | null {
+  const mi = MODEL_LADDER.indexOf(model);
+  const ti = TIER_LADDER.indexOf(tier);
+  if (mi < MODEL_LADDER.length - 1) {
+    return { model: MODEL_LADDER[mi + 1], tier };
+  }
+  if (ti < TIER_LADDER.length - 1) {
+    return { model, tier: TIER_LADDER[ti + 1] };
+  }
+  return null;
+}
 
 const DELIVERABLE_EXAMPLE = `<deliverable kind="markdown|code_app|mixed" title="Short title">
 # Heading
@@ -847,52 +901,92 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       // after the settle period completes).
       if (resumeSettled) resetIdleTimer();
     } else {
-      // Chat runs use stream-json mode (no PTY).
-      const runner = new ClaudeCodeRunner();
-      activeRun.runner = runner;
+      // Chat runs use stream-json mode (no PTY). Wrapped in an escalation
+      // loop: on structured "model fell short" failures (max-turns, context
+      // exhausted, transient overload), retry once on the next ladder rung
+      // (model first, then tier) up to MAX_ESCALATION_ATTEMPTS.
+      const initialTier = (request.qualityTier ?? 'medium') as QualityTier;
+      const initialModel = normalizeModel(request.model);
+      const userOverrodeMaxTurns = typeof request.maxTurns === 'number';
 
-      runner.on('event', (event: RendererAgentEvent) => {
-        if (event.type === 'text_delta') {
-          activeRun.accumulatedText += event.delta;
-        }
-        // Deliver to both the renderer (chat UI streaming) AND the
-        // main-process bus (engine actions like expert_step).
-        this.deliverEvent(runId, webContents, event);
-      });
+      const spawnAttempt = (
+        attempt: number,
+        model: ResponseModel,
+        tier: QualityTier,
+        turns: number,
+      ): void => {
+        const runner = new ClaudeCodeRunner();
+        activeRun.runner = runner;
 
-      runner.on('done', (messageContent: string) => {
-        // Bridge the bare 'done' from the runner to a structured event so
-        // main-process subscribers (expert_step's collectAgentResults)
-        // see it on the same channel as everything else.
-        this.deliverEvent(runId, webContents, {
-          type: 'done',
+        // Per-attempt accumulator: we only commit text to activeRun on success.
+        // On a retry, partial output from the failed attempt is discarded so
+        // the final assistant message reflects only the successful run.
+        let attemptText = '';
+
+        runner.on('event', (event: RendererAgentEvent) => {
+          if (event.type === 'text_delta') {
+            attemptText += event.delta;
+            activeRun.accumulatedText = attemptText;
+          }
+          this.deliverEvent(runId, webContents, event);
+        });
+
+        runner.on('done', (messageContent: string) => {
+          this.deliverEvent(runId, webContents, {
+            type: 'done',
+            runId,
+            messageContent,
+          } as RendererAgentEvent);
+          activeRun.accumulatedText = messageContent;
+          this.finalizeRun(runId, 'completed', messageContent);
+          this.postRunSync(webContents);
+        });
+
+        runner.on('error', (error: string) => {
+          const cls = runner.getLastErrorClass();
+          const next = isEscalatable(cls) && attempt < MAX_ESCALATION_ATTEMPTS
+            ? nextRung(model, tier)
+            : null;
+          if (next) {
+            const nextTurns = userOverrodeMaxTurns ? turns : maxTurnsForTier(next.tier);
+            this.deliverEvent(runId, webContents, {
+              type: 'agent_escalation',
+              runId,
+              attempt: attempt + 1,
+              reason: cls,
+              nextModel: next.model,
+              nextTier: next.tier,
+            } as RendererAgentEvent);
+            // Drop partial output — it's max-turn-truncated / context-broken
+            // and would mislead. The successful attempt produces the final text.
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt + 1, next.model, next.tier, nextTurns);
+            return;
+          }
+          // Non-retryable or ladder exhausted — surface the error.
+          this.deliverEvent(runId, webContents, {
+            type: 'error',
+            runId,
+            error,
+          } as RendererAgentEvent);
+          this.finalizeRun(runId, 'error', activeRun.accumulatedText, error);
+          this.postRunSync(webContents);
+        });
+
+        runner.start({
           runId,
-          messageContent,
-        } as RendererAgentEvent);
-        this.finalizeRun(runId, 'completed', messageContent);
-        this.postRunSync(webContents);
-      });
+          prompt: fullPrompt,
+          agentName,
+          cwd,
+          maxTurns: turns,
+          model,
+          language: request.language,
+          qualityTier: tier,
+        });
+      };
 
-      runner.on('error', (error: string) => {
-        this.deliverEvent(runId, webContents, {
-          type: 'error',
-          runId,
-          error,
-        } as RendererAgentEvent);
-        this.finalizeRun(runId, 'error', activeRun.accumulatedText, error);
-        this.postRunSync(webContents);
-      });
-
-      runner.start({
-        runId,
-        prompt: fullPrompt,
-        agentName,
-        cwd,
-        maxTurns,
-        model: request.model,
-        language: request.language,
-        qualityTier: request.qualityTier,
-      });
+      spawnAttempt(1, initialModel, initialTier, maxTurns);
     }
 
     return runId;

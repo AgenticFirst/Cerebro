@@ -16,6 +16,7 @@ interface StepLiveActivityProps {
 const SHOW_TYPES = new Set([
   'step_log',
   'agent_idle_warning',
+  'agent_escalation',
   'subprocess_stderr',
   'action_tool_start',
   'action_tool_end',
@@ -55,11 +56,28 @@ export default function StepLiveActivity({ step, events, limit = 12 }: StepLiveA
               tone: String(payload.message ?? '').toLowerCase().includes('[stderr]') ? 'stderr' : 'normal',
             };
           case 'agent_idle_warning': {
-            const sec = Math.round(Number(payload.elapsedMs ?? 0) / 1000);
+            const ms = Number(payload.elapsedMs ?? 0);
+            // Progressive copy: 45s → "still thinking", 2m → "tough one", 5m+ → "almost there".
+            const key = ms >= 300_000
+              ? 'liveActivity.idleWarningVeryLong'
+              : ms >= 120_000
+                ? 'liveActivity.idleWarningLong'
+                : 'liveActivity.idleWarning';
             return {
               id: evt.id,
               ts: evt.timestamp,
-              text: t('liveActivity.idleWarning', { sec }),
+              text: t(key),
+              tone: 'normal',
+            };
+          }
+          case 'agent_escalation': {
+            return {
+              id: evt.id,
+              ts: evt.timestamp,
+              text: t('liveActivity.escalationNotice', {
+                model: String(payload.nextModel ?? ''),
+                tier: String(payload.nextTier ?? ''),
+              }),
               tone: 'warn',
             };
           }

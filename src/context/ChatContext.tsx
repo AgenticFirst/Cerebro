@@ -690,6 +690,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 if (accExpertProposal) doneMetadata.expert_proposal = toApiExpertProposal(accExpertProposal);
                 if (accTeamProposal) doneMetadata.team_proposal = toApiTeamProposal(accTeamProposal);
                 {
+                  // Preserve escalation history on the persisted message so the
+                  // "Switched to …" chips survive a reload.
+                  const conv = conversationsRef.current.find((c) => c.id === convId);
+                  const msg = conv?.messages.find((m) => m.id === assistantId);
+                  if (msg?.escalations && msg.escalations.length > 0) {
+                    doneMetadata.escalations = msg.escalations.map((e) => ({
+                      attempt: e.attempt,
+                      model: e.model,
+                      tier: e.tier,
+                      reason: e.reason,
+                    }));
+                  }
+                }
+                {
                   // Safety-net for the case where Cerebro announced a team
                   // run but the parent Agent tool_end never fired — without
                   // this, the card persists in a phantom 'running' state.
@@ -723,6 +737,36 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     metadata: Object.keys(doneMetadata).length > 0 ? doneMetadata : undefined,
                   }),
                 ).catch(console.error);
+                break;
+              }
+
+              case 'agent_escalation': {
+                // Auto-escalation: the previous attempt failed (max-turns,
+                // context, overload) and a new attempt is being spawned on a
+                // stronger model/tier. Reset per-attempt state — partial
+                // text and tool calls from the failed attempt are discarded.
+                state.accumulated = '';
+                state.toolCalls = [];
+                const conv = conversationsRef.current.find((c) => c.id === convId);
+                const msg = conv?.messages.find((m) => m.id === assistantId);
+                const prior = msg?.escalations ?? [];
+                updateMessage(convId, assistantId, {
+                  content: '',
+                  toolCalls: [],
+                  isThinking: true,
+                  isStreaming: true,
+                  escalations: [
+                    ...prior,
+                    {
+                      attempt: event.attempt,
+                      model: event.nextModel,
+                      tier: event.nextTier,
+                      reason: event.reason,
+                    },
+                  ],
+                });
+                thinkingCleared = false;
+                setIsThinking(true);
                 break;
               }
 

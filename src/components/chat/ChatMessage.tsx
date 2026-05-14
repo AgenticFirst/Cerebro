@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Copy, Check, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Copy, Check, Pencil, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import type { Message } from '../../types/chat';
 import MarkdownContent from './MarkdownContent';
@@ -141,6 +141,24 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
           </div>
         )}
       </div>
+
+      {/* Auto-escalation notices: shown before tool calls so the user
+          immediately sees that the system retried on a stronger rung. */}
+      {!isUser && message.escalations && message.escalations.length > 0 && (
+        <div className="mb-2 space-y-1">
+          {message.escalations.map((e, i) => (
+            <div
+              key={`esc-${i}`}
+              className="flex items-center gap-1.5 text-[11px] text-amber-300/90"
+            >
+              <Zap size={11} strokeWidth={2} className="flex-shrink-0" />
+              <span>
+                {t('liveActivity.escalationNotice', { model: e.model, tier: e.tier })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Tool calls (before text content) — hidden by default, user can opt in via Settings → Appearance */}
       {hasToolCalls && (

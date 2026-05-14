@@ -105,6 +105,33 @@ describe('AgentRuntime main-process bus', () => {
     expect(received.map((e) => e.type)).toEqual(['agent_idle_warning', 'subprocess_stderr']);
   });
 
+  it('delivers agent_escalation events with model + tier payload', () => {
+    // Auto-escalation: when a chat run fails with a structured "fell short"
+    // result, the runtime emits agent_escalation before spawning the next
+    // attempt. The chat consumer relies on this event to render the
+    // "Switched to …" chip and reset per-attempt state.
+    const rt = new TestableRuntime();
+    const received: RendererAgentEvent[] = [];
+    rt.onAgentEvent('run-1', (e) => received.push(e));
+
+    rt.deliverEvent('run-1', {
+      type: 'agent_escalation',
+      runId: 'run-1',
+      attempt: 2,
+      reason: 'max_turns',
+      nextModel: 'opus',
+      nextTier: 'medium',
+    });
+
+    expect(received).toHaveLength(1);
+    expect(received[0].type).toBe('agent_escalation');
+    if (received[0].type === 'agent_escalation') {
+      expect(received[0].nextModel).toBe('opus');
+      expect(received[0].nextTier).toBe('medium');
+      expect(received[0].reason).toBe('max_turns');
+    }
+  });
+
   it('regression: a run with no subscribers does not throw', () => {
     // Defensive: even if no expert-step is listening (e.g., a chat run
     // where only the renderer cares), deliverEvent must not blow up.

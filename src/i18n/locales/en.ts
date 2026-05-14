@@ -1009,12 +1009,16 @@ const en = {
 
   liveActivity: {
     title: 'Live activity',
-    idleWarning: 'No subprocess output in {{sec}}s — Claude Code may not be authenticated.',
+    idleWarning: 'Still thinking…',
+    idleWarningLong: 'Working on a tough one…',
+    idleWarningVeryLong: 'Almost there…',
     toolStart: 'Tool: {{tool}}',
     toolEnd: 'Tool done: {{tool}}',
     textDelta: 'LLM text output',
     hungTitle: 'This step has been silent longer than usual.',
-    hungBody: 'Common cause: Claude Code is not authenticated. Try running `claude` in a terminal, then re-run this routine.',
+    hungBody: 'Claude is still working. You can wait, or cancel and try again.',
+    escalationNotice: 'Switched to {{model}} ({{tier}}) for a stronger answer.',
+    authRequired: 'Sign in to Claude Code in your terminal (run `claude`), then retry.',
   },
 
   // ── Approvals screen ────────────────────────────────────────

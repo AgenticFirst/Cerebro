@@ -59,18 +59,45 @@ export interface ClaudeCodeRunOptions {
  *  - 'error'  (error: string)
  */
 /**
- * Idle-watchdog timing. Without this, a hung subprocess (e.g., Claude Code
- * not authenticated) waits forever — the only safety net is the engine's
- * 5-minute step timeout, which produces a UUID-only error with no diagnosis.
+ * Idle-watchdog timing. We are a wrapper around `claude -p` and aim to
+ * mirror the terminal's behavior: the CLI is allowed to think for as long
+ * as the API needs — no wrapper-introduced "no output for N seconds"
+ * kills, which create failure modes that don't exist in the underlying
+ * tool. Progressive warnings drive a "still thinking…" indicator in the
+ * UI; the 30-minute kill is only a backstop for genuinely hung processes,
+ * matching the existing chat-action curl ceiling.
+ *
+ * Auth hangs (the original motivation for the 60s kill) are now caught
+ * structurally via stderr pattern matching — see AUTH_STDERR_PATTERNS.
  */
-const IDLE_WARNING_MS = 30_000;
-const IDLE_TIMEOUT_MS = 60_000;
-// While a tool call is in flight, the subprocess is legitimately silent —
-// it can't write the next stream-json line until the tool returns. The chat
-// agent's `run-chat-action` skill blocks on human approval via a curl with
-// `--max-time 1800`, so we mirror that ceiling here. The 60s idle policy is
-// still right for "no tool open and the model has gone quiet" hangs.
-const IDLE_TOOL_TIMEOUT_MS = 1_800_000;
+const IDLE_WARNING_THRESHOLDS_MS = [45_000, 120_000, 300_000] as const;
+const IDLE_KILL_MS = 1_800_000;
+// Stderr substrings that indicate the Claude CLI cannot proceed because
+// it is not authenticated. Matching one of these short-circuits the run
+// with a clean "sign in" error instead of waiting for the backstop.
+const AUTH_STDERR_PATTERNS = [
+  'not authenticated',
+  'not signed in',
+  'please run',
+  'claude login',
+  'unauthorized',
+  '401',
+] as const;
+
+/**
+ * Classification of why a run ended. The chat-path runtime reads this
+ * after the `error` event fires to decide whether to retry on a stronger
+ * model/tier rung.
+ */
+export type RunnerErrorClass =
+  | 'none'         // run completed successfully
+  | 'max_turns'    // model hit max-turns without finishing — escalate
+  | 'context'      // context-window exhausted — escalate
+  | 'overload'     // transient API overload / rate limit — escalate
+  | 'auth'         // authentication failure — do NOT escalate
+  | 'cancelled'    // user aborted — do NOT escalate
+  | 'spawn'        // could not spawn subprocess — do NOT escalate
+  | 'unknown';     // catch-all — do NOT escalate (safer default)
 
 export class ClaudeCodeRunner extends EventEmitter {
   private process: ChildProcess | null = null;
@@ -93,19 +120,30 @@ export class ClaudeCodeRunner extends EventEmitter {
   private killed = false;
   private closeHandled = false;
   private idleStartedAt = 0;
-  private idleWarningTimer: ReturnType<typeof setTimeout> | null = null;
+  private idleWarningTimers: ReturnType<typeof setTimeout>[] = [];
   private idleKillTimer: ReturnType<typeof setTimeout> | null = null;
-  private idleWarned = false;
   private openToolCount = 0;
   private lastOpenToolName = '';
+  private lastErrorClass: RunnerErrorClass = 'unknown';
+
+  /**
+   * Classification of the most recent terminal state. Inspected by
+   * AgentRuntime after `error` fires to decide whether to retry on a
+   * stronger ladder rung.
+   */
+  getLastErrorClass(): RunnerErrorClass {
+    return this.lastErrorClass;
+  }
 
   start(options: ClaudeCodeRunOptions): void {
     const { runId, prompt, agentName, cwd } = options;
     this.agentNameUsed = agentName;
     this.cwdUsed = cwd;
+    this.lastErrorClass = 'unknown';
     const info = getCachedClaudeCodeInfo();
 
     if (info.status !== 'available' || !info.path) {
+      this.lastErrorClass = 'spawn';
       this.emit('event', {
         type: 'error',
         runId,
@@ -163,10 +201,9 @@ export class ClaudeCodeRunner extends EventEmitter {
     // file keeps the full transcript.
     this.openRunLog(runId, wrapped.binary, wrapped.args);
 
-    // Start idle watchdog as soon as the subprocess is alive. The chat
-    // path used to wait indefinitely for output; if the CLI hangs (most
-    // commonly because the user isn't authenticated), no event would
-    // ever fire. Now: 30s warns, 60s kills with a structured error.
+    // Arm progressive "still thinking…" warnings + a 30-minute kill
+    // backstop. Auth hangs (the original watchdog motivation) are caught
+    // earlier by checkAuthFailure() on the stderr handler.
     this.idleStartedAt = Date.now();
     this.armIdleTimers(runId);
 
@@ -193,6 +230,10 @@ export class ClaudeCodeRunner extends EventEmitter {
       this.appendLog('stderr', text);
       // Keep last ~500 chars of stderr so we can surface the actual error
       this.stderrTail = (this.stderrTail + '\n' + text).slice(-500).trim();
+      // Fast-fail on auth markers instead of waiting for the 30-min backstop.
+      // Returns true if we handled it; further stderr events still emit
+      // (subprocess will exit imminently) but we don't double-fire.
+      this.checkAuthFailure(text, runId);
       // Stream each non-empty stderr line as a structured event so the
       // Activity panel's live feed shows what the subprocess is saying
       // (e.g., auth prompts, model errors, sandbox issues).
@@ -228,23 +269,33 @@ export class ClaudeCodeRunner extends EventEmitter {
 
       if (isError) {
         let detail: string;
-        if (this.stderrTail.includes('max turns')) {
+        const tailLower = (this.stderrTail + ' ' + this.resultErrorTail).toLowerCase();
+        if (tailLower.includes('max turns') || tailLower.includes('max_turns')) {
           detail = 'Claude Code reached the maximum number of turns without completing the task. Try a simpler request.';
-        } else if (this.stderrTail.includes('rate limit') || this.stderrTail.includes('429')) {
-          detail = 'Rate limited by the API. Please wait a moment and try again.';
-        } else if (this.stderrTail.includes('authentication') || this.stderrTail.includes('401')) {
-          detail = 'Authentication error. Check your API key in Settings.';
+          this.lastErrorClass = 'max_turns';
+        } else if (tailLower.includes('context') && (tailLower.includes('length') || tailLower.includes('window') || tailLower.includes('limit'))) {
+          detail = 'Claude Code ran out of context window. The conversation is too long for this model.';
+          this.lastErrorClass = 'context';
+        } else if (tailLower.includes('rate limit') || tailLower.includes('overload') || tailLower.includes('429') || tailLower.includes('503')) {
+          detail = 'Rate limited or overloaded by the API. Please wait a moment and try again.';
+          this.lastErrorClass = 'overload';
+        } else if (tailLower.includes('authentication') || tailLower.includes('401') || tailLower.includes('not authenticated') || tailLower.includes('unauthorized')) {
+          detail = 'Claude Code is not authenticated. Run `claude` in a terminal to sign in, then retry.';
+          this.lastErrorClass = 'auth';
         } else if (signal) {
           detail = this.stderrTail
             ? `Claude Code was killed (${signal}): ${this.stderrTail}`
             : `Claude Code was killed by ${signal}`;
+          this.lastErrorClass = 'unknown';
         } else if (this.stderrTail) {
           detail = `Claude Code error (code ${code}): ${this.stderrTail}`;
+          this.lastErrorClass = 'unknown';
         } else if (this.resultErrorTail) {
           // Max-turns hits and per-turn API errors come through stream-json
           // as `result.is_error: true` rather than on stderr. Surface the
           // CLI's own message instead of the generic "exited unexpectedly".
           detail = `Claude Code error (code ${code}): ${this.resultErrorTail}`;
+          this.lastErrorClass = 'unknown';
         } else if (this.stdoutTail) {
           // stderr was empty but stdout had a non-JSON line before exit —
           // that's almost always the actual error (e.g. "Unknown agent 'foo'").
@@ -267,6 +318,7 @@ export class ClaudeCodeRunner extends EventEmitter {
         this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
         this.emit('error', detail);
       } else {
+        this.lastErrorClass = 'none';
         this.closeRunLog(`[exit] code=${code} signal=${signal ?? ''} ok`);
         this.emit('event', {
           type: 'done',
@@ -308,6 +360,7 @@ export class ClaudeCodeRunner extends EventEmitter {
       if (this.killed) return;
       let detail = err.message;
       if (this.logPath) detail += `\n\n(Details: ${this.logPath})`;
+      this.lastErrorClass = 'spawn';
       this.closeRunLog(`[spawn-error] ${err.message}`);
       this.emit('event', {
         type: 'error',
@@ -320,6 +373,7 @@ export class ClaudeCodeRunner extends EventEmitter {
 
   abort(): void {
     this.killed = true;
+    this.lastErrorClass = 'cancelled';
     this.clearIdleTimers();
     this.closeRunLog('[abort] user cancelled');
     if (!this.process || this.process.killed) return;
@@ -418,47 +472,40 @@ export class ClaudeCodeRunner extends EventEmitter {
     }
   }
 
-  /** Arm both idle timers from the current moment. The kill ceiling is
-   *  IDLE_TIMEOUT_MS when no tool is in flight, IDLE_TOOL_TIMEOUT_MS while
-   *  the subprocess is waiting on a tool result. The warning timer always
-   *  fires at IDLE_WARNING_MS for visibility. */
+  /** Arm progressive idle warnings (45s/2m/5m) and the 30-min backstop
+   *  kill. Warnings are informational only — they drive a "still
+   *  thinking…" indicator in the UI. The kill is a safety net for
+   *  genuinely hung subprocesses; it is intentionally very long because
+   *  Claude can legitimately think for several minutes on hard prompts. */
   private armIdleTimers(runId: string): void {
     this.clearIdleTimers();
-    this.idleWarned = false;
     this.idleStartedAt = Date.now();
-    const toolOpen = this.openToolCount > 0;
-    const killAt = toolOpen ? IDLE_TOOL_TIMEOUT_MS : IDLE_TIMEOUT_MS;
-    this.idleWarningTimer = setTimeout(() => {
-      if (this.killed || this.closeHandled || this.idleWarned) return;
-      this.idleWarned = true;
-      this.emit('event', {
-        type: 'agent_idle_warning',
-        runId,
-        elapsedMs: Date.now() - this.idleStartedAt,
-      } as RendererAgentEvent);
-    }, IDLE_WARNING_MS);
+    for (const threshold of IDLE_WARNING_THRESHOLDS_MS) {
+      const t = setTimeout(() => {
+        if (this.killed || this.closeHandled) return;
+        this.emit('event', {
+          type: 'agent_idle_warning',
+          runId,
+          elapsedMs: Date.now() - this.idleStartedAt,
+        } as RendererAgentEvent);
+      }, threshold);
+      this.idleWarningTimers.push(t);
+    }
     this.idleKillTimer = setTimeout(() => {
       if (this.killed || this.closeHandled) return;
       this.killed = true;
       this.clearIdleTimers();
       const ctx = this.agentNameUsed ? ` (agent='${this.agentNameUsed}')` : '';
       const stderrHint = this.stderrTail ? `\n\nLast stderr:\n${this.stderrTail.slice(-300)}` : '';
-      const seconds = Math.round(killAt / 1000);
-      let detail: string;
-      if (toolOpen) {
-        const toolHint = this.lastOpenToolName ? ` '${this.lastOpenToolName}'` : '';
-        detail =
-          `Claude Code subprocess was killed after ${seconds}s waiting on tool${toolHint}${ctx} to return. ` +
-          `The tool either hung or — for approval-gated chat actions — no human responded in time.` +
-          stderrHint;
-      } else {
-        detail =
-          `Claude Code subprocess produced no output for ${seconds} seconds${ctx} and was killed. ` +
-          `The most common cause is that Claude Code isn't authenticated — run \`claude\` in your terminal to check, then re-run this routine. ` +
-          `If \`claude\` works fine, the model may be unavailable or the agent file may be malformed.` +
-          stderrHint;
-      }
-      // Try graceful first, then force.
+      const minutes = Math.round(IDLE_KILL_MS / 60_000);
+      const toolHint = this.openToolCount > 0 && this.lastOpenToolName
+        ? ` waiting on tool '${this.lastOpenToolName}'`
+        : '';
+      const detail =
+        `Claude Code subprocess was idle for ${minutes} minutes${toolHint}${ctx} and was killed. ` +
+        `This is a backstop for genuinely hung processes — if the request was reasonable, try again.` +
+        stderrHint;
+      this.lastErrorClass = 'unknown';
       if (this.process && !this.process.killed) {
         this.process.kill('SIGTERM');
         setTimeout(() => {
@@ -467,7 +514,7 @@ export class ClaudeCodeRunner extends EventEmitter {
       }
       this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
       this.emit('error', detail);
-    }, killAt);
+    }, IDLE_KILL_MS);
   }
 
   /** Reset idle timers — call from every stdout/stderr chunk. */
@@ -477,8 +524,31 @@ export class ClaudeCodeRunner extends EventEmitter {
   }
 
   private clearIdleTimers(): void {
-    if (this.idleWarningTimer) { clearTimeout(this.idleWarningTimer); this.idleWarningTimer = null; }
+    for (const t of this.idleWarningTimers) clearTimeout(t);
+    this.idleWarningTimers = [];
     if (this.idleKillTimer) { clearTimeout(this.idleKillTimer); this.idleKillTimer = null; }
+  }
+
+  /** Inspect a stderr chunk for the Claude CLI's auth-failure markers.
+   *  Returns true if we recognized an auth error and fast-failed the run. */
+  private checkAuthFailure(text: string, runId: string): boolean {
+    const lower = text.toLowerCase();
+    if (!AUTH_STDERR_PATTERNS.some((p) => lower.includes(p))) return false;
+    if (this.killed || this.closeHandled) return false;
+    this.killed = true;
+    this.clearIdleTimers();
+    this.lastErrorClass = 'auth';
+    const detail =
+      'Claude Code is not authenticated. Run `claude` in a terminal to sign in, then retry.';
+    if (this.process && !this.process.killed) {
+      this.process.kill('SIGTERM');
+      setTimeout(() => {
+        if (this.process && !this.process.killed) this.process.kill('SIGKILL');
+      }, 1000);
+    }
+    this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
+    this.emit('error', detail);
+    return true;
   }
 
   getAccumulatedText(): string {

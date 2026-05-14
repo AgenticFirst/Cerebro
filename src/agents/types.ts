@@ -102,7 +102,18 @@ export type RendererAgentEvent =
   // step_log events by the expert_step action so the user sees the
   // heartbeat trail in the Activity panel.
   | { type: 'agent_idle_warning'; runId: string; elapsedMs: number }
-  | { type: 'subprocess_stderr'; runId: string; line: string };
+  | { type: 'subprocess_stderr'; runId: string; line: string }
+  // Auto-escalation: emitted by AgentRuntime when an attempt fails with a
+  // structured "model fell short" result (max-turns, context exhausted, etc.)
+  // and the next attempt will run with a stronger model and/or tier.
+  | {
+      type: 'agent_escalation';
+      runId: string;
+      attempt: number;
+      reason: string;
+      nextModel: string;
+      nextTier: 'fast' | 'medium' | 'slow';
+    };
 
 // ── Active run info ─────────────────────────────────────────────
 

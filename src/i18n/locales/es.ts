@@ -1002,12 +1002,16 @@ const es: TranslationKeys = {
 
   liveActivity: {
     title: 'Actividad en vivo',
-    idleWarning: 'Sin salida del subproceso en {{sec}}s — Claude Code puede no estar autenticado.',
+    idleWarning: 'Pensando…',
+    idleWarningLong: 'Trabajando en una pregunta difícil…',
+    idleWarningVeryLong: 'Casi listo…',
     toolStart: 'Herramienta: {{tool}}',
     toolEnd: 'Herramienta lista: {{tool}}',
     textDelta: 'Salida de texto del LLM',
     hungTitle: 'Este paso lleva silencioso más de lo normal.',
-    hungBody: 'Causa común: Claude Code no está autenticado. Ejecuta `claude` en una terminal y vuelve a intentarlo.',
+    hungBody: 'Claude sigue trabajando. Puedes esperar o cancelar y reintentar.',
+    escalationNotice: 'Cambiado a {{model}} ({{tier}}) para una mejor respuesta.',
+    authRequired: 'Inicia sesión en Claude Code en tu terminal (ejecuta `claude`), luego reintenta.',
   },
 
   // ── Pantalla de aprobaciones ────────────────────────────────
