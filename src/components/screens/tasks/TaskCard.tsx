@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MessageCircle, Calendar, ArrowUp, Play, ChevronDown, Trash2, FileText } from 'lucide-react';
+import { MessageCircle, Calendar, ArrowUp, Play, ChevronDown, Trash2, FileText, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Task, TaskColumn } from '../../../context/TaskContext';
@@ -68,9 +68,26 @@ interface TaskCardProps {
   onDelete?: (taskId: string) => void;
   expertName?: string;
   isDragOverlay?: boolean;
+  /**
+   * Whether this task's run is live in the Electron runtime right now. A task
+   * at in_progress with isLiveRun=false is "interrupted" (subprocess died,
+   * typically because Cerebro was closed mid-run) and shows a Resume CTA.
+   * Defaults to true so cards rendered outside the board (drag overlay, etc.)
+   * don't spuriously show the interrupted state.
+   */
+  isLiveRun?: boolean;
 }
 
-export default function TaskCard({ task, onClick, onMove, onStart, onDelete, expertName, isDragOverlay }: TaskCardProps) {
+export default function TaskCard({
+  task,
+  onClick,
+  onMove,
+  onStart,
+  onDelete,
+  expertName,
+  isDragOverlay,
+  isLiveRun = true,
+}: TaskCardProps) {
   const { t } = useTranslation();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [fileCount, setFileCount] = useState(0);
@@ -129,11 +146,22 @@ export default function TaskCard({ task, onClick, onMove, onStart, onDelete, exp
   const checklistPct =
     hasChecklist ? Math.round((task.checklist_done / task.checklist_total) * 100) : 0;
 
-  const isStartableColumn = task.column === 'backlog' || task.column === 'to_review' || task.column === 'error';
+  // A task is "interrupted" when it's pinned to in_progress, was actually
+  // started at some point (has a run_id), and its subprocess is no longer
+  // live in the runtime — typically because Cerebro was closed mid-run. A
+  // card dragged to in_progress without ever being started has no run_id
+  // and is not considered interrupted.
+  const isInterrupted = task.column === 'in_progress' && !!task.run_id && !isLiveRun;
+  const isStartableColumn =
+    task.column === 'backlog' ||
+    task.column === 'to_review' ||
+    task.column === 'error' ||
+    isInterrupted;
   const hasExpert = !!task.expert_id;
   const canStart = isStartableColumn && hasExpert;
   const startLabel =
-    task.column === 'to_review' ? t('tasks.rerunTask')
+    isInterrupted ? t('tasks.resumeTask')
+    : task.column === 'to_review' ? t('tasks.rerunTask')
     : task.column === 'error' ? t('tasks.retryTask')
     : t('tasks.startTask');
 
@@ -310,7 +338,18 @@ export default function TaskCard({ task, onClick, onMove, onStart, onDelete, exp
         </div>
       )}
 
-      {/* Start button — disabled for unassigned tasks */}
+      {/* Interrupted-by-shutdown banner — appears above the Resume button. */}
+      {isInterrupted && (
+        <div className="mt-2.5 flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] leading-snug">
+          <AlertTriangle size={12} className="flex-shrink-0 mt-[1px]" />
+          <span className="flex-1">
+            <span className="font-medium">{t('tasks.interruptedBadge')}</span>
+            <span className="block text-amber-300/80">{t('tasks.interruptedHint')}</span>
+          </span>
+        </div>
+      )}
+
+      {/* Start / Retry / Rerun / Resume button — disabled for unassigned tasks */}
       {isStartableColumn && (onStart || onMove) && (
         <button
           onClick={canStart ? handleStart : (e) => e.stopPropagation()}
@@ -319,7 +358,9 @@ export default function TaskCard({ task, onClick, onMove, onStart, onDelete, exp
           className={clsx(
             'mt-2.5 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors border',
             canStart
-              ? 'bg-accent/10 text-accent hover:bg-accent/20 border-accent/20 cursor-pointer'
+              ? isInterrupted
+                ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border-amber-500/30 cursor-pointer'
+                : 'bg-accent/10 text-accent hover:bg-accent/20 border-accent/20 cursor-pointer'
               : 'bg-bg-hover text-text-tertiary border-border-subtle cursor-not-allowed',
           )}
         >

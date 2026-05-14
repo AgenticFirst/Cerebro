@@ -30,6 +30,7 @@ import { ClaudeCodeRunner, type RunnerErrorClass } from '../claude-code/stream-a
 import { toUuidFormat } from '../claude-code/session-id';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
+import { isReplIdleTail } from './completion-detection';
 import { getAgentNameForExpert, installAll, installExpert, expertAgentName } from '../claude-code/installer';
 import { MediaIngestService } from '../files/media-ingest';
 import type { ResolvedAttachment } from '../files/types';
@@ -763,6 +764,16 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       // susceptible to echo false-triggers.
       const QUIESCE_MS = 2_000;
       let lastTextAt = Date.now();
+
+      // Soft-completion detector — fires when the agent has gone quiet at the
+      // REPL prompt with substantive output but never emitted a parseable
+      // `<deliverable>` tag. Without this, the only signal of "agent finished
+      // but skipped the tag" is the IDLE_TIMEOUT_MS path below, which can
+      // compound to ~10 min when the agent emits late tokens every <2 min
+      // (each token resets the hard-idle clock). Soft-idle catches it in ~30 s.
+      const SOFT_IDLE_MS = 30 * 1000;
+      const SOFT_IDLE_MIN_CHARS = 500;
+
       const completionPollTimer = setInterval(() => {
         if (gracefulExitInitiated || ptyRunner.isAborted()) return;
         if (!resumeSettled) return;
@@ -789,6 +800,21 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
             initiateGracefulExit('completed');
             return;
           }
+        }
+
+        // Soft-completion: agent never emitted a parseable <deliverable> but
+        // the PTY tail looks like the REPL idle prompt. Treat as success and
+        // let wrapProseAsDeliverable package the accumulated prose. Gated on
+        // a 500-char floor and the REPL-tail check so we don't preempt a
+        // long-running tool call.
+        if (
+          !completionDetected &&
+          Date.now() - lastTextAt >= SOFT_IDLE_MS &&
+          activeRun.accumulatedText.trim().length >= SOFT_IDLE_MIN_CHARS &&
+          isReplIdleTail(activeRun.accumulatedText)
+        ) {
+          initiateGracefulExit('completed');
+          return;
         }
 
         // Claude Code's session-ended goodbye line. If we see it in a quiesced

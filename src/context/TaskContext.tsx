@@ -157,6 +157,13 @@ interface TaskContextValue {
   promoteChecklistItem: (taskId: string, itemId: string) => Promise<Task>;
   /** Get the active internal Electron runId for a task (may differ from task.run_id on re-runs). */
   getActiveRunId: (taskId: string) => string | null;
+  /**
+   * Task IDs that currently have a live agent run in the Electron runtime.
+   * A task at column='in_progress' whose ID is NOT in this set is "interrupted"
+   * (the subprocess died — typically because Cerebro was closed mid-run) and
+   * should be resumable from the card.
+   */
+  liveTaskIds: ReadonlySet<string>;
 }
 
 const TaskContext = createContext<TaskContextValue | null>(null);
@@ -180,6 +187,29 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   // Map of taskId -> internal Electron runId. On retries, task.run_id is pinned
   // to the ORIGINAL Claude session, so we can't use it to cancel the live run.
   const activeInternalRunIds = useRef<Map<string, string>>(new Map());
+
+  // Reactive mirror of which tasks have a live run right now. Drives the
+  // "Interrupted/Resume" card state — TaskCard checks liveTaskIds.has(task.id)
+  // and renders a Resume CTA when a task sits in_progress without a live run.
+  const [liveTaskIds, setLiveTaskIds] = useState<Set<string>>(() => new Set());
+
+  const markTaskLive = useCallback((taskId: string) => {
+    setLiveTaskIds((prev) => {
+      if (prev.has(taskId)) return prev;
+      const next = new Set(prev);
+      next.add(taskId);
+      return next;
+    });
+  }, []);
+
+  const markTaskNotLive = useCallback((taskId: string) => {
+    setLiveTaskIds((prev) => {
+      if (!prev.has(taskId)) return prev;
+      const next = new Set(prev);
+      next.delete(taskId);
+      return next;
+    });
+  }, []);
 
   // Monotonic counter so rapid drag-drops don't race: only the latest
   // moveTask call's loadTasks result is applied.
@@ -280,6 +310,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       }
       const internalRunId = activeInternalRunIds.current.get(id) ?? task?.run_id;
       activeInternalRunIds.current.delete(id);
+      markTaskNotLive(id);
       // Kill any active run
       if (internalRunId) {
         try { await window.cerebro.agent.cancel(internalRunId); } catch { /* noop */ }
@@ -332,6 +363,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       // runId the runtime knows about to actually kill the PTY.
       const internalRunId = activeInternalRunIds.current.get(id) ?? task.run_id;
       activeInternalRunIds.current.delete(id);
+      markTaskNotLive(id);
       try {
         await window.cerebro.agent.cancel(internalRunId);
       } catch (err) {
@@ -355,6 +387,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     // Claude session on retries). Fall back to the internal runId for fresh runs.
     const backendRunId = reportedRunId ?? runId;
     activeInternalRunIds.current.set(taskId, runId);
+    markTaskLive(taskId);
     const unsub = window.cerebro.agent.onEvent(runId, async (event) => {
       if (event.type === 'done') {
         await handleTermRef.current?.(taskId, backendRunId, 'done');
@@ -363,7 +396,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       }
     });
     runListeners.current.set(taskId, unsub);
-  }, []);
+  }, [markTaskLive]);
 
   // Precedence: explicit task.project_path > hidden per-task workspace fallback.
   const resolveCwd = useCallback(async (task: Task): Promise<string> => {
@@ -637,6 +670,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     if (u) u();
     runListeners.current.delete(taskId);
     activeInternalRunIds.current.delete(taskId);
+    markTaskNotLive(taskId);
 
     // Look for a pending queued instruction tied to this task.
     let pending: TaskComment | null = null;
@@ -667,7 +701,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
 
     await loadTasks();
-  }, [loadTasks, loadComments, drainQueuedInstruction, pushFailurePrompt]);
+  }, [loadTasks, loadComments, drainQueuedInstruction, pushFailurePrompt, markTaskNotLive]);
 
   // Keep the ref pointing at the latest handler so the stable onEvent closure
   // always invokes fresh state/deps.
@@ -675,9 +709,17 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     handleTermRef.current = handleRunTerminated;
   }, [handleRunTerminated]);
 
-  // Orphan recovery: on mount, mark any in_progress task whose run is no
-  // longer active as failed, then surface any queued instructions stranded by
-  // a crash/close mid-run.
+  // On-mount reconciliation. The backend's /engine/runs/recover-stale (called
+  // from the main process during boot) has already decided whether each
+  // formerly-running task should land in to_review, error, or stay at
+  // in_progress as "interrupted". Here we:
+  //   1. Seed liveTaskIds from the runtime's currently-live runs (covers a
+  //      TaskProvider remount mid-session).
+  //   2. Scan terminal-column tasks (to_review/completed/error) for queued
+  //      instructions left dangling by a previous run. Interrupted tasks at
+  //      in_progress are deliberately skipped — their queued instructions get
+  //      drained when the user clicks Resume (buildDirectPrompt re-attaches
+  //      every instruction comment to the resumed session).
   useEffect(() => {
     let cancelled = false;
     const recover = async () => {
@@ -687,37 +729,26 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           window.cerebro.invoke({ method: 'GET', path: '/tasks' }),
         ]);
         if (cancelled || !tasksNow.ok) return;
-        const activeRunIds = new Set(activeRuns.map((r) => r.runId));
         const list = tasksNow.data as Task[];
 
-        const staleRuns = list.filter(
-          (t) => t.column === 'in_progress' && t.run_id && !activeRunIds.has(t.run_id),
-        );
-        if (staleRuns.length > 0) {
-          await Promise.all(staleRuns.map((t) =>
-            window.cerebro.invoke({
-              method: 'POST',
-              path: `/tasks/${t.id}/run-event`,
-              body: {
-                type: 'run_failed',
-                run_id: t.run_id,
-                error: 'Run was interrupted by app restart',
-              },
-            }).catch(() => { /* noop */ }),
-          ));
+        // Seed live-task set from runtime. conversationId on a task run is the
+        // taskId (see startTask() above).
+        if (activeRuns.length > 0) {
+          const seed = new Set(activeRuns.map((r) => r.conversationId));
+          setLiveTaskIds((prev) => {
+            if (prev.size === 0) return seed;
+            const next = new Set(prev);
+            for (const id of seed) next.add(id);
+            return next;
+          });
         }
 
-        if (cancelled) return;
-
-        const refreshed = staleRuns.length > 0
-          ? await window.cerebro.invoke({ method: 'GET', path: '/tasks' })
-          : tasksNow;
-        if (cancelled) return;
-        const refreshedList = refreshed.ok ? (refreshed.data as Task[]) : list;
-
-        // Scan all terminally-stated tasks in parallel for a pending queued comment.
-        const scanTargets = refreshedList.filter(
-          (t) => !(t.column === 'in_progress' && t.run_id && activeRunIds.has(t.run_id)),
+        // Only scan terminal-state tasks for stranded queued instructions.
+        // Tasks still at in_progress are either genuinely running or are
+        // interrupted-pending-resume; in both cases the queued instruction
+        // stays pending and is delivered when the run terminates / is resumed.
+        const scanTargets = list.filter(
+          (t) => t.column === 'to_review' || t.column === 'completed' || t.column === 'error',
         );
         const scans = await Promise.all(
           scanTargets.map(async (t) => {
@@ -748,15 +779,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             });
           }
         }
-
-        if (!cancelled && staleRuns.length > 0) await loadTasks();
       } catch (err) {
         console.warn('[task] Orphan recovery failed:', err);
       }
     };
     recover();
     return () => { cancelled = true; };
-  }, [loadTasks, loadComments, drainQueuedInstruction, pushFailurePrompt]);
+  }, [loadComments, drainQueuedInstruction, pushFailurePrompt]);
 
   const confirmFailurePrompt = useCallback(async (taskId: string) => {
     const prompt = pendingFailurePrompts.find((p) => p.taskId === taskId);
@@ -911,6 +940,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         deleteChecklistItem,
         promoteChecklistItem,
         getActiveRunId,
+        liveTaskIds,
       }}
     >
       {children}

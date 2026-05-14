@@ -23,7 +23,6 @@ import { useQualityTier } from './QualityContext';
 import { useRoutines } from './RoutineContext';
 import i18n from '../i18n';
 import type { DAGDefinition } from '../engine/dag/types';
-import { extractAbsolutePathsFromBashCommand } from '../lib/extract-paths';
 import {
   generateId,
   titleFromContent,
@@ -516,9 +515,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           // teamRun state is owned by the chat-actions HTTP listeners below;
           // the on-Agent-end branch in tool_end below sweeps any still-open
           // members as a safety net.
-          // Paths the assistant produced via Write/Edit. Surfaced as Slack-style
-          // attachment chips below the reply on `done`. Deduped by absolute path.
-          const accFileRefs = new Set<string>();
 
           const clearThinking = () => {
             if (!thinkingCleared) {
@@ -559,28 +555,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 }
                 // Resolve tool name: prefer event (may be empty for nested tool_result), fallback to tc
                 const resolvedToolName = event.toolName || tc?.name || '';
-                // Capture file paths from Write/Edit so we can render them as
-                // attachment chips. Only absolute paths — we don't resolve cwd.
-                if (!event.isError && (resolvedToolName === 'Write' || resolvedToolName === 'Edit')) {
-                  const p = tc?.arguments?.file_path;
-                  if (typeof p === 'string' && p.startsWith('/')) {
-                    accFileRefs.add(p);
-                  }
-                }
-                // Bash is how the agent produces binary files (.docx via
-                // python-docx, .xlsx via openpyxl, etc.) — Write only handles
-                // UTF-8 text. Sniff the command for absolute paths ending in a
-                // known file extension and treat them as candidate refs. The
-                // chip renders missing files as dimmed, so a false positive is
-                // visually quiet; a false negative is a missing chip.
-                if (!event.isError && resolvedToolName === 'Bash') {
-                  const cmd = tc?.arguments?.command;
-                  if (typeof cmd === 'string') {
-                    for (const p of extractAbsolutePathsFromBashCommand(cmd)) {
-                      accFileRefs.add(p);
-                    }
-                  }
-                }
                 // Detect run_routine tool result and attach engineRunId
                 if (resolvedToolName === 'run_routine' && !event.isError) {
                   const marker = event.result.match(/\[ENGINE_RUN_ID:([^\]]+)\]/);
@@ -668,17 +642,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     tc.completedAt = new Date();
                   }
                 }
-                // Compose the final message content. If the expert produced any
-                // files, append them as trailing `@/absolute/path` lines so
-                // parseTrailingFileRefs surfaces them as attachment chips.
-                const baseContent = event.messageContent || state.accumulated;
-                const trailingRefs = [...accFileRefs]
-                  .filter((p) => !baseContent.includes(`@${p}`)) // don't duplicate refs the model already wrote
-                  .map((p) => `@${p}`)
-                  .join('\n');
-                const finalContent = trailingRefs
-                  ? `${baseContent.trimEnd()}\n\n${trailingRefs}`
-                  : baseContent;
+                // Final content is whatever the agent wrote — including any
+                // trailing `@/absolute/path` lines it chose to surface. The
+                // prompt rule (see installer.ts) is that the agent lists ONLY
+                // the file(s) the user asked for; we do not auto-append paths
+                // from tool calls, since that surfaces build scripts,
+                // intermediates, memory writes, and reference reads as chips.
+                const finalContent = event.messageContent || state.accumulated;
                 updateMessage(convId, assistantId, {
                   content: finalContent,
                   isThinking: false,

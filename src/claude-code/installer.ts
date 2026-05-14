@@ -293,7 +293,25 @@ When the user asks for a file (\`.docx\`, CSV, polished spreadsheet, PDF, etc. �
    \`\`\`
 3. **For anything not in the list above, install it.** \`pip install --user reportlab\` for PDF generation, \`npm i -g some-cli\`, \`brew install pandoc\`, etc. The sandbox permits writes into the standard package-manager dirs. Don't ask the user for permission first — just install and proceed.
 4. **Don't write binary file formats with the \`Write\` tool.** \`Write\` only handles UTF-8; it will silently corrupt \`.docx\`, \`.xlsx\`, \`.pdf\`, images, etc. Use \`Bash\` + the relevant library for any non-text output.
-5. **End your reply with a literal \`@/absolute/path/to/file\` line** for every file you produced — one per line, on the very last lines of the message, with nothing after them. Cerebro parses these trailing refs and renders each as a clickable preview chip; the user clicks the chip to open, download, or preview the file. Without this trailing line, the file lives on disk but the user has no chip and no way to open it from chat. Example: end with \`\`\`\n@/Users/jane/Desktop/report.docx\n\`\`\` *(no extra text after the @-line)*. Mentioning the path elsewhere in prose is fine but does not produce a chip.
+5. **Deliver ONLY the file(s) the user asked for — nothing else.** End your reply with one literal \`@/absolute/path/to/file\` line per requested file, on the very last lines of the message, with nothing after them. Cerebro renders each trailing \`@/path\` as a clickable preview chip; without it, the file lives on disk but the user has no way to open it from chat.
+
+   The chips must match, exactly, what the user requested in their latest message:
+   - User asked for one file (*"hazme un manual"*, *"genera el reporte"*, *"exporta a Excel"*) → exactly one trailing \`@/path\` line.
+   - User asked for several specific files (*"dame el Word y el Excel"*) → one \`@/path\` line per requested file, in the order they asked.
+   - User asked a plain question and didn't ask for a file → zero \`@/path\` lines, even if you wrote something to disk while working.
+
+   **By-products of HOW you built the deliverable are never chips.** Do NOT surface as trailing \`@/path\`:
+   - build scripts you wrote to produce the file (\`.py\`, \`.sh\`, \`.js\`, helper notebooks)
+   - intermediate renders (a \`.pdf\` you only made to validate a \`.docx\`)
+   - prior version drafts (\`v1.0\` when you're handing off \`v1.1\`)
+   - source images, fonts, fixtures embedded inside the doc
+   - reference templates the user already gave you — the file they handed you is *not* your deliverable
+   - memory / housekeeping files (\`SOUL.md\`, anything under your agent-memory dir, notes-to-self)
+   - files an expert sub-agent created as scaffolding during its workflow
+
+   **Format default when the user didn't specify a format:** prefer editable formats so the user can edit if needed. Documents → \`.docx\`. Spreadsheets → \`.xlsx\`. Slides → \`.pptx\`. Only deliver \`.pdf\` when the user said *"PDF"* / *"en PDF"* / *"para imprimir"* / equivalent. If you generated both a \`.docx\` and a \`.pdf\` while working, surface only the editable one unless the user asked for the PDF.
+
+   Mentioning a path elsewhere in prose is fine; only the trailing \`@/path\` lines become chips. Example ending: \`\`\`\n@/Users/jane/Desktop/report.docx\n\`\`\` *(no extra text after the @-line)*.
 `;
 }
 
@@ -376,6 +394,18 @@ Keep your own coordinator output focused on routing and synthesis — do **not**
   const coordinatorPrompt = (expert.coordinator_prompt || '').trim();
   const coordinatorBlock = coordinatorPrompt ? `## Coordinator Instructions\n\n${coordinatorPrompt}` : '';
 
+  const deliveryBlock = `## Delivering files
+
+Your synthesized reply becomes Cerebro's reply to the user verbatim. End it with literal \`@/absolute/path\` lines for ONLY the file(s) the user asked for — nothing else.
+
+- User asked for one file → exactly one trailing \`@/path\` line.
+- User asked for several specific files → one \`@/path\` line per requested file.
+- User asked a plain question and didn't ask for a file → no \`@/path\` lines.
+
+Members may write many artifacts to disk during their work — per-member handoff files, build scripts, intermediate renders, prior drafts, embedded source images, reference templates. None of those become chips in your final reply. Only the final artifact(s) the user actually asked for.
+
+**Format default when the user didn't specify:** prefer editable formats — \`.docx\` for documents, \`.xlsx\` for spreadsheets, \`.pptx\` for slides. Only deliver \`.pdf\` when the user explicitly asked for it. If both editable and PDF exist, surface only the editable one.`;
+
   return `You are the **${expert.name}**, a Cerebro orchestrator team.${domainLine} You do not do the work yourself — you delegate to your member experts via the \`Agent\` tool and synthesize their outputs.
 
 Your **team_id** is \`${expert.id}\`. Use this verbatim when calling \`team-member-update.sh\` (see "Live status reporting" below).
@@ -401,6 +431,8 @@ ${memberBlock}
 ${strategyBlock}
 
 ${handoffBlock}
+
+${deliveryBlock}
 
 ${coordinatorBlock}
 `;
@@ -477,6 +509,22 @@ ${turnProtocol(memoryDir)}
       body += `### ${skill.name}\n\n${skill.instructions.trimEnd()}\n\n`;
     }
   }
+
+  body += `## Delivering files
+
+Your reply becomes Cerebro's reply to the user verbatim. End it with literal \`@/absolute/path\` lines for ONLY the file(s) the user asked for — nothing else.
+
+- User asked for one file → exactly one trailing \`@/path\` line.
+- User asked for several specific files → one \`@/path\` line per requested file, in the order they asked.
+- User asked a plain question and didn't ask for a file → no \`@/path\` lines, even if you wrote something to disk while working.
+
+**By-products of your workflow are never chips**, even if they exist on disk: build scripts (\`.py\`, \`.sh\`, helper code), intermediate renders (a \`.pdf\` you made only to validate a \`.docx\`), prior version drafts, source images / fonts / fixtures embedded inside the doc, reference templates the user already gave you, and any memory / housekeeping files. Only the final artifact.
+
+**Format default when the user didn't specify:** prefer editable formats so the user can edit if needed. Documents → \`.docx\`. Spreadsheets → \`.xlsx\`. Slides → \`.pptx\`. Only deliver \`.pdf\` when the user explicitly asked for PDF. If you generated both \`.docx\` and \`.pdf\` while working, surface only the editable one.
+
+Mentioning a path in prose is fine; only the trailing \`@/path\` lines become chips.
+
+`;
 
   body += renderExpertContextSection(contextFiles);
 

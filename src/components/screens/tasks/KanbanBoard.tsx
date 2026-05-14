@@ -24,7 +24,7 @@ interface KanbanBoardProps {
 
 export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
   const { t } = useTranslation();
-  const { tasks, moveTask, startTask, deleteTask } = useTasks();
+  const { tasks, moveTask, startTask, deleteTask, liveTaskIds } = useTasks();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
 
@@ -229,7 +229,12 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
       <DragOverlay dropAnimation={null}>
         {activeTask ? (
           <div className="rotate-2 opacity-90">
-            <TaskCard task={activeTask} onClick={() => {}} isDragOverlay />
+            <TaskCard
+              task={activeTask}
+              onClick={() => {}}
+              isDragOverlay
+              isLiveRun={liveTaskIds.has(activeTask.id)}
+            />
           </div>
         ) : null}
       </DragOverlay>
