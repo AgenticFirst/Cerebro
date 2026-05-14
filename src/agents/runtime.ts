@@ -15,7 +15,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { ipcMain } from 'electron';
-import type { AgentRunRequest, ActiveRunInfo, RendererAgentEvent } from './types';
+import type { AgentRunRequest, ActiveRunInfo, MessageSnapshot, RendererAgentEvent } from './types';
 
 /**
  * Minimal sink interface for run events. Both WebContents (renderer) and
@@ -27,6 +27,7 @@ export interface AgentEventSink {
   isDestroyed(): boolean;
 }
 import { ClaudeCodeRunner, type RunnerErrorClass } from '../claude-code/stream-adapter';
+import { toUuidFormat } from '../claude-code/session-id';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
 import { getAgentNameForExpert, installAll, installExpert, expertAgentName } from '../claude-code/installer';
@@ -149,6 +150,34 @@ function wrapProseAsDeliverable(raw: string): string {
   // Cap body so we don't embed megabytes of tool-call transcripts.
   const body = cleaned.trim().slice(-8000).trim() || 'Task finished.';
   return `<deliverable kind="markdown" title="Task Result">\n${body}\n</deliverable>`;
+}
+
+/**
+ * One-shot prompt builder used ONLY when a `--resume` attempt fails because
+ * the Claude Code session file isn't on disk yet (typical for chats created
+ * before sessions existed, or when the Claude Code data dir was wiped).
+ * Prepends the full conversation transcript from Cerebro's SQLite so the
+ * fresh session is seeded with the same context the user sees in the
+ * scrollback — no per-message truncation, only a 100 KB absolute ceiling.
+ * After this turn, the session exists on disk and future turns resume
+ * normally without any injection.
+ */
+const SEED_MAX_TOTAL_CHARS = 100_000;
+
+function buildSeedPrompt(history: MessageSnapshot[], newMessage: string): string {
+  const lines: string[] = [];
+  let totalChars = 0;
+  for (const m of history) {
+    const tag = m.role === 'user' ? 'human' : 'assistant';
+    const line = `<${tag}>\n${m.content}\n</${tag}>`;
+    if (totalChars + line.length > SEED_MAX_TOTAL_CHARS && lines.length > 0) {
+      lines.push('<truncated_history note="Earlier turns omitted; total exceeded the seed limit." />');
+      break;
+    }
+    lines.push(line);
+    totalChars += line.length;
+  }
+  return `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe block above is the full prior transcript of this conversation, reloaded once because your session was not on disk. Treat every previous turn as already answered. Respond ONLY to the new user message below. Do not re-answer earlier questions or recap prior content unless explicitly asked. For short follow-ups ("sí", "ok", "save that"), interpret them as confirmations of the most recent proposal in the history.\n</instructions>\n\n${newMessage}`;
 }
 
 interface ExpertNameLookup {
@@ -541,26 +570,14 @@ Your FINAL output MUST be a deliverable block in this exact shape, with real con
 
 Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE — no pipes, no placeholder ellipsis). Replace \`title\` with a short task-specific label. Replace the inner \`…\` with your actual markdown result. Do not end with prose outside the block. Without this block the task is finalized as an error no matter how much work you did. This applies to every task, including trivial ones.
 </task_direct>`;
-    } else if (request.recentMessages && request.recentMessages.length > 0) {
-      // Chat mode: prepend recent conversation history
-      const MAX_MSG_CHARS = 500;
-      const MAX_MESSAGES = 10;
-      const MAX_TOTAL_CHARS = 2000;
-      const recent = request.recentMessages.slice(-MAX_MESSAGES);
-      const lines: string[] = [];
-      let totalChars = 0;
-      for (const m of recent) {
-        const tag = m.role === 'user' ? 'human' : 'assistant';
-        const text = m.content.length > MAX_MSG_CHARS
-          ? m.content.slice(0, MAX_MSG_CHARS) + '...(truncated)'
-          : m.content;
-        const line = `<${tag}>${text}</${tag}>`;
-        if (totalChars + line.length > MAX_TOTAL_CHARS && lines.length > 0) break;
-        lines.push(line);
-        totalChars += line.length;
-      }
-      fullPrompt = `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe block above is prior conversation history shown to you for context only. Treat all of it as already-handled — those user messages were answered in earlier turns and you are not answering them again. Respond ONLY to the new user message below, as if it arrived on its own. Do not re-answer earlier questions, do not restate or re-list content you produced in earlier turns, do not output "User:" or simulate user messages. If the new message is short ("save that", "ok", "thanks") respond to that specific message; do not interpret it as a request to recap prior content.\n</instructions>\n\n${resolvedContent}`;
     }
+    // Chat mode does NOT inject conversation history anymore. We rely on
+    // Claude Code's own per-session transcript (--resume reloads it from
+    // disk). The lossy `<conversation_history>` block this used to build —
+    // capped at 10 messages, 500 chars each, 2 KB total — was the source of
+    // the "assistant forgets prior turns" bug. See buildSeedPrompt below
+    // for the one-shot migration path used when --resume can't find the
+    // session on disk (e.g., conversations created before sessions existed).
 
     const channel = `agent:event:${runId}`;
 
@@ -909,11 +926,26 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       const initialModel = normalizeModel(request.model);
       const userOverrodeMaxTurns = typeof request.maxTurns === 'number';
 
+      // Each Cerebro conversation maps 1:1 to a Claude Code session. The
+      // session id is derived deterministically from conversationId so the
+      // same chat always lands in the same on-disk session file.
+      const sessionId = toUuidFormat(conversationId);
+      const hasPriorMessages = !!(request.recentMessages && request.recentMessages.length > 0);
+      // Track whether the seed-on-missing-session fallback has already
+      // fired for this run, so a misconfiguration can't loop us forever.
+      let sessionSeedAttempted = false;
+
       const spawnAttempt = (
         attempt: number,
         model: ResponseModel,
         tier: QualityTier,
         turns: number,
+        // Per-attempt overrides — escalation retries keep the same
+        // resume/prompt state, but a session_missing recovery flips to a
+        // fresh session and substitutes a seed prompt that re-injects the
+        // SQLite history one time.
+        resume: boolean,
+        promptForAttempt: string,
       ): void => {
         const runner = new ClaudeCodeRunner();
         activeRun.runner = runner;
@@ -944,6 +976,22 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
 
         runner.on('error', (error: string) => {
           const cls = runner.getLastErrorClass();
+
+          // --resume failed because Claude Code has no on-disk session for
+          // this conversation (typical for chats created before sessions
+          // existed, or after a data-dir wipe). Transparently fall back:
+          // spawn fresh with --session-id and a one-time seed prompt
+          // containing the full SQLite history. After this turn the
+          // session exists and every future turn resumes normally.
+          if (cls === 'session_missing' && !sessionSeedAttempted) {
+            sessionSeedAttempted = true;
+            const seeded = buildSeedPrompt(request.recentMessages ?? [], resolvedContent);
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt, model, tier, turns, false, seeded);
+            return;
+          }
+
           const next = isEscalatable(cls) && attempt < MAX_ESCALATION_ATTEMPTS
             ? nextRung(model, tier)
             : null;
@@ -961,7 +1009,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
             // and would mislead. The successful attempt produces the final text.
             attemptText = '';
             activeRun.accumulatedText = '';
-            spawnAttempt(attempt + 1, next.model, next.tier, nextTurns);
+            spawnAttempt(attempt + 1, next.model, next.tier, nextTurns, resume, promptForAttempt);
             return;
           }
           // Non-retryable or ladder exhausted — surface the error.
@@ -976,17 +1024,19 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
 
         runner.start({
           runId,
-          prompt: fullPrompt,
+          prompt: promptForAttempt,
           agentName,
           cwd,
           maxTurns: turns,
           model,
           language: request.language,
           qualityTier: tier,
+          sessionId,
+          resume,
         });
       };
 
-      spawnAttempt(1, initialModel, initialTier, maxTurns);
+      spawnAttempt(1, initialModel, initialTier, maxTurns, hasPriorMessages, fullPrompt);
     }
 
     return runId;

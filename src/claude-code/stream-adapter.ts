@@ -18,6 +18,7 @@ import { app } from 'electron';
 import type { RendererAgentEvent } from '../agents/types';
 import type { QualityTier } from '../types/ipc';
 import { getCachedClaudeCodeInfo } from './detector';
+import { toUuidFormat } from './session-id';
 import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
 import { buildSystemPrompt } from '../i18n/language-directive';
 import { resolveBackendPythonBinDir, resolveBackendVirtualEnvRoot } from '../python/venv';
@@ -48,6 +49,24 @@ export interface ClaudeCodeRunOptions {
    *  tier directive appended to the system prompt — flavored for Cerebro
    *  vs. a focused expert based on `agentName`. */
   qualityTier?: QualityTier;
+  /**
+   * Stable Claude Code session identifier for this conversation. Derived
+   * from the Cerebro `conversationId` so every turn of the same chat
+   * lands in the same on-disk session file. Required: callers always pass
+   * one (a fallback is to pass `runId`, which gives a one-shot session).
+   */
+  sessionId: string;
+  /**
+   * When true, spawn with `--resume <sessionId>` to continue an existing
+   * Claude Code session — Claude Code reloads the full transcript on its
+   * own, so no `<conversation_history>` injection is needed and no
+   * `--agent` / `--append-system-prompt` is passed (those are baked into
+   * the session at creation).
+   *
+   * When false (default), spawn with `--session-id <sessionId>` and pass
+   * `--agent` + `--append-system-prompt` to create the session.
+   */
+  resume?: boolean;
 }
 
 /**
@@ -59,19 +78,20 @@ export interface ClaudeCodeRunOptions {
  *  - 'error'  (error: string)
  */
 /**
- * Idle-watchdog timing. We are a wrapper around `claude -p` and aim to
- * mirror the terminal's behavior: the CLI is allowed to think for as long
- * as the API needs — no wrapper-introduced "no output for N seconds"
- * kills, which create failure modes that don't exist in the underlying
- * tool. Progressive warnings drive a "still thinking…" indicator in the
- * UI; the 30-minute kill is only a backstop for genuinely hung processes,
- * matching the existing chat-action curl ceiling.
- *
- * Auth hangs (the original motivation for the 60s kill) are now caught
- * structurally via stderr pattern matching — see AUTH_STDERR_PATTERNS.
+ * Idle-watchdog timing. Two-tier ceiling so we kill obvious wedges fast
+ * without cutting off legitimate long-running tool calls:
+ *   - No tool in flight: 60s. Total silence with nothing running almost
+ *     always means the CLI is wedged before producing any output —
+ *     typically an auth failure that didn't trip AUTH_STDERR_PATTERNS,
+ *     or a hung connection.
+ *   - Tool in flight: 30 minutes. Bash, Edit, etc. can legitimately sit
+ *     waiting on approval gates or long-running commands; we don't want
+ *     to kill those just because they haven't yielded streaming text.
+ * Progressive warnings drive a "still thinking…" indicator in the UI.
  */
 const IDLE_WARNING_THRESHOLDS_MS = [45_000, 120_000, 300_000] as const;
-const IDLE_KILL_MS = 1_800_000;
+const IDLE_NO_TOOL_KILL_MS = 60_000;
+const IDLE_TOOL_KILL_MS = 1_800_000;
 // Stderr substrings that indicate the Claude CLI cannot proceed because
 // it is not authenticated. Matching one of these short-circuits the run
 // with a clean "sign in" error instead of waiting for the backstop.
@@ -90,14 +110,15 @@ const AUTH_STDERR_PATTERNS = [
  * model/tier rung.
  */
 export type RunnerErrorClass =
-  | 'none'         // run completed successfully
-  | 'max_turns'    // model hit max-turns without finishing — escalate
-  | 'context'      // context-window exhausted — escalate
-  | 'overload'     // transient API overload / rate limit — escalate
-  | 'auth'         // authentication failure — do NOT escalate
-  | 'cancelled'    // user aborted — do NOT escalate
-  | 'spawn'        // could not spawn subprocess — do NOT escalate
-  | 'unknown';     // catch-all — do NOT escalate (safer default)
+  | 'none'             // run completed successfully
+  | 'max_turns'        // model hit max-turns without finishing — escalate
+  | 'context'          // context-window exhausted — escalate
+  | 'overload'         // transient API overload / rate limit — escalate
+  | 'auth'             // authentication failure — do NOT escalate
+  | 'cancelled'        // user aborted — do NOT escalate
+  | 'spawn'            // could not spawn subprocess — do NOT escalate
+  | 'session_missing'  // --resume target session not on disk — fall back to --session-id
+  | 'unknown';         // catch-all — do NOT escalate (safer default)
 
 export class ClaudeCodeRunner extends EventEmitter {
   private process: ChildProcess | null = null;
@@ -152,14 +173,29 @@ export class ClaudeCodeRunner extends EventEmitter {
       return;
     }
 
-    const args: string[] = [
-      '-p', prompt,
-      '--agent', agentName,
-      '--output-format', 'stream-json',
-      '--verbose',
-      '--dangerously-skip-permissions',
-      '--append-system-prompt', buildSystemPrompt(options.language, options.qualityTier, options.agentName),
-    ];
+    // Session flags: --resume reloads an existing on-disk session (full
+    // transcript intact), --session-id creates a new one. On resume,
+    // --agent and --append-system-prompt are session-bound — they were
+    // set when the session was created and Claude Code rejects/ignores
+    // them on the resume call, so we deliberately omit them.
+    const sessionUuid = toUuidFormat(options.sessionId);
+    const args: string[] = [];
+    if (options.resume) {
+      args.push('--resume', sessionUuid);
+    } else {
+      args.push('--session-id', sessionUuid);
+    }
+    args.push('-p', prompt);
+    if (!options.resume) {
+      args.push('--agent', agentName);
+      args.push(
+        '--append-system-prompt',
+        buildSystemPrompt(options.language, options.qualityTier, options.agentName),
+      );
+    }
+    args.push('--output-format', 'stream-json');
+    args.push('--verbose');
+    args.push('--dangerously-skip-permissions');
 
     if (typeof options.maxTurns === 'number') {
       args.push('--max-turns', String(options.maxTurns));
@@ -269,8 +305,45 @@ export class ClaudeCodeRunner extends EventEmitter {
 
       if (isError) {
         let detail: string;
-        const tailLower = (this.stderrTail + ' ' + this.resultErrorTail).toLowerCase();
-        if (tailLower.includes('max turns') || tailLower.includes('max_turns')) {
+        const tailLower = (this.stderrTail + ' ' + this.resultErrorTail + ' ' + this.stdoutTail).toLowerCase();
+        // Resume target missing on disk — surface as a distinct class so the
+        // runtime can transparently fall back to --session-id and seed the
+        // new session with full conversation history from SQLite.
+        const sessionMissingPatterns = [
+          'no conversation found',
+          'no such session',
+          'session not found',
+          'could not find session',
+          'unknown session',
+          'session does not exist',
+        ];
+        if (sessionMissingPatterns.some((p) => tailLower.includes(p))) {
+          detail = 'Claude Code session not found — restoring from conversation history.';
+          this.lastErrorClass = 'session_missing';
+          this.closeRunLog(`[exit] code=${code} signal=${signal ?? ''} session_missing`);
+          this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
+          this.emit('error', detail);
+          return;
+        }
+        if (this.resultErrorTail) {
+          // Max-turns hits and per-turn API errors come through stream-json
+          // as `result.is_error: true`, often with a more useful message
+          // than our canned translations. Surface the CLI's own text and
+          // classify off it so retry logic still works.
+          detail = `Claude Code error (code ${code}): ${this.resultErrorTail}`;
+          const lower = this.resultErrorTail.toLowerCase();
+          if (lower.includes('max turns') || lower.includes('max_turns')) {
+            this.lastErrorClass = 'max_turns';
+          } else if (lower.includes('context') && (lower.includes('length') || lower.includes('window') || lower.includes('limit'))) {
+            this.lastErrorClass = 'context';
+          } else if (lower.includes('rate limit') || lower.includes('overload') || lower.includes('429') || lower.includes('503')) {
+            this.lastErrorClass = 'overload';
+          } else if (lower.includes('authentication') || lower.includes('401') || lower.includes('not authenticated') || lower.includes('unauthorized')) {
+            this.lastErrorClass = 'auth';
+          } else {
+            this.lastErrorClass = 'unknown';
+          }
+        } else if (tailLower.includes('max turns') || tailLower.includes('max_turns')) {
           detail = 'Claude Code reached the maximum number of turns without completing the task. Try a simpler request.';
           this.lastErrorClass = 'max_turns';
         } else if (tailLower.includes('context') && (tailLower.includes('length') || tailLower.includes('window') || tailLower.includes('limit'))) {
@@ -280,7 +353,7 @@ export class ClaudeCodeRunner extends EventEmitter {
           detail = 'Rate limited or overloaded by the API. Please wait a moment and try again.';
           this.lastErrorClass = 'overload';
         } else if (tailLower.includes('authentication') || tailLower.includes('401') || tailLower.includes('not authenticated') || tailLower.includes('unauthorized')) {
-          detail = 'Claude Code is not authenticated. Run `claude` in a terminal to sign in, then retry.';
+          detail = 'Authentication error: Claude Code is not authenticated. Run `claude` in a terminal to sign in, then retry.';
           this.lastErrorClass = 'auth';
         } else if (signal) {
           detail = this.stderrTail
@@ -289,12 +362,6 @@ export class ClaudeCodeRunner extends EventEmitter {
           this.lastErrorClass = 'unknown';
         } else if (this.stderrTail) {
           detail = `Claude Code error (code ${code}): ${this.stderrTail}`;
-          this.lastErrorClass = 'unknown';
-        } else if (this.resultErrorTail) {
-          // Max-turns hits and per-turn API errors come through stream-json
-          // as `result.is_error: true` rather than on stderr. Surface the
-          // CLI's own message instead of the generic "exited unexpectedly".
-          detail = `Claude Code error (code ${code}): ${this.resultErrorTail}`;
           this.lastErrorClass = 'unknown';
         } else if (this.stdoutTail) {
           // stderr was empty but stdout had a non-JSON line before exit —
@@ -472,15 +539,17 @@ export class ClaudeCodeRunner extends EventEmitter {
     }
   }
 
-  /** Arm progressive idle warnings (45s/2m/5m) and the 30-min backstop
-   *  kill. Warnings are informational only — they drive a "still
-   *  thinking…" indicator in the UI. The kill is a safety net for
-   *  genuinely hung subprocesses; it is intentionally very long because
-   *  Claude can legitimately think for several minutes on hard prompts. */
+  /** Arm progressive idle warnings (45s/2m/5m) and a kill backstop. The
+   *  kill ceiling depends on whether a tool is in flight (see the
+   *  IDLE_*_KILL_MS constants). Warnings past the active kill threshold
+   *  are suppressed since they'd never fire. */
   private armIdleTimers(runId: string): void {
     this.clearIdleTimers();
     this.idleStartedAt = Date.now();
+    const hasOpenTool = this.openToolCount > 0;
+    const killMs = hasOpenTool ? IDLE_TOOL_KILL_MS : IDLE_NO_TOOL_KILL_MS;
     for (const threshold of IDLE_WARNING_THRESHOLDS_MS) {
+      if (threshold >= killMs) continue;
       const t = setTimeout(() => {
         if (this.killed || this.closeHandled) return;
         this.emit('event', {
@@ -497,14 +566,21 @@ export class ClaudeCodeRunner extends EventEmitter {
       this.clearIdleTimers();
       const ctx = this.agentNameUsed ? ` (agent='${this.agentNameUsed}')` : '';
       const stderrHint = this.stderrTail ? `\n\nLast stderr:\n${this.stderrTail.slice(-300)}` : '';
-      const minutes = Math.round(IDLE_KILL_MS / 60_000);
-      const toolHint = this.openToolCount > 0 && this.lastOpenToolName
-        ? ` waiting on tool '${this.lastOpenToolName}'`
-        : '';
-      const detail =
-        `Claude Code subprocess was idle for ${minutes} minutes${toolHint}${ctx} and was killed. ` +
-        `This is a backstop for genuinely hung processes — if the request was reasonable, try again.` +
-        stderrHint;
+      let detail: string;
+      if (hasOpenTool) {
+        const toolHint = this.lastOpenToolName ? ` waiting on tool '${this.lastOpenToolName}'` : '';
+        const minutes = Math.round(IDLE_TOOL_KILL_MS / 60_000);
+        detail =
+          `Claude Code subprocess was idle for ${minutes} minutes${toolHint}${ctx} and was killed. ` +
+          `This is a backstop for approval-gated or hung tool calls — if the request was reasonable, try again.` +
+          stderrHint;
+      } else {
+        const seconds = Math.round(IDLE_NO_TOOL_KILL_MS / 1000);
+        detail =
+          `Claude Code produced no output for ${seconds} seconds${ctx} and was killed. ` +
+          'The CLI either isn\'t authenticated (run `claude` in a terminal to sign in) or is hung.' +
+          stderrHint;
+      }
       this.lastErrorClass = 'unknown';
       if (this.process && !this.process.killed) {
         this.process.kill('SIGTERM');
@@ -514,7 +590,7 @@ export class ClaudeCodeRunner extends EventEmitter {
       }
       this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
       this.emit('error', detail);
-    }, IDLE_KILL_MS);
+    }, killMs);
   }
 
   /** Reset idle timers — call from every stdout/stderr chunk. */
@@ -539,7 +615,7 @@ export class ClaudeCodeRunner extends EventEmitter {
     this.clearIdleTimers();
     this.lastErrorClass = 'auth';
     const detail =
-      'Claude Code is not authenticated. Run `claude` in a terminal to sign in, then retry.';
+      'Authentication error: Claude Code is not authenticated. Run `claude` in a terminal to sign in, then retry.';
     if (this.process && !this.process.killed) {
       this.process.kill('SIGTERM');
       setTimeout(() => {

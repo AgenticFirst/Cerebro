@@ -33,7 +33,14 @@ export interface AgentRunRequest {
   /** Parent run ID when this is a sub-run (rare — Claude Code's Agent tool
    *  handles nested runs inside its own subprocess). */
   parentRunId?: string;
-  /** Recent messages from this conversation so the subagent has multi-turn context. */
+  /**
+   * Full transcript of this conversation. Used by AgentRuntime as a
+   * one-time seed when a `--resume` attempt fails because Claude Code
+   * has no on-disk session for this chat (e.g., conversations created
+   * before sessions existed, or after a Claude Code data-dir wipe). On
+   * normal turns the runtime ignores this field — Claude Code reloads
+   * the transcript from its own session file via `--resume`.
+   */
   recentMessages?: MessageSnapshot[];
   /** Routine proposals from earlier messages in this conversation. */
   routineProposals?: ProposalSnapshot[];

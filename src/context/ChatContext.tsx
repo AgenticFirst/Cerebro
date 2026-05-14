@@ -445,13 +445,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           const conv = conversationsRef.current.find((c) => c.id === convId);
           const allMessages = conv?.messages ?? [];
 
-          // Recent messages — gives the LLM conversational continuity across turns.
+          // Full conversation transcript. AgentRuntime uses Claude Code's
+          // native `--resume` to reload prior turns on its own, so this
+          // field is normally ignored — it only matters as a one-time seed
+          // when `--resume` fails because no on-disk session exists yet
+          // (e.g., conversations created before sessions existed). Send
+          // everything; the runtime applies an absolute 100 KB ceiling.
           // Note: React batches state updates, so conversationsRef still has the
           // pre-addMessage state here. No need to exclude the just-added message.
-          const MAX_RECENT = 10;
           const recentMessages = allMessages
             .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isThinking)
-            .slice(-MAX_RECENT)
             .map((m) => {
               let enrichedContent = m.content;
               // Enrich assistant messages with successful tool call outputs
