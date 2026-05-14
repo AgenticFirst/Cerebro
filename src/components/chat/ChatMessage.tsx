@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Copy, Check, Pencil } from 'lucide-react';
+import { Loader2, Copy, Check, Pencil, ChevronDown, ChevronUp } from 'lucide-react';
 import clsx from 'clsx';
 import type { Message } from '../../types/chat';
 import MarkdownContent from './MarkdownContent';
@@ -85,6 +85,14 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
   const { copied, copy } = useCopyMessage();
   const canCopy = copyableMarkdown.length > 0 && !message.isStreaming;
 
+  // Long assistant messages (generated documents, lengthy prose) get a
+  // top-of-bubble toolbar + collapse toggle. Pure-text length is a coarse
+  // but predictable signal — ~1500 chars is roughly where scrollback starts
+  // to drown other messages on the default window height.
+  const LONG_CONTENT_THRESHOLD = 1500;
+  const isLong = !isUser && displayContent.length >= LONG_CONTENT_THRESHOLD;
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   return (
     <div
       ref={nodeRef}
@@ -99,6 +107,39 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
           {isUser ? t('chat.you') : t('chat.cerebro')}
         </span>
         <span className="text-xs text-text-tertiary">{formatTime(message.createdAt)}</span>
+        {isLong && !isEditing && (
+          <div className="ml-auto flex items-center gap-0.5">
+            {canCopy && (
+              <button
+                type="button"
+                onClick={() => copy(copyableMarkdown)}
+                className="flex items-center justify-center w-7 h-7 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+                title={copied ? t('chat.copied') : t('chat.copyMessage')}
+                aria-label={copied ? t('chat.copied') : t('chat.copyMessage')}
+              >
+                {copied ? (
+                  <Check size={13} className="text-accent" strokeWidth={2.25} />
+                ) : (
+                  <Copy size={13} strokeWidth={2} />
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsCollapsed((v) => !v)}
+              className="flex items-center justify-center w-7 h-7 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+              title={isCollapsed ? t('chat.expand') : t('chat.collapse')}
+              aria-label={isCollapsed ? t('chat.expand') : t('chat.collapse')}
+              aria-expanded={!isCollapsed}
+            >
+              {isCollapsed ? (
+                <ChevronDown size={14} strokeWidth={2} />
+              ) : (
+                <ChevronUp size={14} strokeWidth={2} />
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tool calls (before text content) — hidden by default, user can opt in via Settings → Appearance */}
@@ -187,8 +228,36 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
         >
           {isUser ? (
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{displayContent}</p>
+          ) : isLong && isCollapsed ? (
+            <div className="relative">
+              <div className="max-h-[280px] overflow-hidden">
+                <MarkdownContent content={displayContent} />
+              </div>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-bg-base to-transparent" />
+            </div>
           ) : (
             <MarkdownContent content={displayContent} />
+          )}
+          {isLong && (
+            <div className="mt-2 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setIsCollapsed((v) => !v)}
+                className="inline-flex items-center gap-1 rounded-full border border-border-subtle bg-bg-base/60 px-2.5 py-1 text-[11px] font-medium text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+              >
+                {isCollapsed ? (
+                  <>
+                    <ChevronDown size={12} strokeWidth={2} />
+                    {t('chat.showMore')}
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp size={12} strokeWidth={2} />
+                    {t('chat.showLess')}
+                  </>
+                )}
+              </button>
+            </div>
           )}
         </div>
       )}
