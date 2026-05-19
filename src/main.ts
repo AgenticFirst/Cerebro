@@ -1138,7 +1138,8 @@ function registerIpcHandlers(): void {
   // within 5 seconds. Result is cached for 60s so back-to-back routine
   // runs don't keep spawning probe subprocesses.
   let probeCache: { value: ClaudeCodeProbeResult; expiresAt: number } | null = null;
-  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH, async (): Promise<ClaudeCodeProbeResult> => {
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH, async (_event, opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult> => {
+    if (opts?.force) probeCache = null;
     if (probeCache && probeCache.expiresAt > Date.now()) return probeCache.value;
     const info = getCachedClaudeCodeInfo();
     if (info.status !== 'available' || !info.path) {
@@ -1190,6 +1191,59 @@ function registerIpcHandlers(): void {
     });
     probeCache = { value: result, expiresAt: Date.now() + 60_000 };
     return result;
+  });
+
+  // Open a terminal window running `claude` so the user can complete the
+  // sign-in flow (browser handshake) and come back. We can't run the
+  // login inside Cerebro because Claude Code's auth flow opens a browser
+  // and binds a local callback — best handled by the OS terminal.
+  // Renderer should call this from the auth-error recovery card, then
+  // re-probe with `{ force: true }` once the user reports success.
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_OPEN_LOGIN, async (): Promise<{ ok: boolean; reason?: string }> => {
+    const info = getCachedClaudeCodeInfo();
+    if (info.status !== 'available' || !info.path) {
+      return { ok: false, reason: 'Claude Code binary not found' };
+    }
+    const binary = info.path;
+    try {
+      if (process.platform === 'darwin') {
+        // AppleScript: open Terminal.app, run the binary at its full
+        // path so the user doesn't need it on PATH. Quoting the path
+        // protects against spaces (`/Application Support/...`).
+        const escaped = binary.replace(/"/g, '\\"');
+        const script = `tell application "Terminal" to do script "${escaped}"\ntell application "Terminal" to activate`;
+        const proc = spawn('osascript', ['-e', script], { stdio: 'ignore', detached: true });
+        proc.unref();
+        return { ok: true };
+      }
+      if (process.platform === 'linux') {
+        // Try a few common terminal emulators; fall through to a hint
+        // if none are present.
+        for (const term of ['gnome-terminal', 'konsole', 'xterm']) {
+          try {
+            const args = term === 'gnome-terminal' ? ['--', binary] : ['-e', binary];
+            const proc = spawn(term, args, { stdio: 'ignore', detached: true });
+            proc.unref();
+            return { ok: true };
+          } catch {
+            /* try next */
+          }
+        }
+        return { ok: false, reason: 'No supported terminal emulator found. Open one manually and run `claude`.' };
+      }
+      if (process.platform === 'win32') {
+        const proc = spawn('cmd.exe', ['/c', 'start', '""', 'cmd.exe', '/k', `"${binary}"`], {
+          stdio: 'ignore',
+          detached: true,
+          windowsHide: false,
+        });
+        proc.unref();
+        return { ok: true };
+      }
+      return { ok: false, reason: `Unsupported platform: ${process.platform}` };
+    } catch (err) {
+      return { ok: false, reason: (err as Error).message };
+    }
   });
 
   // --- Installer sync (called by renderer after expert CRUD) ---

@@ -132,6 +132,16 @@ const en = {
         },
       },
     },
+    authRecovery: {
+      title: 'Sign in to Claude Code',
+      body: 'Cerebro’s engine needs to re-authenticate. We’ll open a terminal that runs `claude` so you can finish signing in — come back here and tap Retry once it’s done.',
+      signIn: 'Open terminal & sign in',
+      retry: 'Retry',
+      retrying: 'Checking…',
+      stillFailing: 'Still not signed in. Finish the `claude` login in the terminal, then retry.',
+      openFailed: 'Couldn’t open a terminal automatically. Open one yourself and run `claude`.',
+      readyHint: 'Signed in. Sending your message again…',
+    },
   },
 
   // ── Capabilities help modal ─────────────────────────────────

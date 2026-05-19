@@ -12,6 +12,7 @@ import IntegrationSetupCard from './IntegrationSetupCard';
 import ExpertProposalCard from './ExpertProposalCard';
 import TeamProposalCard from './TeamProposalCard';
 import TeamRunCard from './TeamRunCard';
+import AuthRecoveryCard from './AuthRecoveryCard';
 import AttachmentChip from './AttachmentChip';
 import {
   parseFileRefs,
@@ -78,7 +79,10 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
     };
   }, [isUser, message.content]);
 
-  const hasContent = displayContent.length > 0;
+  // The auth-recovery card replaces the "Error: ..." prose entirely —
+  // showing both would duplicate the message and look broken.
+  const suppressContent = !isUser && message.errorClass === 'auth';
+  const hasContent = !suppressContent && displayContent.length > 0;
   const assistantBusy =
     !isUser && (message.isThinking || message.isStreaming === true) && !hasContent;
 
@@ -221,6 +225,16 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
             conversationId={message.conversationId}
           />
         </div>
+      )}
+
+      {/* Auth-recovery card — replaces the raw "Error: ..." string when
+          Claude Code lost its session. Renders a one-click Sign In + Retry
+          flow instead of leaving the user to copy a 401 stack trace. */}
+      {!isUser && message.errorClass === 'auth' && (
+        <AuthRecoveryCard
+          conversationId={message.conversationId}
+          messageId={message.id}
+        />
       )}
 
       {/* Thinking indicator — only when there are no tool calls; otherwise the

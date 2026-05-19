@@ -756,12 +756,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     tc.completedAt = new Date();
                   }
                 }
+                // `errorClass` is read by ChatMessage to render the
+                // auth-recovery card when Claude Code lost its session
+                // (or other class-specific affordances we add later).
                 updateMessage(convId, assistantId, {
                   content: `Error: ${event.error}`,
                   isThinking: false,
                   isStreaming: false,
                   toolCalls: [...state.toolCalls],
+                  errorClass: event.errorClass,
                 });
+                // Auth failures invalidate the cached probe — clear it
+                // so the next probe (triggered by the auth-recovery
+                // card after the user signs in) returns fresh data
+                // instead of the 60s-stale "not authenticated" result.
+                if (event.errorClass === 'auth') {
+                  window.cerebro.claudeCode.probeAuth({ force: true }).catch(() => undefined);
+                }
                 break;
               }
             }

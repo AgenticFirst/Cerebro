@@ -55,6 +55,10 @@ export const IPC_CHANNELS = {
    *  script. One event per buffered chunk. */
   CLAUDE_CODE_INSTALL_LOG: 'claude-code:install-log',
   CLAUDE_CODE_PROBE_AUTH: 'claude-code:probe-auth',
+  /** Open a host terminal running `claude` so the user can complete the
+   *  sign-in flow without leaving the app. Used by the auth-error
+   *  recovery card in chat. */
+  CLAUDE_CODE_OPEN_LOGIN: 'claude-code:open-login',
 
   // Voice
   VOICE_START: 'voice:start',
@@ -261,6 +265,21 @@ export interface AgentRunRequest {
   qualityTier?: QualityTier;
 }
 
+/** Class hint set on `error` events so the chat UI can render a
+ *  class-specific recovery affordance (e.g. an inline "Sign in to
+ *  Claude Code" card for `auth`). Mirrors `AgentErrorClass` in
+ *  `agents/types.ts`; duplicated here so renderer files don't need
+ *  to reach into the agent-runtime types graph. */
+export type AgentErrorClass =
+  | 'auth'
+  | 'max_turns'
+  | 'context'
+  | 'overload'
+  | 'cancelled'
+  | 'spawn'
+  | 'session_missing'
+  | 'unknown';
+
 export type RendererAgentEvent =
   | { type: 'run_start'; runId: string }
   | { type: 'turn_start'; turn: number }
@@ -269,7 +288,7 @@ export type RendererAgentEvent =
   | { type: 'tool_end'; toolCallId: string; toolName: string; result: string; isError: boolean }
   | { type: 'system'; message: string; subtype?: string }
   | { type: 'done'; runId: string; messageContent: string }
-  | { type: 'error'; runId: string; error: string };
+  | { type: 'error'; runId: string; error: string; errorClass?: AgentErrorClass };
 
 export interface ActiveRunInfo {
   runId: string;
@@ -371,7 +390,14 @@ export interface ClaudeCodeAPI {
    * Result is cached in main-process memory for 60s to avoid spawning a
    * subprocess per click.
    */
-  probeAuth(): Promise<ClaudeCodeProbeResult>;
+  probeAuth(opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult>;
+  /**
+   * Open a host terminal running `claude` so the user can complete the
+   * sign-in flow (browser handshake) and come back. Called from the
+   * chat's auth-error recovery card. The renderer should follow up
+   * with a `probeAuth({ force: true })` once the user reports success.
+   */
+  openLogin(): Promise<{ ok: boolean; reason?: string }>;
 }
 
 // --- Installer ---

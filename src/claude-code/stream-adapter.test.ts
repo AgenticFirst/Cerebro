@@ -97,12 +97,13 @@ describe('ClaudeCodeRunner error mapping', () => {
     expect(errors[0]).toBe(msg);
   });
 
-  it('surfaces a stream-json result.is_error message instead of the generic fallback', async () => {
+  it('surfaces a stream-json result.is_error max-turns hit via the canned message', async () => {
     // Max-turns hits and per-turn API errors come back as stream-json
     // `{ type: "result", is_error: true, ... }` rather than on stderr.
-    // Before the fix this fell through to "exited unexpectedly (code 1)";
-    // now it produces a legible message.
-    const { errors } = startRunner();
+    // The close handler classifies off the payload and prefers a clean,
+    // user-actionable string over the raw CLI text (which can include
+    // confusing "success:" subtype prefixes or full API stack traces).
+    const { runner, errors } = startRunner();
     const resultErr = {
       type: 'result',
       is_error: true,
@@ -113,8 +114,31 @@ describe('ClaudeCodeRunner error mapping', () => {
     await new Promise((r) => setImmediate(r));
     currentChild!.emit('close', 1, null);
     await Promise.resolve();
-    expect(errors[0]).toMatch(/Reached maximum turns/);
-    expect(errors[0]).toMatch(/code 1/);
+    expect(errors[0]).toMatch(/maximum number of turns/);
+    expect(runner.getLastErrorClass()).toBe('max_turns');
+  });
+
+  it('maps a stream-json result.is_error 401 payload to the auth message + class', async () => {
+    // Regression: the CLI reports 401s through stream-json as
+    // `{ subtype: "success", is_error: true, result: "Failed to authenticate. API Error: 401 ..." }`.
+    // Without classification the user saw the raw "success: Failed to
+    // authenticate..." string, which read like a bug in Cerebro. Now we
+    // detect 401/unauthorized in the result tail and surface the canned
+    // "not signed in" message instead, so the auth-recovery card fires.
+    const { runner, errors } = startRunner();
+    const resultErr = {
+      type: 'result',
+      is_error: true,
+      subtype: 'success',
+      result: 'Failed to authenticate. API Error: 401 Invalid authentication credentials',
+    };
+    currentChild!.stdout.write(JSON.stringify(resultErr) + '\n');
+    await new Promise((r) => setImmediate(r));
+    currentChild!.emit('close', 1, null);
+    await Promise.resolve();
+    expect(errors[0]).toMatch(/not signed in/);
+    expect(errors[0]).not.toMatch(/success:/);
+    expect(runner.getLastErrorClass()).toBe('auth');
   });
 
   it('maps stderr "max turns" to a reached-max-turns message', async () => {
@@ -151,7 +175,7 @@ describe('ClaudeCodeRunner error mapping', () => {
     await new Promise((r) => setImmediate(r));
     currentChild!.emit('close', 1, null);
     await Promise.resolve();
-    expect(errors[0]).toMatch(/Authentication error/);
+    expect(errors[0]).toMatch(/not signed in/);
   });
 
   it('maps stderr "401" to the auth-error message', async () => {
@@ -160,7 +184,7 @@ describe('ClaudeCodeRunner error mapping', () => {
     await new Promise((r) => setImmediate(r));
     currentChild!.emit('close', 1, null);
     await Promise.resolve();
-    expect(errors[0]).toMatch(/Authentication error/);
+    expect(errors[0]).toMatch(/not signed in/);
   });
 
   it('maps SIGTERM signal kill to "killed by" message', async () => {

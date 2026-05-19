@@ -1039,10 +1039,13 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
             return;
           }
           // Non-retryable or ladder exhausted — surface the error.
+          // `errorClass` lets the chat UI render class-specific recovery
+          // affordances (e.g. "Sign in to Claude Code" for auth failures).
           this.deliverEvent(runId, webContents, {
             type: 'error',
             runId,
             error,
+            errorClass: cls === 'none' ? 'unknown' : cls,
           } as RendererAgentEvent);
           this.finalizeRun(runId, 'error', activeRun.accumulatedText, error);
           this.postRunSync(webContents);

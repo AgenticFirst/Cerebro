@@ -153,8 +153,11 @@ const api: CerebroAPI = {
     cancelInstall(): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_INSTALL_CANCEL);
     },
-    probeAuth(): Promise<ClaudeCodeProbeResult> {
-      return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH);
+    probeAuth(opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH, opts);
+    },
+    openLogin(): Promise<{ ok: boolean; reason?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_OPEN_LOGIN);
     },
   },
 

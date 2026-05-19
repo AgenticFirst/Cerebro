@@ -20,6 +20,22 @@ export interface ExpertProposalSnapshot {
   status: 'proposed' | 'previewing' | 'saved' | 'dismissed';
 }
 
+/**
+ * Classification of why a Claude Code run ended in error. Mirrored from
+ * `ClaudeCodeRunner.RunnerErrorClass` and propagated to the renderer on
+ * the `error` event so the chat UI can render class-specific recovery
+ * affordances (e.g. a "Sign in to Claude Code" action for `auth`).
+ */
+export type AgentErrorClass =
+  | 'auth'
+  | 'max_turns'
+  | 'context'
+  | 'overload'
+  | 'cancelled'
+  | 'spawn'
+  | 'session_missing'
+  | 'unknown';
+
 /** Lightweight message summary for conversation context. */
 export interface MessageSnapshot {
   role: 'user' | 'assistant';
@@ -104,7 +120,7 @@ export type RendererAgentEvent =
   | { type: 'tool_end'; toolCallId: string; toolName: string; result: string; isError: boolean }
   | { type: 'system'; message: string; subtype?: string }
   | { type: 'done'; runId: string; messageContent: string }
-  | { type: 'error'; runId: string; error: string }
+  | { type: 'error'; runId: string; error: string; errorClass?: AgentErrorClass }
   // Idle-watchdog events from ClaudeCodeRunner (chat path). Surfaced as
   // step_log events by the expert_step action so the user sees the
   // heartbeat trail in the Activity panel.

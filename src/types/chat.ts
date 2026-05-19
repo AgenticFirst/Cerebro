@@ -108,6 +108,20 @@ export interface EscalationNotice {
   reason: string;
 }
 
+/** Subset of AgentErrorClass surfaced to the chat UI for class-specific
+ *  recovery affordances. Mirrors `src/agents/types.ts:AgentErrorClass`
+ *  but lives here so the renderer-only Message shape doesn't pull the
+ *  whole agent runtime types graph. */
+export type MessageErrorClass =
+  | 'auth'
+  | 'max_turns'
+  | 'context'
+  | 'overload'
+  | 'cancelled'
+  | 'spawn'
+  | 'session_missing'
+  | 'unknown';
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -130,6 +144,11 @@ export interface Message {
    *  was retried on a stronger model/tier. Surfaced inline in the
    *  assistant bubble so the user sees why and what changed. */
   escalations?: EscalationNotice[];
+  /** Set when the run ended in error. Drives class-specific recovery
+   *  UI (e.g. the auth-recovery card for `auth`). Transient — not
+   *  persisted; absent on reload, which is fine because the original
+   *  user prompt is still in the transcript and they can resend. */
+  errorClass?: MessageErrorClass;
 }
 
 export type ConversationSource = 'cerebro' | 'telegram';

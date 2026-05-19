@@ -327,21 +327,27 @@ export class ClaudeCodeRunner extends EventEmitter {
         }
         if (this.resultErrorTail) {
           // Max-turns hits and per-turn API errors come through stream-json
-          // as `result.is_error: true`, often with a more useful message
-          // than our canned translations. Surface the CLI's own text and
-          // classify off it so retry logic still works.
-          detail = `Claude Code error (code ${code}): ${this.resultErrorTail}`;
+          // as `result.is_error: true`. Classify off the message so retry
+          // logic still works, then prefer a canned, user-actionable
+          // message for the known classes — the raw CLI text (often
+          // prefixed with `success:` or with a long API stack trace) is
+          // confusing to surface in chat.
           const lower = this.resultErrorTail.toLowerCase();
           if (lower.includes('max turns') || lower.includes('max_turns')) {
             this.lastErrorClass = 'max_turns';
+            detail = 'Claude Code reached the maximum number of turns without completing the task. Try a simpler request.';
           } else if (lower.includes('context') && (lower.includes('length') || lower.includes('window') || lower.includes('limit'))) {
             this.lastErrorClass = 'context';
+            detail = 'Claude Code ran out of context window. The conversation is too long for this model.';
           } else if (lower.includes('rate limit') || lower.includes('overload') || lower.includes('429') || lower.includes('503')) {
             this.lastErrorClass = 'overload';
-          } else if (lower.includes('authentication') || lower.includes('401') || lower.includes('not authenticated') || lower.includes('unauthorized')) {
+            detail = 'Rate limited or overloaded by the API. Please wait a moment and try again.';
+          } else if (lower.includes('authentication') || lower.includes('401') || lower.includes('not authenticated') || lower.includes('unauthorized') || lower.includes('invalid api key')) {
             this.lastErrorClass = 'auth';
+            detail = 'Claude Code is not signed in. Open a terminal, run `claude` to sign in, then retry.';
           } else {
             this.lastErrorClass = 'unknown';
+            detail = `Claude Code error (code ${code}): ${this.resultErrorTail}`;
           }
         } else if (tailLower.includes('max turns') || tailLower.includes('max_turns')) {
           detail = 'Claude Code reached the maximum number of turns without completing the task. Try a simpler request.';
@@ -352,8 +358,8 @@ export class ClaudeCodeRunner extends EventEmitter {
         } else if (tailLower.includes('rate limit') || tailLower.includes('overload') || tailLower.includes('429') || tailLower.includes('503')) {
           detail = 'Rate limited or overloaded by the API. Please wait a moment and try again.';
           this.lastErrorClass = 'overload';
-        } else if (tailLower.includes('authentication') || tailLower.includes('401') || tailLower.includes('not authenticated') || tailLower.includes('unauthorized')) {
-          detail = 'Authentication error: Claude Code is not authenticated. Run `claude` in a terminal to sign in, then retry.';
+        } else if (tailLower.includes('authentication') || tailLower.includes('401') || tailLower.includes('not authenticated') || tailLower.includes('unauthorized') || tailLower.includes('invalid api key')) {
+          detail = 'Claude Code is not signed in. Open a terminal, run `claude` to sign in, then retry.';
           this.lastErrorClass = 'auth';
         } else if (signal) {
           detail = this.stderrTail
@@ -615,7 +621,7 @@ export class ClaudeCodeRunner extends EventEmitter {
     this.clearIdleTimers();
     this.lastErrorClass = 'auth';
     const detail =
-      'Authentication error: Claude Code is not authenticated. Run `claude` in a terminal to sign in, then retry.';
+      'Claude Code is not signed in. Open a terminal, run `claude` to sign in, then retry.';
     if (this.process && !this.process.killed) {
       this.process.kill('SIGTERM');
       setTimeout(() => {

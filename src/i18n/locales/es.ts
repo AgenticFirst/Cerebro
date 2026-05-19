@@ -133,6 +133,16 @@ const es: TranslationKeys = {
         },
       },
     },
+    authRecovery: {
+      title: 'Inicia sesión en Claude Code',
+      body: 'El motor de Cerebro necesita autenticarse de nuevo. Abriremos una terminal con `claude` para que completes el inicio de sesión — vuelve aquí y pulsa Reintentar cuando termines.',
+      signIn: 'Abrir terminal e iniciar sesión',
+      retry: 'Reintentar',
+      retrying: 'Comprobando…',
+      stillFailing: 'Aún sin sesión iniciada. Completa el login `claude` en la terminal y reintenta.',
+      openFailed: 'No se pudo abrir una terminal automáticamente. Abre una y ejecuta `claude`.',
+      readyHint: 'Sesión iniciada. Reenviando tu mensaje…',
+    },
   },
 
   // \u2500\u2500 Modal de capacidades \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
