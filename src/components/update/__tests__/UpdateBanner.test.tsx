@@ -218,8 +218,8 @@ describe('UpdateBanner — downloaded', () => {
       asset: SAMPLE_INFO.asset,
     });
 
-    expect(screen.getByText(/Update downloaded/i)).toBeInTheDocument();
-    expect(screen.getByText(/Cerebro 0\.3\.0/i)).toBeInTheDocument();
+    expect(screen.getByText(/Cerebro 0\.3\.0 downloaded/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /open installer/i })).toBeInTheDocument();
   });
 });
 
