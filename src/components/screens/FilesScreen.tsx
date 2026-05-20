@@ -401,12 +401,12 @@ export default function FilesScreen() {
           onOpen={(item) => window.cerebro.files.open({
             storageKind: item.storageKind,
             storagePath: item.storagePath,
-            taskId: item.sourceTaskId,
+            taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
           })}
           onReveal={(item) => window.cerebro.files.reveal({
             storageKind: item.storageKind,
             storagePath: item.storagePath,
-            taskId: item.sourceTaskId,
+            taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
           })}
           onRename={(item) => setRenameState({ item, draft: item.name })}
           onMove={() => setMoveCopyMode('move')}
@@ -415,7 +415,7 @@ export default function FilesScreen() {
           onDownload={(item) => window.cerebro.files.download({
             storageKind: item.storageKind,
             storagePath: item.storagePath,
-            taskId: item.sourceTaskId,
+            taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
           })}
           onSoftDelete={() => softDelete(Array.from(selectedItemIds.size > 0 ? selectedItemIds : [contextMenu.item.id]))}
           onRestore={() => restore(Array.from(selectedItemIds.size > 0 ? selectedItemIds : [contextMenu.item.id]))}

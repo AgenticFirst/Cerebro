@@ -310,6 +310,11 @@ class Task(Base):
     # workspace. Stored as the realpath-resolved canonical form.
     project_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
+    # Human-readable folder name used under <userData>/task-workspaces/.
+    # Frozen at task creation as slugify(title) + "-" + id[:8]; never updated
+    # when the title changes, so on-disk paths stay stable.
+    workspace_dir: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+
     # Free-form tags for categorization. JSON-serialized list of strings.
     tags: Mapped[str | None] = mapped_column(Text, nullable=True)
 

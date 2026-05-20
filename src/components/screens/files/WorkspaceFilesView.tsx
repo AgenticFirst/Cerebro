@@ -51,11 +51,11 @@ export default function WorkspaceFilesView() {
     [tasksWithWorkspace, selectedTaskId],
   );
 
-  const loadFileTree = useCallback(async (taskId: string) => {
+  const loadFileTree = useCallback(async (workspaceDir: string) => {
     try {
       const [tree, path] = await Promise.all([
-        window.cerebro.taskTerminal.listFiles(taskId),
-        window.cerebro.taskTerminal.getWorkspacePath(taskId),
+        window.cerebro.taskTerminal.listFiles(workspaceDir),
+        window.cerebro.taskTerminal.getWorkspacePath(workspaceDir),
       ]);
       setFileTree(tree);
       setWorkspacePath(path);
@@ -67,14 +67,14 @@ export default function WorkspaceFilesView() {
   }, []);
 
   useEffect(() => {
-    if (selectedTaskId) {
-      loadFileTree(selectedTaskId);
+    if (selectedTask) {
+      loadFileTree(selectedTask.workspace_dir || selectedTask.id);
       setSelectedFile(null);
     } else {
       setFileTree([]);
       setSelectedFile(null);
     }
-  }, [selectedTaskId, loadFileTree]);
+  }, [selectedTask, loadFileTree]);
 
   const handleSaveSelected = async (bucketId: string) => {
     if (!selectedFile || !selectedTaskId || !workspacePath) return;

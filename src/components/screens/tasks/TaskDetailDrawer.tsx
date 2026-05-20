@@ -94,7 +94,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     const poll = async () => {
       try {
         const tree = await window.cerebro.taskTerminal.listFiles(
-          task.id,
+          task.workspace_dir || task.id,
           task.project_path ?? undefined,
         );
         if (cancelled) return;
@@ -242,7 +242,10 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     let cwd = task.project_path?.trim() || '';
     if (!cwd) {
       try {
-        cwd = await window.cerebro.taskTerminal.createWorkspace(task.id);
+        cwd = await window.cerebro.taskTerminal.createWorkspace({
+          taskId: task.id,
+          workspaceDir: task.workspace_dir || task.id,
+        });
       } catch {
         cwd = '';
       }
@@ -663,7 +666,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
             {/* Preview panel (30%) */}
             <div className="w-[30%] min-w-[320px] max-w-[520px] min-h-0">
               <LivePreview
-                taskId={task.id}
+                taskId={task.workspace_dir || task.id}
                 runId={consoleRunId}
                 isRunning={isRunning}
                 projectPath={task.project_path}
@@ -719,7 +722,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
               {activeTab === 'files' && (
                 <div className="flex-1 min-h-0">
                   <TaskFilesTab
-                    taskId={task.id}
+                    taskId={task.workspace_dir || task.id}
                     projectPath={task.project_path}
                     isRunning={isRunning}
                   />

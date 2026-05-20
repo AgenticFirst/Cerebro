@@ -28,21 +28,21 @@ export default function FilePreviewDrawer({ item, onClose }: FilePreviewDrawerPr
 
     if (kind === 'image' || kind === 'html' || kind === 'video' || kind === 'audio' || kind === 'pdf') {
       window.cerebro.files
-        .previewUrl({ storageKind: item.storageKind, storagePath: item.storagePath, taskId: item.sourceTaskId })
+        .previewUrl({ storageKind: item.storageKind, storagePath: item.storagePath, taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId })
         .then((u) => { if (!cancelled) setPreviewUrl(u); })
         .catch((err) => { if (!cancelled) setLoadError(String(err)); });
     } else if (kind === 'text' || kind === 'markdown') {
       const loader = item.storageKind === 'managed'
         ? window.cerebro.files.readManagedText(item.storagePath)
         : item.sourceTaskId
-          ? window.cerebro.taskTerminal.readFile(item.sourceTaskId, item.storagePath).then((c) => c ?? '')
+          ? window.cerebro.taskTerminal.readFile(item.sourceTaskWorkspaceDir || item.sourceTaskId, item.storagePath).then((c) => c ?? '')
           : Promise.resolve('');
       loader
         .then((c) => { if (!cancelled) setTextContent(c); })
         .catch((err) => { if (!cancelled) setLoadError(String(err)); });
     }
     return () => { cancelled = true; };
-  }, [item.id, item.storagePath, item.storageKind, item.sourceTaskId, kind]);
+  }, [item.id, item.storagePath, item.storageKind, item.sourceTaskId, item.sourceTaskWorkspaceDir, kind]);
 
   // Esc closes
   useEffect(() => {
@@ -56,17 +56,17 @@ export default function FilePreviewDrawer({ item, onClose }: FilePreviewDrawerPr
   const handleOpen = () => window.cerebro.files.open({
     storageKind: item.storageKind,
     storagePath: item.storagePath,
-    taskId: item.sourceTaskId,
+    taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
   });
   const handleReveal = () => window.cerebro.files.reveal({
     storageKind: item.storageKind,
     storagePath: item.storagePath,
-    taskId: item.sourceTaskId,
+    taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
   });
   const handleDownload = () => window.cerebro.files.download({
     storageKind: item.storageKind,
     storagePath: item.storagePath,
-    taskId: item.sourceTaskId,
+    taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
   });
 
   useEffect(() => {

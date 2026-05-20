@@ -74,6 +74,10 @@ class FileItemRead(BaseModel):
     source_conversation_id: str | None
     source_message_id: str | None
     source_task_id: str | None
+    # Frozen on-disk folder name of the source task's workspace. Lets the
+    # renderer build cerebro-workspace:// URLs without round-tripping for the
+    # parent task. Null when source_task_id is null or the task was deleted.
+    source_task_workspace_dir: str | None = None
     starred: bool
     deleted_at: datetime | None
     created_at: datetime

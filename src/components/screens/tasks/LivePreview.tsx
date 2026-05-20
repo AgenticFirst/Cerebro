@@ -8,6 +8,9 @@ import MarkdownContent from '../../chat/MarkdownContent';
 import { kindForFile, type PreviewKind, treeFingerprint } from './file-preview-helpers';
 
 interface LivePreviewProps {
+  // On-disk workspace folder name (task.workspace_dir, or task.id for legacy
+  // pre-migration rows). Used to call task-workspace IPC and compose the
+  // cerebro-workspace:// preview URL.
   taskId: string;
   runId: string | null;
   /** Whether the task is actively running (in_progress with a live agent). */

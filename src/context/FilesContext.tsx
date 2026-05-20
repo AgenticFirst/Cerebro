@@ -440,7 +440,7 @@ export function FilesProvider({ children }: { children: ReactNode }) {
         const sourceAbs = src.storagePath.startsWith('/')
           ? src.storagePath
           : src.sourceTaskId
-            ? `${await window.cerebro.taskTerminal.getWorkspacePath(src.sourceTaskId)}/${src.storagePath}`
+            ? `${await window.cerebro.taskTerminal.getWorkspacePath(src.sourceTaskWorkspaceDir || src.sourceTaskId)}/${src.storagePath}`
             : src.storagePath;
         const item = await importOne(sourceAbs, targetBucket, {
           name: src.name,

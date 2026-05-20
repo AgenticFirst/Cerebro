@@ -30,6 +30,10 @@ export interface FileItem {
   sourceConversationId: string | null;
   sourceMessageId: string | null;
   sourceTaskId: string | null;
+  /** Frozen on-disk folder name of the source task's workspace. Used as the
+   * hostname for cerebro-workspace:// preview URLs. Null when sourceTaskId is
+   * null or the source task was deleted. */
+  sourceTaskWorkspaceDir: string | null;
   starred: boolean;
   deletedAt: string | null;
   createdAt: string;
@@ -65,6 +69,7 @@ export interface ApiFileItem {
   source_conversation_id: string | null;
   source_message_id: string | null;
   source_task_id: string | null;
+  source_task_workspace_dir: string | null;
   starred: boolean;
   deleted_at: string | null;
   created_at: string;
@@ -102,6 +107,7 @@ export function fileItemFromApi(api: ApiFileItem): FileItem {
     sourceConversationId: api.source_conversation_id,
     sourceMessageId: api.source_message_id,
     sourceTaskId: api.source_task_id,
+    sourceTaskWorkspaceDir: api.source_task_workspace_dir ?? null,
     starred: api.starred,
     deletedAt: api.deleted_at,
     createdAt: api.created_at,

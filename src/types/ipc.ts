@@ -995,16 +995,20 @@ export interface TaskTerminalAPI {
   /** Delete the persisted terminal buffer for a run. */
   removeBuffer(runId: string): Promise<void>;
 
-  /** Create an isolated workspace directory for a task. Returns absolute path. */
-  createWorkspace(taskId: string): Promise<string>;
+  /**
+   * Create an isolated workspace directory for a task. Returns absolute path.
+   * `taskId` is the raw 32-hex DB id (used to detect any pre-migration folder
+   * to rename in place); `workspaceDir` is the human-readable on-disk name.
+   */
+  createWorkspace(args: { taskId: string; workspaceDir: string }): Promise<string>;
   /** Return derived workspace path without creating it. */
-  getWorkspacePath(taskId: string): Promise<string>;
+  getWorkspacePath(workspaceDir: string): Promise<string>;
   /** Recursively list files in the workspace as a tree. Pass an explicit path to list an external project folder. */
-  listFiles(taskId: string, overridePath?: string): Promise<WorkspaceFileNode[]>;
+  listFiles(workspaceDir: string, overridePath?: string): Promise<WorkspaceFileNode[]>;
   /** Read a file from the workspace as text (1MB cap). */
-  readFile(taskId: string, relativePath: string): Promise<string | null>;
+  readFile(workspaceDir: string, relativePath: string): Promise<string | null>;
   /** Remove the workspace directory when a task is deleted. */
-  removeWorkspace(taskId: string): Promise<void>;
+  removeWorkspace(workspaceDir: string): Promise<void>;
 
   /**
    * Spawn a plain login shell (zsh/bash) PTY that streams/accepts input on the

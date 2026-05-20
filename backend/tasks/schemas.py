@@ -50,6 +50,7 @@ class TaskRead(BaseModel):
     run_id: str | None
     last_error: str | None
     project_path: str | None
+    workspace_dir: str | None = None
     tags: list[str] = []
     result_md: str | None = None
     result_title: str | None = None

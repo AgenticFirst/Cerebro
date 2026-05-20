@@ -41,12 +41,12 @@ function ImageThumb({ item }: { item: FileItem }) {
       .previewUrl({
         storageKind: item.storageKind,
         storagePath: item.storagePath,
-        taskId: item.sourceTaskId,
+        taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
       })
       .then((u) => { if (!cancelled) setResolvedUrl(u); })
       .catch(() => { if (!cancelled) setResolvedUrl(null); });
     return () => { cancelled = true; };
-  }, [syncUrl, item.storageKind, item.storagePath, item.sourceTaskId]);
+  }, [syncUrl, item.storageKind, item.storagePath, item.sourceTaskId, item.sourceTaskWorkspaceDir]);
 
   const url = syncUrl ?? resolvedUrl;
   if (!url) return <div className="w-full h-full bg-bg-surface" />;

@@ -34,6 +34,7 @@ from .schemas import (
     TaskStats,
     TaskUpdate,
 )
+from .slug import build_workspace_dir
 
 router = APIRouter()
 
@@ -77,7 +78,19 @@ def _serialize_tags(tags: list[str] | None) -> str | None:
     return json.dumps(unique) if unique else None
 
 
+def _ensure_workspace_dir(task: Task, db: Session) -> str:
+    """Backfill workspace_dir for legacy rows on read so the renderer can
+    always rely on the field being populated."""
+    if task.workspace_dir:
+        return task.workspace_dir
+    task.workspace_dir = build_workspace_dir(task.title, task.id)
+    db.add(task)
+    db.commit()
+    return task.workspace_dir
+
+
 def _task_to_read(task: Task, db: Session) -> TaskRead:
+    workspace_dir = _ensure_workspace_dir(task, db)
     checklist_items = (
         db.query(TaskChecklistItem)
         .filter(TaskChecklistItem.task_id == task.id)
@@ -106,6 +119,7 @@ def _task_to_read(task: Task, db: Session) -> TaskRead:
         run_id=task.run_id,
         last_error=task.last_error,
         project_path=task.project_path,
+        workspace_dir=workspace_dir,
         tags=_parse_tags(task.tags),
         result_md=task.result_md,
         result_title=task.result_title,
@@ -164,6 +178,7 @@ def create_task(body: TaskCreate, request: Request, db: Session = Depends(get_db
     )
     db.add(task)
     db.flush()
+    task.workspace_dir = build_workspace_dir(task.title, task.id)
     _add_system_comment(db, task.id, "Task created")
     db.commit()
     db.refresh(task)

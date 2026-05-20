@@ -235,20 +235,20 @@ const api: CerebroAPI = {
     removeBuffer(runId: string): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.TASK_TERMINAL_REMOVE_BUFFER, runId);
     },
-    createWorkspace(taskId: string): Promise<string> {
-      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_CREATE, taskId);
+    createWorkspace(args: { taskId: string; workspaceDir: string }): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_CREATE, args);
     },
-    getWorkspacePath(taskId: string): Promise<string> {
-      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_PATH, taskId);
+    getWorkspacePath(workspaceDir: string): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_PATH, workspaceDir);
     },
-    listFiles(taskId: string, overridePath?: string) {
-      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, taskId, overridePath);
+    listFiles(workspaceDir: string, overridePath?: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, workspaceDir, overridePath);
     },
-    readFile(taskId: string, relativePath: string): Promise<string | null> {
-      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_READ_FILE, taskId, relativePath);
+    readFile(workspaceDir: string, relativePath: string): Promise<string | null> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_READ_FILE, workspaceDir, relativePath);
     },
-    removeWorkspace(taskId: string): Promise<void> {
-      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_REMOVE, taskId);
+    removeWorkspace(workspaceDir: string): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.TASK_WORKSPACE_REMOVE, workspaceDir);
     },
     startShellSession(sessionKey: string, cwd: string, cols: number, rows: number): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL_SESSION_START, sessionKey, cwd, cols, rows);

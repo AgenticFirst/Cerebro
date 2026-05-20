@@ -39,6 +39,7 @@ export interface Task {
   run_id: string | null;
   last_error: string | null;
   project_path: string | null;
+  workspace_dir: string | null;
   tags: string[];
   /** Parsed `<deliverable>` body from the latest successful run. Renders in
    * the Vista previa tab. Null while running or if the run never produced one. */
@@ -371,7 +372,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       }
       // Permanent cleanup: workspace files + terminal buffer
       await Promise.all([
-        window.cerebro.taskTerminal.removeWorkspace(id).catch(() => { /* noop */ }),
+        window.cerebro.taskTerminal.removeWorkspace(task?.workspace_dir || id).catch(() => { /* noop */ }),
         task?.run_id
           ? window.cerebro.taskTerminal.removeBuffer(task.run_id).catch(() => { /* noop */ })
           : Promise.resolve(),
@@ -447,7 +448,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     if (task.project_path && task.project_path.trim()) {
       return task.project_path;
     }
-    return window.cerebro.taskTerminal.createWorkspace(task.id);
+    return window.cerebro.taskTerminal.createWorkspace({
+      taskId: task.id,
+      workspaceDir: task.workspace_dir || task.id,
+    });
   }, []);
 
   // Helpers: build the direct-execution prompt from a task's fields.

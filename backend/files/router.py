@@ -7,7 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Bucket, FileItem
+from models import Bucket, FileItem, Task
 
 from .schemas import (
     BucketCreate,
@@ -18,6 +18,38 @@ from .schemas import (
     FileItemRead,
     FileItemUpdate,
 )
+
+
+def _to_read(item: FileItem, db: Session) -> FileItemRead:
+    workspace_dir: str | None = None
+    if item.source_task_id:
+        workspace_dir = (
+            db.query(Task.workspace_dir)
+            .filter(Task.id == item.source_task_id)
+            .scalar()
+        )
+    read = FileItemRead.model_validate(item)
+    read.source_task_workspace_dir = workspace_dir
+    return read
+
+
+def _list_to_read(items: list[FileItem], db: Session) -> list[FileItemRead]:
+    task_ids = {i.source_task_id for i in items if i.source_task_id}
+    workspace_dirs: dict[str, str | None] = {}
+    if task_ids:
+        rows = (
+            db.query(Task.id, Task.workspace_dir)
+            .filter(Task.id.in_(task_ids))
+            .all()
+        )
+        workspace_dirs = {tid: wd for tid, wd in rows}
+    reads: list[FileItemRead] = []
+    for item in items:
+        read = FileItemRead.model_validate(item)
+        if item.source_task_id:
+            read.source_task_workspace_dir = workspace_dirs.get(item.source_task_id)
+        reads.append(read)
+    return reads
 
 router = APIRouter()
 
@@ -260,7 +292,7 @@ def list_items(
         query = query.order_by(FileItem.created_at.desc())
 
     items = query.offset(offset).limit(limit).all()
-    return [FileItemRead.model_validate(i) for i in items]
+    return _list_to_read(items, db)
 
 
 @router.get("/items/recent", response_model=list[FileItemRead])
@@ -278,7 +310,7 @@ def recent_items(
         .limit(limit)
         .all()
     )
-    return [FileItemRead.model_validate(i) for i in items]
+    return _list_to_read(items, db)
 
 
 class FileItemFromPathRequest(BaseModel):
@@ -343,7 +375,7 @@ def create_item_from_path(body: FileItemFromPathRequest, db: Session = Depends(g
         .first()
     )
     if existing is not None:
-        return FileItemRead.model_validate(existing)
+        return _to_read(existing, db)
 
     item = FileItem(
         bucket_id=body.bucket_id,
@@ -362,7 +394,7 @@ def create_item_from_path(body: FileItemFromPathRequest, db: Session = Depends(g
     db.add(item)
     db.commit()
     db.refresh(item)
-    return FileItemRead.model_validate(item)
+    return _to_read(item, db)
 
 
 def _sniff_mime(head: bytes, ext_hint: str) -> str | None:
@@ -426,7 +458,7 @@ def create_item(body: FileItemCreate, db: Session = Depends(get_db)):
     db.add(item)
     db.commit()
     db.refresh(item)
-    return FileItemRead.model_validate(item)
+    return _to_read(item, db)
 
 
 @router.get("/items/{item_id}", response_model=FileItemRead)
@@ -434,7 +466,7 @@ def get_item(item_id: str, db: Session = Depends(get_db)):
     item = db.get(FileItem, item_id)
     if not item:
         raise HTTPException(404, "File not found")
-    return FileItemRead.model_validate(item)
+    return _to_read(item, db)
 
 
 @router.patch("/items/{item_id}", response_model=FileItemRead)
@@ -462,7 +494,7 @@ def update_item(item_id: str, body: FileItemUpdate, db: Session = Depends(get_db
 
     db.commit()
     db.refresh(item)
-    return FileItemRead.model_validate(item)
+    return _to_read(item, db)
 
 
 @router.post("/items/{item_id}/copy", response_model=FileItemRead, status_code=201)
@@ -491,7 +523,7 @@ def copy_item(item_id: str, body: FileItemCopyRequest, db: Session = Depends(get
     db.add(copy)
     db.commit()
     db.refresh(copy)
-    return FileItemRead.model_validate(copy)
+    return _to_read(copy, db)
 
 
 @router.delete("/items/{item_id}", status_code=204)
@@ -521,7 +553,7 @@ def touch_item(item_id: str, db: Session = Depends(get_db)):
     item.last_opened_at = _utcnow()
     db.commit()
     db.refresh(item)
-    return FileItemRead.model_validate(item)
+    return _to_read(item, db)
 
 
 @router.post("/trash/empty", response_model=list[str])

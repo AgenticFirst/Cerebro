@@ -122,9 +122,23 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-// Helper: resolve the base directory for a task's workspace
-function getTaskWorkspaceDir(taskId: string): string {
-  return path.join(app.getPath('userData'), 'task-workspaces', taskId);
+// Helper: resolve the base directory for a task's workspace.
+// The folder name is `task.workspace_dir` (a human-readable `slug-xxxxxxxx`)
+// for tasks created after the workspace-dir migration, or the raw 32-hex
+// task id for legacy rows / fallback before the renderer has the new field.
+function getTaskWorkspaceDir(workspaceDir: string): string {
+  return path.join(app.getPath('userData'), 'task-workspaces', workspaceDir);
+}
+
+// Folder name validator. Accepts the legacy 32-hex form (e.g.
+// `15acbf488b8248ca9cca7791492153eb`) and the new slug-hex form (e.g.
+// `creacion-manual-crear-ticket-15acbf48`). Rejects anything that could
+// escape the task-workspaces root (dots, slashes, leading/trailing hyphens).
+const WORKSPACE_DIR_RE = /^[a-z0-9](?:[a-z0-9-]{0,118}[a-z0-9])?$/;
+function assertWorkspaceDir(name: string): void {
+  if (!WORKSPACE_DIR_RE.test(name)) {
+    throw new Error(`Invalid workspace dir: ${name}`);
+  }
 }
 
 // Helper: root directory holding all managed bucket files
@@ -899,13 +913,28 @@ function registerIpcHandlers(): void {
 
   // --- Task Workspace (per-task isolated directory) ---
 
-  // Create the workspace directory and symlink .claude from parent dataDir
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_CREATE, async (_event, taskId: string): Promise<string> => {
+  // Create the workspace directory and symlink .claude from parent dataDir.
+  // Accepts `{ taskId, workspaceDir }`: taskId is the 32-hex DB id, used only
+  // to detect a pre-migration folder we should rename in place. workspaceDir
+  // is the actual on-disk folder name (slug-hex, or the legacy 32-hex for
+  // tasks that haven't been backfilled yet).
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_CREATE, async (_event, args: { taskId: string; workspaceDir: string }): Promise<string> => {
+    const { taskId, workspaceDir } = args ?? { taskId: '', workspaceDir: '' };
     if (!/^[a-z0-9]{32}$/i.test(taskId)) {
       throw new Error(`Invalid taskId: ${taskId}`);
     }
+    assertWorkspaceDir(workspaceDir);
     const dataDir = app.getPath('userData');
-    const workspacePath = getTaskWorkspaceDir(taskId);
+    const workspacePath = getTaskWorkspaceDir(workspaceDir);
+    // Lazy migration: if a legacy folder exists at <task-workspaces>/<taskId>
+    // and the new <workspace_dir> folder doesn't, rename it. Preserves any
+    // files the agent already wrote there.
+    if (workspaceDir !== taskId) {
+      const legacyPath = getTaskWorkspaceDir(taskId);
+      if (fs.existsSync(legacyPath) && !fs.existsSync(workspacePath)) {
+        fs.renameSync(legacyPath, workspacePath);
+      }
+    }
     fs.mkdirSync(workspacePath, { recursive: true });
     // Symlink .claude/ from parent so skills/agents are discoverable
     const claudeSrc = path.join(dataDir, '.claude');
@@ -921,17 +950,21 @@ function registerIpcHandlers(): void {
   });
 
   // Return the derived workspace path without creating it
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_PATH, async (_event, taskId: string): Promise<string> => {
-    return getTaskWorkspaceDir(taskId);
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_PATH, async (_event, workspaceDir: string): Promise<string> => {
+    assertWorkspaceDir(workspaceDir);
+    return getTaskWorkspaceDir(workspaceDir);
   });
 
   // List files in the workspace as a nested tree (excluding .claude symlink and node_modules).
   // `overridePath` (optional) routes the listing to an external project folder; the backend
   // sandbox validator already canonicalized and vetted the path at task create/update time.
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, async (_event, taskId: string, overridePath?: string) => {
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, async (_event, workspaceDir: string, overridePath?: string) => {
+    if (!(overridePath && overridePath.trim() && path.isAbsolute(overridePath))) {
+      assertWorkspaceDir(workspaceDir);
+    }
     const baseDir = overridePath && overridePath.trim() && path.isAbsolute(overridePath)
       ? overridePath
-      : getTaskWorkspaceDir(taskId);
+      : getTaskWorkspaceDir(workspaceDir);
     if (!fs.existsSync(baseDir)) return [];
 
     // `_work` is the convention the deliverable prompt asks experts to use for
@@ -992,8 +1025,9 @@ function registerIpcHandlers(): void {
   });
 
   // Read a file from the workspace as text (1MB cap)
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_READ_FILE, async (_event, taskId: string, relativePath: string): Promise<string | null> => {
-    const baseDir = getTaskWorkspaceDir(taskId);
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_READ_FILE, async (_event, workspaceDir: string, relativePath: string): Promise<string | null> => {
+    assertWorkspaceDir(workspaceDir);
+    const baseDir = getTaskWorkspaceDir(workspaceDir);
     const filePath = path.normalize(path.join(baseDir, relativePath));
     if (!filePath.startsWith(baseDir + path.sep) && filePath !== baseDir) return null;
     if (!fs.existsSync(filePath)) return null;
@@ -1007,8 +1041,9 @@ function registerIpcHandlers(): void {
   });
 
   // Remove the workspace directory (on task deletion)
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_REMOVE, async (_event, taskId: string): Promise<void> => {
-    const baseDir = getTaskWorkspaceDir(taskId);
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_REMOVE, async (_event, workspaceDir: string): Promise<void> => {
+    assertWorkspaceDir(workspaceDir);
+    const baseDir = getTaskWorkspaceDir(workspaceDir);
     if (fs.existsSync(baseDir)) {
       fs.rmSync(baseDir, { recursive: true, force: true });
     }
@@ -2307,11 +2342,11 @@ app.on('ready', async () => {
     let filePath = '<unresolved>';
     try {
       const url = new URL(request.url);
-      const taskId = url.hostname;
-      if (!taskId || !/^[a-z0-9]{32}$/i.test(taskId)) {
-        return new Response('Invalid task id', { status: 400 });
+      const workspaceDir = url.hostname;
+      if (!workspaceDir || !WORKSPACE_DIR_RE.test(workspaceDir)) {
+        return new Response('Invalid workspace dir', { status: 400 });
       }
-      const baseDir = getTaskWorkspaceDir(taskId);
+      const baseDir = getTaskWorkspaceDir(workspaceDir);
       let relPath = decodeURIComponent(url.pathname || '/');
       if (relPath === '/' || relPath === '') relPath = '/index.html';
       filePath = path.normalize(path.join(baseDir, relPath));

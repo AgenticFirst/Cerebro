@@ -16,6 +16,9 @@ import { hasTextExt, kindForFile, treeFingerprint } from './file-preview-helpers
 import { formatBytes } from '../files/utils';
 
 interface TaskFilesTabProps {
+  // On-disk workspace folder name (task.workspace_dir, or task.id for legacy
+  // pre-migration rows). Used to call task-workspace IPC and compose the
+  // cerebro-workspace:// preview URL.
   taskId: string;
   /** When set, the file listing comes from this external project folder instead
    * of the hidden per-task workspace dir. */
