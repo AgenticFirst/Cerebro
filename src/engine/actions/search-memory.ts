@@ -101,7 +101,6 @@ export const searchMemoryAction: ActionDefinition = {
       agent,
       prompt,
       signal: context.signal,
-      maxTurns: 8,
       model: params.model?.trim() || undefined,
       allowedTools: 'Read,Glob,Grep',
     });

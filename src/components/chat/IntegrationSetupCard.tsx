@@ -8,6 +8,7 @@ import { apiPatchMessageMetadata, toApiIntegrationProposal } from '../../context
 import { getIntegration } from '../../integrations/registry';
 
 const TelegramConnectModal = lazy(() => import('../screens/integrations/TelegramConnectModal'));
+const SlackConnectModal = lazy(() => import('../screens/integrations/SlackConnectModal'));
 const HubSpotConnectModal = lazy(() => import('../screens/integrations/HubSpotConnectModal'));
 const WhatsAppConnectModal = lazy(() => import('../screens/integrations/WhatsAppConnectModal'));
 const GenericConnectModal = lazy(() => import('../screens/integrations/GenericConnectModal'));
@@ -208,6 +209,9 @@ export default function IntegrationSetupCard({
         <Suspense fallback={null}>
           {manifest.customModalId === 'telegram' && (
             <TelegramConnectModal onClose={closeModal} onPersisted={() => { /* status poll handles it */ }} />
+          )}
+          {manifest.customModalId === 'slack' && (
+            <SlackConnectModal onClose={closeModal} onPersisted={() => { /* status poll handles it */ }} />
           )}
           {manifest.customModalId === 'hubspot' && (
             <HubSpotConnectModal onClose={closeModal} onPersisted={() => { /* status poll handles it */ }} />

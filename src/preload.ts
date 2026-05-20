@@ -15,6 +15,9 @@ import type {
   TelegramVerifyResponse,
   TelegramStatusResponse,
   TelegramConversationUpdatedEvent,
+  SlackVerifyResponse,
+  SlackStatusResponse,
+  SlackConversationUpdatedEvent,
   WhatsAppStatusResponse,
   WhatsAppConversationUpdatedEvent,
   HubSpotStatusResponse,
@@ -32,6 +35,7 @@ import type {
   UpdateAsset,
   UpdateDownloadProgress,
   UpdateDownloadedEvent,
+  BackupCompletionFlag,
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
@@ -331,6 +335,47 @@ const api: CerebroAPI = {
     },
   },
 
+  slack: {
+    verify(botToken: string, appToken: string): Promise<SlackVerifyResponse> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_VERIFY, { botToken, appToken });
+    },
+    enable(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_ENABLE);
+    },
+    disable(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_DISABLE);
+    },
+    status(): Promise<SlackStatusResponse> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_STATUS);
+    },
+    reload(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_RELOAD);
+    },
+    setTokens(tokens: { botToken: string; appToken: string }): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_SET_TOKENS, tokens);
+    },
+    clearTokens(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_CLEAR_TOKENS);
+    },
+    setAllowlist(args: { channels: string[]; users: string[] }): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_SET_ALLOWLIST, args);
+    },
+    getManifest(): Promise<{ ok: boolean; yaml?: string; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_GET_MANIFEST);
+    },
+    onConversationUpdated(
+      callback: (event: SlackConversationUpdatedEvent) => void,
+    ): () => void {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: SlackConversationUpdatedEvent,
+      ) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.SLACK_CONVERSATION_UPDATED, listener);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.SLACK_CONVERSATION_UPDATED, listener);
+    },
+  },
+
   whatsapp: {
     startPairing(): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_START_PAIRING);
@@ -469,6 +514,12 @@ const api: CerebroAPI = {
       ipcRenderer.on(IPC_CHANNELS.TEAM_MEMBER_UPDATE, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAM_MEMBER_UPDATE, listener);
     },
+    generateTitle(args: {
+      userMessage: string;
+      assistantResponse?: string;
+    }): Promise<string | null> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CHAT_GENERATE_TITLE, args);
+    },
   },
 
   updater: {
@@ -477,6 +528,9 @@ const api: CerebroAPI = {
     },
     download(asset: UpdateAsset): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, asset);
+    },
+    apply(asset: UpdateAsset): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_APPLY, asset);
     },
     dismiss(): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_DISMISS);
@@ -511,12 +565,39 @@ const api: CerebroAPI = {
     },
   },
 
+  backup: {
+    pickExportPath(defaultName: string): Promise<string | null> {
+      return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_PICK_EXPORT_PATH, defaultName);
+    },
+    pickImportFile(): Promise<string | null> {
+      return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_PICK_IMPORT_FILE);
+    },
+    applyAndRelaunch(backupPath: string): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_APPLY_AND_RELAUNCH, backupPath);
+    },
+    relaunch(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RELAUNCH);
+    },
+    consumeCompletionFlag(): Promise<BackupCompletionFlag | null> {
+      return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_CONSUME_COMPLETION_FLAG);
+    },
+    revealPath(filePath: string): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_REVEAL_PATH, filePath);
+    },
+    appVersion(): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.BACKUP_APP_VERSION);
+    },
+  },
+
   files: {
     pickFiles() {
       return ipcRenderer.invoke(IPC_CHANNELS.FILES_PICK_FILES);
     },
     importToBucket(args) {
       return ipcRenderer.invoke(IPC_CHANNELS.FILES_IMPORT_TO_BUCKET, args);
+    },
+    importToTask(args) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_IMPORT_TO_TASK, args);
     },
     copyManaged(args) {
       return ipcRenderer.invoke(IPC_CHANNELS.FILES_COPY_MANAGED, args);

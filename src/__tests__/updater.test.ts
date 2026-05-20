@@ -9,7 +9,7 @@
  * Electron and node:https are mocked so the suite runs offline and deterministically.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 
 // ── Mock state shared across the suite ──────────────────────────
@@ -78,6 +78,13 @@ mockHttps.get.mockImplementation((url: string, opts: any, cb?: any) => {
   return req;
 });
 
+const mockAppQuit = vi.hoisted(() => vi.fn());
+const mockShell = vi.hoisted(() => ({
+  openPath: vi.fn(),
+  openExternal: vi.fn(),
+  showItemInFolder: vi.fn(),
+}));
+
 vi.mock('electron', () => ({
   app: {
     getVersion: () => mockApp.version,
@@ -85,22 +92,74 @@ vi.mock('electron', () => ({
       return mockApp.isPackaged;
     },
     getPath: mockApp.getPath,
+    quit: mockAppQuit,
   },
   BrowserWindow: class {},
   dialog: { showMessageBox: vi.fn() },
-  shell: { openPath: vi.fn(), openExternal: vi.fn() },
+  shell: mockShell,
 }));
 
 vi.mock('node:https', () => ({ default: mockHttps, ...mockHttps }));
+
+// child_process.spawn — applyUpdate's Linux AppImage path uses this and then
+// watches the returned child for 2s. Tests construct an EventEmitter-backed
+// child via makeMockChild() and queue its spawn return below.
+type MockChild = ReturnType<typeof makeMockChild>;
+
+function makeMockChild(): {
+  emitter: EventEmitter;
+  stderr: EventEmitter;
+  pid: number;
+  unref: ReturnType<typeof vi.fn>;
+  removeAllListeners: ReturnType<typeof vi.fn>;
+  once: EventEmitter['once'];
+  on: EventEmitter['on'];
+} {
+  const emitter = new EventEmitter();
+  const stderr = new EventEmitter();
+  // Attach a no-op destroy so launchAndVerify's child.stderr?.destroy() works.
+  (stderr as unknown as { destroy: () => void }).destroy = vi.fn();
+  return {
+    emitter,
+    stderr,
+    pid: 12345,
+    unref: vi.fn(),
+    removeAllListeners: vi.fn(),
+    once: emitter.once.bind(emitter),
+    on: emitter.on.bind(emitter),
+  };
+}
+
+const mockSpawn = vi.hoisted(() => {
+  const fn = vi.fn();
+  return fn;
+});
+vi.mock('node:child_process', () => ({ spawn: mockSpawn, default: { spawn: mockSpawn } }));
+
+// fs.promises is the same singleton object whether you reach it via the
+// default import (`import fs from 'node:fs'; fs.promises.chmod`) or named
+// import. Spying on its methods directly is more reliable than trying to
+// re-mock the whole `node:fs` namespace, and leaves `fs.createWriteStream`
+// (used by downloadUpdate's actual download) untouched.
+import fsPromisesRef from 'node:fs';
+const mockFsPromises = {
+  chmod: vi.fn().mockResolvedValue(undefined),
+  rename: vi.fn().mockResolvedValue(undefined),
+  copyFile: vi.fn().mockResolvedValue(undefined),
+  unlink: vi.fn().mockResolvedValue(undefined),
+  access: vi.fn().mockResolvedValue(undefined),
+};
 
 // ── Import the module under test (after mocks are wired) ────────
 
 import {
   pickAssetForPlatform,
   checkNow,
+  applyUpdate,
   __resetUpdaterStateForTests,
   type GithubAsset,
 } from '../updater';
+import type { UpdateAsset } from '../types/ipc';
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -564,5 +623,326 @@ describe('checkNow — concurrency', () => {
     mockHttps.responseQueue.push({ statusCode: 304 });
     await checkNow();
     expect(mockHttps.get).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ── applyUpdate — install + restart with verify-and-rollback ────
+//
+// The previous bug shipped to users: shell.openPath('Cerebro.AppImage') on
+// Linux delegated to xdg-open, which MIME-routes rather than executes, so
+// the install reliably failed.
+//
+// The new applyUpdate flow:
+//   1. Backup current $APPIMAGE → .bak (so we can roll back).
+//   2. Atomically replace $APPIMAGE with the downloaded file.
+//   3. Spawn the new binary with --appimage-extract-and-run (no libfuse2
+//      dependency, no AppImageLauncher integration prompt).
+//   4. Watch the child for LAUNCH_VERIFY_MS (2000). Early exit ⇒ rollback
+//      and throw; survival ⇒ schedule app.quit().
+//
+// These tests use fake timers so we can step through the 2-second wait
+// deterministically, and inject either an early-exit child or a
+// long-running one to exercise both branches.
+
+describe('applyUpdate', () => {
+  const originalPlatform = process.platform;
+  const originalAppImage = process.env.APPIMAGE;
+  const originalAppDir = process.env.APPDIR;
+  const originalOwd = process.env.OWD;
+  const originalArgv0 = process.env.ARGV0;
+
+  function setPlatform(p: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value: p, configurable: true });
+  }
+
+  function makeUpdateAsset(name: string): UpdateAsset {
+    return {
+      name,
+      url: `https://github.com/AgenticFirst/Cerebro/releases/download/v0.2.0/${name}`,
+      size: 12345,
+      contentType: 'application/octet-stream',
+    };
+  }
+
+  const realFsPromises = {
+    chmod: fsPromisesRef.promises.chmod,
+    rename: fsPromisesRef.promises.rename,
+    copyFile: fsPromisesRef.promises.copyFile,
+    unlink: fsPromisesRef.promises.unlink,
+    access: fsPromisesRef.promises.access,
+  };
+
+  // Per-test handle to the most recent mock child returned by spawn(), so
+  // tests can drive its 'exit' / 'error' events without re-introspecting the
+  // mock call args.
+  let currentChild: MockChild | null = null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockSpawn.mockReset();
+    mockSpawn.mockImplementation(() => {
+      currentChild = makeMockChild();
+      return {
+        pid: currentChild.pid,
+        stderr: currentChild.stderr,
+        unref: currentChild.unref,
+        removeAllListeners: currentChild.removeAllListeners,
+        once: currentChild.once,
+        on: currentChild.on,
+      } as unknown as ReturnType<typeof import('node:child_process').spawn>;
+    });
+    mockAppQuit.mockClear();
+    mockShell.openPath.mockReset().mockResolvedValue('');
+    mockShell.showItemInFolder.mockReset();
+    mockFsPromises.chmod.mockReset().mockResolvedValue(undefined);
+    mockFsPromises.rename.mockReset().mockResolvedValue(undefined);
+    mockFsPromises.copyFile.mockReset().mockResolvedValue(undefined);
+    mockFsPromises.unlink.mockReset().mockResolvedValue(undefined);
+    mockFsPromises.access.mockReset().mockResolvedValue(undefined);
+    fsPromisesRef.promises.chmod = mockFsPromises.chmod as unknown as typeof fsPromisesRef.promises.chmod;
+    fsPromisesRef.promises.rename = mockFsPromises.rename as unknown as typeof fsPromisesRef.promises.rename;
+    fsPromisesRef.promises.copyFile = mockFsPromises.copyFile as unknown as typeof fsPromisesRef.promises.copyFile;
+    fsPromisesRef.promises.unlink = mockFsPromises.unlink as unknown as typeof fsPromisesRef.promises.unlink;
+    fsPromisesRef.promises.access = mockFsPromises.access as unknown as typeof fsPromisesRef.promises.access;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    const restore = (key: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    };
+    restore('APPIMAGE', originalAppImage);
+    restore('APPDIR', originalAppDir);
+    restore('OWD', originalOwd);
+    restore('ARGV0', originalArgv0);
+    fsPromisesRef.promises.chmod = realFsPromises.chmod;
+    fsPromisesRef.promises.rename = realFsPromises.rename;
+    fsPromisesRef.promises.copyFile = realFsPromises.copyFile;
+    fsPromisesRef.promises.unlink = realFsPromises.unlink;
+    fsPromisesRef.promises.access = realFsPromises.access;
+    currentChild = null;
+  });
+
+  /** Run applyUpdate, simulate a child that stays alive past the 2s verify
+   *  window, return the resolved promise. */
+  async function applyAndKeepChildAlive(asset: UpdateAsset): Promise<void> {
+    const promise = applyUpdate(asset);
+    // Let microtasks settle so spawn fires and child is created.
+    await vi.advanceTimersByTimeAsync(0);
+    // Step past the 2s verify timeout — child never emits exit, so
+    // launchAndVerify resolves "success".
+    await vi.advanceTimersByTimeAsync(2_001);
+    // Then past the 300ms quit-debounce so app.quit() fires.
+    await vi.advanceTimersByTimeAsync(310);
+    return promise;
+  }
+
+  /** Run applyUpdate, simulate the child exiting with the given code/stderr
+   *  before the verify window. The returned promise will reject. */
+  async function applyAndExitChildEarly(
+    asset: UpdateAsset,
+    code: number,
+    stderr = '',
+  ): Promise<unknown> {
+    const promise = applyUpdate(asset).catch((err) => err);
+    await vi.advanceTimersByTimeAsync(0);
+    if (!currentChild) throw new Error('spawn was not called');
+    if (stderr) currentChild.stderr.emit('data', Buffer.from(stderr));
+    currentChild.emitter.emit('exit', code, null);
+    await vi.advanceTimersByTimeAsync(0);
+    return promise;
+  }
+
+  it('Linux AppImage with $APPIMAGE: backs up, replaces, verifies, and quits', async () => {
+    setPlatform('linux');
+    process.env.APPIMAGE = '/home/me/Applications/Cerebro.AppImage';
+    process.env.APPDIR = '/tmp/.mount_Cerebro';
+    process.env.OWD = '/home/me';
+    process.env.ARGV0 = './Cerebro.AppImage';
+
+    const asset = makeUpdateAsset('Cerebro-0.2.0-x64.AppImage');
+    await applyAndKeepChildAlive(asset);
+
+    // mockApp.getPath returns /tmp/${kind}; updates dir is /tmp/userData/updates/.
+    const expectedDownloadPath = '/tmp/userData/updates/Cerebro-0.2.0-x64.AppImage';
+
+    // Stage-1: backup created before in-place rename.
+    expect(mockFsPromises.copyFile).toHaveBeenCalledWith(
+      '/home/me/Applications/Cerebro.AppImage',
+      '/home/me/Applications/Cerebro.AppImage.bak',
+    );
+    // Stage-2: downloaded file atomically renamed over $APPIMAGE.
+    expect(mockFsPromises.rename).toHaveBeenCalledWith(
+      expectedDownloadPath,
+      '/home/me/Applications/Cerebro.AppImage',
+    );
+    expect(mockFsPromises.chmod).toHaveBeenCalledWith(
+      '/home/me/Applications/Cerebro.AppImage',
+      0o755,
+    );
+
+    // Stage-3: spawn with --appimage-extract-and-run + sanitized env.
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    const [cmd, args, opts] = mockSpawn.mock.calls[0] as [string, string[], Record<string, unknown>];
+    expect(cmd).toBe('/home/me/Applications/Cerebro.AppImage');
+    expect(args).toEqual(['--appimage-extract-and-run']);
+    expect(opts).toMatchObject({ detached: true });
+    const childEnv = (opts as { env: NodeJS.ProcessEnv }).env;
+    expect(childEnv.APPIMAGE).toBeUndefined();
+    expect(childEnv.APPDIR).toBeUndefined();
+    expect(childEnv.OWD).toBeUndefined();
+    expect(childEnv.ARGV0).toBeUndefined();
+
+    // Stage-4: backup cleaned up, app.quit() called after verify succeeds.
+    expect(mockFsPromises.unlink).toHaveBeenCalledWith(
+      '/home/me/Applications/Cerebro.AppImage.bak',
+    );
+    expect(mockAppQuit).toHaveBeenCalledTimes(1);
+    expect(mockShell.openPath).not.toHaveBeenCalled();
+  });
+
+  it('Linux AppImage early-exit: rolls back .bak → $APPIMAGE, surfaces stderr, does NOT quit', async () => {
+    setPlatform('linux');
+    process.env.APPIMAGE = '/home/me/Applications/Cerebro.AppImage';
+    const asset = makeUpdateAsset('Cerebro-0.2.0-x64.AppImage');
+
+    const err = (await applyAndExitChildEarly(
+      asset,
+      127,
+      'AppImages require FUSE to run.\nPlease install libfuse2.\n',
+    )) as Error;
+
+    // Rollback happened: .bak renamed back over $APPIMAGE.
+    expect(mockFsPromises.rename).toHaveBeenCalledWith(
+      '/home/me/Applications/Cerebro.AppImage.bak',
+      '/home/me/Applications/Cerebro.AppImage',
+    );
+    // app.quit() must NOT fire on failure — old install is still working.
+    expect(mockAppQuit).not.toHaveBeenCalled();
+    expect(err.message).toMatch(/Couldn't start the new version/);
+    expect(err.message).toMatch(/current install is unchanged/);
+    expect(err.message).toMatch(/libfuse2/);
+  });
+
+  it('Linux AppImage without $APPIMAGE: launches from updates dir, no backup attempted', async () => {
+    setPlatform('linux');
+    delete process.env.APPIMAGE;
+    const asset = makeUpdateAsset('Cerebro-0.2.0-x64.AppImage');
+    await applyAndKeepChildAlive(asset);
+
+    const expectedPath = '/tmp/userData/updates/Cerebro-0.2.0-x64.AppImage';
+    expect(mockFsPromises.copyFile).not.toHaveBeenCalled();
+    expect(mockFsPromises.rename).not.toHaveBeenCalled();
+    expect(mockSpawn.mock.calls[0][0]).toBe(expectedPath);
+    expect((mockSpawn.mock.calls[0][1] as string[])).toEqual(['--appimage-extract-and-run']);
+    expect(mockAppQuit).toHaveBeenCalledTimes(1);
+  });
+
+  it('Linux AppImage with EXDEV (cross-mount): falls back to copy+unlink, launches from $APPIMAGE', async () => {
+    setPlatform('linux');
+    process.env.APPIMAGE = '/home/me/Applications/Cerebro.AppImage';
+    const asset = makeUpdateAsset('Cerebro-0.2.0-x64.AppImage');
+    const exdev = Object.assign(new Error('EXDEV'), { code: 'EXDEV' });
+    mockFsPromises.rename.mockRejectedValueOnce(exdev);
+    await applyAndKeepChildAlive(asset);
+
+    const expectedDownload = '/tmp/userData/updates/Cerebro-0.2.0-x64.AppImage';
+    expect(mockFsPromises.copyFile).toHaveBeenCalledWith(
+      expectedDownload,
+      '/home/me/Applications/Cerebro.AppImage',
+    );
+    expect(mockFsPromises.unlink).toHaveBeenCalledWith(expectedDownload);
+    expect(mockSpawn.mock.calls[0][0]).toBe('/home/me/Applications/Cerebro.AppImage');
+  });
+
+  it('Linux AppImage with EACCES on $APPIMAGE: launches from updates dir, deletes useless backup', async () => {
+    setPlatform('linux');
+    process.env.APPIMAGE = '/opt/Cerebro/Cerebro.AppImage';
+    const asset = makeUpdateAsset('Cerebro-0.2.0-x64.AppImage');
+    const eacces = Object.assign(new Error('EACCES'), { code: 'EACCES' });
+    mockFsPromises.rename.mockRejectedValueOnce(eacces);
+    await applyAndKeepChildAlive(asset);
+
+    const expectedDownload = '/tmp/userData/updates/Cerebro-0.2.0-x64.AppImage';
+    expect(mockFsPromises.copyFile).toHaveBeenCalledWith(
+      '/opt/Cerebro/Cerebro.AppImage',
+      '/opt/Cerebro/Cerebro.AppImage.bak',
+    );
+    expect(mockFsPromises.unlink).toHaveBeenCalledWith('/opt/Cerebro/Cerebro.AppImage.bak');
+    expect(mockSpawn.mock.calls[0][0]).toBe(expectedDownload);
+    expect(mockAppQuit).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws helpful error when download artifact is missing on disk', async () => {
+    setPlatform('linux');
+    process.env.APPIMAGE = '/home/me/Cerebro.AppImage';
+    const enoent = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    mockFsPromises.access.mockRejectedValueOnce(enoent);
+
+    await expect(
+      applyUpdate(makeUpdateAsset('Cerebro-0.2.0-x64.AppImage')),
+    ).rejects.toThrow(/Downloaded update is missing.*re-download/);
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(mockAppQuit).not.toHaveBeenCalled();
+  });
+
+  it('Linux .deb: reveals in file manager, does not spawn, does not quit', async () => {
+    setPlatform('linux');
+    const asset = makeUpdateAsset('cerebro_0.2.0_amd64.deb');
+    await applyUpdate(asset);
+
+    expect(mockShell.showItemInFolder).toHaveBeenCalledWith(
+      '/tmp/userData/updates/cerebro_0.2.0_amd64.deb',
+    );
+    expect(mockShell.openPath).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(mockAppQuit).not.toHaveBeenCalled();
+  });
+
+  it('Linux .rpm: reveals in file manager', async () => {
+    setPlatform('linux');
+    const asset = makeUpdateAsset('cerebro-0.2.0-1.x86_64.rpm');
+    await applyUpdate(asset);
+
+    expect(mockShell.showItemInFolder).toHaveBeenCalledWith(
+      '/tmp/userData/updates/cerebro-0.2.0-1.x86_64.rpm',
+    );
+    expect(mockShell.openPath).not.toHaveBeenCalled();
+  });
+
+  it('macOS .dmg: opens via shell.openPath, no spawn, no quit', async () => {
+    setPlatform('darwin');
+    const asset = makeUpdateAsset('Cerebro-0.2.0-arm64.dmg');
+    await applyUpdate(asset);
+
+    expect(mockShell.openPath).toHaveBeenCalledWith(
+      '/tmp/userData/updates/Cerebro-0.2.0-arm64.dmg',
+    );
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(mockAppQuit).not.toHaveBeenCalled();
+  });
+
+  it('Windows Setup.exe: opens via shell.openPath', async () => {
+    setPlatform('win32');
+    const asset = makeUpdateAsset('Cerebro-0.2.0 Setup.exe');
+    await applyUpdate(asset);
+
+    // Setup.exe has spaces — the sanitized filename replaces them with _.
+    expect(mockShell.openPath).toHaveBeenCalledWith(
+      '/tmp/userData/updates/Cerebro-0.2.0_Setup.exe',
+    );
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it('macOS shell.openPath failure surfaces as "Failed to open installer"', async () => {
+    setPlatform('darwin');
+    mockShell.openPath.mockResolvedValueOnce('hdiutil: attach failed');
+
+    await expect(applyUpdate(makeUpdateAsset('Cerebro.dmg'))).rejects.toThrow(
+      /Failed to open installer: hdiutil: attach failed/,
+    );
+    expect(mockAppQuit).not.toHaveBeenCalled();
   });
 });

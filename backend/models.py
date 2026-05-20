@@ -313,6 +313,15 @@ class Task(Base):
     # Free-form tags for categorization. JSON-serialized list of strings.
     tags: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Final deliverable captured at run_completed. The expert's <deliverable>
+    # body is parsed in the Electron runtime and POSTed here so the task row
+    # carries the result independent of the PTY terminal buffer (which is
+    # ephemeral and ANSI-laden). Used by the Vista previa tab.
+    result_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    result_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # markdown | code_app | mixed
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

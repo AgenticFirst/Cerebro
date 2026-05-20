@@ -12,7 +12,24 @@ import type {
   UpdateDownloadedEvent,
 } from '../types/ipc';
 
-type UpdateStatus = 'idle' | 'available' | 'downloading' | 'downloaded' | 'error';
+// State machine:
+//   idle → available → downloading → ready → applying → (quit) | error
+//                                       ↑                          │
+//                                       └──────── retry ───────────┘
+//
+// `ready` means: artifact is downloaded and verified intact on disk; we're
+// waiting for the user to click "Restart now". Apply doesn't fire on its
+// own — that's the whole reason this fix is safe. `applying` is the brief
+// window where main is replacing the binary + verifying the new launch.
+// On success the process quits; on failure we surface `error` with the
+// underlying reason and the user can hit "Restart now" again.
+type UpdateStatus =
+  | 'idle'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'applying'
+  | 'error';
 
 interface UpdateContextValue {
   status: UpdateStatus;
@@ -22,6 +39,7 @@ interface UpdateContextValue {
   errorMessage: string | null;
   isDismissed: boolean;
   startDownload: () => Promise<void>;
+  applyUpdate: () => Promise<void>;
   dismiss: () => void;
   openReleasePage: () => void;
 }
@@ -53,7 +71,9 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     });
     const offDownloaded = window.cerebro.updater.onDownloaded((evt: UpdateDownloadedEvent) => {
       setDownloadedPath(evt.path);
-      setStatus('downloaded');
+      // `ready`, not `applying` — install does NOT happen automatically.
+      // The user explicitly clicks "Restart now" in the banner to trigger it.
+      setStatus('ready');
     });
     const offError = window.cerebro.updater.onError((msg) => {
       setErrorMessage(msg);
@@ -99,6 +119,23 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     }
   }, [info]);
 
+  const applyUpdate = useCallback(async () => {
+    if (!info) return;
+    setStatus('applying');
+    setErrorMessage(null);
+    try {
+      // On success the main process app.quit()s shortly after this resolves,
+      // so the renderer is torn down before we ever see the resolve.
+      // On failure (e.g. new version exits early) main rolls back to the
+      // previous install and rejects with a human-readable reason.
+      await window.cerebro.updater.apply(info.asset);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMessage(message);
+      setStatus('error');
+    }
+  }, [info]);
+
   const dismiss = useCallback(() => {
     setIsDismissed(true);
     void window.cerebro.updater.dismiss();
@@ -118,6 +155,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     errorMessage,
     isDismissed,
     startDownload,
+    applyUpdate,
     dismiss,
     openReleasePage,
   };

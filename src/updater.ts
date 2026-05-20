@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, shell } from 'electron';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import https from 'node:https';
@@ -296,10 +297,38 @@ export function ackUpdateBanner(): void {
   rendererAcked = true;
 }
 
-export async function downloadAndOpen(asset: UpdateAsset): Promise<void> {
-  const tempDir = app.getPath('temp');
+/**
+ * Where downloaded artifacts live. Persistent (not /tmp) so a download isn't
+ * lost if the user defers the restart and the OS purges its temp dir. Also
+ * survives a process crash mid-restart — the partial download can be retried.
+ *
+ * IMPORTANT: this directory is INSIDE the user-data dir, which is independent
+ * of the AppImage location. SQLite, settings, memory, chat history all live
+ * elsewhere in the same userData dir. Nothing here touches them.
+ */
+function getUpdatesDir(): string {
+  const dir = path.join(app.getPath('userData'), 'updates');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/**
+ * Download the asset to userData/updates/<safe-name>. Does NOT install —
+ * `applyUpdate` does that when the user clicks Restart. Splitting download
+ * from apply means:
+ *   1. The user controls when the restart happens (no surprise quit).
+ *   2. If `applyUpdate` later detects the new version can't launch, the file
+ *      is still in a known location so we can retry / rollback / report.
+ *   3. The download can take its time without holding the install logic open.
+ *
+ * Streams to <name>.partial and atomically renames on completion so a
+ * crash mid-download can't leave a half-file masquerading as installable.
+ */
+export async function downloadUpdate(asset: UpdateAsset): Promise<string> {
+  const updatesDir = getUpdatesDir();
   const safeName = asset.name.replace(/[^A-Za-z0-9._-]/g, '_');
-  const destPath = path.join(tempDir, safeName);
+  const destPath = path.join(updatesDir, safeName);
+  const partialPath = `${destPath}.partial`;
 
   await new Promise<void>((resolve, reject) => {
     const followRedirects = (url: string, hops: number) => {
@@ -349,7 +378,7 @@ export async function downloadAndOpen(asset: UpdateAsset): Promise<void> {
                 send(IPC_CHANNELS.UPDATE_DOWNLOAD_PROGRESS, progress);
               }
             });
-            const out = fs.createWriteStream(destPath);
+            const out = fs.createWriteStream(partialPath);
             pipeline(res, out).then(() => resolve()).catch(reject);
           },
         )
@@ -358,22 +387,243 @@ export async function downloadAndOpen(asset: UpdateAsset): Promise<void> {
     followRedirects(asset.url, 0);
   });
 
-  // Linux AppImages are downloaded without the executable bit; without
-  // chmod +x, double-clicking them just opens a text editor. Same for the
-  // shell.openPath call.
+  // Atomic finalize: nothing tries to apply a half-downloaded file.
+  await fs.promises.rename(partialPath, destPath);
+
+  // chmod AppImages now so retries don't have to repeat it.
   if (process.platform === 'linux' && /\.appimage$/i.test(asset.name)) {
     try {
       await fs.promises.chmod(destPath, 0o755);
     } catch (err) {
-      console.warn('[updater] Failed to chmod AppImage:', err);
+      console.warn('[updater] Failed to chmod downloaded AppImage:', err);
     }
   }
 
   send(IPC_CHANNELS.UPDATE_DOWNLOADED, { path: destPath, asset });
+  return destPath;
+}
 
-  // shell.openPath returns a string error message ('' = success).
-  const openErr = await shell.openPath(destPath);
+/**
+ * Resolve the path of a previously-downloaded artifact. Used by `applyUpdate`
+ * so the renderer doesn't have to remember the on-disk path — it just hands
+ * back the same asset descriptor it received from UPDATE_DOWNLOADED.
+ */
+function downloadedPathFor(asset: UpdateAsset): string {
+  const safeName = asset.name.replace(/[^A-Za-z0-9._-]/g, '_');
+  return path.join(getUpdatesDir(), safeName);
+}
+
+/**
+ * Install the previously-downloaded artifact and restart, with a hard
+ * guarantee: we do NOT quit the current process until the new version has
+ * been observed running for `LAUNCH_VERIFY_MS`. If verification fails the
+ * old install is rolled back from a sibling .bak file. This is the only
+ * place that calls `app.quit()` in the updater.
+ *
+ * Per-platform behavior:
+ *
+ *   Linux .AppImage:
+ *     1. If $APPIMAGE is set + writable: copy the running file to .bak,
+ *        atomically rename the downloaded file over $APPIMAGE.
+ *     2. Spawn the AppImage with `--appimage-extract-and-run`. This avoids
+ *        the libfuse2 dependency (Ubuntu 22.04+, Fedora 36+ no longer ship
+ *        it) and bypasses AppImageLauncher's integration prompt. The trade
+ *        is ~500ms slower startup + ~500 MB extra temp disk for the extract.
+ *     3. Watch the child for `LAUNCH_VERIFY_MS`. If it exits before then,
+ *        rollback (rename .bak back over $APPIMAGE) and throw — current
+ *        process keeps running. If it survives, app.quit().
+ *
+ *   Linux .deb/.rpm: reveal in the file manager. No quit, no spawn — the
+ *     user runs the system package GUI. (Same as before: no portable way to
+ *     auto-install without sudo, and dpkg/rpm need the current process to
+ *     not be running anyway.)
+ *
+ *   macOS .dmg / Windows Setup.exe: shell.openPath. These have always-
+ *     present, well-defined handlers; the user manually quits + installs.
+ */
+const LAUNCH_VERIFY_MS = 2000;
+
+export async function applyUpdate(asset: UpdateAsset): Promise<void> {
+  const downloadedPath = downloadedPathFor(asset);
+  try {
+    await fs.promises.access(downloadedPath, fs.constants.R_OK);
+  } catch {
+    throw new Error(
+      `Downloaded update is missing. Please click "Update now" again to re-download.`,
+    );
+  }
+
+  if (process.platform === 'linux') {
+    if (/\.appimage$/i.test(asset.name)) {
+      await applyLinuxAppImage(downloadedPath);
+      return;
+    }
+    if (/\.(deb|rpm)$/i.test(asset.name)) {
+      // Reveal-only. Do not quit — dpkg/rpm need to run while we're idle,
+      // and we have no way to wait on the user. Update apply succeeds as
+      // soon as the file is in front of them.
+      try {
+        shell.showItemInFolder(downloadedPath);
+      } catch (err) {
+        console.warn('[updater] showItemInFolder failed:', err);
+      }
+      return;
+    }
+  }
+
+  // macOS .dmg, Windows .exe / Setup.exe.
+  const openErr = await shell.openPath(downloadedPath);
   if (openErr) {
     throw new Error(`Failed to open installer: ${openErr}`);
   }
+}
+
+async function applyLinuxAppImage(downloadedPath: string): Promise<void> {
+  let launchPath = downloadedPath;
+  let backupPath: string | null = null;
+  const runningAppImage = process.env.APPIMAGE;
+
+  // ── Step 1: Try to replace the running AppImage in place ───────
+  if (runningAppImage) {
+    backupPath = `${runningAppImage}.bak`;
+    try {
+      // Stage a backup BEFORE overwriting so rollback is always possible.
+      await fs.promises.copyFile(runningAppImage, backupPath);
+    } catch (err) {
+      console.warn('[updater] Could not back up running AppImage (will continue without rollback):', err);
+      backupPath = null;
+    }
+
+    try {
+      await fs.promises.rename(downloadedPath, runningAppImage);
+      await fs.promises.chmod(runningAppImage, 0o755);
+      launchPath = runningAppImage;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EXDEV') {
+        try {
+          await fs.promises.copyFile(downloadedPath, runningAppImage);
+          await fs.promises.chmod(runningAppImage, 0o755);
+          await fs.promises.unlink(downloadedPath);
+          launchPath = runningAppImage;
+        } catch (copyErr) {
+          console.warn('[updater] Cross-device replace failed; launching from updates dir:', copyErr);
+          // Backup is useless if we never replaced — delete it so we don't
+          // leave .bak files lying around.
+          await safeUnlink(backupPath);
+          backupPath = null;
+        }
+      } else {
+        console.warn('[updater] In-place replace failed; launching from updates dir:', err);
+        await safeUnlink(backupPath);
+        backupPath = null;
+      }
+    }
+  }
+
+  // ── Step 2: Verify the new binary can actually launch ──────────
+  try {
+    await launchAndVerify(launchPath);
+  } catch (launchErr) {
+    // Rollback so the user's install is restored to its prior working state.
+    if (backupPath && runningAppImage) {
+      try {
+        await fs.promises.rename(backupPath, runningAppImage);
+        console.log('[updater] Rolled back to previous AppImage after failed launch');
+      } catch (rollbackErr) {
+        console.error('[updater] Rollback failed — user may need to reinstall manually:', rollbackErr);
+      }
+    }
+    throw new Error(
+      `Couldn't start the new version of Cerebro. Your current install is unchanged. ` +
+        `Details: ${(launchErr as Error).message}`,
+    );
+  }
+
+  // ── Step 3: Launch verified — clean up + quit ──────────────────
+  if (backupPath) {
+    await safeUnlink(backupPath);
+  }
+  // Tiny delay so the renderer can paint the "restarting" state before we
+  // tear down the window.
+  setTimeout(() => app.quit(), 300);
+}
+
+async function safeUnlink(p: string | null): Promise<void> {
+  if (!p) return;
+  try {
+    await fs.promises.unlink(p);
+  } catch {
+    // Best-effort cleanup; don't care if it's already gone.
+  }
+}
+
+/**
+ * Spawn the new AppImage and watch it for `LAUNCH_VERIFY_MS`. If the child
+ * exits within that window we treat the launch as failed; otherwise we treat
+ * it as successful and resolve. Uses `--appimage-extract-and-run` so the new
+ * version works even on systems without libfuse2 and without triggering
+ * AppImageLauncher integration prompts.
+ */
+function launchAndVerify(launchPath: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    // Strip AppImage runtime variables so the child re-initializes cleanly.
+    const childEnv: NodeJS.ProcessEnv = { ...process.env };
+    delete childEnv.APPIMAGE;
+    delete childEnv.APPDIR;
+    delete childEnv.OWD;
+    delete childEnv.ARGV0;
+
+    let child;
+    try {
+      child = spawn(launchPath, ['--appimage-extract-and-run'], {
+        detached: true,
+        // Capture stderr so an early-exit failure tells us *why* (e.g.
+        // "FUSE: failed", glibc version mismatch). stdin/stdout ignored so
+        // the child doesn't keep our pipe alive after we quit.
+        stdio: ['ignore', 'ignore', 'pipe'],
+        env: childEnv,
+      });
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    if (!child.pid) {
+      reject(new Error('Failed to spawn new Cerebro process (no pid returned)'));
+      return;
+    }
+
+    let stderr = '';
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (stderr.length < 2000) stderr += chunk.toString();
+    });
+
+    let settled = false;
+    child.once('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+    child.once('exit', (code, signal) => {
+      if (settled) return;
+      settled = true;
+      const tail = stderr.trim().split('\n').slice(-3).join(' | ');
+      const why = tail || (signal ? `signal=${signal}` : `exit code ${code}`);
+      reject(new Error(`new version exited during launch verification: ${why}`));
+    });
+
+    setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      // Still alive after LAUNCH_VERIFY_MS — treat as a successful start.
+      // Detach from the child so our pending app.quit() doesn't drag it down
+      // and so its stderr pipe stops feeding back into this process.
+      child.removeAllListeners();
+      child.stderr?.removeAllListeners();
+      child.stderr?.destroy();
+      child.unref();
+      resolve();
+    }, LAUNCH_VERIFY_MS);
+  });
 }

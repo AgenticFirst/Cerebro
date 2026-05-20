@@ -51,6 +51,9 @@ class TaskRead(BaseModel):
     last_error: str | None
     project_path: str | None
     tags: list[str] = []
+    result_md: str | None = None
+    result_title: str | None = None
+    result_kind: str | None = None
     created_at: datetime
     updated_at: datetime
     started_at: datetime | None
@@ -120,3 +123,45 @@ class TaskStats(BaseModel):
     to_review: int = 0
     completed: int = 0
     error: int = 0
+
+
+# ── Attachments ──
+
+class TaskAttachmentCreate(BaseModel):
+    storage_path: str        # relative to <userData>/files (set by IPC importer)
+    name: str
+    ext: str = ""
+    mime: str | None = None
+    size_bytes: int = 0
+    sha256: str
+
+
+class TaskAttachmentRead(BaseModel):
+    id: str
+    task_id: str
+    name: str
+    ext: str
+    mime: str | None
+    size_bytes: int
+    storage_kind: str        # always "managed" for task attachments
+    storage_path: str
+    sha256: str | None
+    created_at: datetime
+
+
+class TaskAttachmentMaterializeRequest(BaseModel):
+    # Absolute path to the task's working directory. Resolved on the renderer
+    # via resolveCwd (task.project_path with per-task workspace fallback).
+    cwd: str
+
+
+class TaskAttachmentMaterializeError(BaseModel):
+    name: str
+    error: str
+
+
+class TaskAttachmentMaterializeResult(BaseModel):
+    copied: list[str] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
+    errors: list[TaskAttachmentMaterializeError] = Field(default_factory=list)
+    destination_dir: str = ""

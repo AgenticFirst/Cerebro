@@ -22,6 +22,7 @@ import { OnboardingProvider } from './context/OnboardingContext';
 import AppLayout from './components/layout/AppLayout';
 import ToastContainer from './components/ui/Toast';
 import OnboardingTour from './components/onboarding/OnboardingTour';
+import RestoreCompletionWatcher from './components/backup/RestoreCompletionWatcher';
 
 function App() {
   return (
@@ -67,6 +68,7 @@ function App() {
       </ThemeProvider>
       </OnboardingProvider>
       <ToastContainer />
+      <RestoreCompletionWatcher />
     </ToastProvider>
   );
 }

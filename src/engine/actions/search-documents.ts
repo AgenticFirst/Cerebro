@@ -136,7 +136,6 @@ export const searchDocumentsAction: ActionDefinition = {
       agent: 'cerebro',
       prompt,
       signal: context.signal,
-      maxTurns: 12,
       model: params.model?.trim() || undefined,
       allowedTools: 'Read,Glob,Grep',
     });

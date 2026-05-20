@@ -57,6 +57,28 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
     },
     summary: '[dry-run] Would send Telegram message',
   }),
+  send_slack_message: (input) => ({
+    data: {
+      sent: true,
+      message_ts: '0000.000000',
+      channel: String((input.params as Record<string, unknown>).channel ?? ''),
+      error: null,
+    },
+    summary: '[dry-run] Would send Slack message',
+  }),
+  send_slack_file: (input) => ({
+    data: {
+      sent: true,
+      file_id: syntheticId('dryrun-slackfile-'),
+      channel: String((input.params as Record<string, unknown>).channel ?? ''),
+      error: null,
+    },
+    summary: '[dry-run] Would upload Slack file',
+  }),
+  list_slack_channels: () => ({
+    data: { ok: true, channels: [], error: null },
+    summary: '[dry-run] Would list Slack channels',
+  }),
   send_whatsapp_message: (input) => ({
     data: {
       sent: true,

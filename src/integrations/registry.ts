@@ -17,6 +17,7 @@
 
 import type { IntegrationManifest } from '../types/integrations';
 import { telegramManifest } from './manifests/telegram';
+import { slackManifest } from './manifests/slack';
 import { hubspotManifest } from './manifests/hubspot';
 import { whatsappManifest } from './manifests/whatsapp';
 import { ghlManifest } from './manifests/ghl';
@@ -24,6 +25,7 @@ import { githubManifest } from './manifests/github';
 
 export const INTEGRATION_REGISTRY: Record<string, IntegrationManifest> = {
   [telegramManifest.id]: telegramManifest,
+  [slackManifest.id]: slackManifest,
   [hubspotManifest.id]: hubspotManifest,
   [whatsappManifest.id]: whatsappManifest,
   [ghlManifest.id]: ghlManifest,

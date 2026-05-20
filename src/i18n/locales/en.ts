@@ -366,6 +366,7 @@ const en = {
     interruptedBadge: 'Interrupted',
     interruptedHint: 'Cerebro was closed while this task was running. Click Resume to continue.',
     startNeedsExpert: 'Assign an Expert before starting this task',
+    startFailed: 'Could not start the Expert. Check the task and try again.',
     moveTo: 'Move to',
     previewWaiting: 'Waiting for files',
     previewWaitingHint: 'The preview will appear here once the Expert creates files in the workspace, or when a dev server URL is detected.',
@@ -430,6 +431,25 @@ const en = {
     drawerArtifacts: 'Artifacts',
     drawerArtifactsEmpty: 'No artifacts yet',
     drawerArtifactsMore: '+{{count}} more',
+    // Result / Files tabs
+    tabFiles: 'Files',
+    tabFilesWithCount: 'Files · {{count}}',
+    previewResultTitle: 'Result',
+    previewResultUntitled: 'Task result',
+    previewResultCopy: 'Copy result',
+    previewResultCopied: 'Copied',
+    previewResultEmpty: "Waiting for the expert's delivery. In the meantime, check the **Console** to see what it's doing.",
+    previewResultRunning: 'The expert is still working — open the **Console** to follow along.',
+    previewSeeAllFiles: 'See all files →',
+    filesEmpty: "The expert hasn't written any files yet.",
+    filesEmptyHint: "When the expert saves a file in its workspace, it'll show up here.",
+    filesRecent: 'Recent',
+    filesAll: 'All files',
+    filesCount_one: '{{count}} file in workspace',
+    filesCount_other: '{{count}} files in workspace',
+    filesRevealWorkspace: 'Reveal workspace in Finder',
+    filesBack: 'Back to list',
+    filesPreviewUnavailable: "This file can't be previewed here. Reveal it in Finder.",
     // Mentions + Activity
     mentionPlaceholder: 'Mention an expert\u2026',
     mentionNoResults: 'No matching experts',
@@ -445,6 +465,18 @@ const en = {
     queueFailedPromptMessage: 'The previous run did not finish ({{reason}}). Still send the queued instruction to {{expert}}?',
     queueFailedSend: 'Send to {{expert}}',
     queueFailedDiscard: 'Discard',
+    // Attachments
+    attachmentsLabel: 'Attachments',
+    attachmentsAdd: 'Attach',
+    attachmentsAddTitle: 'Attach files to this task',
+    attachmentsEmpty: 'Drag files here or click Attach',
+    attachmentsDropHint: 'Drop to attach',
+    attachmentsRemove: 'Remove attachment',
+    attachmentsReveal: 'Reveal in Finder',
+    attachmentsOpen: 'Open',
+    attachmentsCopied_one: '{{count}} file added to the task workspace',
+    attachmentsCopied_other: '{{count}} files added to the task workspace',
+    attachmentsCopyFailed: 'Some attachments could not be copied',
   },
 
   // ── Files screen ────────────────────────────────────────────
@@ -1105,6 +1137,26 @@ const en = {
         pasteHere: 'Paste the token in the next step. Cerebro verifies it and stores it encrypted.',
       },
     },
+    slack: {
+      name: 'Slack',
+      description: 'Talk to Cerebro from Slack — DMs, channel mentions, and /cerebro.',
+      fields: {
+        botToken: 'Bot User OAuth Token',
+        appToken: 'App-Level Token',
+      },
+      hints: {
+        botToken: 'Starts with xoxb-… (from Install App → Bot User OAuth Token)',
+        appToken: 'Starts with xapp-… (from Basic Information → App-Level Tokens, scope connections:write)',
+      },
+      steps: {
+        copyManifest: 'Copy the Slack manifest YAML Cerebro provides — it preconfigures scopes, events, and the /cerebro slash command.',
+        createApp: 'In Slack, open api.slack.com/apps → Create New App → From an app manifest. Paste the YAML and pick your workspace.',
+        installWorkspace: 'In the new app, open Install App in the sidebar and click Install to Workspace.',
+        copyBotToken: 'On Install App, copy the Bot User OAuth Token (starts with xoxb-).',
+        generateAppToken: 'On Basic Information → App-Level Tokens, click Generate. Name it (e.g. socket), add scope connections:write, and copy the xapp- token.',
+        pasteHere: 'Paste both tokens in the next step. Cerebro verifies them via auth.test and stores them encrypted.',
+      },
+    },
     hubspot: {
       name: 'HubSpot',
       description: 'Create tickets and update contacts in your HubSpot CRM.',
@@ -1274,6 +1326,9 @@ const en = {
     telegram: 'Telegram',
     telegramDesc: 'Message Cerebro via Telegram bot',
     telegramDescConnected: 'Connected as @{{username}}',
+    slack: 'Slack',
+    slackDesc: 'DM Cerebro, mention @Cerebro in channels, or use /cerebro.',
+    slackDescConnected: 'Connected to {{teamName}}.',
     whatsapp: 'WhatsApp',
     whatsappDesc: 'Pair a WhatsApp Business number for customer-support routines.',
     whatsappDescConnected: 'Connected as {{phone}}.',
@@ -1339,6 +1394,103 @@ const en = {
     step4DiscoveryBody:
       'No allowed IDs yet — that’s fine. The bot will only reply with the sender’s numeric ID and won’t respond to anything else. Message your bot from Telegram, copy the ID it sends back, then add it on the Telegram card to unlock real conversations.',
     enableDiscoveryMode: 'Enable in discovery mode',
+  },
+
+  // ── Slack connect modal (onboarding tour) ──────────────────
+  slackConnect: {
+    stepLabel: 'Step {{current}} of {{total}}',
+    back: 'Back',
+    continue: 'Continue',
+    skip: 'Skip',
+    enableAndFinish: 'Enable & finish',
+    enabling: 'Enabling…',
+    enableFailed: 'Could not start the bridge.',
+    verifiedAs: 'Verified on workspace {{teamName}}',
+    storageLabel: 'Storage',
+    storageKeychain: 'OS keychain',
+    storagePlaintext: 'Plaintext fallback',
+
+    step1Title: 'Create your Slack app',
+    step1Body:
+      'Cerebro ships a manifest YAML that preconfigures everything: bot user, slash command, scopes, and Socket Mode. You\'ll paste it into Slack\'s "Create from manifest" flow.',
+    step1Item1: 'Copy the manifest below.',
+    step1Item2: 'Open api.slack.com/apps → Create New App → From an app manifest.',
+    step1Item3: 'Pick the workspace where Cerebro should live.',
+    step1Item4: 'Paste the manifest and click Create.',
+    copyManifest: 'Copy manifest YAML',
+    copyManifestDone: 'Copied!',
+    openSlackApps: 'Open Slack App builder',
+
+    step2Title: 'Install to your workspace',
+    step2Body:
+      'In your new app, go to Install App in the left sidebar and click Install to Workspace. Slack will ask you to approve the requested scopes. After approval you\'ll see a Bot User OAuth Token starting with xoxb-.',
+
+    step3Title: 'Paste your bot token',
+    step3Body:
+      'On the Install App page, copy the Bot User OAuth Token (starts with xoxb-) and paste it here.',
+    botTokenLabel: 'Bot User OAuth Token',
+    botTokenPlaceholder: 'xoxb-…',
+
+    step4Title: 'Generate your app-level token',
+    step4Body:
+      'Go to Basic Information → App-Level Tokens → Generate Token and Scopes. Name it (e.g. socket), add the connections:write scope, and click Generate. Copy the xapp- token.',
+    appTokenLabel: 'App-Level Token',
+    appTokenPlaceholder: 'xapp-…',
+    openBasicInformation: 'Open Basic Information page',
+
+    step5Title: 'Verify & enable',
+    step5Body:
+      'Cerebro will call auth.test with your bot token and open a quick connection with your app token to verify Socket Mode works.',
+    step5VerifyFailed: 'Could not verify the tokens. Double-check that the manifest installed cleanly and both tokens were copied without trailing spaces.',
+    verify: 'Verify',
+    verifying: 'Verifying…',
+
+    step6Title: 'You\'re ready',
+    step6Body:
+      'The bridge is online. DM Cerebro, mention @Cerebro in any channel, or type /cerebro help to see the menu. You can change any setting later from the Slack card.',
+    setAllowlistLater: 'Set up the allowlist later from the Slack card.',
+  },
+
+  // ── Slack section (within Channels) ───────────────────────
+  slackSection: {
+    title: 'Slack',
+    description:
+      'Cerebro talks to your team in Slack via Socket Mode — no public URL needed. Each Slack thread is its own conversation, so many people can chat with Cerebro in parallel.',
+    tokensLabel: 'Tokens',
+    tokensVerified: 'Both tokens verified.',
+    botTokenLabel: 'Bot token',
+    appTokenLabel: 'App-level token',
+    botTokenPlaceholder: 'xoxb-…',
+    appTokenPlaceholder: 'xapp-…',
+    verify: 'Verify',
+    verifying: 'Verifying…',
+    save: 'Save',
+    saving: 'Saving…',
+    clear: 'Clear tokens',
+    cleared: 'Tokens cleared.',
+    allowlistChannelsLabel: 'Allowed channels',
+    allowlistChannelsHelp:
+      'Slack channel IDs (Cnnn / Gnnn) where Cerebro can be mentioned. Use * to allow any channel the bot is in.',
+    allowlistUsersLabel: 'Allowed users',
+    allowlistUsersHelp:
+      'Slack user IDs (Unnn) who can DM Cerebro or trigger /cerebro. Use * to allow any workspace member.',
+    saveAllowlist: 'Save allowlist',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    enableLabel: 'Enable bridge',
+    disableLabel: 'Disable bridge',
+    enable: 'Enable',
+    disable: 'Disable',
+    reconnect: 'Reconnect',
+    statusRunning: 'Online — last event {{at}}',
+    statusOffline: 'Offline',
+    statusError: 'Error: {{message}}',
+    connectedAs: 'Connected to {{teamName}}',
+    botUserLabel: 'Bot user',
+    docsLink: 'Slack Socket Mode docs',
+    workspaceLabel: 'Workspace',
+    helpHint:
+      'Need to talk to Cerebro from Slack? DM the bot, mention @Cerebro in any channel, or type /cerebro help.',
   },
 
   // ── Telegram section (within Channels) ──────────────────────
@@ -1455,10 +1607,66 @@ const en = {
     memory: 'Memory',
     sandbox: 'Sandbox',
     voice: 'Voice',
+    backup: 'Backup',
     appearance: 'Appearance',
     beta: 'Beta Features',
     about: 'About',
     aboutComingSoon: 'About Cerebro coming soon',
+  },
+
+  // ── Backup & restore section ────────────────────────────────
+  backup: {
+    title: 'Backup & Restore',
+    description:
+      'Save everything in Cerebro — conversations, tasks, experts, memory, and attachments — into a single file you can keep safe or move to another machine.',
+    create: {
+      title: 'Create backup',
+      description:
+        'Writes one .cerebro-backup file you can store anywhere. Includes the database and all attached files.',
+      cta: 'Create backup',
+      inProgress: 'Creating…',
+      includeModels:
+        'Include downloaded models (large — GBs). Off by default; models re-download automatically when needed.',
+      estimatedSize: 'Estimated size: {{size}}',
+    },
+    restore: {
+      title: 'Restore from backup',
+      description:
+        'Replaces everything currently in Cerebro with the contents of a backup file. The app will restart after the restore.',
+      cta: 'Restore from file',
+      inspecting: 'Reading backup…',
+    },
+    preview: {
+      title: 'Restore from backup?',
+      stats: '{{conversations}} conversations · {{tasks}} tasks · {{experts}} experts · {{size}} of files',
+      created: 'Created {{when}}',
+      version: 'Cerebro version: {{version}}',
+      warning:
+        'This will REPLACE all current data. A rollback snapshot will be saved first so you can undo if needed.',
+      cancel: 'Cancel',
+      confirm: 'Restore and restart',
+      applying: 'Applying…',
+    },
+    rollbacks: {
+      title: 'Rollback snapshots',
+      description:
+        'Cerebro keeps a snapshot of your state from before each restore so you can undo. Snapshots older than the most recent two are pruned automatically.',
+      undo: 'Undo to this snapshot',
+    },
+    lastBackup: 'Last backup: {{when}} · {{size}}',
+    revealFile: 'Reveal in Finder',
+    crossMachineNote:
+      'Heads up: integrations that store credentials in your OS keychain (Telegram, HubSpot, GitHub, etc.) will need to be re-authenticated after restoring to a different machine.',
+    toasts: {
+      restoreComplete: 'Backup restored. Welcome back.',
+      undoComplete: 'Undo applied. Your previous state is back.',
+    },
+    exportSucceeded: 'Backup saved ({{size}})',
+    exportFailed: 'Backup failed: {{detail}}',
+    inspectFailed: 'Could not read backup: {{detail}}',
+    applyFailed: 'Restore failed: {{detail}}',
+    applyDidNotRelaunch: 'Restore staged but the app did not restart. Please quit and reopen Cerebro.',
+    undoFailed: 'Undo failed: {{detail}}',
   },
 
   // ── Beta features section ──────────────────────────────────

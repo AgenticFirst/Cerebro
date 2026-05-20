@@ -116,7 +116,6 @@ export const searchWebAction: ActionDefinition = {
       agent: 'cerebro',
       prompt: promptLines.join('\n'),
       signal: context.signal,
-      maxTurns: 8,
       model: params.model?.trim() || undefined,
       allowedTools: 'WebSearch,WebFetch',
     });

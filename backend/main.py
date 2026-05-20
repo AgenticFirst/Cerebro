@@ -33,6 +33,7 @@ from files.router import router as files_router
 from integrations.router import router as integrations_router
 from files_parsing.router import router as files_parsing_router
 from expert_context.router import router as expert_context_router
+from backup.router import router as backup_router
 
 
 @asynccontextmanager
@@ -98,6 +99,7 @@ app.include_router(files_router, prefix="/files")
 app.include_router(integrations_router, prefix="/integrations")
 app.include_router(files_parsing_router, prefix="/files")
 app.include_router(expert_context_router, prefix="/experts")
+app.include_router(backup_router, prefix="/backup")
 
 
 @app.get("/health")

@@ -78,11 +78,14 @@ export class TaskPtyRunner extends EventEmitter {
 
     if (options.resume && options.sessionId) {
       args.push('--resume', toUuidFormat(options.sessionId));
-      args.push('--max-turns', String(options.maxTurns ?? 10));
     } else {
       args.push('--session-id', toUuidFormat(options.sessionId || options.runId));
       args.push('--agent', options.agentName);
-      args.push('--max-turns', String(options.maxTurns ?? 10));
+    }
+    // Mirror plain `claude -p`: no --max-turns unless the caller explicitly
+    // budgeted one. Auto-compaction handles long runs.
+    if (typeof options.maxTurns === 'number') {
+      args.push('--max-turns', String(options.maxTurns));
     }
 
     args.push('--verbose');

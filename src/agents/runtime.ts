@@ -35,7 +35,7 @@ import { getAgentNameForExpert, installAll, installExpert, expertAgentName } fro
 import { MediaIngestService } from '../files/media-ingest';
 import type { ResolvedAttachment } from '../files/types';
 import fsSync from 'node:fs';
-import { IPC_CHANNELS } from '../types/ipc';
+import { IPC_CHANNELS, buildDeliverablePayload, type ParsedDeliverable } from '../types/ipc';
 import { buildSystemPrompt } from '../i18n/language-directive';
 
 /** Cap concurrent runs to prevent spawning a wall of subprocesses. */
@@ -111,7 +111,9 @@ const RUN_INFO_EXAMPLE = `<run_info>
 }
 </run_info>`;
 
-const DELIVERABLE_HARD_RULE = `**ALWAYS end every run with a \`<deliverable kind="…" title="…">…</deliverable>\` block.** \`kind\` MUST be exactly one of \`markdown\`, \`code_app\`, or \`mixed\` (no other values, no pipe-separated lists — pick ONE). Cerebro uses this block as the machine-readable completion sentinel — without it, your work is invisible to the user and the task will NOT complete. This applies to EVERY task no matter how trivial: a one-line haiku, a one-word answer, a "hello world" — wrap the final result in a deliverable block. Do NOT output your final answer as plain text outside the block. If you've already written the result as prose, your last action is still to emit the deliverable block with the same content inside.`;
+const DELIVERABLE_HARD_RULE = `**ALWAYS end every run with a \`<deliverable kind="…" title="…">…</deliverable>\` block.** \`kind\` MUST be exactly one of \`markdown\`, \`code_app\`, or \`mixed\` (no other values, no pipe-separated lists — pick ONE). Cerebro uses this block as the machine-readable completion sentinel — without it, your work is invisible to the user and the task will NOT complete. This applies to EVERY task no matter how trivial: a one-line haiku, a one-word answer, a "hello world" — wrap the final result in a deliverable block. Do NOT output your final answer as plain text outside the block. If you've already written the result as prose, your last action is still to emit the deliverable block with the same content inside.
+
+**Keep the workspace tidy.** Put scratch files, downloads, intermediate scripts, screenshots, and anything else that isn't a final artifact under a \`_work/\` directory — Cerebro hides that path from the user's Archivos tab. Only files that are part of the actual deliverable (the manual PDF, the source code, the final report) should live at the workspace root. A user opening the Archivos tab should see a handful of final artifacts, not a hundred build intermediates.`;
 
 interface ActiveRun {
   runId: string;
@@ -126,6 +128,42 @@ interface ActiveRun {
   ptyRunner: TaskPtyRunner | null;
   isTaskRun: boolean;
 }
+
+/**
+ * Pull the `<deliverable kind="…" title="…">BODY</deliverable>` block out of a
+ * finalized run's accumulated text. Mirrors the regex used by the completion
+ * poller so anything the poller would have recognised as completion is also
+ * what the renderer/backend see as the persisted result. Returns null if no
+ * valid deliverable block is present (caller treats absence as "no result").
+ */
+export function parseDeliverableBlock(text: string): ParsedDeliverable | null {
+  // Walk every deliverable in the buffer and keep the last one — handles
+  // retries where Claude Code re-emits the block, and is robust to attribute
+  // ordering (the completion poller only checks for kind="…", so we mirror
+  // that and then re-extract `title` independently).
+  const re = /<deliverable\s+([^>]*)>([\s\S]*?)<\/deliverable>/g;
+  let last: { attrs: string; body: string } | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    last = { attrs: m[1], body: m[2] };
+  }
+  if (!last) return null;
+  const kindMatch = last.attrs.match(/kind=["'](markdown|code_app|mixed)["']/);
+  if (!kindMatch) return null;
+  const titleMatch = last.attrs.match(/title=["']([^"']*)["']/);
+  const body = last.body.trim();
+  if (!body) return null;
+  // Same word-count floor as the completion detector (line ~787) so we don't
+  // capture the placeholder example block whose body is a single ellipsis.
+  const wordChars = (body.match(/\w/g) ?? []).length;
+  if (wordChars < 10) return null;
+  return {
+    kind: kindMatch[1] as ParsedDeliverable['kind'],
+    title: (titleMatch?.[1] ?? '').trim(),
+    body,
+  };
+}
+
 
 /**
  * Synthesize a `<deliverable>` envelope when the agent exited cleanly with
@@ -582,22 +620,12 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
 
     const channel = `agent:event:${runId}`;
 
-    // Resolve maxTurns: plan=15, execute/follow_up=request.maxTurns or 30,
-    // chat=tier-based (fast=8, medium=15, slow=25) when no explicit override.
-    let maxTurns = 15;
-    if (isTaskRun) {
-      if (request.taskPhase === 'plan') {
-        maxTurns = 15;
-      } else {
-        maxTurns = request.maxTurns ?? 30;
-      }
-    } else if (request.maxTurns) {
-      maxTurns = request.maxTurns;
-    } else if (request.qualityTier === 'fast') {
-      maxTurns = 8;
-    } else if (request.qualityTier === 'slow') {
-      maxTurns = 25;
-    }
+    // We do NOT pass --max-turns by default — mirroring the interactive
+    // `claude` CLI. Auto-compaction (on by default in Claude Code) handles
+    // long conversations without surfacing error_max_turns. Explicit caller
+    // overrides (routine step config, expert maxTurns) still apply.
+    const maxTurns: number | undefined =
+      typeof request.maxTurns === 'number' ? request.maxTurns : undefined;
 
     // All task phases run inside the task workspace: plan writes PLAN.md
     // there, execute reads PLAN.md and produces deliverables, follow_up
@@ -703,10 +731,20 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
           const messageContent = completionDetected
             ? activeRun.accumulatedText
             : wrapProseAsDeliverable(activeRun.accumulatedText);
+          // Parse the deliverable once and reuse it for both the renderer's
+          // `done` event (so Vista previa can show the result without re-scanning
+          // the buffer) and the backup run-event POST in finalizeRun (so the
+          // tasks row gets `result_md` even if the renderer is gone).
+          const deliverable = parseDeliverableBlock(messageContent);
           if (!webContents.isDestroyed()) {
-            webContents.send(channel, { type: 'done', runId, messageContent } as RendererAgentEvent);
+            webContents.send(channel, {
+              type: 'done',
+              runId,
+              messageContent,
+              deliverable,
+            } as RendererAgentEvent);
           }
-          this.finalizeRun(runId, 'completed', messageContent);
+          this.finalizeRun(runId, 'completed', messageContent, undefined, deliverable);
         } else {
           if (!webContents.isDestroyed()) {
             webContents.send(channel, { type: 'error', runId, error: errorDetail } as RendererAgentEvent);
@@ -965,7 +1003,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         attempt: number,
         model: ResponseModel,
         tier: QualityTier,
-        turns: number,
+        turns: number | undefined,
         // Per-attempt overrides — escalation retries keep the same
         // resume/prompt state, but a session_missing recovery flips to a
         // fresh session and substitutes a seed prompt that re-injects the
@@ -1022,7 +1060,12 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
             ? nextRung(model, tier)
             : null;
           if (next) {
-            const nextTurns = userOverrodeMaxTurns ? turns : maxTurnsForTier(next.tier);
+            // Preserve "no cap" semantics across escalation: when the run
+            // started without a turn budget (the default chat path), retries
+            // also run uncapped. Explicit caller overrides keep their number.
+            const nextTurns = userOverrodeMaxTurns
+              ? turns
+              : (typeof maxTurns === 'number' ? maxTurnsForTier(next.tier) : undefined);
             this.deliverEvent(runId, webContents, {
               type: 'agent_escalation',
               runId,
@@ -1118,6 +1161,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     status: 'completed' | 'error' | 'cancelled',
     messageContent: string,
     error?: string,
+    deliverable?: ParsedDeliverable | null,
   ): void {
     const run = this.activeRuns.get(runId);
     if (!run) return;
@@ -1151,10 +1195,17 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         status === 'completed' ? 'run_completed'
           : status === 'cancelled' ? 'run_cancelled'
             : 'run_failed';
+      // Forward parsed deliverable on completion so the backend persists
+      // result_md/result_title/result_kind even when the renderer's POST is
+      // lost (destroyed webContents, crashed renderer, etc.).
+      const deliverablePayload = status === 'completed'
+        ? buildDeliverablePayload(deliverable)
+        : {};
       this.backendRequest('POST', `/tasks/${taskId}/run-event`, {
         type: eventType,
         run_id: runId,
         ...(error ? { error } : {}),
+        ...deliverablePayload,
       }).catch((err: unknown) => {
         // Best-effort: the renderer's POST and the TaskReconciler both cover
         // this path, so don't surface to the user — but log so diagnostic

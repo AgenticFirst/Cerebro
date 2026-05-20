@@ -21,6 +21,7 @@ export type RequiredConnection =
   | 'whatsapp'
   | 'hubspot'
   | 'telegram'
+  | 'slack'
   | 'tavily'
   | 'anthropic'
   | 'openai'

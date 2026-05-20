@@ -74,7 +74,6 @@ ${text}`;
       agent: params.agent ?? 'cerebro',
       prompt: fullPrompt,
       signal: context.signal,
-      maxTurns: 3,
       model: params.model?.trim() || undefined,
     });
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Brain, Palette, Info, Shield, FlaskConical, Mic, type LucideIcon } from 'lucide-react';
+import { Brain, Palette, Info, Shield, FlaskConical, Mic, Archive, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import MemorySection from './settings/MemorySection';
@@ -7,11 +7,12 @@ import AppearanceSection from './settings/AppearanceSection';
 import SandboxSection from './settings/SandboxSection';
 import BetaFeaturesSection from './settings/BetaFeaturesSection';
 import VoiceSection from './settings/VoiceSection';
+import BackupSection from './settings/BackupSection';
 import { consumePendingSettingsSection } from './settings/pending-section';
 import { useFeatureFlags } from '../../context/FeatureFlagsContext';
 import { useOnboarding } from '../../context/OnboardingContext';
 
-type Section = 'memory' | 'sandbox' | 'voice' | 'appearance' | 'beta' | 'about';
+type Section = 'memory' | 'sandbox' | 'voice' | 'backup' | 'appearance' | 'beta' | 'about';
 
 interface SectionNavItem {
   id: Section;
@@ -22,6 +23,7 @@ const SECTIONS: SectionNavItem[] = [
   { id: 'memory', icon: Brain },
   { id: 'sandbox', icon: Shield },
   { id: 'voice', icon: Mic },
+  { id: 'backup', icon: Archive },
   { id: 'appearance', icon: Palette },
   { id: 'beta', icon: FlaskConical },
   { id: 'about', icon: Info },
@@ -124,6 +126,7 @@ export default function SettingsScreen() {
           {activeSection === 'memory' && <MemorySection />}
           {activeSection === 'sandbox' && <SandboxSection />}
           {activeSection === 'voice' && <VoiceSection />}
+          {activeSection === 'backup' && <BackupSection />}
           {activeSection === 'appearance' && <AppearanceSection />}
           {activeSection === 'beta' && <BetaFeaturesSection />}
           {activeSection === 'about' && (

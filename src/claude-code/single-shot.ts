@@ -89,8 +89,13 @@ export function singleShotClaudeCode(options: SingleShotOptions): Promise<string
     '-p', options.prompt,
     '--agent', options.agent,
     '--output-format', 'text',
-    '--max-turns', String(options.maxTurns ?? 5),
   ];
+
+  // Mirror plain `claude -p`: no --max-turns unless the caller explicitly
+  // budgeted one. Auto-compaction handles long runs.
+  if (typeof options.maxTurns === 'number') {
+    args.push('--max-turns', String(options.maxTurns));
+  }
 
   if (options.model) {
     args.push('--model', options.model);

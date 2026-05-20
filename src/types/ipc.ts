@@ -30,6 +30,10 @@ export const IPC_CHANNELS = {
 
   // Chat actions catalog (renderer → main; the run path is HTTP from the chat subprocess)
   CHAT_ACTIONS_CATALOG: 'chat-actions:catalog',
+  /** Renderer → main: generate a short conversation title from the first user
+   *  message (and optionally the first assistant response) via Claude Code.
+   *  Resolves to the generated title string, or null on any failure. */
+  CHAT_GENERATE_TITLE: 'chat:generate-title',
   /** Main → renderer: chat agent proposed an integration setup card.
    *  Payload: IntegrationProposalEventPayload. */
   INTEGRATION_PROPOSAL: 'chat-actions:integration-proposal',
@@ -122,6 +126,21 @@ export const IPC_CHANNELS = {
    *  UI can refresh that conversation in real time. */
   TELEGRAM_CONVERSATION_UPDATED: 'telegram:conversation-updated',
 
+  // Slack bridge (Bolt / Socket Mode)
+  SLACK_VERIFY: 'slack:verify',
+  SLACK_ENABLE: 'slack:enable',
+  SLACK_DISABLE: 'slack:disable',
+  SLACK_STATUS: 'slack:status',
+  SLACK_RELOAD: 'slack:reload',
+  SLACK_SET_TOKENS: 'slack:set-tokens',
+  SLACK_CLEAR_TOKENS: 'slack:clear-tokens',
+  SLACK_SET_ALLOWLIST: 'slack:set-allowlist',
+  SLACK_GET_MANIFEST: 'slack:get-manifest',
+  /** Main → renderer whenever the bridge persists a message into a Slack
+   *  conversation (inbound user OR final assistant reply). Lets the chat
+   *  UI refresh that conversation in real time. */
+  SLACK_CONVERSATION_UPDATED: 'slack:conversation-updated',
+
   // WhatsApp bridge (Baileys / WhatsApp Web)
   WHATSAPP_START_PAIRING: 'whatsapp:start-pairing',
   WHATSAPP_CANCEL_PAIRING: 'whatsapp:cancel-pairing',
@@ -159,7 +178,14 @@ export const IPC_CHANNELS = {
 
   // App auto-updater (GitHub Releases)
   UPDATE_CHECK_NOW: 'update:check-now',
+  /** Renderer → main: download the artifact to a persistent location.
+   *  Does NOT install; the app keeps running until the user clicks Restart. */
   UPDATE_DOWNLOAD: 'update:download',
+  /** Renderer → main: install the previously-downloaded artifact and
+   *  restart. For Linux AppImage this replaces the running binary atomically
+   *  with rollback if launch verification fails. Throws if the new version
+   *  cannot start, leaving the current install untouched. */
+  UPDATE_APPLY: 'update:apply',
   UPDATE_DISMISS: 'update:dismiss',
   /** Renderer → main: "I received UPDATE_AVAILABLE and showed the banner."
    *  Suppresses the 5s native-dialog fallback. */
@@ -167,12 +193,16 @@ export const IPC_CHANNELS = {
   UPDATE_OPEN_RELEASE_PAGE: 'update:open-release-page',
   UPDATE_AVAILABLE: 'update:available',
   UPDATE_DOWNLOAD_PROGRESS: 'update:download-progress',
+  /** Main → renderer: artifact has been downloaded and is ready to install.
+   *  The renderer should show a "Restart to apply" affordance — install does
+   *  not happen automatically. */
   UPDATE_DOWNLOADED: 'update:downloaded',
   UPDATE_ERROR: 'update:error',
 
   // Files (managed buckets at <userData>/files)
   FILES_PICK_FILES: 'files:pick-files',
   FILES_IMPORT_TO_BUCKET: 'files:import-to-bucket',
+  FILES_IMPORT_TO_TASK: 'files:import-to-task',
   FILES_DELETE_MANAGED: 'files:delete-managed',
   FILES_DELETE_MANAGED_BATCH: 'files:delete-managed-batch',
   FILES_PREVIEW_URL: 'files:preview-url',
@@ -181,6 +211,15 @@ export const IPC_CHANNELS = {
   FILES_OPEN: 'files:open',
   FILES_DOWNLOAD: 'files:download',
   FILES_READ_MANAGED_TEXT: 'files:read-managed-text',
+
+  // Backup & restore (one-file export of all userData; one-click restore)
+  BACKUP_PICK_EXPORT_PATH: 'backup:pick-export-path',
+  BACKUP_PICK_IMPORT_FILE: 'backup:pick-import-file',
+  BACKUP_APPLY_AND_RELAUNCH: 'backup:apply-and-relaunch',
+  BACKUP_RELAUNCH: 'backup:relaunch',
+  BACKUP_CONSUME_COMPLETION_FLAG: 'backup:consume-completion-flag',
+  BACKUP_REVEAL_PATH: 'backup:reveal-path',
+  BACKUP_APP_VERSION: 'backup:app-version',
 } as const;
 
 // --- Backend Request/Response ---
@@ -280,6 +319,30 @@ export type AgentErrorClass =
   | 'session_missing'
   | 'unknown';
 
+/** Parsed `<deliverable kind="…" title="…">BODY</deliverable>` block extracted
+ * from a task run's final output. Attached to the `done` event so the renderer
+ * can both persist it on the task row and render it in Vista previa. */
+export interface ParsedDeliverable {
+  kind: 'markdown' | 'code_app' | 'mixed';
+  title: string;
+  body: string;
+}
+
+/** Backend `/tasks/{id}/run-event` payload fragment carrying the parsed
+ * deliverable. Built once and POSTed from both the renderer (TaskContext) and
+ * the main-process backup path (finalizeRun) — keep the two call sites in
+ * sync via this builder rather than open-coding the shape twice. */
+export function buildDeliverablePayload(
+  deliverable: ParsedDeliverable | null | undefined,
+): { result_md: string; result_title: string | null; result_kind: ParsedDeliverable['kind'] } | Record<string, never> {
+  if (!deliverable) return {};
+  return {
+    result_md: deliverable.body,
+    result_title: deliverable.title || null,
+    result_kind: deliverable.kind,
+  };
+}
+
 export type RendererAgentEvent =
   | { type: 'run_start'; runId: string }
   | { type: 'turn_start'; turn: number }
@@ -287,7 +350,7 @@ export type RendererAgentEvent =
   | { type: 'tool_start'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool_end'; toolCallId: string; toolName: string; result: string; isError: boolean }
   | { type: 'system'; message: string; subtype?: string }
-  | { type: 'done'; runId: string; messageContent: string }
+  | { type: 'done'; runId: string; messageContent: string; deliverable?: ParsedDeliverable | null }
   | { type: 'error'; runId: string; error: string; errorClass?: AgentErrorClass };
 
 export interface ActiveRunInfo {
@@ -494,6 +557,13 @@ export interface FilesCopyArgs {
   destExt: string;
 }
 
+export interface FilesImportToTaskArgs {
+  sourcePath: string;     // absolute path on disk
+  taskId: string;         // owning task (32-hex)
+  fileId: string;         // pre-allocated id, becomes the on-disk basename
+  destExt: string;        // lowercased ext (no dot), preserved on disk
+}
+
 export interface FilesAPI {
   /** Open a multi-select file picker. Returns absolute paths or empty array if cancelled. */
   pickFiles(): Promise<string[]>;
@@ -501,6 +571,10 @@ export interface FilesAPI {
    *  Computes SHA-256 during the copy. Does NOT touch the database — caller follows
    *  up with POST /files/items. */
   importToBucket(args: FilesImportArgs): Promise<FilesImportResult>;
+  /** Stream-copy a file into <userData>/files/task-attachments/<taskId>/<fileId>.<ext>.
+   *  Same shape as importToBucket but without a bucket — used for files attached
+   *  to a Kanban task. */
+  importToTask(args: FilesImportToTaskArgs): Promise<FilesImportResult>;
   /** Duplicate a managed file's bytes to a new managed location. */
   copyManaged(args: FilesCopyArgs): Promise<FilesImportResult>;
   /** Unlink the bytes for a single managed file. Path is relative to <userData>/files. */
@@ -549,7 +623,14 @@ export interface UpdateDownloadedEvent {
 
 export interface UpdaterAPI {
   checkNow(): Promise<UpdateInfo | null>;
+  /** Download the asset to a persistent location (userData/updates/). Does
+   *  not install. Rejects if the download fails. */
   download(asset: UpdateAsset): Promise<void>;
+  /** Install the previously-downloaded asset and restart. For Linux AppImage
+   *  this verifies the new version can launch before quitting the current
+   *  process. If the launch verification fails the old install is rolled
+   *  back and this rejects — the current app keeps running. */
+  apply(asset: UpdateAsset): Promise<void>;
   dismiss(): Promise<void>;
   /** Renderer tells main "the banner is on screen" so the native
    *  dialog fallback doesn't fire. Fire-and-forget. */
@@ -629,6 +710,44 @@ export interface ChatActionsAPI {
   onTeamMemberUpdate(
     callback: (payload: TeamMemberUpdateEventPayload) => void,
   ): () => void;
+  /** Generate a short conversation title from the first user message and,
+   *  optionally, the first assistant response. Resolves to a sanitised title
+   *  string, or null if Claude Code is unavailable or the call fails. */
+  generateTitle(args: {
+    userMessage: string;
+    assistantResponse?: string;
+  }): Promise<string | null>;
+}
+
+export interface BackupCompletionFlag {
+  rollback_id: string;
+  applied_at: string;
+  is_undo: boolean;
+  contents: string[];
+}
+
+export interface BackupAPI {
+  /** Open a save dialog filtered to `.cerebro-backup`. Returns the chosen path or null. */
+  pickExportPath(defaultName: string): Promise<string | null>;
+  /** Open a file dialog filtered to `.cerebro-backup`. Returns the picked path or null. */
+  pickImportFile(): Promise<string | null>;
+  /**
+   * Tell the backend to snapshot current state, stage the backup, and write
+   * the pending-restore marker. Then relaunch the app so the swap happens
+   * with no live DB connection holding the file open.
+   */
+  applyAndRelaunch(backupPath: string): Promise<void>;
+  /**
+   * Relaunch with no backend round-trip. Used by the undo flow after
+   * `/backup/undo` has already staged the rollback.
+   */
+  relaunch(): Promise<void>;
+  /** Return + clear the one-shot "restore complete" flag set on the last boot. */
+  consumeCompletionFlag(): Promise<BackupCompletionFlag | null>;
+  /** Reveal a backup file in Finder/Explorer. Quietly no-ops on a stale path. */
+  revealPath(filePath: string): Promise<void>;
+  /** Cerebro version (from package.json) so the backend can stamp it into manifests. */
+  appVersion(): Promise<string>;
 }
 
 export interface CerebroAPI {
@@ -648,6 +767,7 @@ export interface CerebroAPI {
   shell: ShellAPI;
   sandbox: SandboxAPI;
   telegram: TelegramAPI;
+  slack: SlackAPI;
   whatsapp: WhatsAppAPI;
   hubspot: HubSpotAPI;
   ghl: GHLAPI;
@@ -655,6 +775,55 @@ export interface CerebroAPI {
   chatActions: ChatActionsAPI;
   files: FilesAPI;
   updater: UpdaterAPI;
+  backup: BackupAPI;
+}
+
+// --- Slack bridge (Bolt / Socket Mode) ---
+
+export interface SlackVerifyResponse {
+  ok: boolean;
+  teamName?: string;
+  teamId?: string;
+  botUserId?: string;
+  error?: string;
+}
+
+export interface SlackStatusResponse {
+  running: boolean;
+  /** ms timestamp of the last observed Slack event (any envelope). */
+  lastEventAt: number | null;
+  lastError: string | null;
+  /** Slack workspace name reported by auth.test, when known. */
+  teamName: string | null;
+  /** Bot user id (`U…`) reported by auth.test. */
+  botUserId: string | null;
+  hasBotToken: boolean;
+  hasAppToken: boolean;
+  /** Configured-on flag. Independent of `running`. */
+  enabled: boolean;
+  allowlistChannels: string[];
+  allowlistUsers: string[];
+  tokenBackend: 'os-keychain' | 'plaintext-fallback';
+}
+
+export interface SlackConversationUpdatedEvent {
+  conversationId: string;
+  kind: 'created' | 'message';
+}
+
+export interface SlackAPI {
+  verify(botToken: string, appToken: string): Promise<SlackVerifyResponse>;
+  enable(): Promise<{ ok: boolean; error?: string }>;
+  disable(): Promise<void>;
+  status(): Promise<SlackStatusResponse>;
+  reload(): Promise<{ ok: boolean; error?: string }>;
+  setTokens(tokens: { botToken: string; appToken: string }): Promise<{ ok: boolean; error?: string }>;
+  clearTokens(): Promise<{ ok: boolean; error?: string }>;
+  setAllowlist(args: { channels: string[]; users: string[] }): Promise<{ ok: boolean; error?: string }>;
+  /** Returns the shipped manifest YAML so the renderer can copy it to the
+   *  clipboard or pipe it to api.slack.com's "create from manifest" URL. */
+  getManifest(): Promise<{ ok: boolean; yaml?: string; error?: string }>;
+  onConversationUpdated(callback: (event: SlackConversationUpdatedEvent) => void): () => void;
 }
 
 // --- WhatsApp bridge (Baileys) ---

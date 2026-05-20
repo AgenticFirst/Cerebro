@@ -38,8 +38,10 @@ import {
   migrateLegacyContextFiles,
 } from './claude-code/installer';
 import { setClaudeCodeCwd } from './claude-code/single-shot';
+import { generateConversationTitle } from './claude-code/generate-title';
 import { VoiceSessionManager } from './voice/session';
 import { TelegramBridge } from './telegram/bridge';
+import { SlackBridge } from './slack/bridge';
 import { WhatsAppBridge } from './whatsapp/bridge';
 import { HubSpotHolder } from './hubspot/holder';
 import { GHLHolder } from './ghl/holder';
@@ -52,10 +54,12 @@ import type { SandboxConfig } from './sandbox/types';
 import {
   startUpdateChecker,
   checkNow as checkForUpdate,
-  downloadAndOpen as downloadUpdate,
+  downloadUpdate,
+  applyUpdate,
   ackUpdateBanner,
 } from './updater';
 import type { UpdateAsset } from './types/ipc';
+import { applyPendingRestore, consumeCompletionFlag } from './backup/swap';
 
 // Stdio EPIPE guard. When the Electron main process is launched under a
 // shell pipeline (`tail -f /dev/null | npm start`, electron-forge dev,
@@ -227,6 +231,7 @@ engineEventBus.setMaxListeners(50);
 
 // Telegram bridge (initialized after backend is healthy)
 let telegramBridge: TelegramBridge | null = null;
+let slackBridge: SlackBridge | null = null;
 // WhatsApp bridge (Baileys / WhatsApp Web)
 let whatsAppBridge: WhatsAppBridge | null = null;
 // HubSpot credential holder
@@ -433,6 +438,20 @@ async function startPythonBackend(): Promise<void> {
   executionEngine.setTelegramChannel(telegramBridge);
   telegramBridge.start().catch((err) => {
     console.error('[Cerebro] Telegram bridge start failed:', err);
+  });
+
+  // Slack bridge — starts only if the user has pasted tokens + enabled it.
+  slackBridge = new SlackBridge({
+    backendPort: port,
+    agentRuntime,
+    dataDir,
+    engineEventBus,
+    executionEngine,
+  });
+  registerChannelSender('slack', slackBridge);
+  executionEngine.setSlackChannel(slackBridge);
+  slackBridge.start().catch((err) => {
+    console.error('[Cerebro] Slack bridge start failed:', err);
   });
 
   // WhatsApp bridge — starts only if the user has paired + enabled it.
@@ -915,7 +934,14 @@ function registerIpcHandlers(): void {
       : getTaskWorkspaceDir(taskId);
     if (!fs.existsSync(baseDir)) return [];
 
-    const SKIP_DIRS = new Set(['.claude', 'node_modules', '.git', '.next', 'dist', 'build', '.venv', '__pycache__']);
+    // `_work` is the convention the deliverable prompt asks experts to use for
+    // scratch/intermediates; keeping it out of the listing is what makes the
+    // expert's "keep workspace tidy" instruction actually visible. The rest
+    // are standard caches/tmp folders we never want to show as deliverables.
+    const SKIP_DIRS = new Set([
+      '.claude', 'node_modules', '.git', '.next', 'dist', 'build',
+      '.venv', '__pycache__', '_work', '.tmp', 'tmp', '.cache', '.pytest_cache',
+    ]);
     const MAX_DEPTH = 6;
 
     function walk(dir: string, depth: number): Array<{ name: string; path: string; type: 'dir' | 'file'; size?: number; mtime?: number; children?: unknown[] }> {
@@ -1029,6 +1055,20 @@ function registerIpcHandlers(): void {
     const safeLang: 'en' | 'es' = lang === 'es' ? 'es' : 'en';
     return executionEngine.getChatActionCatalog(safeLang);
   });
+
+  ipcMain.handle(
+    IPC_CHANNELS.CHAT_GENERATE_TITLE,
+    async (
+      _event,
+      args: { userMessage: string; assistantResponse?: string },
+    ): Promise<string | null> => {
+      if (!args || typeof args.userMessage !== 'string') return null;
+      return generateConversationTitle({
+        userMessage: args.userMessage,
+        assistantResponse: args.assistantResponse,
+      });
+    },
+  );
 
   // --- Scheduler ---
 
@@ -1537,6 +1577,59 @@ function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IPC_CHANNELS.FILES_IMPORT_TO_TASK,
+    async (_event, args: { sourcePath: string; taskId: string; fileId: string; destExt: string }) => {
+      const { sourcePath, taskId, fileId, destExt } = args;
+      if (!path.isAbsolute(sourcePath)) {
+        throw new Error('Source path must be absolute');
+      }
+      if (!/^[a-z0-9]{32}$/i.test(taskId)) {
+        throw new Error(`Invalid taskId: ${taskId}`);
+      }
+      if (!/^[a-z0-9]{32}$/i.test(fileId)) {
+        throw new Error(`Invalid fileId: ${fileId}`);
+      }
+
+      const srcStat = await fs.promises.stat(sourcePath);
+      if (srcStat.isDirectory()) throw new Error('Source is a directory');
+      const MAX_BYTES = 100 * 1024 * 1024;
+      if (srcStat.size > MAX_BYTES) {
+        throw new Error(`File too large (${Math.round(srcStat.size / 1024 / 1024)} MB > 100 MB)`);
+      }
+
+      const cleanExt = (destExt || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
+      const baseName = cleanExt ? `${fileId}.${cleanExt}` : fileId;
+      const destDir = path.join(getFilesRoot(), 'task-attachments', taskId);
+      const destAbs = path.join(destDir, baseName);
+      await fs.promises.mkdir(destDir, { recursive: true });
+
+      const hash = crypto.createHash('sha256');
+      let bytes = 0;
+      await new Promise<void>((resolve, reject) => {
+        const reader = fs.createReadStream(sourcePath);
+        const writer = fs.createWriteStream(destAbs);
+        reader.on('data', (chunk: Buffer | string) => {
+          const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+          hash.update(buf);
+          bytes += buf.length;
+        });
+        reader.on('error', reject);
+        writer.on('error', reject);
+        writer.on('finish', resolve);
+        reader.pipe(writer);
+      });
+
+      const destRelPath = path.posix.join('task-attachments', taskId, baseName);
+      return {
+        destRelPath,
+        sha256: hash.digest('hex'),
+        sizeBytes: bytes,
+        mime: mimeFor(destAbs).split(';')[0] || null,
+      };
+    },
+  );
+
+  ipcMain.handle(
     IPC_CHANNELS.FILES_COPY_MANAGED,
     async (_event, args: { srcRelPath: string; destBucketId: string; destFileId: string; destExt: string }) => {
       const srcAbs = resolveManagedPath(args.srcRelPath);
@@ -1678,6 +1771,85 @@ function registerIpcHandlers(): void {
     return content;
   });
 
+  // --- Backup & restore ---
+
+  ipcMain.handle(
+    IPC_CHANNELS.BACKUP_PICK_EXPORT_PATH,
+    async (_event, defaultName: string) => {
+      const [parent] = BrowserWindow.getAllWindows();
+      const downloads = app.getPath('downloads');
+      const result = await dialog.showSaveDialog(parent, {
+        title: 'Save Cerebro backup',
+        defaultPath: path.join(downloads, defaultName || 'cerebro-backup.cerebro-backup'),
+        filters: [{ name: 'Cerebro backup', extensions: ['cerebro-backup'] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      return result.filePath;
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_PICK_IMPORT_FILE, async () => {
+    const [parent] = BrowserWindow.getAllWindows();
+    const result = await dialog.showOpenDialog(parent, {
+      title: 'Restore from Cerebro backup',
+      properties: ['openFile'],
+      filters: [{ name: 'Cerebro backup', extensions: ['cerebro-backup'] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.BACKUP_APPLY_AND_RELAUNCH,
+    async (_event, backupPath: string) => {
+      if (typeof backupPath !== 'string' || !backupPath) {
+        throw new Error('Missing backup path');
+      }
+      // Ask the backend to snapshot + stage. It writes the pending marker;
+      // applyPendingRestore() picks it up on the next boot.
+      const res = await makeBackendRequest({
+        method: 'POST',
+        path: '/backup/apply',
+        body: { path: backupPath },
+        timeout: 120_000,
+      });
+      if (!res.ok) {
+        const detail = (res.data as { detail?: string } | null)?.detail ?? 'apply failed';
+        throw new Error(detail);
+      }
+      // Bow out cleanly so Python flushes its DB, then relaunch.
+      app.relaunch();
+      app.quit();
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_RELAUNCH, async () => {
+    app.relaunch();
+    app.quit();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_CONSUME_COMPLETION_FLAG, async () => {
+    return consumeCompletionFlag(app.getPath('userData'));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_REVEAL_PATH, async (_event, filePath: string) => {
+    if (typeof filePath !== 'string' || !filePath) return;
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (stat.isFile()) {
+        shell.showItemInFolder(filePath);
+      } else if (stat.isDirectory()) {
+        shell.openPath(filePath);
+      }
+    } catch {
+      /* file moved or deleted — no-op, the UI will refresh "last backup" */
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_APP_VERSION, async () => {
+    return app.getVersion();
+  });
+
   // --- Telegram bridge ---
 
   ipcMain.handle(IPC_CHANNELS.TELEGRAM_VERIFY, async (_event, token: string) => {
@@ -1733,6 +1905,88 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.TELEGRAM_CLEAR_TOKEN, async () => {
     if (!telegramBridge) return { ok: false, error: 'Bridge not initialized' };
     return telegramBridge.setToken(null);
+  });
+
+  // --- Slack bridge (Bolt / Socket Mode) ---
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_VERIFY, async (_event, args: { botToken: string; appToken: string }) => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    const bot = (args?.botToken ?? '').trim();
+    const app = (args?.appToken ?? '').trim();
+    if (!bot || !app) return { ok: false, error: 'Both bot token and app token are required.' };
+    return slackBridge.verifyTokens(bot, app);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_ENABLE, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    try {
+      await slackBridge.stop(); // restart so it picks up fresh settings
+      await slackBridge.start();
+      const s = slackBridge.status();
+      return { ok: s.running, error: s.running ? undefined : (s.lastError ?? 'Failed to start') };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_DISABLE, async () => {
+    if (!slackBridge) return;
+    await slackBridge.stop();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_STATUS, async () => {
+    if (!slackBridge) {
+      return {
+        running: false,
+        lastEventAt: null,
+        lastError: 'Bridge not initialized',
+        teamName: null,
+        botUserId: null,
+        hasBotToken: false,
+        hasAppToken: false,
+        enabled: false,
+        allowlistChannels: [],
+        allowlistUsers: [],
+        tokenBackend: 'plaintext-fallback',
+      };
+    }
+    return slackBridge.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_RELOAD, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.reloadSettings();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_SET_TOKENS, async (_event, args: { botToken: string; appToken: string }) => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    const bot = (args?.botToken ?? '').trim();
+    const app = (args?.appToken ?? '').trim();
+    if (!bot || !app) return { ok: false, error: 'Both bot token and app token are required.' };
+    return slackBridge.setTokens({ botToken: bot, appToken: app });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_CLEAR_TOKENS, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.clearTokens();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_SET_ALLOWLIST, async (_event, args: { channels: string[]; users: string[] }) => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.setAllowlist({
+      channels: Array.isArray(args?.channels) ? args.channels : [],
+      users: Array.isArray(args?.users) ? args.users : [],
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_GET_MANIFEST, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    try {
+      const yaml = await slackBridge.getManifestYaml();
+      return { ok: true, yaml };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 
   // --- WhatsApp bridge ---
@@ -1938,6 +2192,18 @@ function registerIpcHandlers(): void {
       throw err;
     }
   });
+  ipcMain.handle(IPC_CHANNELS.UPDATE_APPLY, async (event, asset: UpdateAsset) => {
+    // applyUpdate either app.quit()s on success or throws on failure. We
+    // re-throw so the renderer can put the banner into the error state and
+    // give the user a chance to retry / read release notes / etc.
+    try {
+      await applyUpdate(asset);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      event.sender.send(IPC_CHANNELS.UPDATE_ERROR, message);
+      throw err;
+    }
+  });
   ipcMain.handle(IPC_CHANNELS.UPDATE_DISMISS, async () => {
     ackUpdateBanner();
   });
@@ -2003,6 +2269,9 @@ const createWindow = () => {
   }
   if (telegramBridge) {
     telegramBridge.setWebContents(mainWindow.webContents);
+  }
+  if (slackBridge) {
+    slackBridge.setWebContents(mainWindow.webContents);
   }
   if (whatsAppBridge) {
     whatsAppBridge.setWebContents(mainWindow.webContents);
@@ -2182,6 +2451,21 @@ app.on('ready', async () => {
   });
 
   registerIpcHandlers();
+
+  // If the user applied a backup last session we left a marker file behind.
+  // Swap the staged DB + dirs into place BEFORE Python opens its connection,
+  // otherwise the live SQLite handle will hold the old file hostage.
+  try {
+    const swap = applyPendingRestore(app.getPath('userData'));
+    if (swap.applied) {
+      console.log(`[Cerebro] Applied pending restore (rollback ${swap.rollback_id}, undo=${Boolean(swap.is_undo)})`);
+    } else if (swap.error) {
+      console.warn(`[Cerebro] Pending restore did not apply: ${swap.error}`);
+    }
+  } catch (err) {
+    console.error('[Cerebro] applyPendingRestore threw:', err);
+  }
+
   createWindow();
 
   // Detect Claude Code BEFORE starting the backend so the binary path is
@@ -2229,6 +2513,10 @@ app.on('before-quit', async () => {
   if (telegramBridge) {
     try { await telegramBridge.stop(); } catch { /* ignore */ }
     unregisterChannelSender('telegram');
+  }
+  if (slackBridge) {
+    try { await slackBridge.stop(); } catch { /* ignore */ }
+    unregisterChannelSender('slack');
   }
   if (chatActionServer) {
     try { await chatActionServer.stop(); } catch { /* ignore */ }

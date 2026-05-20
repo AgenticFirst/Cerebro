@@ -26,6 +26,7 @@ import type { DAGDefinition } from '../engine/dag/types';
 import {
   generateId,
   titleFromContent,
+  isUntitledConversationTitle,
   fromApiConversation,
   toApiProposal,
   toApiExpertProposal,
@@ -191,6 +192,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const claudeCodeInfoRef = useRef(claudeCodeInfo);
   claudeCodeInfoRef.current = claudeCodeInfo;
 
+  // Tracks conversations whose title is still owned by the auto-titler.
+  // Inserted when a new conversation is created from sendMessage(); removed
+  // as soon as the user manually renames or deletes it, so the post-response
+  // refinement pass never clobbers a human edit.
+  const autoTitledIdsRef = useRef<Set<string>>(new Set());
+  // Last auto-generated title per conversation. Used during phase-2 refine to
+  // confirm the title hasn't drifted from what we set in phase 1 — if it has,
+  // someone else changed it (manual rename, telegram bridge, etc.) and we
+  // back off.
+  const autoTitledLastRef = useRef<Map<string, string>>(new Map());
+
   // Per-conversation write chain. Every backend write for a conversation is
   // appended to this promise so writes commit in the order the UI fires them.
   // Without this, the optimistic-first pattern lets the very first user message
@@ -321,6 +333,54 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [chainWrite],
   );
 
+  // Background auto-titler. Best-effort: any failure logs and exits — the
+  // truncated-first-40-chars title remains as the fallback. Honours manual
+  // renames via autoTitledIdsRef (the rename callback drops the id).
+  const runAutoTitle = useCallback(
+    async (convId: string, userMessage: string, assistantResponse?: string) => {
+      if (!autoTitledIdsRef.current.has(convId)) return;
+      let generated: string | null = null;
+      try {
+        generated = await window.cerebro.chatActions.generateTitle({
+          userMessage,
+          assistantResponse,
+        });
+      } catch (err) {
+        console.warn('[chat] auto-title failed:', err);
+        return;
+      }
+      if (!generated) return;
+      if (!autoTitledIdsRef.current.has(convId)) return;
+
+      const conv = conversationsRef.current.find((c) => c.id === convId);
+      if (!conv) return;
+
+      // Only overwrite if the title is still ours: either the original
+      // placeholder/truncated-first-40-chars OR the previous auto-title.
+      const previousAuto = autoTitledLastRef.current.get(convId);
+      const isStillOurs =
+        isUntitledConversationTitle(conv.title) ||
+        conv.title === titleFromContent(userMessage) ||
+        (previousAuto !== undefined && conv.title === previousAuto);
+      if (!isStillOurs) {
+        autoTitledIdsRef.current.delete(convId);
+        autoTitledLastRef.current.delete(convId);
+        return;
+      }
+
+      autoTitledLastRef.current.set(convId, generated);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convId ? { ...c, title: generated as string, updatedAt: new Date() } : c,
+        ),
+      );
+      chainWrite(convId, () => apiPatchConversation(convId, { title: generated as string })).catch(
+        console.error,
+      );
+    },
+    [chainWrite],
+  );
+
   const setActiveConversation = useCallback((id: string | null) => {
     setActiveConversationIdState(id);
   }, []);
@@ -375,6 +435,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setConversations((prev) => prev.filter((c) => c.id !== id));
     setActiveConversationIdState((current) => (current === id ? null : current));
     writeChainRef.current.delete(id);
+    autoTitledIdsRef.current.delete(id);
+    autoTitledLastRef.current.delete(id);
     apiDeleteConversation(id).catch(console.error);
   }, []);
 
@@ -382,6 +444,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (id: string, nextTitle: string) => {
       const trimmed = nextTitle.trim().slice(0, 200);
       if (!trimmed) return;
+      // Manual rename: hand ownership of the title back to the user so the
+      // post-response refine pass leaves it alone.
+      autoTitledIdsRef.current.delete(id);
+      autoTitledLastRef.current.delete(id);
       setConversations((prev) => {
         const target = prev.find((c) => c.id === id);
         if (!target || target.title === trimmed) return prev;
@@ -710,6 +776,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     metadata: Object.keys(doneMetadata).length > 0 ? doneMetadata : undefined,
                   }),
                 ).catch(console.error);
+                // Phase 2 auto-title refine: if the conversation is still
+                // auto-titled (no manual rename happened during the response),
+                // generate a richer title using both the user's first message
+                // and the assistant's reply.
+                if (autoTitledIdsRef.current.has(convId) && finalContent.trim()) {
+                  const conv = conversationsRef.current.find((c) => c.id === convId);
+                  const firstUserMessage = conv?.messages.find((m) => m.role === 'user')?.content;
+                  if (firstUserMessage) {
+                    runAutoTitle(convId, firstUserMessage, finalContent).catch((err) =>
+                      console.warn('[chat] auto-title phase-2 error:', err),
+                    );
+                  }
+                }
                 break;
               }
 
@@ -759,8 +838,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 // `errorClass` is read by ChatMessage to render the
                 // auth-recovery card when Claude Code lost its session
                 // (or other class-specific affordances we add later).
+                // Preserve any partial streamed text so the user doesn't
+                // lose what the agent already produced — append the error
+                // below a separator instead of overwriting the body.
+                const partial = state.accumulated.trim();
+                const content = partial
+                  ? `${partial}\n\n---\n_Error: ${event.error}_`
+                  : `Error: ${event.error}`;
                 updateMessage(convId, assistantId, {
-                  content: `Error: ${event.error}`,
+                  content,
                   isThinking: false,
                   isStreaming: false,
                   toolCalls: [...state.toolCalls],
@@ -801,7 +887,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       runAgent();
     },
-    [updateMessage, chainWrite, waitForConversation],
+    [updateMessage, chainWrite, waitForConversation, runAutoTitle],
   );
 
   const sendMessage = useCallback(
@@ -818,12 +904,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       let convId = activeConversationId;
+      let createdHere = false;
       if (!convId) {
         // Auto-scope new conversations to the selected expert so threads
         // started from the Experts > Messages tab are discoverable there.
         convId = createConversation(content, { expertId: activeExpertId });
+        createdHere = true;
       }
       addMessage(convId, 'user', content);
+
+      // Phase 1 auto-title: fire-and-forget the moment a new conversation is
+      // born. Runs in parallel with the assistant response. The renameConversation
+      // and deleteConversation callbacks invalidate the ref, so a manual edit
+      // mid-flight wins.
+      if (createdHere) {
+        autoTitledIdsRef.current.add(convId);
+        runAutoTitle(convId, content).catch((err) =>
+          console.warn('[chat] auto-title phase-1 error:', err),
+        );
+      }
 
       const expertId = activeExpertId;
 
@@ -854,7 +953,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       runAgentForMessage(convId, assistantId, content, expertId);
     },
-    [activeConversationId, activeExpertId, createConversation, addMessage, runAgentForMessage],
+    [
+      activeConversationId,
+      activeExpertId,
+      createConversation,
+      addMessage,
+      runAgentForMessage,
+      runAutoTitle,
+    ],
   );
 
   const stopMessage = useCallback(async () => {

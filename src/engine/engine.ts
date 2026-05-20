@@ -37,6 +37,9 @@ import { runClaudeCodeAction } from './actions/run-claude-code';
 import { waitForWebhookAction } from './actions/wait-for-webhook';
 import { runScriptAction } from './actions/run-script';
 import { createSendTelegramAction } from './actions/send-telegram-message';
+import { createSendSlackMessageAction } from './actions/send-slack-message';
+import { createSendSlackFileAction } from './actions/send-slack-file';
+import { createListSlackChannelsAction } from './actions/list-slack-channels';
 import {
   createSendTelegramMediaActions,
   createSendTelegramLocationAction,
@@ -46,6 +49,7 @@ import {
   createSendWhatsAppLocationAction,
 } from './actions/send-whatsapp-media';
 import type { TelegramChannel } from './actions/telegram-channel';
+import type { SlackChannel } from './actions/slack-channel';
 import { createSendWhatsAppAction } from './actions/send-whatsapp-message';
 import type { WhatsAppChannel } from './actions/whatsapp-channel';
 import { createHubSpotCreateTicketAction } from './actions/hubspot-create-ticket';
@@ -93,6 +97,7 @@ export class ExecutionEngine {
   private agentRuntime: AgentRuntime;
   private sharedBus?: EventEmitter;
   private telegramChannel: TelegramChannel | null = null;
+  private slackChannel: SlackChannel | null = null;
   private whatsAppChannel: WhatsAppChannel | null = null;
   private hubSpotChannel: HubSpotChannel | null = null;
   private gitHubChannel: GitHubChannel | null = null;
@@ -112,6 +117,11 @@ export class ExecutionEngine {
    *  Set during main.ts wiring; safe to leave null in tests. */
   setTelegramChannel(channel: TelegramChannel): void {
     this.telegramChannel = channel;
+  }
+
+  /** Late-bind the Slack bridge so send_slack_* actions can use it. */
+  setSlackChannel(channel: SlackChannel): void {
+    this.slackChannel = channel;
   }
 
   /** Late-bind the WhatsApp (Baileys) bridge so send_whatsapp_message can use it. */
@@ -525,6 +535,9 @@ export class ExecutionEngine {
         backendPort: () => this.backendPort,
       }),
       createSendTelegramLocationAction({ getChannel: () => this.telegramChannel }),
+      createSendSlackMessageAction({ getChannel: () => this.slackChannel }),
+      createSendSlackFileAction({ getChannel: () => this.slackChannel }),
+      createListSlackChannelsAction({ getChannel: () => this.slackChannel }),
       createSendWhatsAppAction({ getChannel: () => this.whatsAppChannel }),
       ...createSendWhatsAppMediaActions({
         getChannel: () => this.whatsAppChannel,
@@ -908,6 +921,9 @@ export class ExecutionEngine {
       registry.register(action);
     }
     registry.register(createSendTelegramLocationAction({ getChannel: () => this.telegramChannel }));
+    registry.register(createSendSlackMessageAction({ getChannel: () => this.slackChannel }));
+    registry.register(createSendSlackFileAction({ getChannel: () => this.slackChannel }));
+    registry.register(createListSlackChannelsAction({ getChannel: () => this.slackChannel }));
     registry.register(createSendWhatsAppAction({ getChannel: () => this.whatsAppChannel }));
     for (const action of createSendWhatsAppMediaActions({
       getChannel: () => this.whatsAppChannel,

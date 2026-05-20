@@ -5,17 +5,24 @@ import clsx from 'clsx';
 import { useTasks, type Task, type TaskColumn, type TaskPriority } from '../../../context/TaskContext';
 import { useExperts } from '../../../context/ExpertContext';
 import TaskDescriptionEditor from './TaskDescriptionEditor';
+import TaskAttachmentsSection from './TaskAttachmentsSection';
 import ChecklistEditor from './ChecklistEditor';
 import CommentThread from './CommentThread';
 import ActivityTimeline from './ActivityTimeline';
 import ExpertConsole from './ExpertConsole';
 import LivePreview from './LivePreview';
 import TagChipInput from './TagChipInput';
-import TaskArtifactStrip from './TaskArtifactStrip';
+import TaskFilesTab from './TaskFilesTab';
 import ProjectFolderField from './ProjectFolderField';
 import AlertModal from '../../ui/AlertModal';
+import { flattenFiles } from '../../../utils/workspace-tree';
+import { treeFingerprint } from './file-preview-helpers';
 
-type Tab = 'details' | 'console' | 'preview' | 'activity';
+// Tab order intentionally puts Vista previa (the result) immediately after
+// Detalles so a finished task opens straight onto its deliverable. Archivos
+// is its own tab now — file browser used to be a fallback inside Vista previa
+// but that made the result harder to find in workspaces with many files.
+type Tab = 'details' | 'preview' | 'files' | 'console' | 'activity';
 
 const COLUMNS: TaskColumn[] = ['backlog', 'in_progress', 'to_review', 'completed', 'error'];
 const PRIORITIES: TaskPriority[] = ['low', 'normal', 'high', 'urgent'];
@@ -58,6 +65,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   );
 
   const [activeTab, setActiveTab] = useState<Tab>('details');
+  const [fileCount, setFileCount] = useState(0);
   const [isFullWidth, setIsFullWidth] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -75,12 +83,48 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     }
   }, [isEditingTitle]);
 
+  // Drive the Files tab label with a live count. Both the Files tab itself
+  // and LivePreview poll listFiles independently for their own rendering;
+  // this poll exists solely so the tab label tracks reality. Same fingerprint
+  // guard pattern as the other consumers — only updates state on real change.
+  const fileFpRef = useRef('');
   useEffect(() => {
     if (!task) return;
-    // Always land on Details when opening a task — the live-session badge in
-    // the header lets users jump to the console on demand. This keeps the
-    // entry point friendly for non-coders who don't want to see a terminal.
-    setActiveTab('details');
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const tree = await window.cerebro.taskTerminal.listFiles(
+          task.id,
+          task.project_path ?? undefined,
+        );
+        if (cancelled) return;
+        const fp = treeFingerprint(tree);
+        if (fp === fileFpRef.current) return;
+        fileFpRef.current = fp;
+        setFileCount(flattenFiles(tree).length);
+      } catch {
+        if (!cancelled) { setFileCount(0); fileFpRef.current = ''; }
+      }
+    };
+    poll();
+    if (task.column === 'in_progress') {
+      const id = setInterval(poll, 5000);
+      return () => { cancelled = true; clearInterval(id); };
+    }
+    return () => { cancelled = true; };
+  }, [task?.id, task?.project_path, task?.column]);
+
+  useEffect(() => {
+    if (!task) return;
+    // Default tab when opening a task:
+    //  - to_review / completed → Vista previa (the result is what they came for)
+    //  - everything else → Detalles
+    // Running tasks stay on Detalles too; the live-session badge above the
+    // tabs offers a one-click jump to the console.
+    const initial: Tab = task.column === 'to_review' || task.column === 'completed'
+      ? 'preview'
+      : 'details';
+    setActiveTab(initial);
     setIsFullWidth(false);
     setIsEditingTitle(false);
     setShowHardReset(false);
@@ -270,6 +314,9 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   // runId during the brief window between agent.run() and the backend's
   // run_started echo that sets task.run_id.
   const consoleRunId = task.run_id ?? getActiveRunId(task.id);
+  const deliverable = task.result_md && task.result_kind
+    ? { body: task.result_md, title: task.result_title ?? '', kind: task.result_kind }
+    : null;
   const startLabel =
     task.column === 'to_review' ? t('tasks.rerunTask')
     : task.column === 'error' ? t('tasks.retryTask')
@@ -343,8 +390,9 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'details', label: t('tasks.tabDetails') },
-    { key: 'console', label: t('tasks.tabConsole') },
     { key: 'preview', label: t('tasks.tabPreview') },
+    { key: 'files', label: fileCount > 0 ? t('tasks.tabFilesWithCount', { count: fileCount }) : t('tasks.tabFiles') },
+    { key: 'console', label: t('tasks.tabConsole') },
     { key: 'activity', label: t('tasks.tabActivity') },
   ];
 
@@ -558,6 +606,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
         value={task.description_md}
         onSave={handleDescriptionSave}
       />
+      <TaskAttachmentsSection taskId={task.id} />
       <ChecklistEditor task={task} />
       <div className="pt-4 border-t border-border-subtle">
         <span className="block text-xs font-medium text-text-secondary uppercase tracking-wide mb-3">
@@ -600,13 +649,6 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
       >
         {renderHeader()}
 
-        <TaskArtifactStrip
-          taskId={task.id}
-          projectPath={task.project_path}
-          runId={task.run_id}
-          onOpenFile={() => setActiveTab('preview')}
-        />
-
         {isFullWidth ? (
           // ── Focus Mode: 3-panel split ──
           <div className="flex-1 min-h-0 flex">
@@ -620,7 +662,14 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
             </div>
             {/* Preview panel (30%) */}
             <div className="w-[30%] min-w-[320px] max-w-[520px] min-h-0">
-              <LivePreview taskId={task.id} runId={consoleRunId} isRunning={isRunning} projectPath={task.project_path} />
+              <LivePreview
+                taskId={task.id}
+                runId={consoleRunId}
+                isRunning={isRunning}
+                projectPath={task.project_path}
+                deliverable={deliverable}
+                onJumpToFiles={() => setActiveTab('files')}
+              />
             </div>
           </div>
         ) : (
@@ -628,8 +677,9 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
           <>
             <div className="flex px-5 border-b border-border-subtle flex-shrink-0">
               {tabs.map((tab) => {
-                // Hide Preview and Console tabs if task hasn't started yet
-                if ((tab.key === 'console' || tab.key === 'preview') && !hasRun) return null;
+                // Preview/Files/Console tabs only show once the task has been
+                // run at least once — there's nothing to put in them before that.
+                if ((tab.key === 'console' || tab.key === 'preview' || tab.key === 'files') && !hasRun) return null;
                 return (
                   <button
                     key={tab.key}
@@ -656,7 +706,23 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
               )}
               {activeTab === 'preview' && (
                 <div className="flex-1 min-h-0">
-                  <LivePreview taskId={task.id} runId={consoleRunId} isRunning={isRunning} projectPath={task.project_path} />
+                  <LivePreview
+                    taskId={task.id}
+                    runId={consoleRunId}
+                    isRunning={isRunning}
+                    projectPath={task.project_path}
+                    deliverable={deliverable}
+                    onJumpToFiles={() => setActiveTab('files')}
+                  />
+                </div>
+              )}
+              {activeTab === 'files' && (
+                <div className="flex-1 min-h-0">
+                  <TaskFilesTab
+                    taskId={task.id}
+                    projectPath={task.project_path}
+                    isRunning={isRunning}
+                  />
                 </div>
               )}
               {activeTab === 'activity' && activityContent}

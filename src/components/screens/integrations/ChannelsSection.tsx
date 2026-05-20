@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { Mail } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { TelegramIcon, WhatsAppIcon } from '../../icons/BrandIcons';
+import { TelegramIcon, WhatsAppIcon, SlackIcon } from '../../icons/BrandIcons';
 import IntegrationCard from './IntegrationCard';
 import TelegramSection from './TelegramSection';
 import TelegramConnectModal from './TelegramConnectModal';
+import SlackSection from './SlackSection';
+import SlackConnectModal from './SlackConnectModal';
 import WhatsAppSection from './WhatsAppSection';
 import WhatsAppConnectModal from './WhatsAppConnectModal';
-import type { TelegramStatusResponse, WhatsAppStatusResponse } from '../../../types/ipc';
+import type {
+  TelegramStatusResponse,
+  WhatsAppStatusResponse,
+  SlackStatusResponse,
+} from '../../../types/ipc';
 
 interface ComingSoonChannel {
   id: string;
@@ -33,14 +39,17 @@ export default function ChannelsSection() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<TelegramStatusResponse | null>(null);
   const [waStatus, setWaStatus] = useState<WhatsAppStatusResponse | null>(null);
+  const [slStatus, setSlStatus] = useState<SlackStatusResponse | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showWaConnectModal, setShowWaConnectModal] = useState(false);
+  const [showSlackConnectModal, setShowSlackConnectModal] = useState(false);
   // Bumping this remounts the TelegramSection so it reloads from settings
   // after the onboarding modal persists changes.
   const [reloadKey, setReloadKey] = useState(0);
   // Independent counter so the WhatsApp inline card remounts after its tour
   // persists an allowlist or pairs a new device.
   const [waReloadKey, setWaReloadKey] = useState(0);
+  const [slReloadKey, setSlReloadKey] = useState(0);
 
   const refreshStatus = useCallback(async () => {
     const s = await window.cerebro.telegram.status();
@@ -61,6 +70,17 @@ export default function ChannelsSection() {
     const off = window.cerebro.whatsapp.onStatusChanged((s) => setWaStatus(s));
     return off;
   }, []);
+
+  const refreshSlackStatus = useCallback(async () => {
+    const s = await window.cerebro.slack.status();
+    setSlStatus(s);
+  }, []);
+
+  useEffect(() => {
+    void refreshSlackStatus();
+    const id = setInterval(refreshSlackStatus, 5_000);
+    return () => clearInterval(id);
+  }, [refreshSlackStatus]);
 
   const tokenConfigured = Boolean(status?.hasToken);
 
@@ -115,6 +135,36 @@ export default function ChannelsSection() {
         </IntegrationCard>
 
         <IntegrationCard
+          icon={SlackIcon}
+          iconBg="bg-purple-500/15"
+          iconColor="text-purple-400"
+          name={t('channelsSection.slack')}
+          description={
+            slStatus?.teamName && slStatus.hasBotToken && slStatus.hasAppToken
+              ? t('channelsSection.slackDescConnected', { teamName: slStatus.teamName })
+              : t('channelsSection.slackDesc')
+          }
+          status={slStatus?.running ? (
+            <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              {t('slackSection.enabled')}
+            </span>
+          ) : (slStatus?.hasBotToken && slStatus?.hasAppToken) ? (
+            <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-border-subtle bg-bg-elevated text-text-tertiary">
+              {t('channelsSection.statusConfigured')}
+            </span>
+          ) : null}
+          primaryAction={{
+            label: (slStatus?.hasBotToken && slStatus?.hasAppToken)
+              ? t('channelsSection.setupTour')
+              : t('channelsSection.connect'),
+            onClick: () => setShowSlackConnectModal(true),
+          }}
+        >
+          <SlackSection key={slReloadKey} />
+        </IntegrationCard>
+
+        <IntegrationCard
           icon={WhatsAppIcon}
           iconBg="bg-emerald-500/15"
           iconColor="text-emerald-400"
@@ -166,6 +216,13 @@ export default function ChannelsSection() {
         <TelegramConnectModal
           onClose={() => { setShowConnectModal(false); setReloadKey((k) => k + 1); void refreshStatus(); }}
           onPersisted={() => { setReloadKey((k) => k + 1); void refreshStatus(); }}
+        />
+      )}
+
+      {showSlackConnectModal && (
+        <SlackConnectModal
+          onClose={() => { setShowSlackConnectModal(false); setSlReloadKey((k) => k + 1); void refreshSlackStatus(); }}
+          onPersisted={() => { setSlReloadKey((k) => k + 1); void refreshSlackStatus(); }}
         />
       )}
 

@@ -367,6 +367,7 @@ const es: TranslationKeys = {
     interruptedBadge: 'Interrumpida',
     interruptedHint: 'Cerebro se cerró mientras esta tarea estaba en ejecución. Haz clic en Reanudar para continuar.',
     startNeedsExpert: 'Asigna un Experto antes de iniciar esta tarea',
+    startFailed: 'No se pudo iniciar al Experto. Revisa la tarea e inténtalo de nuevo.',
     moveTo: 'Mover a',
     previewWaiting: 'Esperando archivos',
     previewWaitingHint: 'La vista previa aparecer\u00e1 cuando el Experto cree archivos en el workspace, o cuando se detecte una URL de servidor de desarrollo.',
@@ -431,6 +432,25 @@ const es: TranslationKeys = {
     drawerArtifacts: 'Archivos',
     drawerArtifactsEmpty: 'A\u00fan no hay archivos',
     drawerArtifactsMore: '+{{count}} m\u00e1s',
+    // Pesta\u00f1as de Resultado / Archivos
+    tabFiles: 'Archivos',
+    tabFilesWithCount: 'Archivos \u00b7 {{count}}',
+    previewResultTitle: 'Resultado',
+    previewResultUntitled: 'Resultado de la tarea',
+    previewResultCopy: 'Copiar resultado',
+    previewResultCopied: 'Copiado',
+    previewResultEmpty: 'Esperando la entrega del experto. Mientras tanto, revisa la **Consola** para ver lo que est\u00e1 haciendo.',
+    previewResultRunning: 'El experto a\u00fan est\u00e1 trabajando \u2014 abre la **Consola** para seguir el progreso.',
+    previewSeeAllFiles: 'Ver todos los archivos \u2192',
+    filesEmpty: 'El experto a\u00fan no ha escrito archivos.',
+    filesEmptyHint: 'Cuando el experto guarde un archivo en su espacio de trabajo, aparecer\u00e1 aqu\u00ed.',
+    filesRecent: 'Recientes',
+    filesAll: 'Todos los archivos',
+    filesCount_one: '{{count}} archivo en el espacio de trabajo',
+    filesCount_other: '{{count}} archivos en el espacio de trabajo',
+    filesRevealWorkspace: 'Abrir carpeta en Finder',
+    filesBack: 'Volver al listado',
+    filesPreviewUnavailable: 'Este archivo no se puede previsualizar aqu\u00ed. \u00c1brelo en Finder.',
     // Menciones + Actividad
     mentionPlaceholder: 'Menciona un experto\u2026',
     mentionNoResults: 'No hay expertos coincidentes',
@@ -446,6 +466,18 @@ const es: TranslationKeys = {
     queueFailedPromptMessage: 'La ejecuci\u00f3n anterior no termin\u00f3 ({{reason}}). \u00bfEnviar igualmente la instrucci\u00f3n en cola a {{expert}}?',
     queueFailedSend: 'Enviar a {{expert}}',
     queueFailedDiscard: 'Descartar',
+    // Adjuntos
+    attachmentsLabel: 'Adjuntos',
+    attachmentsAdd: 'Adjuntar',
+    attachmentsAddTitle: 'Adjuntar archivos a esta tarea',
+    attachmentsEmpty: 'Arrastra archivos aquí o haz clic en Adjuntar',
+    attachmentsDropHint: 'Suelta para adjuntar',
+    attachmentsRemove: 'Quitar adjunto',
+    attachmentsReveal: 'Mostrar en Finder',
+    attachmentsOpen: 'Abrir',
+    attachmentsCopied_one: '{{count}} archivo añadido al espacio de la tarea',
+    attachmentsCopied_other: '{{count}} archivos añadidos al espacio de la tarea',
+    attachmentsCopyFailed: 'No se pudieron copiar algunos adjuntos',
   },
 
   // ── Pantalla de archivos ────────────────────────────────────
@@ -1099,6 +1131,26 @@ const es: TranslationKeys = {
         pasteHere: 'Pega el token en el siguiente paso. Cerebro lo verifica y lo guarda cifrado.',
       },
     },
+    slack: {
+      name: 'Slack',
+      description: 'Habla con Cerebro desde Slack \u2014 DMs, menciones en canales y /cerebro.',
+      fields: {
+        botToken: 'Bot User OAuth Token',
+        appToken: 'App-Level Token',
+      },
+      hints: {
+        botToken: 'Empieza con xoxb-\u2026 (de Install App \u2192 Bot User OAuth Token)',
+        appToken: 'Empieza con xapp-\u2026 (de Basic Information \u2192 App-Level Tokens, scope connections:write)',
+      },
+      steps: {
+        copyManifest: 'Copia el manifiesto YAML de Slack que Cerebro te muestra \u2014 ya trae los scopes, eventos y el slash command /cerebro configurados.',
+        createApp: 'En Slack, abre api.slack.com/apps \u2192 Create New App \u2192 From an app manifest. Pega el YAML y elige tu workspace.',
+        installWorkspace: 'En la app reci\u00e9n creada, abre Install App en la barra lateral y haz click en Install to Workspace.',
+        copyBotToken: 'En Install App, copia el Bot User OAuth Token (empieza con xoxb-).',
+        generateAppToken: 'En Basic Information \u2192 App-Level Tokens, dale a Generate. Ponle un nombre (por ejemplo socket), a\u00f1ade el scope connections:write y copia el token xapp-.',
+        pasteHere: 'Pega ambos tokens en el siguiente paso. Cerebro los verifica con auth.test y los guarda cifrados.',
+      },
+    },
     hubspot: {
       name: 'HubSpot',
       description: 'Crea tickets y actualiza contactos en tu CRM de HubSpot.',
@@ -1268,6 +1320,9 @@ const es: TranslationKeys = {
     telegram: 'Telegram',
     telegramDesc: 'Env\u00eda mensajes a Cerebro a trav\u00e9s del bot de Telegram',
     telegramDescConnected: 'Conectado como @{{username}}',
+    slack: 'Slack',
+    slackDesc: 'H\u00e1blale a Cerebro por DM, menci\u00f3nalo en canales o usa /cerebro.',
+    slackDescConnected: 'Conectado al workspace {{teamName}}.',
     whatsapp: 'WhatsApp',
     whatsappDesc: 'Vincula un número de WhatsApp Business para rutinas de atención al cliente.',
     whatsappDescConnected: 'Conectado como {{phone}}.',
@@ -1336,6 +1391,95 @@ const es: TranslationKeys = {
   },
 
   // ── Secci\u00f3n de Telegram ─────────────────────────────────────
+  slackConnect: {
+    stepLabel: 'Paso {{current}} de {{total}}',
+    back: 'Atrás',
+    continue: 'Continuar',
+    skip: 'Saltar',
+    enableAndFinish: 'Activar y terminar',
+    enabling: 'Activando…',
+    enableFailed: 'No se pudo iniciar el puente.',
+    verifiedAs: 'Verificado en el workspace {{teamName}}',
+    storageLabel: 'Almacenamiento',
+    storageKeychain: 'Llavero del SO',
+    storagePlaintext: 'Texto plano (fallback)',
+    step1Title: 'Crea tu app de Slack',
+    step1Body:
+      'Cerebro trae un manifiesto YAML que preconfigura todo: bot user, slash command, scopes y Socket Mode. Lo pegas en el flujo "Create from manifest" de Slack.',
+    step1Item1: 'Copia el manifiesto de abajo.',
+    step1Item2: 'Abre api.slack.com/apps → Create New App → From an app manifest.',
+    step1Item3: 'Elige el workspace donde vivirá Cerebro.',
+    step1Item4: 'Pega el manifiesto y haz click en Create.',
+    copyManifest: 'Copiar manifiesto YAML',
+    copyManifestDone: '¡Copiado!',
+    openSlackApps: 'Abrir constructor de apps de Slack',
+    step2Title: 'Instala en tu workspace',
+    step2Body:
+      'En tu nueva app, ve a Install App en la barra lateral y haz click en Install to Workspace. Slack te pedirá aprobar los scopes solicitados. Tras aprobar, verás un Bot User OAuth Token que empieza con xoxb-.',
+    step3Title: 'Pega tu bot token',
+    step3Body:
+      'En la página Install App, copia el Bot User OAuth Token (empieza con xoxb-) y pégalo aquí.',
+    botTokenLabel: 'Bot User OAuth Token',
+    botTokenPlaceholder: 'xoxb-…',
+    step4Title: 'Genera tu app-level token',
+    step4Body:
+      'Ve a Basic Information → App-Level Tokens → Generate Token and Scopes. Ponle un nombre (por ejemplo socket), añade el scope connections:write y haz click en Generate. Copia el token xapp-.',
+    appTokenLabel: 'App-Level Token',
+    appTokenPlaceholder: 'xapp-…',
+    openBasicInformation: 'Abrir Basic Information',
+    step5Title: 'Verifica y activa',
+    step5Body:
+      'Cerebro va a llamar a auth.test con tu bot token y abrir una conexión rápida con tu app token para verificar que Socket Mode funciona.',
+    step5VerifyFailed: 'No se pudieron verificar los tokens. Revisa que el manifiesto se instaló bien y que ambos tokens se copiaron sin espacios al final.',
+    verify: 'Verificar',
+    verifying: 'Verificando…',
+    step6Title: 'Listo',
+    step6Body:
+      'El puente está en línea. Mándale un DM a Cerebro, menciónalo en cualquier canal con @Cerebro o escribe /cerebro help para ver el menú. Puedes cambiar cualquier ajuste después desde la tarjeta de Slack.',
+    setAllowlistLater: 'Configura la lista de permitidos después desde la tarjeta de Slack.',
+  },
+
+  slackSection: {
+    title: 'Slack',
+    description:
+      'Cerebro habla con tu equipo en Slack vía Socket Mode — no necesita URL pública. Cada hilo de Slack es su propia conversación, así que muchas personas pueden chatear con Cerebro en paralelo.',
+    tokensLabel: 'Tokens',
+    tokensVerified: 'Ambos tokens verificados.',
+    botTokenLabel: 'Bot token',
+    appTokenLabel: 'Token a nivel de app',
+    botTokenPlaceholder: 'xoxb-…',
+    appTokenPlaceholder: 'xapp-…',
+    verify: 'Verificar',
+    verifying: 'Verificando…',
+    save: 'Guardar',
+    saving: 'Guardando…',
+    clear: 'Borrar tokens',
+    cleared: 'Tokens borrados.',
+    allowlistChannelsLabel: 'Canales permitidos',
+    allowlistChannelsHelp:
+      'IDs de canales de Slack (Cnnn / Gnnn) donde se puede mencionar a Cerebro. Usa * para permitir cualquier canal donde esté el bot.',
+    allowlistUsersLabel: 'Usuarios permitidos',
+    allowlistUsersHelp:
+      'IDs de usuario de Slack (Unnn) que pueden enviarle DM a Cerebro o usar /cerebro. Usa * para permitir a cualquier miembro del workspace.',
+    saveAllowlist: 'Guardar lista',
+    enabled: 'Activado',
+    disabled: 'Desactivado',
+    enableLabel: 'Activar puente',
+    disableLabel: 'Desactivar puente',
+    enable: 'Activar',
+    disable: 'Desactivar',
+    reconnect: 'Reconectar',
+    statusRunning: 'En línea — último evento {{at}}',
+    statusOffline: 'Fuera de línea',
+    statusError: 'Error: {{message}}',
+    connectedAs: 'Conectado a {{teamName}}',
+    botUserLabel: 'Bot user',
+    docsLink: 'Documentación Socket Mode',
+    workspaceLabel: 'Workspace',
+    helpHint:
+      '¿Quieres hablarle a Cerebro desde Slack? Mándale un DM al bot, menciónalo en cualquier canal con @Cerebro o escribe /cerebro help.',
+  },
+
   telegramSection: {
     title: 'Telegram',
     description:
@@ -1449,6 +1593,64 @@ const es: TranslationKeys = {
     beta: 'Funciones beta',
     about: 'Acerca de',
     aboutComingSoon: 'Acerca de Cerebro pr\u00f3ximamente',
+    backup: 'Copia de seguridad',
+  },
+
+  // \u2500\u2500 Secci\u00f3n de copia de seguridad \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  backup: {
+    title: 'Copia de seguridad y restauraci\u00f3n',
+    description:
+      'Guarda todo lo de Cerebro \u2014 conversaciones, tareas, expertos, memoria y archivos adjuntos \u2014 en un solo archivo que puedes conservar o mover a otro equipo.',
+    create: {
+      title: 'Crear copia de seguridad',
+      description:
+        'Escribe un archivo .cerebro-backup que puedes guardar donde quieras. Incluye la base de datos y todos los archivos adjuntos.',
+      cta: 'Crear copia',
+      inProgress: 'Creando\u2026',
+      includeModels:
+        'Incluir modelos descargados (grandes \u2014 GB). Desactivado por defecto; los modelos se re-descargan autom\u00e1ticamente cuando hacen falta.',
+      estimatedSize: 'Tama\u00f1o estimado: {{size}}',
+    },
+    restore: {
+      title: 'Restaurar desde una copia',
+      description:
+        'Reemplaza todo lo que tienes ahora en Cerebro por el contenido del archivo de copia. La app se reiniciar\u00e1 al terminar la restauraci\u00f3n.',
+      cta: 'Restaurar desde archivo',
+      inspecting: 'Leyendo copia\u2026',
+    },
+    preview: {
+      title: '\u00bfRestaurar desde la copia?',
+      stats:
+        '{{conversations}} conversaciones \u00b7 {{tasks}} tareas \u00b7 {{experts}} expertos \u00b7 {{size}} de archivos',
+      created: 'Creada {{when}}',
+      version: 'Versi\u00f3n de Cerebro: {{version}}',
+      warning:
+        'Esto REEMPLAZAR\u00c1 todos los datos actuales. Antes se guardar\u00e1 una instant\u00e1nea de retroceso para que puedas deshacerlo.',
+      cancel: 'Cancelar',
+      confirm: 'Restaurar y reiniciar',
+      applying: 'Aplicando\u2026',
+    },
+    rollbacks: {
+      title: 'Instant\u00e1neas de retroceso',
+      description:
+        'Cerebro guarda una instant\u00e1nea del estado anterior cada vez que restauras, por si quieres deshacerlo. Las m\u00e1s antiguas (m\u00e1s all\u00e1 de las dos m\u00e1s recientes) se eliminan autom\u00e1ticamente.',
+      undo: 'Deshacer a esta instant\u00e1nea',
+    },
+    lastBackup: '\u00daltima copia: {{when}} \u00b7 {{size}}',
+    revealFile: 'Mostrar en Finder',
+    crossMachineNote:
+      'Aviso: las integraciones que guardan credenciales en el llavero del sistema (Telegram, HubSpot, GitHub, etc.) hay que volver a autenticarlas tras restaurar en otro equipo.',
+    toasts: {
+      restoreComplete: 'Copia restaurada. Bienvenido de vuelta.',
+      undoComplete: 'Retroceso aplicado. Tu estado anterior est\u00e1 de vuelta.',
+    },
+    exportSucceeded: 'Copia guardada ({{size}})',
+    exportFailed: 'Fall\u00f3 la copia: {{detail}}',
+    inspectFailed: 'No se pudo leer la copia: {{detail}}',
+    applyFailed: 'Fall\u00f3 la restauraci\u00f3n: {{detail}}',
+    applyDidNotRelaunch:
+      'La restauraci\u00f3n qued\u00f3 preparada pero la app no se reinici\u00f3. Sal de Cerebro y vu\u00e9lvelo a abrir.',
+    undoFailed: 'Fall\u00f3 el retroceso: {{detail}}',
   },
 
   // ── Secci\u00f3n de funciones beta ─────────────────────────────

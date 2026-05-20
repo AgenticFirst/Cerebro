@@ -30,6 +30,7 @@ VALID_SOURCES = {
     "telegram-inbound",
     "whatsapp-inbound",
     "expert-context",
+    "task-attachment",
 }
 VALID_STORAGE_KINDS = {"managed", "workspace"}
 VALID_ORDERS = {"created", "updated", "name", "opened"}
