@@ -41,6 +41,25 @@ import { buildSystemPrompt } from '../i18n/language-directive';
 /** Cap concurrent runs to prevent spawning a wall of subprocesses. */
 const MAX_CONCURRENT_RUNS = 5;
 
+/**
+ * Thrown when a caller tries to spawn a chat run on a conversation that
+ * already has one in flight. Each Cerebro conversation maps to a single
+ * Claude Code session id, and the CLI refuses to open the same session
+ * twice. Callers (Telegram bridge, chat IPC) catch this and surface a
+ * "still working" message instead of letting the raw session-collision
+ * reach the user.
+ */
+export class ConversationBusyError extends Error {
+  readonly conversationId: string;
+  readonly runId: string;
+  constructor(conversationId: string, runId: string) {
+    super(`Conversation ${conversationId} already has run ${runId} in flight`);
+    this.name = 'ConversationBusyError';
+    this.conversationId = conversationId;
+    this.runId = runId;
+  }
+}
+
 // ── Auto-escalation ladder ──────────────────────────────────────
 // When a chat run fails with a structured "model fell short" signal
 // (max-turns, context exhausted, transient overload), we retry on a
@@ -226,6 +245,14 @@ interface ExpertNameLookup {
 
 export class AgentRuntime {
   private activeRuns = new Map<string, ActiveRun>();
+  /**
+   * Single-flight registry keyed by conversationId. Chat runs map 1:1 to a
+   * Claude Code session id (`toUuidFormat(conversationId)`), so a second
+   * concurrent spawn would collide on the session lock and the CLI would
+   * return "Session ID … is already in use". Task and engine runs use
+   * per-run session ids, so they are intentionally excluded.
+   */
+  private activeConversations = new Map<string, string>();
   private backendPort: number;
   private dataDir: string;
   private syncChain: Promise<void> = Promise.resolve();
@@ -287,6 +314,19 @@ export class AgentRuntime {
     const isTaskRun = request.runType === 'task';
     const runId = request.runIdOverride || crypto.randomUUID().replace(/-/g, '').slice(0, 32);
     const { conversationId, content, expertId } = request;
+
+    // Single-flight per conversation for chat runs. Engine runs use a
+    // synthetic per-run conversationId (`engine-run:<id>`) so they never
+    // collide; task runs key sessions off runId, not conversationId.
+    const isEngineRunPrefix = typeof conversationId === 'string' && conversationId.startsWith('engine-run:');
+    const gateConversation = !isTaskRun && !isEngineRunPrefix && !!conversationId;
+    if (gateConversation) {
+      const existing = this.activeConversations.get(conversationId!);
+      if (existing) {
+        throw new ConversationBusyError(conversationId!, existing);
+      }
+      this.activeConversations.set(conversationId!, runId);
+    }
 
     // Resolve which subagent to invoke. Default to the main "cerebro" agent
     // when no expert is specified. For experts, we must guarantee both (a) the
@@ -1172,6 +1212,14 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     const isTaskRun = run.isTaskRun;
     const taskId = isTaskRun ? run.conversationId : null;
     this.activeRuns.delete(runId);
+
+    // Release the per-conversation slot if this run claimed it. The
+    // `=== runId` check prevents a stale finalize from releasing a slot
+    // a newer run has since claimed (defensive — shouldn't happen given
+    // the single-flight guard, but cheap insurance).
+    if (run.conversationId && this.activeConversations.get(run.conversationId) === runId) {
+      this.activeConversations.delete(run.conversationId);
+    }
 
     // Engine-spawned runs were never INSERT'd (see startRun) so don't PATCH
     // either — the row doesn't exist.
