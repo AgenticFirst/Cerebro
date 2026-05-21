@@ -2277,6 +2277,68 @@ const en = {
       replayHint: 'Tip: revisit this tour from Settings → Appearance.',
     },
   },
+
+  // ── In-app update banner ────────────────────────────────────
+  updateBanner: {
+    available: {
+      title: 'Cerebro {{version}} is available',
+      updateNow: 'Update now',
+      viewReleaseNotes: 'View release notes',
+    },
+    downloading: {
+      title: 'Downloading Cerebro {{version}}…',
+      progress: '{{transferred}} / {{total}} ({{percent}}%)',
+      starting: 'Starting download…',
+    },
+    ready: {
+      titleReady: 'Cerebro {{version}} is ready to install',
+      titleDownloaded: 'Cerebro {{version}} downloaded',
+      detailAppImage:
+        'Your chats, tasks, settings, and memory will be preserved. Cerebro will restart to apply the update.',
+      detailLinuxPackage:
+        "Open the installer in your file manager to finish installing, then relaunch Cerebro. Your data is stored separately and won't be touched.",
+      detailDefault:
+        "Open the installer to finish installing, then relaunch Cerebro. Your data is stored separately and won't be touched.",
+      restartToUpdate: 'Restart to update',
+      revealInstaller: 'Reveal installer',
+      openInstaller: 'Open installer',
+      releaseNotes: 'Release notes',
+    },
+    applying: {
+      title: 'Restarting Cerebro {{version}}…',
+      detail:
+        'Verifying the new version can launch. If anything goes wrong the previous version will be restored automatically.',
+    },
+    error: {
+      titleApply: "Couldn't apply the update",
+      titleDownload: "Couldn't download the update",
+      unknownError: 'Unknown error.',
+      detailApply:
+        'Your previous version is still installed. You can try again, or download the installer manually.',
+      detailDownload: 'You can grab the installer manually from the release page.',
+      openReleasePage: 'Open release page',
+      retry: 'Retry',
+      // Kind-aware copy. Picked by the banner based on UpdateErrorKind so
+      // every failure feels specific and reassuring instead of generic.
+      networkTitle: 'The download didn’t complete',
+      networkBody:
+        'This usually clears up on its own — a slow connection, a corporate proxy, or GitHub hiccupping. Your current version is unaffected; we can try again now.',
+      networkRetryCountdown: 'Retry in {{seconds}}s',
+      verifyTitle: 'The download didn’t arrive cleanly',
+      verifyBody:
+        'A check on the downloaded file didn’t match what GitHub published. Nothing has changed on your machine. Let’s grab a fresh copy.',
+      applyTitle: 'The new version couldn’t start',
+      applyBody:
+        'Your current version is still running normally — nothing changed. You can retry from here, or install the new version from the release page when it’s convenient.',
+      disabledTitle: 'Auto-updates are disabled on this machine',
+      disabledBody:
+        'An administrator turned off in-app updates. Open the release page if you want to install manually.',
+      unknownTitle: 'Something went wrong with the update',
+      unknownBody:
+        'Your current version is still working. Try again, and if it keeps happening, open the release page to install manually.',
+    },
+    dismissAria: 'Dismiss update banner',
+  },
 } as const;
 
 export type TranslationKeys = typeof en;

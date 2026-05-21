@@ -2247,6 +2247,66 @@ const es: TranslationKeys = {
       replayHint: 'Tip: vuelve a este recorrido desde Ajustes → Apariencia.',
     },
   },
+
+  // ── Banner de actualización dentro de la app ────────────────
+  updateBanner: {
+    available: {
+      title: 'Cerebro {{version}} está disponible',
+      updateNow: 'Actualizar ahora',
+      viewReleaseNotes: 'Ver notas de la versión',
+    },
+    downloading: {
+      title: 'Descargando Cerebro {{version}}…',
+      progress: '{{transferred}} / {{total}} ({{percent}}%)',
+      starting: 'Iniciando descarga…',
+    },
+    ready: {
+      titleReady: 'Cerebro {{version}} está listo para instalarse',
+      titleDownloaded: 'Cerebro {{version}} descargado',
+      detailAppImage:
+        'Tus chats, tareas, ajustes y memoria se conservarán. Cerebro se reiniciará para aplicar la actualización.',
+      detailLinuxPackage:
+        'Abre el instalador en tu gestor de archivos para terminar la instalación y luego vuelve a abrir Cerebro. Tus datos se guardan por separado y no se tocarán.',
+      detailDefault:
+        'Abre el instalador para terminar la instalación y luego vuelve a abrir Cerebro. Tus datos se guardan por separado y no se tocarán.',
+      restartToUpdate: 'Reiniciar para actualizar',
+      revealInstaller: 'Mostrar instalador',
+      openInstaller: 'Abrir instalador',
+      releaseNotes: 'Notas de la versión',
+    },
+    applying: {
+      title: 'Reiniciando Cerebro {{version}}…',
+      detail:
+        'Comprobando que la nueva versión arranca. Si algo falla, se restaurará automáticamente la versión anterior.',
+    },
+    error: {
+      titleApply: 'No se pudo aplicar la actualización',
+      titleDownload: 'No se pudo descargar la actualización',
+      unknownError: 'Error desconocido.',
+      detailApply:
+        'Tu versión anterior sigue instalada. Puedes intentarlo de nuevo o descargar el instalador manualmente.',
+      detailDownload: 'Puedes descargar el instalador manualmente desde la página de la versión.',
+      openReleasePage: 'Abrir página de la versión',
+      retry: 'Reintentar',
+      networkTitle: 'La descarga no se completó',
+      networkBody:
+        'Esto suele resolverse solo: una conexión lenta, un proxy corporativo o un hipo de GitHub. Tu versión actual no se ve afectada; podemos volver a intentarlo ahora.',
+      networkRetryCountdown: 'Reintentar en {{seconds}} s',
+      verifyTitle: 'La descarga no llegó completa',
+      verifyBody:
+        'La verificación del archivo descargado no coincide con lo que publicó GitHub. Nada ha cambiado en tu equipo. Vamos a descargar una copia nueva.',
+      applyTitle: 'La nueva versión no pudo iniciarse',
+      applyBody:
+        'Tu versión actual sigue funcionando con normalidad — nada ha cambiado. Puedes reintentar desde aquí o instalar la nueva versión desde la página de la versión cuando te venga bien.',
+      disabledTitle: 'Las actualizaciones automáticas están desactivadas en este equipo',
+      disabledBody:
+        'Un administrador desactivó las actualizaciones dentro de la app. Abre la página de la versión si quieres instalarla manualmente.',
+      unknownTitle: 'Algo falló con la actualización',
+      unknownBody:
+        'Tu versión actual sigue funcionando. Vuelve a intentarlo y, si sigue fallando, abre la página de la versión para instalar manualmente.',
+    },
+    dismissAria: 'Cerrar banner de actualización',
+  },
 } as const;
 
 export default es;

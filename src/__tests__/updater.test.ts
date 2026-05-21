@@ -157,9 +157,18 @@ import {
   checkNow,
   applyUpdate,
   __resetUpdaterStateForTests,
+  __setCachedReleaseForTests,
+  verifyDownloadedAsset,
+  toErrorEvent,
+  UpdaterError,
+  autoUpdatesDisabled,
   type GithubAsset,
 } from '../updater';
 import type { UpdateAsset } from '../types/ipc';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import realFs from 'node:fs';
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -821,7 +830,12 @@ describe('applyUpdate', () => {
     );
     // app.quit() must NOT fire on failure — old install is still working.
     expect(mockAppQuit).not.toHaveBeenCalled();
-    expect(err.message).toMatch(/Couldn't start the new version/);
+    // The user-facing copy was rewritten in v0.1.3 to be reassuring first
+    // ("Your current install is unchanged and still running normally") and
+    // demote the technical detail into a parenthetical. The underlying
+    // contract is the same: the message tells the user it didn't start AND
+    // includes the original child stderr (libfuse2 here) for support.
+    expect(err.message).toMatch(/new version couldn.t start/i);
     expect(err.message).toMatch(/current install is unchanged/);
     expect(err.message).toMatch(/libfuse2/);
   });
@@ -944,5 +958,225 @@ describe('applyUpdate', () => {
       /Failed to open installer: hdiutil: attach failed/,
     );
     expect(mockAppQuit).not.toHaveBeenCalled();
+  });
+});
+
+// ── IPC reply path: UpdaterError + toErrorEvent ─────────────────
+//
+// These cover the structural fix for the "Error invoking remote method
+// 'update:download': reply was never sent" bug. The IPC handler now sends
+// every error through `toErrorEvent`, which produces a structured-clone-
+// safe { message, kind } pair. As long as that mapping is correct, the
+// renderer can never see "reply was never sent" again — the handler doesn't
+// throw, period.
+
+describe('toErrorEvent', () => {
+  it('extracts kind + message from an UpdaterError', () => {
+    const ev = toErrorEvent(new UpdaterError('network', 'connection refused'));
+    expect(ev).toEqual({ message: 'connection refused', kind: 'network' });
+  });
+
+  it('maps plain Error to kind: unknown', () => {
+    const ev = toErrorEvent(new Error('something bad'));
+    expect(ev).toEqual({ message: 'something bad', kind: 'unknown' });
+  });
+
+  it('handles non-Error throws (strings, objects) without crashing', () => {
+    expect(toErrorEvent('boom')).toEqual({ message: 'boom', kind: 'unknown' });
+    expect(toErrorEvent({ weird: true })).toEqual({
+      message: '[object Object]',
+      kind: 'unknown',
+    });
+  });
+
+  it('survives errors whose stack carries circular references (structured-clone hostility)', () => {
+    // Reproduces the shape that produced "reply was never sent" — an Error
+    // with a self-referential property that structured-clone refuses. Our
+    // mapping only reads .message, so this can't trip the IPC layer up.
+    const err = new Error('with cycle') as Error & { cycle?: unknown };
+    err.cycle = err;
+    const ev = toErrorEvent(err);
+    expect(ev).toEqual({ message: 'with cycle', kind: 'unknown' });
+  });
+});
+
+describe('UpdaterError', () => {
+  it('carries the kind on the instance', () => {
+    const err = new UpdaterError('verify', 'hash mismatch');
+    expect(err).toBeInstanceOf(Error);
+    expect(err.kind).toBe('verify');
+    expect(err.message).toBe('hash mismatch');
+    expect(err.name).toBe('UpdaterError');
+  });
+});
+
+// ── Admin opt-out ───────────────────────────────────────────────
+
+describe('autoUpdatesDisabled', () => {
+  const ORIGINAL = process.env.CEREBRO_DISABLE_AUTO_UPDATES;
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env.CEREBRO_DISABLE_AUTO_UPDATES;
+    else process.env.CEREBRO_DISABLE_AUTO_UPDATES = ORIGINAL;
+  });
+
+  it('returns false when the env var is not set', () => {
+    delete process.env.CEREBRO_DISABLE_AUTO_UPDATES;
+    expect(autoUpdatesDisabled()).toBe(false);
+  });
+
+  it('returns false for the conventional "off" values', () => {
+    process.env.CEREBRO_DISABLE_AUTO_UPDATES = '0';
+    expect(autoUpdatesDisabled()).toBe(false);
+    process.env.CEREBRO_DISABLE_AUTO_UPDATES = 'false';
+    expect(autoUpdatesDisabled()).toBe(false);
+    process.env.CEREBRO_DISABLE_AUTO_UPDATES = '';
+    expect(autoUpdatesDisabled()).toBe(false);
+  });
+
+  it('returns true for any truthy admin-friendly value', () => {
+    for (const v of ['1', 'true', 'yes', 'on']) {
+      process.env.CEREBRO_DISABLE_AUTO_UPDATES = v;
+      expect(autoUpdatesDisabled()).toBe(true);
+    }
+  });
+});
+
+// ── Integrity verification (real fs against tmp files) ──────────
+//
+// These run against a fresh tmp dir so we exercise the *real* fs.stat /
+// fs.createReadStream / fs.open paths. The applyUpdate suite above mocks
+// `fs.promises`; this suite is scoped separately so those mocks don't
+// bleed in. The verify helper is exported on purpose for this coverage —
+// the integrity layer is the load-bearing part of the "this cannot fail"
+// guarantee, so the unit test surface needs to match.
+
+describe('verifyDownloadedAsset', () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = realFs.mkdtempSync(path.join(os.tmpdir(), 'cerebro-verify-'));
+    __setCachedReleaseForTests(null);
+  });
+  afterEach(() => {
+    try {
+      realFs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* swallow */
+    }
+    __setCachedReleaseForTests(null);
+  });
+
+  function writeFile(name: string, contents: Buffer): string {
+    const p = path.join(tmpDir, name);
+    realFs.writeFileSync(p, contents);
+    return p;
+  }
+
+  function makeAppImageHeader(body: Buffer): Buffer {
+    // Bytes 0..3 = ELF magic, byte 8..9 = 'AI', byte 10 = type version (2).
+    const header = Buffer.alloc(16);
+    header[0] = 0x7f;
+    header[1] = 0x45;
+    header[2] = 0x4c;
+    header[3] = 0x46;
+    header[8] = 0x41;
+    header[9] = 0x49;
+    header[10] = 0x02;
+    return Buffer.concat([header, body]);
+  }
+
+  it('rejects a size mismatch (truncated download)', async () => {
+    const filePath = writeFile('Cerebro-0.2.0.dmg', Buffer.from('short'));
+    const asset: UpdateAsset = {
+      name: 'Cerebro-0.2.0.dmg',
+      url: 'https://example.com/a.dmg',
+      size: 999_999, // expected size much larger than actual file
+      contentType: 'application/octet-stream',
+    };
+    await expect(verifyDownloadedAsset(filePath, asset)).rejects.toThrow(/wrong size/i);
+    await expect(verifyDownloadedAsset(filePath, asset)).rejects.toMatchObject({
+      kind: 'verify',
+    });
+  });
+
+  it('accepts a hash match parsed from release.body', async () => {
+    const body = Buffer.from('hello world');
+    const filePath = writeFile('Cerebro-0.2.0.dmg', body);
+    const expected = crypto.createHash('sha256').update(body).digest('hex');
+    const asset: UpdateAsset = {
+      name: 'Cerebro-0.2.0.dmg',
+      url: 'https://example.com/a.dmg',
+      size: body.length,
+      contentType: 'application/octet-stream',
+    };
+    __setCachedReleaseForTests({
+      tag_name: 'v0.2.0',
+      name: 'v0.2.0',
+      body: `### SHA-256\n${expected}  Cerebro-0.2.0.dmg\n`,
+      html_url: 'https://example.com/r',
+      prerelease: false,
+      draft: false,
+      assets: [],
+    });
+    await expect(verifyDownloadedAsset(filePath, asset)).resolves.toBeUndefined();
+  });
+
+  it('rejects on hash mismatch', async () => {
+    const filePath = writeFile('Cerebro-0.2.0.dmg', Buffer.from('actual contents'));
+    const wrongHash = 'a'.repeat(64);
+    const asset: UpdateAsset = {
+      name: 'Cerebro-0.2.0.dmg',
+      url: 'https://example.com/a.dmg',
+      size: 'actual contents'.length,
+      contentType: 'application/octet-stream',
+    };
+    __setCachedReleaseForTests({
+      tag_name: 'v0.2.0',
+      name: 'v0.2.0',
+      body: `### Hashes\n${wrongHash}  Cerebro-0.2.0.dmg`,
+      html_url: 'https://example.com/r',
+      prerelease: false,
+      draft: false,
+      assets: [],
+    });
+    await expect(verifyDownloadedAsset(filePath, asset)).rejects.toMatchObject({
+      kind: 'verify',
+    });
+  });
+
+  it('falls through to AppImage magic-bytes when no hash is published', async () => {
+    const body = makeAppImageHeader(Buffer.alloc(64));
+    const filePath = writeFile('Cerebro-0.2.0.AppImage', body);
+    const asset: UpdateAsset = {
+      name: 'Cerebro-0.2.0.AppImage',
+      url: 'https://example.com/a.AppImage',
+      size: body.length,
+      contentType: 'application/octet-stream',
+    };
+    // No release set, so no SHA-256 is found and we rely on magic bytes.
+    if (process.platform === 'linux') {
+      await expect(verifyDownloadedAsset(filePath, asset)).resolves.toBeUndefined();
+    } else {
+      // On macOS / Windows the AppImage magic-bytes branch is skipped — only
+      // size is verified. That's the documented behavior.
+      await expect(verifyDownloadedAsset(filePath, asset)).resolves.toBeUndefined();
+    }
+  });
+
+  it('rejects an AppImage whose ELF magic is missing (HTML error page served instead of binary)', async () => {
+    // Original Cerebro v0.1.x bug: a 404 redirect to GitHub's branded error
+    // page could result in HTML landing in `<asset>.AppImage`. Size *might*
+    // match by coincidence; magic bytes catch it.
+    if (process.platform !== 'linux') return; // branch is Linux-only
+    const html = Buffer.from('<!doctype html><html><head><title>Not Found');
+    const filePath = writeFile('Cerebro-0.2.0.AppImage', html);
+    const asset: UpdateAsset = {
+      name: 'Cerebro-0.2.0.AppImage',
+      url: 'https://example.com/a.AppImage',
+      size: html.length,
+      contentType: 'application/octet-stream',
+    };
+    await expect(verifyDownloadedAsset(filePath, asset)).rejects.toMatchObject({
+      kind: 'verify',
+    });
   });
 });

@@ -179,12 +179,14 @@ export const IPC_CHANNELS = {
   // App auto-updater (GitHub Releases)
   UPDATE_CHECK_NOW: 'update:check-now',
   /** Renderer → main: download the artifact to a persistent location.
-   *  Does NOT install; the app keeps running until the user clicks Restart. */
+   *  Does NOT install; the app keeps running until the user clicks Restart.
+   *  Returns UpdateActionResult — never throws over IPC. */
   UPDATE_DOWNLOAD: 'update:download',
   /** Renderer → main: install the previously-downloaded artifact and
    *  restart. For Linux AppImage this replaces the running binary atomically
-   *  with rollback if launch verification fails. Throws if the new version
-   *  cannot start, leaving the current install untouched. */
+   *  with rollback if launch verification fails. Returns UpdateActionResult;
+   *  on `{ ok: true }` the main process quits the current app shortly after
+   *  the reply is sent. On `{ ok: false }` the current install is intact. */
   UPDATE_APPLY: 'update:apply',
   UPDATE_DISMISS: 'update:dismiss',
   /** Renderer → main: "I received UPDATE_AVAILABLE and showed the banner."
@@ -197,6 +199,10 @@ export const IPC_CHANNELS = {
    *  The renderer should show a "Restart to apply" affordance — install does
    *  not happen automatically. */
   UPDATE_DOWNLOADED: 'update:downloaded',
+  /** Main → renderer: an updater operation failed. Payload shape is
+   *  UpdateErrorEvent ({ message, kind }) — the kind drives banner copy and
+   *  the secondary action. Sent in addition to the IPC return value so the
+   *  banner stays in sync even when no one is awaiting the call. */
   UPDATE_ERROR: 'update:error',
 
   // Files (managed buckets at <userData>/files)
@@ -621,6 +627,42 @@ export interface UpdateDownloadedEvent {
   asset: UpdateAsset;
 }
 
+/**
+ * Categorisation of updater failures. Lets the renderer pick reassuring,
+ * specific copy + the right secondary action instead of dumping raw Electron
+ * / Node error strings at the user.
+ *   - 'network'  : couldn't reach GitHub, stalled, timed out, HTTP error.
+ *   - 'verify'   : downloaded artefact failed size / hash / magic-bytes check.
+ *   - 'apply'    : new version downloaded fine but didn't survive launch
+ *                  verification. Rollback already happened — current install
+ *                  is intact.
+ *   - 'disabled' : auto-updates turned off by env var or settings; banner
+ *                  shouldn't render at all but kept here for completeness.
+ *   - 'unknown'  : everything else, including IPC anomalies.
+ */
+export type UpdateErrorKind =
+  | 'network'
+  | 'verify'
+  | 'apply'
+  | 'disabled'
+  | 'unknown';
+
+export interface UpdateErrorEvent {
+  message: string;
+  kind: UpdateErrorKind;
+}
+
+/**
+ * Discriminated result returned by writeful updater IPC calls
+ * (UPDATE_DOWNLOAD, UPDATE_APPLY). Plain-string error keeps the response
+ * structured-clone safe: Node stream errors / AggregateErrors / circular
+ * references can't leak into the IPC reply and produce
+ * "reply was never sent".
+ */
+export type UpdateActionResult =
+  | { ok: true }
+  | { ok: false; error: string; kind: UpdateErrorKind };
+
 export interface UpdaterAPI {
   checkNow(): Promise<UpdateInfo | null>;
   /** Download the asset to a persistent location (userData/updates/). Does
@@ -639,7 +681,7 @@ export interface UpdaterAPI {
   onAvailable(callback: (info: UpdateInfo) => void): () => void;
   onProgress(callback: (progress: UpdateDownloadProgress) => void): () => void;
   onDownloaded(callback: (event: UpdateDownloadedEvent) => void): () => void;
-  onError(callback: (message: string) => void): () => void;
+  onError(callback: (event: UpdateErrorEvent) => void): () => void;
 }
 
 // --- Preload API exposed on window.cerebro ---

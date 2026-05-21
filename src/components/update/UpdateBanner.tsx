@@ -1,4 +1,5 @@
 import { Download, RefreshCw, AlertCircle, X, ExternalLink, CheckCircle2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useUpdate } from '../../context/UpdateContext';
 
 function formatMB(bytes: number): string {
@@ -7,11 +8,13 @@ function formatMB(bytes: number): string {
 }
 
 export default function UpdateBanner() {
+  const { t } = useTranslation();
   const {
     status,
     info,
     progress,
-    errorMessage,
+    errorKind,
+    retryCooldownSeconds,
     isDismissed,
     startDownload,
     applyUpdate,
@@ -37,12 +40,16 @@ export default function UpdateBanner() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-text-primary">
-              Downloading Cerebro {info.version}…
+              {t('updateBanner.downloading.title', { version: info.version })}
             </div>
             <div className="text-xs text-text-secondary mt-0.5">
               {progress
-                ? `${formatMB(progress.transferred)} / ${formatMB(progress.total)} (${pct}%)`
-                : 'Starting download…'}
+                ? t('updateBanner.downloading.progress', {
+                    transferred: formatMB(progress.transferred),
+                    total: formatMB(progress.total),
+                    percent: pct,
+                  })
+                : t('updateBanner.downloading.starting')}
             </div>
             <div className="mt-2 h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
               <div
@@ -64,17 +71,17 @@ export default function UpdateBanner() {
       let detail: string;
       let primaryLabel: string;
       if (isAppImage) {
-        title = `Cerebro ${info.version} is ready to install`;
-        detail = `Your chats, tasks, settings, and memory will be preserved. Cerebro will restart to apply the update.`;
-        primaryLabel = 'Restart to update';
+        title = t('updateBanner.ready.titleReady', { version: info.version });
+        detail = t('updateBanner.ready.detailAppImage');
+        primaryLabel = t('updateBanner.ready.restartToUpdate');
       } else if (isLinuxPackage) {
-        title = `Cerebro ${info.version} downloaded`;
-        detail = `Open the installer in your file manager to finish installing, then relaunch Cerebro. Your data is stored separately and won't be touched.`;
-        primaryLabel = 'Reveal installer';
+        title = t('updateBanner.ready.titleDownloaded', { version: info.version });
+        detail = t('updateBanner.ready.detailLinuxPackage');
+        primaryLabel = t('updateBanner.ready.revealInstaller');
       } else {
-        title = `Cerebro ${info.version} downloaded`;
-        detail = `Open the installer to finish installing, then relaunch Cerebro. Your data is stored separately and won't be touched.`;
-        primaryLabel = 'Open installer';
+        title = t('updateBanner.ready.titleDownloaded', { version: info.version });
+        detail = t('updateBanner.ready.detailDefault');
+        primaryLabel = t('updateBanner.ready.openInstaller');
       }
       return (
         <>
@@ -95,7 +102,7 @@ export default function UpdateBanner() {
                 onClick={openReleasePage}
                 className="px-3 py-1.5 rounded-md text-xs text-text-secondary hover:text-text-primary hover:bg-white/[0.04] transition-colors cursor-pointer inline-flex items-center gap-1.5"
               >
-                <ExternalLink size={12} /> Release notes
+                <ExternalLink size={12} /> {t('updateBanner.ready.releaseNotes')}
               </button>
             </div>
           </div>
@@ -111,11 +118,10 @@ export default function UpdateBanner() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-text-primary">
-              Restarting Cerebro {info.version}…
+              {t('updateBanner.applying.title', { version: info.version })}
             </div>
             <div className="text-xs text-text-secondary mt-0.5 leading-relaxed">
-              Verifying the new version can launch. If anything goes wrong the previous version
-              will be restored automatically.
+              {t('updateBanner.applying.detail')}
             </div>
           </div>
         </>
@@ -123,40 +129,74 @@ export default function UpdateBanner() {
     }
 
     if (status === 'error') {
-      // Errors come from either the download step OR the apply step.
-      // - Download errors: retry the download.
-      // - Apply errors (Linux AppImage launch failed): the binary was
-      //   rolled back to the prior version, so retrying just kicks off the
-      //   apply again (same artifact, no re-download). Either way, the
-      //   user always has "Open release page" as an escape hatch.
-      const cameFromApply = errorMessage?.includes("Couldn't start the new version") ?? false;
+      // Pick reassuring, kind-specific copy. The renderer's `errorKind` is
+      // set by `UPDATE_ERROR` events emitted from main, so the categorisation
+      // happens server-side where the failure mode is actually known —
+      // we don't string-match on error.message.
+      //
+      // Fallback: `errorKind` can briefly be null on a stale state (e.g. an
+      // earlier IPC-layer rejection that didn't ride on UPDATE_ERROR). In
+      // that case treat it as `'unknown'` and show the calm generic copy.
+      const kind = errorKind ?? 'unknown';
+      const isApplyKind = kind === 'apply';
+      const isDisabled = kind === 'disabled';
+      const copy = {
+        network: {
+          title: t('updateBanner.error.networkTitle'),
+          body: t('updateBanner.error.networkBody'),
+        },
+        verify: {
+          title: t('updateBanner.error.verifyTitle'),
+          body: t('updateBanner.error.verifyBody'),
+        },
+        apply: {
+          title: t('updateBanner.error.applyTitle'),
+          body: t('updateBanner.error.applyBody'),
+        },
+        disabled: {
+          title: t('updateBanner.error.disabledTitle'),
+          body: t('updateBanner.error.disabledBody'),
+        },
+        unknown: {
+          title: t('updateBanner.error.unknownTitle'),
+          body: t('updateBanner.error.unknownBody'),
+        },
+      }[kind];
+      const onRetry = () => void (isApplyKind ? applyUpdate() : startDownload());
+      const retryLabel =
+        retryCooldownSeconds > 0
+          ? t('updateBanner.error.networkRetryCountdown', { seconds: retryCooldownSeconds })
+          : t('updateBanner.error.retry');
       return (
         <>
           <div className="w-8 h-8 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center flex-shrink-0 mt-0.5">
             <AlertCircle size={15} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-text-primary">
-              {cameFromApply ? "Couldn't apply the update" : "Couldn't download the update"}
-            </div>
-            <div className="text-xs text-text-secondary mt-0.5 leading-relaxed">
-              {errorMessage ?? 'Unknown error.'}{' '}
-              {cameFromApply
-                ? 'Your previous version is still installed. You can try again, or download the installer manually.'
-                : 'You can grab the installer manually from the release page.'}
-            </div>
+            <div className="text-sm font-medium text-text-primary">{copy.title}</div>
+            <div className="text-xs text-text-secondary mt-0.5 leading-relaxed">{copy.body}</div>
+            {/* Reassurance-first layout: when the user can recover by retrying
+                we show Retry as the PRIMARY action. "Open release page" stays
+                available as a secondary escape hatch for apply/verify/
+                disabled flows where retrying alone is unlikely to help. */}
             <div className="flex items-center gap-2 mt-2.5">
+              {!isDisabled && (
+                <button
+                  onClick={onRetry}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-bg-base hover:bg-accent/90 transition-colors cursor-pointer"
+                >
+                  {retryLabel}
+                </button>
+              )}
               <button
                 onClick={openReleasePage}
-                className="px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-bg-base hover:bg-accent/90 transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                className={
+                  isDisabled
+                    ? 'px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-bg-base hover:bg-accent/90 transition-colors cursor-pointer inline-flex items-center gap-1.5'
+                    : 'px-3 py-1.5 rounded-md text-xs text-text-secondary hover:text-text-primary hover:bg-white/[0.04] transition-colors cursor-pointer inline-flex items-center gap-1.5'
+                }
               >
-                <ExternalLink size={12} /> Open release page
-              </button>
-              <button
-                onClick={() => void (cameFromApply ? applyUpdate() : startDownload())}
-                className="px-3 py-1.5 rounded-md text-xs text-text-secondary hover:text-text-primary hover:bg-white/[0.04] transition-colors cursor-pointer"
-              >
-                Retry
+                <ExternalLink size={12} /> {t('updateBanner.error.openReleasePage')}
               </button>
             </div>
           </div>
@@ -172,7 +212,7 @@ export default function UpdateBanner() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium text-text-primary">
-            Cerebro {info.version} is available
+            {t('updateBanner.available.title', { version: info.version })}
           </div>
           {info.notes ? (
             <div className="text-xs text-text-secondary mt-0.5 leading-relaxed line-clamp-2">
@@ -184,13 +224,13 @@ export default function UpdateBanner() {
               onClick={() => void startDownload()}
               className="px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-bg-base hover:bg-accent/90 transition-colors cursor-pointer"
             >
-              Update now
+              {t('updateBanner.available.updateNow')}
             </button>
             <button
               onClick={openReleasePage}
               className="px-3 py-1.5 rounded-md text-xs text-text-secondary hover:text-text-primary hover:bg-white/[0.04] transition-colors cursor-pointer inline-flex items-center gap-1.5"
             >
-              <ExternalLink size={12} /> View release notes
+              <ExternalLink size={12} /> {t('updateBanner.available.viewReleaseNotes')}
             </button>
           </div>
         </div>
@@ -213,7 +253,7 @@ export default function UpdateBanner() {
           <button
             onClick={dismiss}
             className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.04] transition-colors cursor-pointer flex-shrink-0"
-            aria-label="Dismiss update banner"
+            aria-label={t('updateBanner.dismissAria')}
           >
             <X size={13} />
           </button>

@@ -35,6 +35,8 @@ import type {
   UpdateAsset,
   UpdateDownloadProgress,
   UpdateDownloadedEvent,
+  UpdateActionResult,
+  UpdateErrorEvent,
   BackupCompletionFlag,
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
@@ -526,11 +528,27 @@ const api: CerebroAPI = {
     checkNow(): Promise<UpdateInfo | null> {
       return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK_NOW);
     },
-    download(asset: UpdateAsset): Promise<void> {
-      return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, asset);
+    async download(asset: UpdateAsset): Promise<void> {
+      // Main returns UpdateActionResult — never throws over IPC. We unwrap
+      // here so any caller doing `await updater.download(...)` still sees a
+      // rejected Promise on failure, but with a plain string message that
+      // crossed the IPC boundary safely (no structured-clone surprises).
+      const res = (await ipcRenderer.invoke(
+        IPC_CHANNELS.UPDATE_DOWNLOAD,
+        asset,
+      )) as UpdateActionResult;
+      if (!res?.ok) {
+        throw new Error(res?.error ?? 'Update download failed');
+      }
     },
-    apply(asset: UpdateAsset): Promise<void> {
-      return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_APPLY, asset);
+    async apply(asset: UpdateAsset): Promise<void> {
+      const res = (await ipcRenderer.invoke(
+        IPC_CHANNELS.UPDATE_APPLY,
+        asset,
+      )) as UpdateActionResult;
+      if (!res?.ok) {
+        throw new Error(res?.error ?? 'Update apply failed');
+      }
     },
     dismiss(): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_DISMISS);
@@ -558,8 +576,23 @@ const api: CerebroAPI = {
       ipcRenderer.on(IPC_CHANNELS.UPDATE_DOWNLOADED, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_DOWNLOADED, listener);
     },
-    onError(callback: (message: string) => void): () => void {
-      const listener = (_event: Electron.IpcRendererEvent, data: string) => callback(data);
+    onError(callback: (event: UpdateErrorEvent) => void): () => void {
+      // Back-compat: v0.1.x main sent a plain string on this channel; the
+      // current main sends UpdateErrorEvent ({message, kind}). Coerce both
+      // shapes here so a stale main paired with a fresh preload (or vice
+      // versa across an in-progress rolling update) never crashes the
+      // banner — we just default the kind to 'unknown' for legacy payloads.
+      const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
+        if (typeof data === 'string') {
+          callback({ message: data, kind: 'unknown' });
+        } else if (data && typeof data === 'object' && 'message' in data) {
+          const obj = data as Partial<UpdateErrorEvent>;
+          callback({
+            message: typeof obj.message === 'string' ? obj.message : 'Update failed',
+            kind: (obj.kind as UpdateErrorEvent['kind']) ?? 'unknown',
+          });
+        }
+      };
       ipcRenderer.on(IPC_CHANNELS.UPDATE_ERROR, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_ERROR, listener);
     },

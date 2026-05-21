@@ -57,8 +57,11 @@ import {
   downloadUpdate,
   applyUpdate,
   ackUpdateBanner,
+  recordBannerDismissed,
+  autoUpdatesDisabled,
+  toErrorEvent,
 } from './updater';
-import type { UpdateAsset } from './types/ipc';
+import type { UpdateAsset, UpdateActionResult } from './types/ipc';
 import { applyPendingRestore, consumeCompletionFlag } from './backup/swap';
 
 // Stdio EPIPE guard. When the Electron main process is launched under a
@@ -2213,34 +2216,62 @@ function registerIpcHandlers(): void {
   });
 
   // --- App auto-updater ---
+  // All writeful handlers return UpdateActionResult instead of throwing.
+  // Re-throwing from `ipcMain.handle` is the path that produced
+  // `Error invoking remote method 'X': reply was never sent` on Ubuntu in
+  // v0.1.1 — the rejection couldn't be delivered when `event.sender` was
+  // mid-teardown or when the thrown Error carried non-cloneable fields
+  // (Node stream errors with circular refs, `AggregateError` from
+  // `pipeline()`). The discriminated result shape is structured-clone-safe
+  // by construction: only a plain string crosses the IPC boundary.
   ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK_NOW, async () => {
+    if (autoUpdatesDisabled()) return null;
     return checkForUpdate();
   });
-  ipcMain.handle(IPC_CHANNELS.UPDATE_DOWNLOAD, async (event, asset: UpdateAsset) => {
-    // Renderer is showing the banner — suppress the native dialog fallback.
-    ackUpdateBanner();
-    try {
-      await downloadUpdate(asset);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      event.sender.send(IPC_CHANNELS.UPDATE_ERROR, message);
-      throw err;
-    }
-  });
-  ipcMain.handle(IPC_CHANNELS.UPDATE_APPLY, async (event, asset: UpdateAsset) => {
-    // applyUpdate either app.quit()s on success or throws on failure. We
-    // re-throw so the renderer can put the banner into the error state and
-    // give the user a chance to retry / read release notes / etc.
-    try {
-      await applyUpdate(asset);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      event.sender.send(IPC_CHANNELS.UPDATE_ERROR, message);
-      throw err;
-    }
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.UPDATE_DOWNLOAD,
+    async (event, asset: UpdateAsset): Promise<UpdateActionResult> => {
+      if (autoUpdatesDisabled()) {
+        const ev = { message: 'Auto-updates disabled by administrator', kind: 'disabled' as const };
+        event.sender.send(IPC_CHANNELS.UPDATE_ERROR, ev);
+        return { ok: false, error: ev.message, kind: ev.kind };
+      }
+      // Renderer is showing the banner — suppress the native dialog fallback.
+      ackUpdateBanner();
+      try {
+        await downloadUpdate(asset);
+        return { ok: true };
+      } catch (err) {
+        const ev = toErrorEvent(err);
+        event.sender.send(IPC_CHANNELS.UPDATE_ERROR, ev);
+        return { ok: false, error: ev.message, kind: ev.kind };
+      }
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.UPDATE_APPLY,
+    async (event, asset: UpdateAsset): Promise<UpdateActionResult> => {
+      if (autoUpdatesDisabled()) {
+        const ev = { message: 'Auto-updates disabled by administrator', kind: 'disabled' as const };
+        event.sender.send(IPC_CHANNELS.UPDATE_ERROR, ev);
+        return { ok: false, error: ev.message, kind: ev.kind };
+      }
+      // `applyUpdate` either succeeds (and schedules `app.quit()` ~300ms
+      // later, deliberately AFTER this reply is sent — see updater.ts) or
+      // throws. Either way we reply with a structured result, never raw.
+      try {
+        await applyUpdate(asset);
+        return { ok: true };
+      } catch (err) {
+        const ev = toErrorEvent(err);
+        event.sender.send(IPC_CHANNELS.UPDATE_ERROR, ev);
+        return { ok: false, error: ev.message, kind: ev.kind };
+      }
+    },
+  );
   ipcMain.handle(IPC_CHANNELS.UPDATE_DISMISS, async () => {
     ackUpdateBanner();
+    recordBannerDismissed();
   });
   ipcMain.handle(IPC_CHANNELS.UPDATE_NOTIFIED, async () => {
     ackUpdateBanner();
