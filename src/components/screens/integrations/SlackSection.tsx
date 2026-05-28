@@ -6,6 +6,7 @@ import { SlackIcon } from '../../icons/BrandIcons';
 import { loadSetting, saveSetting } from '../../../lib/settings';
 import { SLACK_SETTING_KEYS } from '../../../slack/types';
 import type { SlackStatusResponse } from '../../../types/ipc';
+import UserExpertAccessEditor from './UserExpertAccessEditor';
 
 type VerifyState =
   | { kind: 'idle' }
@@ -28,6 +29,7 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
 
   const [allowChans, setAllowChans] = useState('');
   const [allowUsers, setAllowUsers] = useState('');
+  const [operatorUserId, setOperatorUserId] = useState('');
   const [enabled, setEnabled] = useState(false);
 
   const [verify, setVerify] = useState<VerifyState>({ kind: 'idle' });
@@ -37,14 +39,16 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
 
   useEffect(() => {
     (async () => {
-      const [chans, users, en] = await Promise.all([
+      const [chans, users, en, operator] = await Promise.all([
         loadSetting<string[]>(SLACK_SETTING_KEYS.allowlistChannels),
         loadSetting<string[]>(SLACK_SETTING_KEYS.allowlistUsers),
         loadSetting<boolean>(SLACK_SETTING_KEYS.enabled),
+        loadSetting<string>(SLACK_SETTING_KEYS.operatorUserId),
       ]);
       if (Array.isArray(chans)) setAllowChans(chans.join(', '));
       if (Array.isArray(users)) setAllowUsers(users.join(', '));
       if (typeof en === 'boolean') setEnabled(en);
+      if (typeof operator === 'string') setOperatorUserId(operator);
     })();
   }, []);
 
@@ -118,13 +122,15 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
       saveSetting(SLACK_SETTING_KEYS.allowlistUsers, users),
     ]);
     await window.cerebro.slack.setAllowlist({ channels, users });
+    const trimmedOperator = operatorUserId.trim() || null;
+    await window.cerebro.slack.setOperatorUserId(trimmedOperator);
     if (enabled && status?.running) {
       await window.cerebro.slack.reload();
     }
     await refreshStatus();
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1_500);
-  }, [allowChans, allowUsers, parseList, persistTokensIfDraft, enabled, status?.running, refreshStatus]);
+  }, [allowChans, allowUsers, operatorUserId, parseList, persistTokensIfDraft, enabled, status?.running, refreshStatus]);
 
   const handleClearTokens = useCallback(async () => {
     await window.cerebro.slack.clearTokens();
@@ -345,6 +351,25 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
           {t('slackSection.allowlistUsersHelp')}
         </p>
       </div>
+
+      {/* Operator user id — receives Claude re-auth DMs */}
+      <div className="mt-6">
+        <label className="text-xs font-medium text-text-secondary">{t('slackSection.operatorUserIdLabel')}</label>
+        <input
+          type="text"
+          value={operatorUserId}
+          onChange={(e) => setOperatorUserId(e.target.value)}
+          placeholder="U01ABCDE"
+          className="mt-1.5 w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          spellCheck={false}
+        />
+        <p className="mt-1.5 text-[11px] text-text-tertiary leading-relaxed">
+          {t('slackSection.operatorUserIdHelp')}
+        </p>
+      </div>
+
+      {/* Per-person expert access */}
+      <UserExpertAccessEditor status={status} />
 
       {/* Save */}
       <div className="mt-5 flex items-center justify-end gap-3">

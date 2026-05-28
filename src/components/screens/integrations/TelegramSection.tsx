@@ -30,6 +30,7 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
   const [showToken, setShowToken] = useState(false);
 
   const [allowlistRaw, setAllowlistRaw] = useState('');
+  const [operatorChatId, setOperatorChatId] = useState('');
   const [forwardAll, setForwardAll] = useState(false);
   const [enabled, setEnabled] = useState(false);
 
@@ -43,14 +44,16 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
   // process and is never sent back to the renderer.
   useEffect(() => {
     (async () => {
-      const [allowed, en, fwd] = await Promise.all([
+      const [allowed, en, fwd, operator] = await Promise.all([
         loadSetting<string[]>(TELEGRAM_SETTING_KEYS.allowlist),
         loadSetting<boolean>(TELEGRAM_SETTING_KEYS.enabled),
         loadSetting<boolean>(TELEGRAM_SETTING_KEYS.forwardAllApprovals),
+        loadSetting<string>(TELEGRAM_SETTING_KEYS.operatorChatId),
       ]);
       if (Array.isArray(allowed)) setAllowlistRaw(allowed.join(', '));
       if (typeof en === 'boolean') setEnabled(en);
       if (typeof fwd === 'boolean') setForwardAll(fwd);
+      if (typeof operator === 'string') setOperatorChatId(operator);
     })();
   }, []);
 
@@ -117,9 +120,11 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
     if (!tokenRes.ok) return;
     // Must await both writes before reload — otherwise the bridge re-reads
     // settings before the PUTs land and sees the stale allowlist.
+    const operatorTrimmed = operatorChatId.trim();
     await Promise.all([
       saveSetting(TELEGRAM_SETTING_KEYS.allowlist, list),
       saveSetting(TELEGRAM_SETTING_KEYS.forwardAllApprovals, forwardAll),
+      saveSetting(TELEGRAM_SETTING_KEYS.operatorChatId, operatorTrimmed),
     ]);
     if (enabled && status?.running) {
       await window.cerebro.telegram.reload();
@@ -127,7 +132,7 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
     await refreshStatus();
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1_500);
-  }, [allowlistRaw, forwardAll, parseAllowlist, persistTokenIfDraft, enabled, status?.running, refreshStatus]);
+  }, [allowlistRaw, forwardAll, operatorChatId, parseAllowlist, persistTokenIfDraft, enabled, status?.running, refreshStatus]);
 
   const handleClearToken = useCallback(async () => {
     await window.cerebro.telegram.clearToken();
@@ -315,6 +320,22 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
         <p className="mt-1.5 text-[11px] text-text-tertiary leading-relaxed">
           {t('telegramSection.allowlistHelp')}
         </p>
+
+        {/* Operator chat id — receives Claude re-auth DMs */}
+        <div className="mt-4">
+          <label className="text-xs font-medium text-text-secondary">{t('telegramSection.operatorChatIdLabel')}</label>
+          <input
+            type="text"
+            value={operatorChatId}
+            onChange={(e) => setOperatorChatId(e.target.value)}
+            placeholder="123456789"
+            className="mt-1.5 w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+            spellCheck={false}
+          />
+          <p className="mt-1.5 text-[11px] text-text-tertiary leading-relaxed">
+            {t('telegramSection.operatorChatIdHelp')}
+          </p>
+        </div>
 
         {/* Crystal-clear "how to find your ID" panel */}
         <div className="mt-3 rounded-md bg-accent/[0.06] border border-accent/20 p-3.5">

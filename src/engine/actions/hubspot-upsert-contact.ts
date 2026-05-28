@@ -9,7 +9,7 @@
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { renderTemplate } from './utils/template';
 import type { HubSpotChannel } from './hubspot-channel';
-import { callHubSpotApi } from '../../hubspot/api';
+import { upsertContact } from '../../hubspot/contacts';
 
 interface UpsertContactParams {
   email?: string;
@@ -92,77 +92,28 @@ export function createHubSpotUpsertContactAction(deps: {
         throw new Error('HubSpot: Upsert Contact — at least one of email or phone is required.');
       }
 
-      const searchProperty = email ? 'email' : 'phone';
-      const searchValue = email || phone;
-      const searchRes = await callHubSpotApi<{ results?: Array<{ id?: string }> }>(
+      const result = await upsertContact(
         token,
-        '/crm/v3/objects/contacts/search',
-        {
-          method: 'POST',
-          body: {
-            filterGroups: [{ filters: [{ propertyName: searchProperty, operator: 'EQ', value: searchValue }] }],
-            properties: ['email', 'firstname', 'lastname', 'phone'],
-            limit: 1,
-          },
-          signal: input.context.signal,
-        },
+        { email, phone, firstname, lastname, lifecyclestage },
+        input.context.signal,
+        (msg) => input.context.log(msg),
       );
-      const matchedId: string | null =
-        (searchRes.ok && searchRes.data?.results && searchRes.data.results.length > 0
-          ? searchRes.data.results[0].id ?? null
-          : null);
-      if (!searchRes.ok) {
-        input.context.log(`HubSpot contact search failed (continuing to create): ${searchRes.error}`);
-      }
 
-      // Only include fields the caller actually set, so an upsert doesn't
-      // blow away existing data with empty strings.
-      const properties: Record<string, string> = {};
-      if (email) properties.email = email;
-      if (phone) properties.phone = phone;
-      if (firstname) properties.firstname = firstname;
-      if (lastname) properties.lastname = lastname;
-      if (lifecyclestage) properties.lifecyclestage = lifecyclestage;
-
-      if (matchedId) {
-        // PATCH only if we have new properties to write beyond the lookup key.
-        const patchProps = { ...properties };
-        if (email) delete patchProps.email;
-        if (phone) delete patchProps.phone;
-        if (Object.keys(patchProps).length > 0) {
-          const patchRes = await callHubSpotApi(token, `/crm/v3/objects/contacts/${matchedId}`, {
-            method: 'PATCH',
-            body: { properties: patchProps },
-            signal: input.context.signal,
-          });
-          if (!patchRes.ok) {
-            input.context.log(`HubSpot contact PATCH error (non-fatal): ${patchRes.error}`);
-          }
-        }
-        input.context.log(`HubSpot contact matched: ${matchedId}`);
+      if (!result.contactId && result.error) {
         return {
-          data: { contact_id: matchedId, created: false, matched_by: searchProperty, error: null },
-          summary: `Matched HubSpot contact ${matchedId}`,
+          data: { contact_id: null, created: false, matched_by: null, error: result.error },
+          summary: `HubSpot upsert_contact failed: ${result.error}`,
         };
       }
-
-      const createRes = await callHubSpotApi<Record<string, unknown>>(token, '/crm/v3/objects/contacts', {
-        method: 'POST',
-        body: { properties },
-        signal: input.context.signal,
-      });
-      if (!createRes.ok) {
-        input.context.log(`HubSpot contact create ${createRes.status}: ${createRes.error}`);
+      if (result.matchedBy) {
         return {
-          data: { contact_id: null, created: false, matched_by: null, error: createRes.error },
-          summary: `HubSpot upsert_contact failed: ${createRes.error}`,
+          data: { contact_id: result.contactId, created: false, matched_by: result.matchedBy, error: null },
+          summary: `Matched HubSpot contact ${result.contactId}`,
         };
       }
-      const newId = createRes.data && typeof createRes.data.id === 'string' ? createRes.data.id : null;
-      input.context.log(`HubSpot contact created: ${newId}`);
       return {
-        data: { contact_id: newId, created: true, matched_by: null, error: null },
-        summary: `Created HubSpot contact ${newId ?? '(unknown id)'}`,
+        data: { contact_id: result.contactId, created: true, matched_by: null, error: null },
+        summary: `Created HubSpot contact ${result.contactId ?? '(unknown id)'}`,
       };
     },
   };

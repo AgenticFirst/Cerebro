@@ -54,6 +54,7 @@ import { createSendWhatsAppAction } from './actions/send-whatsapp-message';
 import type { WhatsAppChannel } from './actions/whatsapp-channel';
 import { createHubSpotCreateTicketAction } from './actions/hubspot-create-ticket';
 import { createHubSpotUpsertContactAction } from './actions/hubspot-upsert-contact';
+import { createHubSpotSearchContactAction } from './actions/hubspot-search-contact';
 import type { HubSpotChannel } from './actions/hubspot-channel';
 import { createGitHubCreateIssueAction } from './actions/github-create-issue';
 import { createGitHubCommentIssueAction } from './actions/github-comment-issue';
@@ -183,7 +184,7 @@ export class ExecutionEngine {
       runId,
       (event) => { eventBuffer.push(event); },
       this.sharedBus,
-      { routineId: request.routineId },
+      { routineId: request.routineId, conversationId: request.conversationId },
     );
 
     // Track this run
@@ -255,8 +256,7 @@ export class ExecutionEngine {
     // for clicks on every gate the routine declares.
     const onApprovalRequired = request.dryRun
       ? () => Promise.resolve(true)
-      : (step: StepDefinition): Promise<boolean> => {
-      return new Promise<boolean>((resolvePromise) => {
+      : async (step: StepDefinition): Promise<boolean> => {
         const approvalId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
 
         // Prefer the user-authored summary (configured on the Approval Gate
@@ -267,50 +267,63 @@ export class ExecutionEngine {
         const approvalSummary =
           authoredSummary || `Step "${step.name}" requires your approval before execution.`;
 
-        // Persist approval request to backend
-        this.backendRequest('POST', '/engine/approvals', {
-          id: approvalId,
-          run_id: runId,
-          step_id: step.id,
-          step_name: step.name,
-          summary: approvalSummary,
-          payload_json: JSON.stringify(step.params),
-        }).catch(console.error);
-
-        // Update step record with approval info
         const stepRecordId = stepRecordIdMap.get(step.id);
+
+        // Persist (and commit) the approval BEFORE announcing it, chained after
+        // the run+step records so it can't 404 ("Run record not found"). The
+        // renderer refreshes its pending list the instant it sees
+        // approval_requested; awaiting the write here guarantees that refresh's
+        // GET sees the committed row instead of racing ahead of the insert —
+        // otherwise the badge stays at 0 until the Approvals screen remounts.
+        await runPersisted
+          .then(() => this.backendRequest('POST', '/engine/approvals', {
+            id: approvalId,
+            run_id: runId,
+            step_id: step.id,
+            step_name: step.name,
+            summary: approvalSummary,
+            payload_json: JSON.stringify(step.params),
+          }))
+          .catch(console.error);
+
+        // Link the approval to the step record and pause the run. These don't
+        // gate the announce, so leave them fire-and-forget — but still chain
+        // after runPersisted for the same 404-safety as onStepUpdate.
         if (stepRecordId) {
-          this.backendRequest('PATCH', `/engine/runs/${runId}/steps/${stepRecordId}`, {
-            approval_id: approvalId,
-            approval_status: 'pending',
-          }).catch(console.error);
+          runPersisted
+            .then(() => this.backendRequest('PATCH', `/engine/runs/${runId}/steps/${stepRecordId}`, {
+              approval_id: approvalId,
+              approval_status: 'pending',
+            }))
+            .catch(console.error);
         }
+        runPersisted
+          .then(() => this.backendRequest('PATCH', `/engine/runs/${runId}`, {
+            status: 'paused',
+          }))
+          .catch(console.error);
 
-        // Set run status to paused
-        this.backendRequest('PATCH', `/engine/runs/${runId}`, {
-          status: 'paused',
-        }).catch(console.error);
+        return new Promise<boolean>((resolvePromise) => {
+          // Emit approval_requested event (the approval row is now durable).
+          emitter.emit({
+            type: 'approval_requested',
+            runId,
+            stepId: step.id,
+            approvalId,
+            summary: approvalSummary,
+            payload: step.params,
+            timestamp: new Date().toISOString(),
+          });
 
-        // Emit approval_requested event
-        emitter.emit({
-          type: 'approval_requested',
-          runId,
-          stepId: step.id,
-          approvalId,
-          summary: approvalSummary,
-          payload: step.params,
-          timestamp: new Date().toISOString(),
+          // Store pending approval for later resolution
+          this.pendingApprovals.set(approvalId, {
+            runId,
+            stepId: step.id,
+            stepRecordId,
+            resolve: resolvePromise,
+          });
         });
-
-        // Store pending approval for later resolution
-        this.pendingApprovals.set(approvalId, {
-          runId,
-          stepId: step.id,
-          stepRecordId,
-          resolve: resolvePromise,
-        });
-      });
-    };
+      };
 
     // Create executor
     const executor = new DAGExecutor(
@@ -546,6 +559,7 @@ export class ExecutionEngine {
       createSendWhatsAppLocationAction({ getChannel: () => this.whatsAppChannel }),
       createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }),
       createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }),
+      createHubSpotSearchContactAction({ getChannel: () => this.hubSpotChannel }),
       createGitHubCreateIssueAction({ getChannel: () => this.gitHubChannel }),
       createGitHubCommentIssueAction({ getChannel: () => this.gitHubChannel }),
       createGitHubCommentPrAction({ getChannel: () => this.gitHubChannel }),
@@ -633,6 +647,7 @@ export class ExecutionEngine {
         dag,
         triggerSource: 'chat',
         runType: 'chat_action',
+        conversationId: options.conversationId,
       });
     } catch (err) {
       return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
@@ -936,6 +951,7 @@ export class ExecutionEngine {
     // HubSpot (outbound only)
     registry.register(createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }));
     registry.register(createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }));
+    registry.register(createHubSpotSearchContactAction({ getChannel: () => this.hubSpotChannel }));
 
     // GitHub
     registry.register(createGitHubCreateIssueAction({ getChannel: () => this.gitHubChannel }));

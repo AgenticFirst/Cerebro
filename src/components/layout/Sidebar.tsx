@@ -14,6 +14,7 @@ import {
   PanelLeftOpen,
   Pencil,
   Trash2,
+  RotateCcw,
   FolderOpen,
   type LucideIcon,
 } from 'lucide-react';
@@ -391,6 +392,7 @@ export default function Sidebar() {
                       onSelect={() => setActiveConversation(conv.id)}
                       onRename={renameConversation}
                       onDelete={(e) => handleDelete(e, conv.id)}
+                      onResetSession={() => { void window.cerebro.chatActions.resetSession(conv.id); }}
                     />
                   ))}
                 </div>
@@ -422,6 +424,7 @@ interface ConversationRowProps {
   onSelect: () => void;
   onRename: (id: string, nextTitle: string) => void;
   onDelete: (e: React.MouseEvent) => void;
+  onResetSession: () => void;
 }
 
 function ConversationRow({
@@ -430,6 +433,7 @@ function ConversationRow({
   onSelect,
   onRename,
   onDelete,
+  onResetSession,
 }: ConversationRowProps) {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
@@ -542,6 +546,21 @@ function ConversationRow({
             aria-label={t('nav.renameConversation')}
           >
             <Pencil size={12} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onResetSession();
+            }}
+            className={clsx(
+              'p-1 rounded-md',
+              'text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]',
+              'transition-colors duration-100 cursor-pointer',
+            )}
+            title={t('nav.resetSession')}
+            aria-label={t('nav.resetSession')}
+          >
+            <RotateCcw size={12} />
           </button>
           <button
             onClick={onDelete}

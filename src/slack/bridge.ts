@@ -37,6 +37,9 @@ import {
 } from '../secure-token';
 import { SlackApi, SlackApiError, scrubTokenish } from './api';
 import { SlackStreamSink } from './SlackStreamSink';
+import { markdownToMrkdwn } from './mrkdwn';
+import { pickApprovalRun } from '../utils/approval-routing';
+import { getLoginOrchestrator, type LoginSnapshot } from '../claude-code/login-orchestrator';
 import {
   threadKey,
   EventDedupe,
@@ -153,6 +156,29 @@ function backendRequest<T = unknown>(
   });
 }
 
+function sanitizeUserExpertAccess(raw: unknown): Record<string, string[]> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, string[]> = {};
+  for (const [userId, expertIds] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(expertIds)) continue;
+    const cleaned = expertIds
+      .filter((v): v is string => typeof v === 'string' && v.length > 0)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    out[userId] = Array.from(new Set(cleaned));
+  }
+  return out;
+}
+
+function sanitizeExpertIdList(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const cleaned = raw
+    .filter((v): v is string => typeof v === 'string' && v.length > 0)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return Array.from(new Set(cleaned));
+}
+
 function emptySettings(): SlackSettings {
   return {
     botToken: null,
@@ -163,8 +189,11 @@ function emptySettings(): SlackSettings {
     threadConversationMap: {},
     threadExpertMap: {},
     userDisplayNames: {},
+    defaultExpertAccess: null,
+    userExpertAccess: {},
     teamName: null,
     botUserId: null,
+    operatorUserId: null,
   };
 }
 
@@ -176,7 +205,8 @@ interface ActiveSlackRun {
   sink: SlackStreamSink;
   threadKey: string;
   channel: string;
-  threadTs: string;
+  /** Undefined for top-level replies (DMs and top-level @mentions). */
+  threadTs: string | undefined;
   startedAt: number;
   lastActivityAt: number;
 }
@@ -226,11 +256,33 @@ export class SlackBridge implements SlackChannel {
   private runWatchdogTimer: NodeJS.Timeout | null = null;
   private idleWatchdogTimer: NodeJS.Timeout | null = null;
 
+  /**
+   * In-flight Claude Code re-authentication. When the bundled CLI's session
+   * expires, we route the sign-in to the configured operator via a DM and
+   * accept the paste-back code from their next reply. While `pendingLogin`
+   * is set, an inbound DM from `operatorUserId` is intercepted as the code
+   * instead of being dispatched to the runner. Settled when the
+   * orchestrator emits success/failure or when the timeout fires.
+   */
+  private pendingLogin: {
+    loginId: string;
+    operatorUserId: string;
+    operatorDmChannel: string;
+    /** Original inbound that triggered the auth failure — resent on success. */
+    originalCtx: SlackInboundContext;
+    originalText: string;
+    /** Timer guards against operators who never reply. */
+    timeoutTimer: NodeJS.Timeout;
+    /** Unsubscribe from the orchestrator. */
+    unsubscribe: () => void;
+  } | null = null;
+
   private routineCache: { fetchedAt: number; routines: SlackTriggerRoutine[] } | null = null;
 
   /** approvalId → { channel, threadTs } so the engine listener can reply
-   *  in the originating Slack thread once an approval resolves. */
-  private approvalThreadMap = new Map<string, { channel: string; threadTs: string }>();
+   *  in the originating Slack thread once an approval resolves. threadTs
+   *  is undefined when the run was a top-level reply. */
+  private approvalThreadMap = new Map<string, { channel: string; threadTs: string | undefined }>();
   private engineListener: ((event: ExecutionEvent, ctx: EngineEventContext) => void) | null = null;
 
   private webContents: WebContents | null = null;
@@ -396,6 +448,7 @@ export class SlackBridge implements SlackChannel {
       enabled: this.settings.enabled,
       allowlistChannels: [...this.settings.allowlistChannels],
       allowlistUsers: [...this.settings.allowlistUsers],
+      operatorUserId: this.settings.operatorUserId,
     };
   }
 
@@ -446,6 +499,108 @@ export class SlackBridge implements SlackChannel {
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  getOperatorUserId(): string | null {
+    return this.settings.operatorUserId;
+  }
+
+  async setOperatorUserId(userId: string | null): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const trimmed = (userId ?? '').trim() || null;
+      this.settings.operatorUserId = trimmed;
+      await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.operatorUserId, trimmed ?? '');
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
+   * Snapshot of expert access for the renderer:
+   *   - `defaultExpertAccess`: `null` = unrestricted workspace, `string[]` = baseline.
+   *   - `exceptions`: per-user overrides. `expertIds: ['*']` means full access.
+   * Display names come from `userDisplayNames`; the UI refreshes missing
+   * ones via the `listWorkspaceUsers` IPC.
+   */
+  getExpertAccessConfig(): {
+    defaultExpertAccess: string[] | null;
+    exceptions: Array<{ userId: string; displayName: string | null; expertIds: string[] }>;
+  } {
+    const exceptions = Object.entries(this.settings.userExpertAccess).map(([userId, expertIds]) => ({
+      userId,
+      displayName: this.settings.userDisplayNames[userId] ?? null,
+      expertIds: Array.isArray(expertIds) ? [...expertIds] : [],
+    }));
+    return {
+      defaultExpertAccess: this.settings.defaultExpertAccess === null ? null : [...this.settings.defaultExpertAccess],
+      exceptions,
+    };
+  }
+
+  async setExpertAccessConfig(
+    args: {
+      defaultExpertAccess: string[] | null;
+      exceptions: Array<{ userId: string; expertIds: string[] }>;
+    },
+  ): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const def = args.defaultExpertAccess === null
+        ? null
+        : Array.from(new Set(
+          (args.defaultExpertAccess ?? []).filter((s): s is string => typeof s === 'string' && s.length > 0),
+        ));
+
+      const nextExceptions: Record<string, string[]> = {};
+      for (const { userId, expertIds } of args.exceptions ?? []) {
+        if (!userId || typeof userId !== 'string') continue;
+        if (!Array.isArray(expertIds)) continue;
+        nextExceptions[userId] = Array.from(new Set(
+          expertIds.filter((s): s is string => typeof s === 'string' && s.length > 0),
+        ));
+      }
+
+      this.settings.defaultExpertAccess = def;
+      this.settings.userExpertAccess = nextExceptions;
+      await Promise.all([
+        this.persistDefaultExpertAccess(),
+        this.persistUserExpertAccess(),
+      ]);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
+   * Fetch the visible workspace user directory (humans only). Used by the
+   * Settings UI to render the "add person" picker without ever exposing
+   * Slack user IDs to operators.
+   */
+  async listWorkspaceUsers(): Promise<{
+    ok: boolean;
+    users?: Array<{ id: string; name: string; email?: string; avatarUrl?: string }>;
+    error?: string;
+  }> {
+    if (!this.api || !this.running) {
+      return { ok: false, error: 'Slack bridge not running' };
+    }
+    try {
+      const users = await this.api.usersList();
+      // Cache display names so subsequent UI loads + bridge log lines have them.
+      let dirty = false;
+      for (const u of users) {
+        if (u.name && !this.settings.userDisplayNames[u.id]) {
+          this.settings.userDisplayNames[u.id] = u.name;
+          dirty = true;
+        }
+      }
+      if (dirty) void this.persistUserDisplayNames();
+      return { ok: true, users };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: scrubTokenish(msg) };
     }
   }
 
@@ -500,7 +655,7 @@ export class SlackBridge implements SlackChannel {
     if (!this.proactiveRateLimiter.allow(channel)) {
       return { messageTs: null, channelId: null, error: `channel ${channel} rate-limited` };
     }
-    const safeText = scrubTokenish(text);
+    const safeText = markdownToMrkdwn(scrubTokenish(text));
     const chunks = chunkSlackText(safeText, 3500);
     let firstTs: string | null = null;
     let lastChannel: string | null = null;
@@ -596,7 +751,10 @@ export class SlackBridge implements SlackChannel {
           channelType: 'channel',
           userId: event.user ?? '',
           ts: event.ts,
-          threadTs: event.thread_ts ?? event.ts,
+          // Only set when Slack actually delivered a thread_ts (i.e. the
+          // mention was inside an existing thread). Leaving it undefined
+          // makes our reply land at the channel top level.
+          threadTs: event.thread_ts,
           text: stripped,
           surface: 'app_mention',
         };
@@ -626,7 +784,9 @@ export class SlackBridge implements SlackChannel {
           channelType: 'im',
           userId: m.user,
           ts: m.ts,
-          threadTs: m.thread_ts ?? m.ts,
+          // DMs almost never carry a thread_ts; when they don't, our reply
+          // lands at the top of the DM channel (no thread side panel).
+          threadTs: m.thread_ts,
           text: m.text ?? '',
           surface: 'message_im',
         };
@@ -676,6 +836,19 @@ export class SlackBridge implements SlackChannel {
     if (!this.api) return;
     if (!ctx.userId) return;
 
+    // 0. Auth paste-back intercept. If the bundled Claude Code CLI is
+    //    re-authenticating and this DM is the operator replying with the
+    //    code, route it to the orchestrator instead of dispatching to the
+    //    runner (which would just hit the same auth failure again).
+    if (
+      this.pendingLogin
+      && ctx.channelType === 'im'
+      && ctx.userId === this.pendingLogin.operatorUserId
+    ) {
+      await this.handleOperatorAuthCode(ctx.text ?? '');
+      return;
+    }
+
     // 1. Allowlist gate — same check as outbound, but for inbound we let the
     //    user know their ID if they're not on the list (rate-limited).
     if (!this.isAllowlisted(ctx.channel, ctx.userId)) {
@@ -716,6 +889,9 @@ export class SlackBridge implements SlackChannel {
     }
 
     const key = threadKey({ teamId: ctx.teamId, channel: ctx.channel, ts: ctx.ts, threadTs: ctx.threadTs });
+    // Captured before ensureConversation creates one: tells the runtime whether
+    // to --resume an existing Claude Code session or --session-id a fresh one.
+    const conversationExisted = !!this.settings.threadConversationMap[key];
     let conversationId = await this.ensureConversation(key, ctx);
 
     // 4. Persist the inbound user message.
@@ -762,8 +938,11 @@ export class SlackBridge implements SlackChannel {
       return;
     }
 
-    // 8. Start the agent run with a SlackStreamSink targeting this thread.
-    const threadTsForReply = ctx.threadTs ?? ctx.ts;
+    // 8. Start the agent run. Reply lands at the channel/DM top level unless
+    //    the inbound message was already inside an existing thread — keeps
+    //    Cerebro from forcing users to open a thread side panel for every
+    //    DM or top-level @mention.
+    const threadTsForReply = ctx.threadTs;
     const bumpActivity = () => {
       const r = this.activeRuns.get(key);
       if (r) r.lastActivityAt = Date.now();
@@ -795,15 +974,30 @@ export class SlackBridge implements SlackChannel {
         }
       },
       onActivity: bumpActivity,
+      onAuthFailure: async () => this.handleAuthFailure(ctx, trimmed),
     });
 
-    const expertId = this.settings.threadExpertMap[key] ?? null;
+    const accessibleExpertIds = this.getAccessibleExpertIds(ctx.userId);
+    let expertId = this.settings.threadExpertMap[key] ?? null;
+    if (expertId && accessibleExpertIds !== null && !accessibleExpertIds.includes(expertId)) {
+      // The user has lost access to the pinned expert since it was set. Drop
+      // the pin and fall back to the default Cerebro agent (which will itself
+      // honour accessibleExpertIds for any delegation).
+      log(`pinned expert ${expertId} no longer accessible to user ${ctx.userId}; falling back to default agent`);
+      delete this.settings.threadExpertMap[key];
+      void this.persistThreadExpertMap();
+      expertId = null;
+    }
 
     const runRequest: AgentRunRequest = {
       conversationId,
       content: trimmed,
       expertId,
+      // The bridge doesn't ship a transcript — Claude Code's own --resume
+      // carries history — so hint the create-vs-resume decision explicitly.
+      resume: conversationExisted,
       source: { kind: 'slack', channel: ctx.channel, threadTs: threadTsForReply, teamId: ctx.teamId },
+      accessibleExpertIds,
     };
 
     try {
@@ -821,12 +1015,25 @@ export class SlackBridge implements SlackChannel {
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      // Runtime-level single-flight: another run on this thread is already in
+      // flight (a race past the early-peek gate above). Surface the same
+      // "still working" UX instead of leaking the raw internal error.
+      if (err instanceof Error && err.name === 'ConversationBusyError') {
+        try {
+          await this.api.chatPostMessage({
+            channel: ctx.channel,
+            thread_ts: threadTsForReply,
+            text: ':hourglass_flowing_sand: Still working on your last message — I’ll reply here when it’s done.',
+          });
+        } catch { /* ignore */ }
+        return;
+      }
       logError('startRun failed', errMsg);
       try {
         await this.api.chatPostMessage({
           channel: ctx.channel,
           thread_ts: threadTsForReply,
-          text: `:warning: Failed to start: ${scrubTokenish(errMsg)}`,
+          text: ':warning: Something went wrong starting that. Please try again in a moment.',
         });
       } catch { /* ignore */ }
     }
@@ -980,12 +1187,18 @@ export class SlackBridge implements SlackChannel {
       },
       isDestroyed: () => false,
     };
+    const accessibleExpertIds = this.getAccessibleExpertIds(command.user_id);
+    let slashExpertId = this.settings.threadExpertMap[`${command.team_id}:${command.channel_id}:slash`] ?? null;
+    if (slashExpertId && accessibleExpertIds !== null && !accessibleExpertIds.includes(slashExpertId)) {
+      slashExpertId = null;
+    }
     try {
       await this.deps.agentRuntime.startRun(sink, {
         conversationId,
         content: text,
-        expertId: this.settings.threadExpertMap[`${command.team_id}:${command.channel_id}:slash`] ?? null,
-        source: { kind: 'slack', channel: command.channel_id, threadTs: '', teamId: command.team_id },
+        expertId: slashExpertId,
+        source: { kind: 'slack', channel: command.channel_id, threadTs: undefined, teamId: command.team_id },
+        accessibleExpertIds,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1069,6 +1282,37 @@ export class SlackBridge implements SlackChannel {
     return res.data?.experts ?? [];
   }
 
+  /**
+   * Resolve the effective expert allowlist for a Slack user.
+   *
+   * Returns `null` for "unrestricted — every expert is allowed". Returns a
+   * `string[]` for a curated set (possibly empty = no experts allowed).
+   *
+   * Resolution order:
+   *  1. Per-user override (`userExpertAccess[userId]`) wins when present.
+   *     The sentinel value `'*'` in the override array means "full access"
+   *     (used to grant admins everything when the workspace default is
+   *     restrictive). Otherwise the listed ids are the only ones allowed.
+   *  2. Workspace default (`defaultExpertAccess`) — `null` = unrestricted,
+   *     `string[]` = baseline for everyone without a per-user entry.
+   */
+  private getAccessibleExpertIds(userId: string | undefined): string[] | null {
+    if (!userId) return this.settings.defaultExpertAccess;
+    const entry = this.settings.userExpertAccess?.[userId];
+    if (Array.isArray(entry)) {
+      if (entry.includes('*')) return null;
+      return entry;
+    }
+    return this.settings.defaultExpertAccess;
+  }
+
+  private filterExpertsForUser<E extends { id: string }>(experts: E[], userId: string | undefined): E[] {
+    const allow = this.getAccessibleExpertIds(userId);
+    if (allow === null) return experts;
+    const set = new Set(allow);
+    return experts.filter((e) => set.has(e.id));
+  }
+
   private async replyExpertsList(
     channel: string,
     threadTs: string | undefined,
@@ -1076,9 +1320,16 @@ export class SlackBridge implements SlackChannel {
     key: string,
     respond?: (msg: { response_type?: 'ephemeral' | 'in_channel'; text: string }) => Promise<unknown>,
   ): Promise<void> {
-    const experts = await this.fetchExperts();
-    if (experts.length === 0) {
+    const all = await this.fetchExperts();
+    if (all.length === 0) {
       const txt = 'No experts configured yet.';
+      if (respond) await respond({ response_type: 'ephemeral', text: txt });
+      else if (this.api) await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
+      return;
+    }
+    const experts = this.filterExpertsForUser(all, user);
+    if (experts.length === 0) {
+      const txt = 'No experts have been assigned to you yet. Ask your Cerebro operator.';
       if (respond) await respond({ response_type: 'ephemeral', text: txt });
       else if (this.api) await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
       return;
@@ -1105,6 +1356,13 @@ export class SlackBridge implements SlackChannel {
     );
     if (!match) {
       const txt = `No expert matched "${slug}". Try \`/cerebro experts\` to see options.`;
+      if (respond) await respond({ response_type: 'ephemeral', text: txt });
+      else if (this.api) await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
+      return;
+    }
+    const allow = this.getAccessibleExpertIds(user);
+    if (allow !== null && !allow.includes(match.id)) {
+      const txt = `You don't have access to *${match.name}*. Try \`/cerebro experts\` to see what you can use.`;
       if (respond) await respond({ response_type: 'ephemeral', text: txt });
       else if (this.api) await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
       return;
@@ -1208,15 +1466,37 @@ export class SlackBridge implements SlackChannel {
     this.deps.engineEventBus.on(ENGINE_EVENT, listener);
   }
 
+  /**
+   * Pick the Slack thread an approval should be announced in. Prefers an
+   * exact conversationId match; otherwise falls back per pickApprovalRun.
+   * Returns null only when no run can be attributed.
+   */
+  private resolveApprovalTarget(
+    conversationId: string | undefined,
+  ): { channel: string; threadTs: string | undefined } | null {
+    const run = pickApprovalRun(
+      [...this.activeRuns.values()].map((r) => ({ id: r, conversationId: r.conversationId, startedAt: r.startedAt })),
+      conversationId,
+    );
+    if (!run) return null;
+    return { channel: run.channel, threadTs: run.threadTs };
+  }
+
   private async handleApprovalRequested(
     event: Extract<ExecutionEvent, { type: 'approval_requested' }>,
-    _ctx: EngineEventContext,
+    ctx: EngineEventContext,
   ): Promise<void> {
     if (!this.api) return;
-    // Best-effort routing: if there is exactly one active Slack run, the
-    // approval almost certainly belongs to it (mirrors Telegram's heuristic).
-    if (this.activeRuns.size !== 1) return;
-    const [{ channel, threadTs }] = this.activeRuns.values();
+    // Route the approval back to the thread that triggered it. The chat-action
+    // engine run carries the originating conversationId (stamped by
+    // run-chat-action.sh), so we match it precisely against our active runs —
+    // this works even when several runs are in flight at once. When the id is
+    // missing or doesn't match a live run, fall back to the most recently
+    // started run rather than dropping the approval (a silently-dropped
+    // approval leaves the engine paused forever).
+    const target = this.resolveApprovalTarget(ctx.conversationId);
+    if (!target) return;
+    const { channel, threadTs } = target;
     const summary = scrubTokenish(event.summary || `Step "${event.stepId}" needs approval`);
     try {
       await this.api.chatPostMessage({
@@ -1255,7 +1535,7 @@ export class SlackBridge implements SlackChannel {
 
   private async loadSettings(): Promise<void> {
     const port = this.deps.backendPort;
-    const [storedBotToken, storedAppToken, enabled, allowChans, allowUsers, threadMap, expertMap, displayNames, teamName, botUserId] = await Promise.all([
+    const [storedBotToken, storedAppToken, enabled, allowChans, allowUsers, threadMap, expertMap, displayNames, defaultExpertAccess, userExpertAccess, teamName, botUserId, operatorUserId] = await Promise.all([
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.botToken),
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.appToken),
       backendGetSetting<boolean>(port, SLACK_SETTING_KEYS.enabled),
@@ -1264,8 +1544,11 @@ export class SlackBridge implements SlackChannel {
       backendGetSetting<Record<string, string>>(port, SLACK_SETTING_KEYS.threadConversationMap),
       backendGetSetting<Record<string, string>>(port, SLACK_SETTING_KEYS.threadExpertMap),
       backendGetSetting<Record<string, string>>(port, SLACK_SETTING_KEYS.userDisplayNames),
+      backendGetSetting<string[] | null>(port, SLACK_SETTING_KEYS.defaultExpertAccess),
+      backendGetSetting<Record<string, string[]>>(port, SLACK_SETTING_KEYS.userExpertAccess),
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.teamName),
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.botUserId),
+      backendGetSetting<string>(port, SLACK_SETTING_KEYS.operatorUserId),
     ]);
 
     const botToken = decryptFromStorage(storedBotToken);
@@ -1289,8 +1572,11 @@ export class SlackBridge implements SlackChannel {
       threadConversationMap: threadMap ?? {},
       threadExpertMap: expertMap ?? {},
       userDisplayNames: displayNames ?? {},
+      defaultExpertAccess: sanitizeExpertIdList(defaultExpertAccess),
+      userExpertAccess: sanitizeUserExpertAccess(userExpertAccess),
       teamName: typeof teamName === 'string' ? teamName : null,
       botUserId: typeof botUserId === 'string' ? botUserId : null,
+      operatorUserId: typeof operatorUserId === 'string' && operatorUserId ? operatorUserId : null,
     };
   }
 
@@ -1302,6 +1588,12 @@ export class SlackBridge implements SlackChannel {
   }
   private async persistUserDisplayNames(): Promise<void> {
     await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.userDisplayNames, this.settings.userDisplayNames);
+  }
+  private async persistUserExpertAccess(): Promise<void> {
+    await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.userExpertAccess, this.settings.userExpertAccess);
+  }
+  private async persistDefaultExpertAccess(): Promise<void> {
+    await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.defaultExpertAccess, this.settings.defaultExpertAccess);
   }
   private async persistTeamMetadata(): Promise<void> {
     await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.teamName, this.settings.teamName ?? '');
@@ -1346,6 +1638,208 @@ export class SlackBridge implements SlackChannel {
     if (this.starting) return;
     await this.stop();
     await this.start();
+  }
+
+  // ── Claude Code re-auth (operator paste-back) ───────────────────
+
+  /**
+   * Resolve the Slack user id we should DM when Claude Code needs to be
+   * re-authenticated. Prefers the explicit `operatorUserId` setting; falls
+   * back to the first concrete entry in `allowlistUsers` so existing
+   * deployments don't need a fresh setting to get the recovery flow. The
+   * `'*'` wildcard is skipped — we need a real user id to open a DM.
+   */
+  private resolveOperatorUserId(): string | null {
+    const explicit = this.settings.operatorUserId;
+    if (explicit && explicit !== '*') return explicit;
+    const fromAllowlist = this.settings.allowlistUsers.find((u) => u && u !== '*');
+    return fromAllowlist ?? null;
+  }
+
+  /**
+   * Invoked by SlackStreamSink when a run errors with `errorClass: 'auth'`.
+   * Kicks off `claude setup-token` via the login orchestrator, DMs the
+   * operator the captured URL with paste-back instructions, and arms an
+   * intercept on the operator's next DM. Returns true when handled so the
+   * sink suppresses the raw error string in the requesting user's thread.
+   *
+   * Returns false (let the sink post the default :warning:) when no
+   * operator can be resolved — better than silently swallowing the error.
+   */
+  private async handleAuthFailure(ctx: SlackInboundContext, originalText: string): Promise<boolean> {
+    if (!this.api) return false;
+    if (this.pendingLogin) {
+      // Another auth attempt is already in flight. Don't double-DM; the
+      // operator's reply will retry the queued original message and any
+      // other auth-failed threads will eventually resolve on the next
+      // turn (the cached probe will be valid by then).
+      return true;
+    }
+    const operatorUserId = this.resolveOperatorUserId();
+    if (!operatorUserId) {
+      logError('auth failure: no operator user id configured — falling back to default error post');
+      return false;
+    }
+
+    let operatorDmChannel: string;
+    try {
+      operatorDmChannel = await this.api.conversationsOpen(operatorUserId);
+    } catch (err) {
+      logError('auth failure: conversations.open failed', err instanceof Error ? err.message : String(err));
+      return false;
+    }
+
+    const orchestrator = getLoginOrchestrator();
+    if (orchestrator.current()) {
+      // A login is already in flight from another surface (e.g. the
+      // renderer card). Don't try to take it over — just let the sink
+      // post the default warning so the user has *something*.
+      return false;
+    }
+
+    let snap: LoginSnapshot;
+    try {
+      snap = await orchestrator.start('setup-token');
+    } catch (err) {
+      logError('auth failure: login start failed', err instanceof Error ? err.message : String(err));
+      return false;
+    }
+
+    if (!snap.url) {
+      logError('auth failure: login orchestrator returned no URL');
+      orchestrator.cancel(snap.loginId);
+      return false;
+    }
+
+    try {
+      await this.api.chatPostMessage({
+        channel: operatorDmChannel,
+        text:
+          ':key: *Cerebro needs you to re-authenticate Claude.*\n\n'
+          + `1. Open this link in your browser: ${snap.url}\n`
+          + '2. Complete the sign-in.\n'
+          + '3. Reply to this DM with the code shown on the page.\n\n'
+          + '_I’ll resume the original request automatically once you reply._',
+      });
+    } catch (err) {
+      logError('auth failure: operator DM post failed', err instanceof Error ? err.message : String(err));
+      orchestrator.cancel(snap.loginId);
+      return false;
+    }
+
+    // Re-broadcast orchestrator updates so the operator sees verification
+    // succeed/fail without us having to poll. Settled state is also
+    // handled in handleOperatorAuthCode below.
+    const update = (s: LoginSnapshot): void => {
+      if (s.loginId !== snap.loginId) return;
+      if (s.status === 'success') {
+        void this.completeAuthRecovery();
+      } else if (s.status === 'failure' || s.status === 'cancelled') {
+        void this.failAuthRecovery(s.reason ?? 'Sign-in failed.');
+      }
+    };
+    orchestrator.on('update', update);
+    const unsubscribe = (): void => { orchestrator.off('update', update); };
+
+    const timeoutTimer = setTimeout(() => {
+      void this.failAuthRecovery('Sign-in timed out after 10 minutes.');
+    }, 10 * 60_000);
+
+    this.pendingLogin = {
+      loginId: snap.loginId,
+      operatorUserId,
+      operatorDmChannel,
+      originalCtx: ctx,
+      originalText,
+      timeoutTimer,
+      unsubscribe,
+    };
+
+    return true;
+  }
+
+  /**
+   * The operator replied to the auth DM with the paste-back code. Forward
+   * it to the orchestrator. Errors here surface back through orchestrator
+   * 'update' events.
+   */
+  private async handleOperatorAuthCode(code: string): Promise<void> {
+    const pending = this.pendingLogin;
+    if (!pending) return;
+    const trimmed = (code ?? '').trim();
+    if (!trimmed) return;
+    try {
+      await getLoginOrchestrator().submitCode(pending.loginId, trimmed);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (this.api) {
+        try {
+          await this.api.chatPostMessage({
+            channel: pending.operatorDmChannel,
+            text: `:warning: Couldn’t verify that code: ${scrubTokenish(msg)}\n\nPaste the code again, or open the link again to start over.`,
+          });
+        } catch { /* ignore */ }
+      }
+    }
+  }
+
+  /** Resolve a pending auth recovery — operator successfully re-authed. */
+  private async completeAuthRecovery(): Promise<void> {
+    const pending = this.pendingLogin;
+    if (!pending) return;
+    this.pendingLogin = null;
+    clearTimeout(pending.timeoutTimer);
+    pending.unsubscribe();
+
+    if (this.api) {
+      try {
+        await this.api.chatPostMessage({
+          channel: pending.operatorDmChannel,
+          text: ':white_check_mark: Reconnected to Claude. Resuming the original request now.',
+        });
+      } catch { /* ignore */ }
+    }
+
+    // Re-dispatch the original inbound so the requesting user finally gets
+    // their answer. The dedupe layer would normally reject a replay of the
+    // same event id, so synthesize a fresh one for the retry.
+    const replayCtx: SlackInboundContext = {
+      ...pending.originalCtx,
+      eventId: `${pending.originalCtx.eventId}::auth-retry::${Date.now()}`,
+      text: pending.originalText,
+    };
+    try {
+      await this.handleInbound(replayCtx);
+    } catch (err) {
+      logError('auth recovery replay failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Resolve a pending auth recovery — sign-in failed or timed out. */
+  private async failAuthRecovery(reason: string): Promise<void> {
+    const pending = this.pendingLogin;
+    if (!pending) return;
+    this.pendingLogin = null;
+    clearTimeout(pending.timeoutTimer);
+    pending.unsubscribe();
+    try { getLoginOrchestrator().cancel(pending.loginId); } catch { /* noop */ }
+
+    if (this.api) {
+      try {
+        await this.api.chatPostMessage({
+          channel: pending.operatorDmChannel,
+          text: `:warning: Claude sign-in didn’t complete: ${scrubTokenish(reason)}`,
+        });
+      } catch { /* ignore */ }
+      // Tell the original requesting user we gave up.
+      try {
+        await this.api.chatPostMessage({
+          channel: pending.originalCtx.channel,
+          thread_ts: pending.originalCtx.threadTs,
+          text: ':warning: Couldn’t reconnect to Claude. The operator has been notified.',
+        });
+      } catch { /* ignore */ }
+    }
   }
 
   // ── Error helpers ─────────────────────────────────────────────

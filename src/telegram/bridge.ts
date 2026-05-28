@@ -23,6 +23,7 @@ import { ENGINE_EVENT, type EngineEventContext } from '../engine/events/emitter'
 import type { ExecutionEngine } from '../engine/engine';
 import type { TelegramChannel } from '../engine/actions/telegram-channel';
 import { IPC_CHANNELS } from '../types/ipc';
+import { pickApprovalRun } from '../utils/approval-routing';
 import { TelegramApi, TelegramApiError, approvalKeyboard, scrubTokenish } from './api';
 import {
   encryptForStorage,
@@ -51,6 +52,7 @@ import {
 import { MediaIngestService } from '../files/media-ingest';
 import type { ResolvedAttachment } from '../files/types';
 import { IntegrationStaging } from '../files/staging';
+import { getLoginOrchestrator, type LoginSnapshot } from '../claude-code/login-orchestrator';
 
 // ── Tunables ──────────────────────────────────────────────────────
 
@@ -219,6 +221,7 @@ class TelegramStreamSink implements AgentEventSink {
   private destroyed = false;
   private onDoneCb: (finalText: string, err?: string) => void;
   private onActivityCb: (() => void) | null;
+  private onAuthFailureCb: (() => Promise<boolean>) | null;
   private api: TelegramApi;
   private chatId: number;
   private replyToMessageId?: number;
@@ -230,12 +233,14 @@ class TelegramStreamSink implements AgentEventSink {
     replyToMessageId: number | undefined,
     onDone: (finalText: string, err?: string) => void,
     onActivity?: () => void,
+    onAuthFailure?: () => Promise<boolean>,
   ) {
     this.api = api;
     this.chatId = chatId;
     this.replyToMessageId = replyToMessageId;
     this.onDoneCb = onDone;
     this.onActivityCb = onActivity ?? null;
+    this.onAuthFailureCb = onAuthFailure ?? null;
     this.typingTimer = setInterval(() => {
       if (!this.destroyed) {
         this.api.sendChatAction(this.chatId, 'typing').catch(() => { /* non-fatal */ });
@@ -270,7 +275,8 @@ class TelegramStreamSink implements AgentEventSink {
     }
 
     if (event.type === 'error' && 'error' in event) {
-      void this.finalizeWithError(event.error);
+      const errorClass = ('errorClass' in event ? (event as { errorClass?: string }).errorClass : undefined);
+      void this.finalizeWithError(event.error, errorClass);
       return;
     }
     // tool_start / tool_end / turn_start / system → ignore for now;
@@ -396,9 +402,29 @@ class TelegramStreamSink implements AgentEventSink {
     this.onDoneCb(finalText);
   }
 
-  private async finalizeWithError(error: string): Promise<void> {
+  private async finalizeWithError(error: string, errorClass?: string): Promise<void> {
     if (this.destroyed) return;
     if (this.editTimer) { clearTimeout(this.editTimer); this.editTimer = null; }
+
+    // Auth failures get a brief reply in the chat + the bridge routes the
+    // actual recovery to the operator's DM. The raw "Cerebro lost its
+    // Claude Code session" tells the user nothing they can act on,
+    // especially when they have no terminal access to the host.
+    if (errorClass === 'auth' && this.onAuthFailureCb) {
+      let handled = false;
+      try { handled = await this.onAuthFailureCb(); } catch { /* fall through */ }
+      if (handled) {
+        const brief = "I'm reconnecting to Claude — operator notified. Try again in a moment.";
+        try {
+          await this.api.sendMessage(this.chatId, brief, {
+            reply_to_message_id: this.replyToMessageId,
+          });
+        } catch { /* ignore */ }
+        this.teardown();
+        this.onDoneCb(this.accumulated, error);
+        return;
+      }
+    }
 
     const text = `⚠️ ${scrubTokenish(error)}`;
     if (this.currentMessageId !== null) {
@@ -462,6 +488,18 @@ export class TelegramBridge implements TelegramChannel {
 
   private activeRuns = new Map<number, ActiveTelegramRun>(); // chatId → run
   private runWatchdogTimer: NodeJS.Timeout | null = null;
+
+  /** In-flight Claude Code re-authentication. While set, inbound messages
+   *  from the operator chat are treated as the paste-back code instead of
+   *  being dispatched to the runner. See handleAuthFailure / handleOperatorAuthCode. */
+  private pendingLogin: {
+    loginId: string;
+    operatorChatId: string;
+    originalMsg: TelegramMessage;
+    originalText: string;
+    timeoutTimer: NodeJS.Timeout;
+    unsubscribe: () => void;
+  } | null = null;
   private approvalChatMap = new Map<string, number>(); // approvalId → chatId
   private tempFiles = new Map<string, NodeJS.Timeout>();
 
@@ -645,6 +683,173 @@ export class TelegramBridge implements TelegramChannel {
       hasToken: this.hasToken(),
       tokenBackend: secureTokenBackend(),
     };
+  }
+
+  // ── Claude Code re-auth (operator paste-back) ───────────────────
+
+  getOperatorChatId(): string | null {
+    return this.settings.operatorChatId;
+  }
+
+  async setOperatorChatId(chatId: string | null): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const trimmed = (chatId ?? '').trim() || null;
+      this.settings.operatorChatId = trimmed;
+      await backendPutSetting(this.deps.backendPort, TELEGRAM_SETTING_KEYS.operatorChatId, trimmed ?? '');
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
+   * Resolve which Telegram chat id receives the auth re-login DM. Prefers
+   * the explicit `operatorChatId` setting; falls back to the first numeric
+   * id in `allowlist` so existing deployments work without configuration.
+   */
+  private resolveOperatorChatId(): string | null {
+    const explicit = this.settings.operatorChatId;
+    if (explicit) return explicit;
+    const first = this.settings.allowlist.find((u) => /^-?\d+$/.test(u));
+    return first ?? null;
+  }
+
+  private async handleAuthFailure(originalMsg: TelegramMessage, originalText: string): Promise<boolean> {
+    if (!this.api) return false;
+    if (this.pendingLogin) return true; // another auth attempt already in flight
+
+    const operatorChatId = this.resolveOperatorChatId();
+    if (!operatorChatId) {
+      logError('auth failure: no operator chat id configured — falling back to default error post');
+      return false;
+    }
+
+    const orchestrator = getLoginOrchestrator();
+    if (orchestrator.current()) return false; // already in flight from another surface
+
+    let snap: LoginSnapshot;
+    try {
+      snap = await orchestrator.start('setup-token');
+    } catch (err) {
+      logError('auth failure: login start failed', err instanceof Error ? err.message : String(err));
+      return false;
+    }
+
+    if (!snap.url) {
+      logError('auth failure: login orchestrator returned no URL');
+      orchestrator.cancel(snap.loginId);
+      return false;
+    }
+
+    try {
+      await this.api.sendMessage(
+        Number(operatorChatId),
+        '🔑 *Cerebro needs you to re-authenticate Claude.*\n\n'
+        + `1. Open this link in your browser: ${snap.url}\n`
+        + '2. Complete the sign-in.\n'
+        + '3. Reply to this chat with the code shown on the page.\n\n'
+        + "I'll resume the original request automatically once you reply.",
+      );
+    } catch (err) {
+      logError('auth failure: operator DM send failed', err instanceof Error ? err.message : String(err));
+      orchestrator.cancel(snap.loginId);
+      return false;
+    }
+
+    const update = (s: LoginSnapshot): void => {
+      if (s.loginId !== snap.loginId) return;
+      if (s.status === 'success') void this.completeAuthRecovery();
+      else if (s.status === 'failure' || s.status === 'cancelled') void this.failAuthRecovery(s.reason ?? 'Sign-in failed.');
+    };
+    orchestrator.on('update', update);
+    const unsubscribe = (): void => { orchestrator.off('update', update); };
+
+    const timeoutTimer = setTimeout(() => {
+      void this.failAuthRecovery('Sign-in timed out after 10 minutes.');
+    }, 10 * 60_000);
+
+    this.pendingLogin = {
+      loginId: snap.loginId,
+      operatorChatId,
+      originalMsg,
+      originalText,
+      timeoutTimer,
+      unsubscribe,
+    };
+    return true;
+  }
+
+  private async handleOperatorAuthCode(code: string): Promise<void> {
+    const pending = this.pendingLogin;
+    if (!pending || !this.api) return;
+    const trimmed = (code ?? '').trim();
+    if (!trimmed) return;
+    try {
+      await getLoginOrchestrator().submitCode(pending.loginId, trimmed);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      try {
+        await this.api.sendMessage(
+          Number(pending.operatorChatId),
+          `⚠️ Couldn't verify that code: ${scrubTokenish(msg)}\n\nPaste the code again, or open the link again to start over.`,
+        );
+      } catch { /* ignore */ }
+    }
+  }
+
+  private async completeAuthRecovery(): Promise<void> {
+    const pending = this.pendingLogin;
+    if (!pending) return;
+    this.pendingLogin = null;
+    clearTimeout(pending.timeoutTimer);
+    pending.unsubscribe();
+
+    if (this.api) {
+      try {
+        await this.api.sendMessage(
+          Number(pending.operatorChatId),
+          '✅ Reconnected to Claude. Resuming the original request now.',
+        );
+      } catch { /* ignore */ }
+    }
+
+    // Re-dispatch the original inbound. The dedupe layer would normally
+    // drop a replay of the same message_id, so allocate a synthetic one
+    // outside the real Telegram id space (numeric, well above any real
+    // update id) for the retry pass.
+    const replay: TelegramMessage = {
+      ...pending.originalMsg,
+      message_id: pending.originalMsg.message_id + 1_000_000_000,
+    };
+    try {
+      await this.handleMessage(replay);
+    } catch (err) {
+      logError('auth recovery replay failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async failAuthRecovery(reason: string): Promise<void> {
+    const pending = this.pendingLogin;
+    if (!pending) return;
+    this.pendingLogin = null;
+    clearTimeout(pending.timeoutTimer);
+    pending.unsubscribe();
+    try { getLoginOrchestrator().cancel(pending.loginId); } catch { /* noop */ }
+
+    if (this.api) {
+      try {
+        await this.api.sendMessage(
+          Number(pending.operatorChatId),
+          `⚠️ Claude sign-in didn't complete: ${scrubTokenish(reason)}`,
+        );
+      } catch { /* ignore */ }
+      try {
+        await this.api.sendMessage(
+          pending.originalMsg.chat.id,
+          "⚠️ Couldn't reconnect to Claude. The operator has been notified.",
+        );
+      } catch { /* ignore */ }
+    }
   }
 
   // ── TelegramChannel implementation (consumed by send_telegram_message) ──
@@ -861,7 +1066,7 @@ export class TelegramBridge implements TelegramChannel {
   private subscribeToEngineEvents(): void {
     const listener = (event: ExecutionEvent, ctx: EngineEventContext): void => {
       if (event.type === 'approval_requested' && 'approvalId' in event) {
-        void this.handleApprovalRequested(event);
+        void this.handleApprovalRequested(event, ctx);
         return;
       }
       if (event.type === 'approval_granted' || event.type === 'approval_denied') {
@@ -882,12 +1087,13 @@ export class TelegramBridge implements TelegramChannel {
 
   private async handleApprovalRequested(
     event: Extract<ExecutionEvent, { type: 'approval_requested' }>,
+    ctx: EngineEventContext,
   ): Promise<void> {
     if (!this.api) return;
 
     // Route to: the chat that originated the run, OR broadcast when
     // forwardAllApprovals is on and we don't know the origin.
-    const originChatId = this.findOriginChatIdForRun();
+    const originChatId = this.findOriginChatIdForRun(ctx.conversationId);
     const targets: number[] = [];
     if (originChatId !== null) {
       targets.push(originChatId);
@@ -936,16 +1142,28 @@ export class TelegramBridge implements TelegramChannel {
     await this.sendProactive(telegramRecipients, summary);
   }
 
-  // v1 heuristic: if there's exactly one active Telegram run, the approval
-  // almost certainly belongs to it. Otherwise fall through to forwardAllApprovals.
-  private findOriginChatIdForRun(): number | null {
-    if (this.activeRuns.size !== 1) return null;
-    return this.activeRuns.keys().next().value ?? null;
+  // Attribute an approval to the chat that triggered it. Chat-action runs
+  // carry their originating conversationId (stamped by run-chat-action.sh), so
+  // we match it precisely even with several runs in flight; if it can't be
+  // matched we fall back to the most recently started run rather than dropping
+  // the approval (a dropped chat-action approval pauses the engine forever).
+  // Without a conversationId (e.g. a routine-triggered approval) we keep the
+  // single-run heuristic so we don't hijack it into an unrelated chat — the
+  // caller then falls through to forwardAllApprovals.
+  private findOriginChatIdForRun(conversationId?: string): number | null {
+    return pickApprovalRun(
+      [...this.activeRuns.entries()].map(([chatId, run]) => ({
+        id: chatId,
+        conversationId: run.conversationId,
+        startedAt: run.startedAt,
+      })),
+      conversationId,
+    );
   }
 
   private async loadSettings(): Promise<void> {
     const port = this.deps.backendPort;
-    const [storedToken, allowlist, enabled, forwardAll, chatMap, chatExpertMap, chatUsernames, lastUpdate] = await Promise.all([
+    const [storedToken, allowlist, enabled, forwardAll, chatMap, chatExpertMap, chatUsernames, lastUpdate, operatorChatId] = await Promise.all([
       backendGetSetting<string>(port, TELEGRAM_SETTING_KEYS.token),
       backendGetSetting<string[]>(port, TELEGRAM_SETTING_KEYS.allowlist),
       backendGetSetting<boolean>(port, TELEGRAM_SETTING_KEYS.enabled),
@@ -954,6 +1172,7 @@ export class TelegramBridge implements TelegramChannel {
       backendGetSetting<Record<string, string>>(port, TELEGRAM_SETTING_KEYS.chatExpertMap),
       backendGetSetting<Record<string, string>>(port, TELEGRAM_SETTING_KEYS.chatUsernames),
       backendGetSetting<number>(port, TELEGRAM_SETTING_KEYS.lastUpdateId),
+      backendGetSetting<string>(port, TELEGRAM_SETTING_KEYS.operatorChatId),
     ]);
 
     const token = decryptFromStorage(storedToken);
@@ -976,6 +1195,7 @@ export class TelegramBridge implements TelegramChannel {
       chatExpertMap: chatExpertMap ?? {},
       chatUsernames: chatUsernames ?? {},
       lastUpdateId: typeof lastUpdate === 'number' ? lastUpdate : 0,
+      operatorChatId: typeof operatorChatId === 'string' && operatorChatId ? operatorChatId : null,
     };
   }
 
@@ -1106,6 +1326,18 @@ export class TelegramBridge implements TelegramChannel {
     const fromId = msg.from?.id;
     if (fromId === undefined) return;
     const fromIdStr = String(fromId);
+
+    // Auth paste-back intercept. If Claude Code is re-authenticating and
+    // this DM is the configured operator replying with the code, route it
+    // to the orchestrator instead of dispatching to the runner (which
+    // would just hit the same auth failure again).
+    if (
+      this.pendingLogin
+      && this.pendingLogin.operatorChatId === String(msg.chat.id)
+    ) {
+      await this.handleOperatorAuthCode((msg.text ?? msg.caption ?? '').trim());
+      return;
+    }
 
     if (!this.settings.allowlist.includes(fromIdStr)) {
       if (this.shouldReplyUnknown(fromIdStr)) {
@@ -1243,6 +1475,7 @@ export class TelegramBridge implements TelegramChannel {
         }
       },
       bumpActivity,
+      async () => this.handleAuthFailure(msg, textOrCaption),
     );
 
     const expertId = this.settings.chatExpertMap[String(msg.chat.id)] || null;
@@ -1251,6 +1484,10 @@ export class TelegramBridge implements TelegramChannel {
       conversationId,
       content: prompt,
       expertId,
+      // No transcript is shipped — Claude Code's own --resume carries history —
+      // so hint the create-vs-resume decision: resume unless this is the first
+      // message we've ever seen for this chat.
+      resume: !isFirstContact,
       source: { kind: 'telegram', chatId: msg.chat.id },
     };
 
@@ -1282,7 +1519,7 @@ export class TelegramBridge implements TelegramChannel {
       }
       logError('startRun failed', errMsg);
       try {
-        await this.api.sendMessage(msg.chat.id, `⚠️ Failed to start: ${scrubTokenish(errMsg)}`);
+        await this.api.sendMessage(msg.chat.id, '⚠️ Something went wrong starting that. Please try again in a moment.');
       } catch { /* ignore */ }
     }
   }
@@ -1967,6 +2204,7 @@ function emptySettings(): TelegramSettings {
     chatExpertMap: {},
     chatUsernames: {},
     lastUpdateId: 0,
+    operatorChatId: null,
   };
 }
 

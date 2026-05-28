@@ -28,6 +28,10 @@ export const IPC_CHANNELS = {
   ENGINE_ANY_EVENT: 'engine:any-event',
   engineEvent: (runId: string) => `engine:event:${runId}`,
 
+  /** Renderer → main: bring the main window to the foreground (e.g. when the
+   *  user clicks an OS notification about a pending approval). */
+  WINDOW_FOCUS: 'window:focus',
+
   // Chat actions catalog (renderer → main; the run path is HTTP from the chat subprocess)
   CHAT_ACTIONS_CATALOG: 'chat-actions:catalog',
   /** Renderer → main: generate a short conversation title from the first user
@@ -46,6 +50,14 @@ export const IPC_CHANNELS = {
    *  coordinator subprocess as it starts/finishes each member.
    *  Payload: TeamMemberUpdateEventPayload. */
   TEAM_MEMBER_UPDATE: 'chat-actions:team-member-update',
+  /** Renderer → main: write a clipboard-pasted image to the chat staging dir
+   *  so it can be referenced as an `@/path` attachment. */
+  CHAT_SAVE_CLIPBOARD_IMAGE: 'chat:save-clipboard-image',
+  /** Renderer → main: force a fresh Claude Code session for a conversation
+   *  (operator escape hatch if a session ever wedges). Rotates the stored
+   *  session id to a new UUID; the next turn reseeds from history. Resolves
+   *  to the new session id. */
+  CHAT_RESET_SESSION: 'chat:reset-session',
 
   // Scheduler
   SCHEDULER_SYNC: 'scheduler:sync',
@@ -63,6 +75,17 @@ export const IPC_CHANNELS = {
    *  sign-in flow without leaving the app. Used by the auth-error
    *  recovery card in chat. */
   CLAUDE_CODE_OPEN_LOGIN: 'claude-code:open-login',
+  /** Spawn `claude /login` (or `claude setup-token`) via PTY, capture the
+   *  OAuth URL, and surface it through the chat sign-in card. Replaces the
+   *  manual terminal escape hatch above for users who'd otherwise have to
+   *  drop to a shell. */
+  CLAUDE_CODE_LOGIN_START: 'claude-code:login-start',
+  /** Feed the paste-back code into the running setup-token subprocess. */
+  CLAUDE_CODE_LOGIN_SUBMIT_CODE: 'claude-code:login-submit-code',
+  /** SIGTERM the running login subprocess. */
+  CLAUDE_CODE_LOGIN_CANCEL: 'claude-code:login-cancel',
+  /** Main → renderer: status transitions on the active login attempt. */
+  CLAUDE_CODE_LOGIN_EVENT: 'claude-code:login-event',
 
   // Voice
   VOICE_START: 'voice:start',
@@ -135,7 +158,11 @@ export const IPC_CHANNELS = {
   SLACK_SET_TOKENS: 'slack:set-tokens',
   SLACK_CLEAR_TOKENS: 'slack:clear-tokens',
   SLACK_SET_ALLOWLIST: 'slack:set-allowlist',
+  SLACK_SET_OPERATOR_USER_ID: 'slack:set-operator-user-id',
   SLACK_GET_MANIFEST: 'slack:get-manifest',
+  SLACK_LIST_WORKSPACE_USERS: 'slack:list-workspace-users',
+  SLACK_GET_EXPERT_ACCESS: 'slack:get-expert-access',
+  SLACK_SET_EXPERT_ACCESS: 'slack:set-expert-access',
   /** Main → renderer whenever the bridge persists a message into a Slack
    *  conversation (inbound user OR final assistant reply). Lets the chat
    *  UI refresh that conversation in real time. */
@@ -441,6 +468,26 @@ export interface ClaudeCodeProbeResult {
   reason?: string;
 }
 
+export type ClaudeCodeLoginMode = 'oauth' | 'setup-token';
+
+export type ClaudeCodeLoginStatus =
+  | 'starting'
+  | 'awaiting-user'
+  | 'submitting-code'
+  | 'success'
+  | 'failure'
+  | 'cancelled';
+
+export interface ClaudeCodeLoginSnapshot {
+  loginId: string;
+  mode: ClaudeCodeLoginMode;
+  status: ClaudeCodeLoginStatus;
+  url: string | null;
+  requiresCode: boolean;
+  reason?: string;
+  startedAt: number;
+}
+
 export interface ClaudeCodeAPI {
   detect(): Promise<ClaudeCodeInfo>;
   getStatus(): Promise<ClaudeCodeInfo>;
@@ -467,6 +514,21 @@ export interface ClaudeCodeAPI {
    * with a `probeAuth({ force: true })` once the user reports success.
    */
   openLogin(): Promise<{ ok: boolean; reason?: string }>;
+  /** In-Cerebro login flow that captures the OAuth URL (and, for paste-back
+   *  mode, accepts the code) without dropping the user to a shell. */
+  login: {
+    /** Spawn the chosen login subprocess and resolve with the first snapshot
+     *  that has a URL (or 'awaiting-user' status if the CLI opened a
+     *  browser without printing one). */
+    start(mode: ClaudeCodeLoginMode): Promise<ClaudeCodeLoginSnapshot>;
+    /** Feed the paste-back code into the running setup-token subprocess.
+     *  Resolves with the terminal snapshot (`success` or `failure`). */
+    submitCode(loginId: string, code: string): Promise<ClaudeCodeLoginSnapshot>;
+    /** Cancel the active attempt. No-op when idle. */
+    cancel(loginId?: string): Promise<void>;
+    /** Subscribe to status transitions on the active attempt. */
+    onEvent(callback: (snapshot: ClaudeCodeLoginSnapshot) => void): () => void;
+  };
 }
 
 // --- Installer ---
@@ -759,6 +821,10 @@ export interface ChatActionsAPI {
     userMessage: string;
     assistantResponse?: string;
   }): Promise<string | null>;
+  /** Force a fresh Claude Code session for a conversation (operator escape
+   *  hatch). Rotates the stored session id; the next turn reseeds from
+   *  history. Resolves to the new session id, or null on failure. */
+  resetSession(conversationId: string): Promise<string | null>;
 }
 
 export interface BackupCompletionFlag {
@@ -799,6 +865,12 @@ export interface CerebroAPI {
   cancelStream(streamId: string): Promise<void>;
   onStream(streamId: string, callback: (event: StreamEvent) => void): () => void;
   getPathForFile(file: File): string;
+  saveClipboardImage(input: {
+    bytes: ArrayBuffer;
+    mime: string;
+  }): Promise<{ filePath: string; fileName: string; size: number }>;
+  /** Bring the main window to the foreground. */
+  focusWindow(): void;
   agent: AgentAPI;
   engine: EngineAPI;
   scheduler: SchedulerAPI;
@@ -846,11 +918,41 @@ export interface SlackStatusResponse {
   allowlistChannels: string[];
   allowlistUsers: string[];
   tokenBackend: 'os-keychain' | 'plaintext-fallback';
+  /** Slack user id (`U…`) of the Cerebro operator. Receives the DM with
+   *  the Claude sign-in link when the bundled CLI loses auth. Null falls
+   *  back to the first allowlist user. */
+  operatorUserId: string | null;
 }
 
 export interface SlackConversationUpdatedEvent {
   conversationId: string;
   kind: 'created' | 'message';
+}
+
+export interface SlackWorkspaceUser {
+  id: string;
+  name: string;
+  email?: string;
+  avatarUrl?: string;
+}
+
+export interface SlackUserExpertAccessEntry {
+  userId: string;
+  /** Cached display name from the bridge — UI uses this so operators never
+   *  see raw Slack ids. Null when the bridge hasn't resolved it yet. */
+  displayName: string | null;
+  /** Per-user override. `['*']` means full access (overrides a restrictive
+   *  workspace default). Otherwise these are the only experts the person
+   *  can use. Empty array = no experts at all. */
+  expertIds: string[];
+}
+
+export interface SlackExpertAccessConfig {
+  /** Workspace-wide default. `null` = unrestricted (any expert allowed).
+   *  `string[]` = baseline curated set. Empty array = no experts by default. */
+  defaultExpertAccess: string[] | null;
+  /** Per-person overrides on top of the default. */
+  exceptions: SlackUserExpertAccessEntry[];
 }
 
 export interface SlackAPI {
@@ -862,9 +964,20 @@ export interface SlackAPI {
   setTokens(tokens: { botToken: string; appToken: string }): Promise<{ ok: boolean; error?: string }>;
   clearTokens(): Promise<{ ok: boolean; error?: string }>;
   setAllowlist(args: { channels: string[]; users: string[] }): Promise<{ ok: boolean; error?: string }>;
+  /** Set the Slack user id who should receive Claude re-authentication
+   *  DMs. Pass null to clear (falls back to the first allowlist user). */
+  setOperatorUserId(userId: string | null): Promise<{ ok: boolean; error?: string }>;
   /** Returns the shipped manifest YAML so the renderer can copy it to the
    *  clipboard or pipe it to api.slack.com's "create from manifest" URL. */
   getManifest(): Promise<{ ok: boolean; yaml?: string; error?: string }>;
+  /** Lists the human members of the workspace for the per-person expert-access
+   *  picker. Requires the bridge to be running. Names only — IDs are kept
+   *  internal so operators never copy/paste them. */
+  listWorkspaceUsers(): Promise<{ ok: boolean; users?: SlackWorkspaceUser[]; error?: string }>;
+  /** Snapshot of the workspace default + per-person exceptions. */
+  getExpertAccess(): Promise<{ ok: boolean; config?: SlackExpertAccessConfig; error?: string }>;
+  /** Replace both the workspace default and the per-person exceptions. */
+  setExpertAccess(config: SlackExpertAccessConfig): Promise<{ ok: boolean; error?: string }>;
   onConversationUpdated(callback: (event: SlackConversationUpdatedEvent) => void): () => void;
 }
 

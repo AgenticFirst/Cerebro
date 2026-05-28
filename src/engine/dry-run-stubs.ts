@@ -30,15 +30,23 @@ function syntheticId(prefix = DRY_RUN_ID_PREFIX): string {
  * params.
  */
 const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<ActionOutput>> = {
-  hubspot_create_ticket: () => ({
-    data: {
-      ticket_id: syntheticId('dryrun-ticket-'),
-      ticket_url: null,
-      created: true,
-      error: null,
-    },
-    summary: '[dry-run] Would create HubSpot ticket',
-  }),
+  hubspot_create_ticket: (input) => {
+    const hasContact = Boolean(
+      String((input.params as Record<string, unknown>).contact_id ?? '').trim() ||
+      String((input.params as Record<string, unknown>).contact_email ?? '').trim(),
+    );
+    return {
+      data: {
+        ticket_id: syntheticId('dryrun-ticket-'),
+        ticket_url: null,
+        created: true,
+        contact_id: hasContact ? syntheticId('dryrun-contact-') : null,
+        contact_associated: hasContact,
+        error: null,
+      },
+      summary: '[dry-run] Would create HubSpot ticket',
+    };
+  },
   hubspot_upsert_contact: () => ({
     data: {
       contact_id: syntheticId('dryrun-contact-'),
@@ -47,6 +55,17 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
       error: null,
     },
     summary: '[dry-run] Would upsert HubSpot contact',
+  }),
+  hubspot_search_contact: (input) => ({
+    data: {
+      found: true,
+      contact_id: syntheticId('dryrun-contact-'),
+      email: String((input.params as Record<string, unknown>).email ?? '') || null,
+      firstname: '[dry-run]',
+      lastname: '[dry-run]',
+      error: null,
+    },
+    summary: '[dry-run] Would search HubSpot contact',
   }),
   send_telegram_message: (input) => ({
     data: {

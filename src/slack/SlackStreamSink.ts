@@ -9,10 +9,13 @@
  *      Slack's chat.update rate limit is Tier 3 (~50/min/channel), and
  *      chat.postMessage is the Special tier (1/sec/channel). A 1.5s
  *      minimum debounce keeps us comfortably inside both budgets.
- *   4. On `done`, finalise the placeholder with the full text. If the
- *      accumulated response exceeds the Slack text cap, chunk into
- *      additional in-thread messages.
- *   5. On `error`, edit the placeholder to a redacted error line.
+ *   4. On `done`, delete the placeholder and post the full text as a NEW
+ *      in-thread message. Slack does not push a notification for edits, so
+ *      we have to post fresh for the user's client to ping them. If the
+ *      response exceeds the Slack text cap, chunk into additional in-thread
+ *      messages.
+ *   5. On `error`, delete the placeholder and post a redacted error line as
+ *      a new in-thread message (same notification reasoning).
  *
  * The sink owns no IO beyond the SlackApi handle — it never touches the
  * bridge directly, which makes it trivially unit-testable with a stub.
@@ -21,6 +24,7 @@
 import type { AgentEventSink, RendererAgentEvent } from '../agents/runtime';
 import { SlackApi, scrubTokenish } from './api';
 import { chunkSlackText } from './helpers';
+import { markdownToMrkdwn } from './mrkdwn';
 
 const EDIT_DEBOUNCE_MS = 1_500;       // 1.5s minimum between edits
 const EDIT_CHUNK_CHARS = 600;         // or 600 chars of new visible text
@@ -29,14 +33,26 @@ const MAX_MESSAGE_CHARS = 3500;       // chunk threshold; Slack `text` allows up
 interface SinkDeps {
   api: SlackApi;
   channel: string;
-  /** Thread ts to reply into. Use the inbound message's ts if no thread exists. */
-  threadTs: string;
+  /**
+   * Thread ts to reply into. Leave undefined to post at top level (the
+   * default for DMs and top-level channel @mentions). Set only when the
+   * inbound message was already part of an existing thread.
+   */
+  threadTs?: string;
   /** Called once the run finishes (with final text) or errors (with err). */
   onDone: (finalText: string, err?: string) => void;
   /** Called any time the sink observes an event — used by the bridge watchdog. */
   onActivity?: () => void;
   /** Initial placeholder text. Defaults to "Cerebro is thinking…". */
   placeholder?: string;
+  /**
+   * Invoked when the run errors with `errorClass: 'auth'`. The bridge
+   * uses this to kick off the operator DM paste-back flow instead of
+   * letting the raw "Cerebro lost its Claude Code session" text reach
+   * the requesting user. Suppresses the default :warning: post when
+   * this returns true (handled).
+   */
+  onAuthFailure?: () => boolean | Promise<boolean>;
 }
 
 export class SlackStreamSink implements AgentEventSink {
@@ -46,6 +62,11 @@ export class SlackStreamSink implements AgentEventSink {
 
   /** ts of the placeholder message that we keep updating. Null until first send. */
   private placeholderTs: string | null = null;
+  /**
+   * Resolves once the in-flight placeholder send settles (success or failure).
+   * finalize() awaits this so a fast-returning model can't race past the post.
+   */
+  private placeholderPromise: Promise<void> | null = null;
   /** ts values of any follow-up messages we posted when accumulated text exceeded MAX_MESSAGE_CHARS. */
   private overflowTs: string[] = [];
 
@@ -88,7 +109,8 @@ export class SlackStreamSink implements AgentEventSink {
     }
 
     if (event.type === 'error' && 'error' in event) {
-      void this.finalizeWithError(event.error);
+      const errorClass = ('errorClass' in event ? (event as { errorClass?: string }).errorClass : undefined);
+      void this.finalizeWithError(event.error, errorClass);
       return;
     }
     // tool_start / tool_end / system / turn_start → silently ignored.
@@ -100,23 +122,28 @@ export class SlackStreamSink implements AgentEventSink {
 
   // ── Internals ─────────────────────────────────────────────────
 
-  private async ensurePlaceholder(): Promise<void> {
-    if (this.destroyed || this.placeholderTs !== null) return;
-    try {
-      const text = this.deps.placeholder ?? '_Cerebro is thinking…_';
-      const sent = await this.deps.api.chatPostMessage({
-        channel: this.deps.channel,
-        thread_ts: this.deps.threadTs,
-        text,
-        mrkdwn: true,
-      });
-      this.placeholderTs = sent.ts;
-    } catch (err) {
-      // If we can't post the placeholder we'll try again on the first
-      // text_delta — the operator will see an error in the bridge logs.
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[Slack] placeholder send failed:', scrubTokenish(msg));
-    }
+  private ensurePlaceholder(): Promise<void> {
+    if (this.destroyed || this.placeholderTs !== null) return Promise.resolve();
+    if (this.placeholderPromise) return this.placeholderPromise;
+    const run = async (): Promise<void> => {
+      try {
+        const text = this.deps.placeholder ?? '_Cerebro is thinking…_';
+        const sent = await this.deps.api.chatPostMessage({
+          channel: this.deps.channel,
+          thread_ts: this.deps.threadTs,
+          text,
+          mrkdwn: true,
+        });
+        this.placeholderTs = sent.ts;
+      } catch (err) {
+        // If we can't post the placeholder we'll try again on the first
+        // text_delta — the operator will see an error in the bridge logs.
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[Slack] placeholder send failed:', scrubTokenish(msg));
+      }
+    };
+    this.placeholderPromise = run();
+    return this.placeholderPromise;
   }
 
   private async scheduleEdit(): Promise<void> {
@@ -161,7 +188,10 @@ export class SlackStreamSink implements AgentEventSink {
     // If the accumulated text exceeds the cap, we still only show the first
     // MAX_MESSAGE_CHARS in the placeholder during streaming — the chunk-out
     // happens in finalize(). This keeps streaming UX simple.
-    const visible = slice.length > MAX_MESSAGE_CHARS ? slice.slice(0, MAX_MESSAGE_CHARS) : slice;
+    const rendered = markdownToMrkdwn(slice);
+    const visible = rendered.length > MAX_MESSAGE_CHARS
+      ? rendered.slice(0, MAX_MESSAGE_CHARS)
+      : rendered;
 
     try {
       await this.deps.api.chatUpdate({
@@ -169,7 +199,7 @@ export class SlackStreamSink implements AgentEventSink {
         ts: this.placeholderTs,
         text: visible,
       });
-      this.lastSentVisible = visible.length;
+      this.lastSentVisible = slice.length;
       this.lastEditAt = Date.now();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -184,36 +214,36 @@ export class SlackStreamSink implements AgentEventSink {
     if (this.destroyed) return;
     if (this.editTimer) { clearTimeout(this.editTimer); this.editTimer = null; }
 
+    // If the placeholder is still being posted, let it finish before we
+    // decide whether to delete it. Otherwise we can orphan the placeholder
+    // above a freshly-posted final answer.
+    if (this.placeholderPromise) {
+      try { await this.placeholderPromise; } catch { /* ignore — handled in ensurePlaceholder */ }
+    }
+
     const finalText = (this.accumulated.trim().length === 0)
       ? '_(empty response)_'
       : this.accumulated;
-    const chunks = chunkSlackText(finalText, MAX_MESSAGE_CHARS);
+    // Convert to Slack mrkdwn before chunking — link/header rewrites change
+    // length and we want chunk boundaries to land on the actual sent text.
+    const renderedFinal = markdownToMrkdwn(finalText);
+    const chunks = chunkSlackText(renderedFinal, MAX_MESSAGE_CHARS);
 
-    // First chunk goes into the placeholder via chat.update.
-    if (this.placeholderTs !== null) {
-      try {
-        await this.deps.api.chatUpdate({
-          channel: this.deps.channel,
-          ts: this.placeholderTs,
-          text: chunks[0],
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error('[Slack] finalize chat.update failed:', scrubTokenish(msg));
-      }
-    } else {
-      // We never managed to post the placeholder — emit a fresh message.
-      try {
-        const sent = await this.deps.api.chatPostMessage({
-          channel: this.deps.channel,
-          thread_ts: this.deps.threadTs,
-          text: chunks[0],
-        });
-        this.placeholderTs = sent.ts;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error('[Slack] finalize chat.postMessage failed:', scrubTokenish(msg));
-      }
+    // Edits don't fire Slack notifications, so we delete the placeholder
+    // and post the final answer fresh. The new chat.postMessage rings the
+    // user's client exactly like a human reply would.
+    await this.deletePlaceholderIfAny();
+
+    // First (and possibly only) chunk → notifying post.
+    try {
+      await this.deps.api.chatPostMessage({
+        channel: this.deps.channel,
+        thread_ts: this.deps.threadTs,
+        text: chunks[0],
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Slack] finalize chat.postMessage failed:', scrubTokenish(msg));
     }
 
     // Remaining chunks → additional in-thread messages.
@@ -235,30 +265,77 @@ export class SlackStreamSink implements AgentEventSink {
     this.deps.onDone(finalText);
   }
 
-  private async finalizeWithError(error: string): Promise<void> {
+  private async finalizeWithError(error: string, errorClass?: string): Promise<void> {
     if (this.destroyed) return;
     if (this.editTimer) { clearTimeout(this.editTimer); this.editTimer = null; }
 
-    const text = `:warning: ${scrubTokenish(error)}`;
-    if (this.placeholderTs !== null) {
-      try {
-        await this.deps.api.chatUpdate({
-          channel: this.deps.channel,
-          ts: this.placeholderTs,
-          text,
-        });
-      } catch { /* ignore */ }
-    } else {
-      try {
-        await this.deps.api.chatPostMessage({
-          channel: this.deps.channel,
-          thread_ts: this.deps.threadTs,
-          text,
-        });
-      } catch { /* ignore */ }
+    if (this.placeholderPromise) {
+      try { await this.placeholderPromise; } catch { /* ignore */ }
     }
+
+    await this.deletePlaceholderIfAny();
+
+    // Auth failures get a humane brief reply in the thread + the bridge
+    // routes the actual recovery to the operator's DM. The raw error
+    // ("Cerebro lost its Claude Code session.") is suppressed — it gives
+    // the requesting user nothing they can act on, especially on a
+    // headless server they don't have terminal access to.
+    if (errorClass === 'auth') {
+      let handled = false;
+      if (this.deps.onAuthFailure) {
+        try {
+          handled = await this.deps.onAuthFailure();
+        } catch { /* fall through to default post */ }
+      }
+      if (handled) {
+        const brief = "I'm reconnecting to Claude — operator notified. Try again in a moment.";
+        try {
+          await this.deps.api.chatPostMessage({
+            channel: this.deps.channel,
+            thread_ts: this.deps.threadTs,
+            text: brief,
+          });
+        } catch { /* ignore */ }
+        this.teardown();
+        this.deps.onDone(this.accumulated, error);
+        return;
+      }
+      // Fall through to the default :warning: post when no operator was
+      // configured — at least the requesting user knows something broke.
+    }
+
+    const text = `:warning: ${scrubTokenish(error)}`;
+    try {
+      await this.deps.api.chatPostMessage({
+        channel: this.deps.channel,
+        thread_ts: this.deps.threadTs,
+        text,
+      });
+    } catch { /* ignore */ }
+
     this.teardown();
     this.deps.onDone(this.accumulated, error);
+  }
+
+  /**
+   * Best-effort delete of the streaming placeholder. We tolerate
+   * `message_not_found` (already gone) and log every other failure but keep
+   * going — a stray placeholder above a notifying final message is worse
+   * UX than the current silent-edit bug, but still better than no answer
+   * at all.
+   */
+  private async deletePlaceholderIfAny(): Promise<void> {
+    const ts = this.placeholderTs;
+    if (ts === null) return;
+    this.placeholderTs = null;
+    try {
+      await this.deps.api.chatDelete({ channel: this.deps.channel, ts });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/message_not_found/i.test(msg)) {
+        console.error('[Slack] chat.delete placeholder failed:', scrubTokenish(msg));
+      }
+    }
   }
 
   private teardown(): void {

@@ -9,7 +9,7 @@
  * any boundary the operator might see.
  */
 
-import { WebClient, type ChatPostMessageArguments, type ChatUpdateArguments } from '@slack/web-api';
+import { WebClient, type ChatPostMessageArguments, type ChatUpdateArguments, type ChatDeleteArguments } from '@slack/web-api';
 
 /** Remove anything resembling a Slack token from a string. */
 export function scrubTokenish(s: string): string {
@@ -136,6 +136,60 @@ export class SlackApi {
     }
   }
 
+  /**
+   * List the human members of the workspace. Filters out bots, the bot
+   * users Slack invents for apps, deleted accounts, and the Slackbot user.
+   * Paginates up to ~2000 members so large workspaces stay responsive.
+   */
+  async usersList(): Promise<Array<{ id: string; name: string; email?: string; avatarUrl?: string }>> {
+    try {
+      const out: Array<{ id: string; name: string; email?: string; avatarUrl?: string }> = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 10; page++) {
+        const res = await this.client.users.list({ limit: 200, cursor });
+        const members = (res.members ?? []) as Array<{
+          id?: string;
+          name?: string;
+          real_name?: string;
+          deleted?: boolean;
+          is_bot?: boolean;
+          is_app_user?: boolean;
+          is_workflow_bot?: boolean;
+          profile?: {
+            display_name?: string;
+            real_name?: string;
+            email?: string;
+            image_192?: string;
+          };
+        }>;
+        for (const m of members) {
+          if (!m.id) continue;
+          if (m.deleted) continue;
+          if (m.is_bot || m.is_app_user || m.is_workflow_bot) continue;
+          if (m.id === 'USLACKBOT') continue;
+          const name =
+            m.profile?.display_name?.trim()
+            || m.profile?.real_name?.trim()
+            || m.real_name?.trim()
+            || m.name?.trim()
+            || m.id;
+          out.push({
+            id: m.id,
+            name,
+            email: m.profile?.email,
+            avatarUrl: m.profile?.image_192,
+          });
+        }
+        cursor = res.response_metadata?.next_cursor || undefined;
+        if (!cursor) break;
+      }
+      out.sort((a, b) => a.name.localeCompare(b.name));
+      return out;
+    } catch (err) {
+      throw this.wrap('users.list', err);
+    }
+  }
+
   async chatPostMessage(args: ChatPostMessageArguments): Promise<SlackPostMessageResult> {
     try {
       const res = await this.client.chat.postMessage(args);
@@ -160,6 +214,14 @@ export class SlackApi {
     }
   }
 
+  async chatDelete(args: ChatDeleteArguments): Promise<void> {
+    try {
+      await this.client.chat.delete(args);
+    } catch (err) {
+      throw this.wrap('chat.delete', err);
+    }
+  }
+
   async chatPostEphemeral(args: {
     channel: string;
     user: string;
@@ -171,6 +233,25 @@ export class SlackApi {
       await this.client.chat.postEphemeral(args);
     } catch (err) {
       throw this.wrap('chat.postEphemeral', err);
+    }
+  }
+
+  /**
+   * Open (or look up) a DM channel with a user id. Returns the IM channel
+   * id (D…) needed by chat.postMessage. Used by the auth-recovery flow to
+   * route the sign-in link to the configured operator without depending on
+   * a previously-seen DM channel id.
+   */
+  async conversationsOpen(userId: string): Promise<string> {
+    try {
+      const res = await this.client.conversations.open({ users: userId });
+      const ch = (res as { channel?: { id?: string } }).channel?.id;
+      if (!ch) {
+        throw new SlackApiError('conversations.open', null, 'missing channel.id in response');
+      }
+      return ch;
+    } catch (err) {
+      throw this.wrap('conversations.open', err);
     }
   }
 

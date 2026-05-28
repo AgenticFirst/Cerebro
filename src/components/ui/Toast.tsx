@@ -36,6 +36,17 @@ export default function ToastContainer() {
           >
             <Icon size={16} className={`flex-shrink-0 ${ICON_COLOR[toast.type]}`} />
             <span className="text-xs text-text-primary flex-1">{toast.message}</span>
+            {toast.action && (
+              <button
+                onClick={() => {
+                  toast.action!.onClick();
+                  dismissToast(toast.id);
+                }}
+                className={`text-xs font-medium px-2 py-1 rounded hover:bg-bg-subtle transition-colors flex-shrink-0 ${ICON_COLOR[toast.type]}`}
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button
               onClick={() => dismissToast(toast.id)}
               className="p-0.5 rounded text-text-tertiary hover:text-text-secondary transition-colors flex-shrink-0"

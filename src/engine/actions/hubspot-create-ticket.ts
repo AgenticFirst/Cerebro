@@ -10,6 +10,7 @@ import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { renderTemplate } from './utils/template';
 import type { HubSpotChannel } from './hubspot-channel';
 import { callHubSpotApi } from '../../hubspot/api';
+import { upsertContact } from '../../hubspot/contacts';
 
 interface CreateTicketParams {
   subject: string;
@@ -19,6 +20,7 @@ interface CreateTicketParams {
   priority?: string;
   source_type?: string;
   contact_id?: string;
+  contact_email?: string;
   owner_id?: string;
 }
 
@@ -65,7 +67,8 @@ export function createHubSpotCreateTicketAction(deps: {
         stage: { type: 'string', description: 'Ticket stage id within the pipeline. Falls back to the default configured in Integrations.' },
         priority: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
         source_type: { type: 'string' },
-        contact_id: { type: 'string', description: 'Associate the ticket to an existing contact id.' },
+        contact_id: { type: 'string', description: 'Associate the ticket to an existing contact id. Takes precedence over contact_email.' },
+        contact_email: { type: 'string', description: 'Associate the ticket to a contact by email. The contact is looked up and created if missing. Templated.' },
         owner_id: { type: 'string' },
       },
       required: ['subject'],
@@ -77,6 +80,8 @@ export function createHubSpotCreateTicketAction(deps: {
         ticket_id: { type: ['string', 'null'] },
         ticket_url: { type: ['string', 'null'] },
         created: { type: 'boolean' },
+        contact_id: { type: ['string', 'null'] },
+        contact_associated: { type: 'boolean' },
         error: { type: ['string', 'null'] },
       },
       required: ['created'],
@@ -102,7 +107,8 @@ export function createHubSpotCreateTicketAction(deps: {
       const priorityRaw = renderTemplate(params.priority ?? '', vars).trim().toUpperCase();
       const priority = priorityRaw && VALID_PRIORITIES.has(priorityRaw) ? priorityRaw : null;
       const sourceType = renderTemplate(params.source_type ?? '', vars).trim();
-      const contactId = renderTemplate(params.contact_id ?? '', vars).trim();
+      const explicitContactId = renderTemplate(params.contact_id ?? '', vars).trim();
+      const contactEmail = renderTemplate(params.contact_email ?? '', vars).trim();
       const ownerId = renderTemplate(params.owner_id ?? '', vars).trim();
 
       if (!subject) {
@@ -110,6 +116,26 @@ export function createHubSpotCreateTicketAction(deps: {
       }
       if (!pipeline || !stage) {
         throw new Error('HubSpot: Create Ticket — pipeline and stage are required. Set defaults in the HubSpot integration panel.');
+      }
+
+      // Resolve the contact to associate. An explicit contact_id wins; otherwise
+      // look up (and create-if-missing) by email so the agent can attach a
+      // contact in a single action instead of chaining two approval-gated calls.
+      // Association is best-effort: if resolution fails we still open the
+      // ticket and report contact_associated:false rather than aborting.
+      let contactId = explicitContactId;
+      if (!contactId && contactEmail) {
+        const resolved = await upsertContact(
+          token,
+          { email: contactEmail },
+          input.context.signal,
+          (msg) => input.context.log(msg),
+        );
+        if (resolved.contactId) {
+          contactId = resolved.contactId;
+        } else {
+          input.context.log(`HubSpot create_ticket: could not resolve contact for ${contactEmail}: ${resolved.error ?? 'unknown'}`);
+        }
       }
 
       // HubSpot CRM v3: POST /crm/v3/objects/tickets
@@ -144,7 +170,7 @@ export function createHubSpotCreateTicketAction(deps: {
       if (!res.ok) {
         input.context.log(`HubSpot create_ticket ${res.status}: ${res.error}`);
         return {
-          data: { ticket_id: null, ticket_url: null, created: false, error: res.error },
+          data: { ticket_id: null, ticket_url: null, created: false, contact_id: null, contact_associated: false, error: res.error },
           summary: `HubSpot create_ticket failed: ${res.error}`,
         };
       }
@@ -153,11 +179,22 @@ export function createHubSpotCreateTicketAction(deps: {
       const ticketUrl = ticketId && portal
         ? `https://app.hubspot.com/contacts/${portal}/ticket/${ticketId}`
         : null;
+      const contactAssociated = Boolean(contactId);
 
-      input.context.log(`HubSpot ticket created: ${ticketId}`);
+      input.context.log(`HubSpot ticket created: ${ticketId}${contactAssociated ? ` (contact ${contactId})` : ''}`);
+      const summary = contactAssociated
+        ? `Created HubSpot ticket ${ticketId ?? '(unknown id)'} associated with contact ${contactId}`
+        : `Created HubSpot ticket ${ticketId ?? '(unknown id)'}`;
       return {
-        data: { ticket_id: ticketId, ticket_url: ticketUrl, created: true, error: null },
-        summary: `Created HubSpot ticket ${ticketId ?? '(unknown id)'}`,
+        data: {
+          ticket_id: ticketId,
+          ticket_url: ticketUrl,
+          created: true,
+          contact_id: contactId || null,
+          contact_associated: contactAssociated,
+          error: null,
+        },
+        summary,
       };
     },
   };

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useImperativeHandle, forwardRef, type KeyboardEvent, type ChangeEvent } from 'react';
+import { useState, useRef, useCallback, useImperativeHandle, forwardRef, type KeyboardEvent, type ChangeEvent, type ClipboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowUp, Square, Paperclip } from 'lucide-react';
 import clsx from 'clsx';
@@ -6,6 +6,7 @@ import AttachmentChip from './AttachmentChip';
 import SpeedSelector from './SpeedSelector';
 import type { AttachmentInfo } from '../../types/attachments';
 import { generateId } from '../../context/chat-helpers';
+import { useToast } from '../../context/ToastContext';
 
 interface ChatInputProps {
   onSend: (content: string) => void;
@@ -21,6 +22,7 @@ export interface ChatInputHandle {
 const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   function ChatInput({ onSend, onStop, isStreaming = false, placeholder }, ref) {
     const { t } = useTranslation();
+    const { addToast } = useToast();
     const [value, setValue] = useState('');
     const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -79,6 +81,47 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       fileInputRef.current?.click();
     };
 
+    const handlePaste = useCallback(
+      async (e: ClipboardEvent<HTMLTextAreaElement>) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        const imageFiles: File[] = [];
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind === 'file' && item.type.startsWith('image/')) {
+            const f = item.getAsFile();
+            if (f) imageFiles.push(f);
+          }
+        }
+        if (imageFiles.length === 0) return; // let normal text paste run
+
+        e.preventDefault();
+        const saved: AttachmentInfo[] = [];
+        let sawTooLarge = false;
+        let sawOtherError = false;
+        for (const file of imageFiles) {
+          try {
+            const buf = await file.arrayBuffer();
+            const { filePath, fileName, size } = await window.cerebro.saveClipboardImage({
+              bytes: buf,
+              mime: file.type,
+            });
+            const ext = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
+            saved.push({ id: generateId(), filePath, fileName, fileSize: size, extension: ext });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('too large')) sawTooLarge = true;
+            else sawOtherError = true;
+            console.warn('[ChatInput] clipboard image save failed:', err);
+          }
+        }
+        if (saved.length > 0) addAttachments(saved);
+        if (sawTooLarge) addToast(t('chat.pasteImageTooLarge'), 'error');
+        else if (sawOtherError) addToast(t('chat.pasteImageFailed'), 'error');
+      },
+      [addAttachments, addToast, t],
+    );
+
     const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || []);
       const newAttachments: AttachmentInfo[] = [];
@@ -130,6 +173,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={placeholder ?? t('chat.sendPlaceholder')}
             rows={1}
             className={clsx(

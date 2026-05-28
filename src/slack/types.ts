@@ -83,10 +83,34 @@ export interface SlackSettings {
   threadExpertMap: Record<string, string>;
   /** Cached user-id → display name (refreshed via users.info on inbound). */
   userDisplayNames: Record<string, string>;
+  /**
+   * Workspace-wide default: the experts every Slack person can use unless
+   * they have an entry in `userExpertAccess`. `null` (default) means
+   * unrestricted — everyone keeps access to every expert. A `string[]`
+   * curates the baseline so an operator can configure a 50-person workspace
+   * with one default and a handful of overrides instead of one entry per
+   * person.
+   */
+  defaultExpertAccess: string[] | null;
+  /**
+   * Per-user override on top of the default. Maps Slack user id → expert
+   * ids. The sentinel value `'*'` means "this person gets ALL experts,
+   * regardless of the default" (the common case where the default is
+   * restrictive but admins/power users need everything). An empty array
+   * means "no experts at all". Users absent from this map fall back to
+   * `defaultExpertAccess`.
+   */
+  userExpertAccess: Record<string, string[]>;
   /** Slack workspace name once auth.test resolves, for the UI status card. */
   teamName: string | null;
   /** Slack bot user id (e.g. "U098…") — used to strip self-mentions. */
   botUserId: string | null;
+  /** Slack user id of the Cerebro operator. When the bundled Claude Code
+   *  CLI loses auth, we DM the operator the sign-in link (and accept a
+   *  paste-back code via their next DM) instead of leaking a useless
+   *  "run `claude` in a terminal" message to the requesting user. When
+   *  null, falls back to the first id in `allowlistUsers`. */
+  operatorUserId: string | null;
 }
 
 export const SLACK_SETTING_KEYS = {
@@ -98,8 +122,11 @@ export const SLACK_SETTING_KEYS = {
   threadConversationMap: 'slack_thread_conversation_map',
   threadExpertMap: 'slack_thread_expert_map',
   userDisplayNames: 'slack_user_display_names',
+  defaultExpertAccess: 'slack_default_expert_access',
+  userExpertAccess: 'slack_user_expert_access',
   teamName: 'slack_team_name',
   botUserId: 'slack_bot_user_id',
+  operatorUserId: 'slack_operator_user_id',
 } as const;
 
 // ── IPC surface (re-exports of the canonical types in types/ipc.ts) ──

@@ -18,6 +18,7 @@ import { app } from 'electron';
 import type { RendererAgentEvent } from '../agents/types';
 import type { QualityTier } from '../types/ipc';
 import { getCachedClaudeCodeInfo } from './detector';
+import { probeClaudeAuth } from './auth-probe';
 import { toUuidFormat } from './session-id';
 import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
 import { buildSystemPrompt } from '../i18n/language-directive';
@@ -67,6 +68,13 @@ export interface ClaudeCodeRunOptions {
    * `--agent` + `--append-system-prompt` to create the session.
    */
   resume?: boolean;
+  /**
+   * Per-run environment overlay merged into the subprocess `env`. Used to
+   * scope cross-cutting policies (e.g. the Slack bridge's per-user expert
+   * allowlist) to a single run without leaking into the parent process or
+   * other concurrent runs.
+   */
+  extraEnv?: Record<string, string>;
 }
 
 /**
@@ -80,17 +88,20 @@ export interface ClaudeCodeRunOptions {
 /**
  * Idle-watchdog timing. Two-tier ceiling so we kill obvious wedges fast
  * without cutting off legitimate long-running tool calls:
- *   - No tool in flight: 60s. Total silence with nothing running almost
- *     always means the CLI is wedged before producing any output —
- *     typically an auth failure that didn't trip AUTH_STDERR_PATTERNS,
- *     or a hung connection.
+ *   - No tool in flight: 90s. Total silence with nothing running usually
+ *     means the CLI is wedged before producing any output (an auth failure
+ *     that didn't trip AUTH_STDERR_PATTERNS, or a hung connection) — but a
+ *     loaded headless box with a large system prompt + MCP boot can take a
+ *     while to first token, so we give it real headroom. The runtime then
+ *     auto-retries a no-tool kill once on a fresh session, so the only cost
+ *     of a generous ceiling is latency, never a user-visible error.
  *   - Tool in flight: 30 minutes. Bash, Edit, etc. can legitimately sit
  *     waiting on approval gates or long-running commands; we don't want
  *     to kill those just because they haven't yielded streaming text.
  * Progressive warnings drive a "still thinking…" indicator in the UI.
  */
 const IDLE_WARNING_THRESHOLDS_MS = [45_000, 120_000, 300_000] as const;
-const IDLE_NO_TOOL_KILL_MS = 60_000;
+const IDLE_NO_TOOL_KILL_MS = 90_000;
 const IDLE_TOOL_KILL_MS = 1_800_000;
 // Stderr substrings that indicate the Claude CLI cannot proceed because
 // it is not authenticated. Matching one of these short-circuits the run
@@ -118,6 +129,8 @@ export type RunnerErrorClass =
   | 'cancelled'        // user aborted — do NOT escalate
   | 'spawn'            // could not spawn subprocess — do NOT escalate
   | 'session_missing'  // --resume target session not on disk — fall back to --session-id
+  | 'session_in_use'   // --session-id collided with an existing on-disk session — retry as --resume
+  | 'idle_hang'        // no-tool idle-watchdog kill after some output — retry once on a fresh session
   | 'unknown';         // catch-all — do NOT escalate (safer default)
 
 export class ClaudeCodeRunner extends EventEmitter {
@@ -146,6 +159,10 @@ export class ClaudeCodeRunner extends EventEmitter {
   private openToolCount = 0;
   private lastOpenToolName = '';
   private lastErrorClass: RunnerErrorClass = 'unknown';
+  /** Have we observed ANY stream-json event from the CLI yet? Used by the
+   *  idle-watchdog to distinguish a boot-time auth wedge (no output ever)
+   *  from a mid-run stall (the CLI did produce output, then went quiet). */
+  private sawAnyOutput = false;
 
   /**
    * Classification of the most recent terminal state. Inspected by
@@ -157,6 +174,15 @@ export class ClaudeCodeRunner extends EventEmitter {
   }
 
   start(options: ClaudeCodeRunOptions): void {
+    // Async pre-flight, then synchronous spawn. The original API is
+    // fire-and-forget (returns void; consumers subscribe via events), so we
+    // wrap the auth probe in an async helper and surface a classified error
+    // event when the probe fails. Avoids the 60 s silent-wedge that used to
+    // leak a terminal instruction into Slack/Telegram surfaces.
+    void this.startAsync(options);
+  }
+
+  private async startAsync(options: ClaudeCodeRunOptions): Promise<void> {
     const { runId, prompt, agentName, cwd } = options;
     this.agentNameUsed = agentName;
     this.cwdUsed = cwd;
@@ -170,6 +196,21 @@ export class ClaudeCodeRunner extends EventEmitter {
         runId,
         error: 'Claude Code is not available',
       } as RendererAgentEvent);
+      this.emit('error', 'Claude Code is not available');
+      return;
+    }
+
+    // Pre-flight auth probe. If the CLI is unauthenticated, the cached
+    // probe says so within 5 s (often 0 ms when cached). Short-circuit
+    // here with `errorClass: 'auth'` so the chat renders the sign-in card
+    // and the Slack/Telegram bridges route to the operator immediately —
+    // no spawn, no 60 s wedge, no leaked "run claude in a terminal" hint.
+    const probe = await probeClaudeAuth();
+    if (!probe.ok) {
+      this.lastErrorClass = 'auth';
+      const error = 'Cerebro lost its Claude Code session.';
+      this.emit('event', { type: 'error', runId, error } as RendererAgentEvent);
+      this.emit('error', error);
       return;
     }
 
@@ -208,6 +249,11 @@ export class ClaudeCodeRunner extends EventEmitter {
     // Build env: inherit process.env but strip CLAUDECODE to avoid nested session error
     const env = { ...process.env } as Record<string, string>;
     delete env.CLAUDECODE;
+    if (options.extraEnv) {
+      for (const [k, v] of Object.entries(options.extraEnv)) {
+        if (typeof v === 'string') env[k] = v;
+      }
+    }
 
     // Make the bundled / dev backend Python visible to the subprocess so the
     // agent's Bash tool can `import docx`, `import openpyxl`, etc. without a
@@ -325,6 +371,18 @@ export class ClaudeCodeRunner extends EventEmitter {
           this.emit('error', detail);
           return;
         }
+        // The mirror of session_missing: we spawned with --session-id to
+        // create a session whose id already exists on disk (the deterministic
+        // per-conversation id was created by an earlier turn). The runtime
+        // recovers by retrying the same id with --resume.
+        if (tailLower.includes('already in use') || (tailLower.includes('session id') && tailLower.includes('in use'))) {
+          detail = 'Reattaching to the existing Claude Code session.';
+          this.lastErrorClass = 'session_in_use';
+          this.closeRunLog(`[exit] code=${code} signal=${signal ?? ''} session_in_use`);
+          this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
+          this.emit('error', detail);
+          return;
+        }
         if (this.resultErrorTail) {
           // Max-turns hits and per-turn API errors come through stream-json
           // as `result.is_error: true`. Classify off the message so retry
@@ -344,7 +402,7 @@ export class ClaudeCodeRunner extends EventEmitter {
             detail = 'Rate limited or overloaded by the API. Please wait a moment and try again.';
           } else if (lower.includes('authentication') || lower.includes('401') || lower.includes('not authenticated') || lower.includes('unauthorized') || lower.includes('invalid api key')) {
             this.lastErrorClass = 'auth';
-            detail = 'Claude Code is not signed in. Open a terminal, run `claude` to sign in, then retry.';
+            detail = 'Cerebro lost its Claude Code session.';
           } else {
             this.lastErrorClass = 'unknown';
             detail = `Claude Code error (code ${code}): ${this.resultErrorTail}`;
@@ -359,7 +417,7 @@ export class ClaudeCodeRunner extends EventEmitter {
           detail = 'Rate limited or overloaded by the API. Please wait a moment and try again.';
           this.lastErrorClass = 'overload';
         } else if (tailLower.includes('authentication') || tailLower.includes('401') || tailLower.includes('not authenticated') || tailLower.includes('unauthorized') || tailLower.includes('invalid api key')) {
-          detail = 'Claude Code is not signed in. Open a terminal, run `claude` to sign in, then retry.';
+          detail = 'Cerebro lost its Claude Code session.';
           this.lastErrorClass = 'auth';
         } else if (signal) {
           detail = this.stderrTail
@@ -580,19 +638,39 @@ export class ClaudeCodeRunner extends EventEmitter {
           `Claude Code subprocess was idle for ${minutes} minutes${toolHint}${ctx} and was killed. ` +
           `This is a backstop for approval-gated or hung tool calls — if the request was reasonable, try again.` +
           stderrHint;
+        this.lastErrorClass = 'unknown';
+      } else if (!this.sawAnyOutput) {
+        // No tool in flight AND nothing has ever come back from the CLI —
+        // this is the classic unauthenticated-CLI wedge: the subprocess
+        // silently waits on stdin for OAuth credentials that will never
+        // arrive. Classify as 'auth' so the chat surfaces the login card
+        // instead of a terminal instruction the user can't act on
+        // (especially over Slack/Telegram). The message is intentionally
+        // short and surface-agnostic; the consumer renders the recovery
+        // affordance.
+        detail = 'Cerebro lost its Claude Code session.';
+        this.lastErrorClass = 'auth';
       } else {
+        // The CLI produced output, then went silent with no tool open. Almost
+        // always a transient mid-turn stall (a flaky upstream hop, a GC pause
+        // on a loaded box). Classify as a retryable idle_hang: the runtime
+        // re-spawns once on a fresh session rather than surfacing the raw
+        // "produced no output" string, so the user never sees a CLI error.
         const seconds = Math.round(IDLE_NO_TOOL_KILL_MS / 1000);
         detail =
-          `Claude Code produced no output for ${seconds} seconds${ctx} and was killed. ` +
-          'The CLI either isn\'t authenticated (run `claude` in a terminal to sign in) or is hung.' +
+          `Claude Code produced no output for ${seconds} seconds${ctx} and was killed.` +
           stderrHint;
+        this.lastErrorClass = 'idle_hang';
       }
-      this.lastErrorClass = 'unknown';
       if (this.process && !this.process.killed) {
         this.process.kill('SIGTERM');
+        // Give the CLI a real chance to flush + release its on-disk session
+        // lock before we SIGKILL. A SIGKILLed process orphans the lock, which
+        // wedges the next turn with "Session ID … is already in use" until the
+        // session-recovery path rotates it. 5s matches abort()'s grace.
         setTimeout(() => {
           if (this.process && !this.process.killed) this.process.kill('SIGKILL');
-        }, 2000);
+        }, 5000);
       }
       this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
       this.emit('error', detail);
@@ -621,7 +699,7 @@ export class ClaudeCodeRunner extends EventEmitter {
     this.clearIdleTimers();
     this.lastErrorClass = 'auth';
     const detail =
-      'Claude Code is not signed in. Open a terminal, run `claude` to sign in, then retry.';
+      'Cerebro lost its Claude Code session.';
     if (this.process && !this.process.killed) {
       this.process.kill('SIGTERM');
       setTimeout(() => {
@@ -660,6 +738,7 @@ export class ClaudeCodeRunner extends EventEmitter {
   }
 
   private handleJsonLine(line: string, runId: string): void {
+    this.sawAnyOutput = true;
     let parsed: any;
     try {
       parsed = JSON.parse(line);

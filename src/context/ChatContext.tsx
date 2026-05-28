@@ -516,10 +516,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           // when `--resume` fails because no on-disk session exists yet
           // (e.g., conversations created before sessions existed). Send
           // everything; the runtime applies an absolute 100 KB ceiling.
-          // Note: React batches state updates, so conversationsRef still has the
-          // pre-addMessage state here. No need to exclude the just-added message.
-          const recentMessages = allMessages
-            .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isThinking)
+          // Filter first (drops the just-added thinking placeholder), then
+          // drop the trailing user message if it matches what we're about
+          // to send. `await waitForConversation` above yields long enough
+          // for React to commit the just-added user message into
+          // conversationsRef, and including it would duplicate the prompt
+          // in the seed-recovery path AND wrongly mark this conversation
+          // as "having prior turns" before the assistant has responded.
+          const realMessages = allMessages
+            .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isThinking);
+          const lastReal = realMessages[realMessages.length - 1];
+          const priorMessages =
+            lastReal && lastReal.role === 'user' && lastReal.content === userContent
+              ? realMessages.slice(0, -1)
+              : realMessages;
+          const recentMessages = priorMessages
             .map((m) => {
               let enrichedContent = m.content;
               // Enrich assistant messages with successful tool call outputs
@@ -872,13 +883,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             state,
           };
         } catch (e) {
-          const errorMsg =
-            e instanceof Error ? e.message : 'An error occurred while starting the agent.';
+          // Never surface a raw exception string. The common case is the
+          // runtime single-flight guard (a previous turn still in flight);
+          // everything else gets a generic, friendly retry message.
+          const rawMsg = e instanceof Error ? e.message : '';
           activeRunRef.current = null;
           setIsStreaming(false);
           setIsThinking(false);
+          const friendly = /already has run|in flight|ConversationBusy/i.test(rawMsg)
+            ? i18n.t('chat.busyRetry')
+            : i18n.t('chat.startFailed');
           updateMessage(convId, assistantId, {
-            content: `Error: ${errorMsg}`,
+            content: friendly,
             isThinking: false,
             isStreaming: false,
           });

@@ -12,25 +12,10 @@ import * as pty from 'node-pty';
 import { getCachedClaudeCodeInfo } from '../claude-code/detector';
 import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
 import { toUuidFormat } from '../claude-code/session-id';
+import { stripAnsi, stripAnsiFull } from '../utils/ansi';
 
 const PTY_BUFFER_INTERVAL_MS = 16; // ~60fps
 const MAX_ACCUMULATED_TEXT = 512 * 1024; // cap ANSI-stripped text in memory
-
-/** Strip CSI codes used for coloring/cursor. Fast path for 'text' events. */
-function stripAnsi(data: string): string {
-  return data
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-    .replace(/\x1b\][^\x07]*\x07/g, '');
-}
-
-/** Aggressive strip including OSC, DCS, and 1-char ESC sequences for plaintext matching. */
-function stripAnsiAggressive(data: string): string {
-  return data
-    .replace(/\x1b\[[0-9;?]*[a-zA-Z@]/g, '')
-    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
-    .replace(/\x1b[PX^_][^\x1b]*\x1b\\/g, '')
-    .replace(/\x1b[=>NOc78]/g, '');
-}
 
 export interface TaskPtyRunOptions {
   runId: string;
@@ -187,7 +172,7 @@ export class TaskPtyRunner extends EventEmitter {
 
     this.ptyProcess.onData((data: string) => {
       if (!trustHandled) {
-        strippedAccum += stripAnsiAggressive(data);
+        strippedAccum += stripAnsiFull(data);
         if (/trust\s+this\s+folder/i.test(strippedAccum) || /Yes,\s*I\s*trust/i.test(strippedAccum)) {
           trustHandled = true;
           strippedAccum = '';
@@ -196,7 +181,7 @@ export class TaskPtyRunner extends EventEmitter {
       }
 
       if (!resumePromptInjected && !resumeInjectScheduled) {
-        resumeStripped += stripAnsiAggressive(data);
+        resumeStripped += stripAnsiFull(data);
         // Cap the buffer — the indicator match only needs the tail and the
         // stream can spew megabytes of history replay before the prompt shows.
         if (resumeStripped.length > 4096) {

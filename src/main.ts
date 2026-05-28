@@ -38,6 +38,9 @@ import {
   migrateLegacyContextFiles,
 } from './claude-code/installer';
 import { setClaudeCodeCwd } from './claude-code/single-shot';
+import { probeClaudeAuth } from './claude-code/auth-probe';
+import { getLoginOrchestrator } from './claude-code/login-orchestrator';
+import type { ClaudeCodeLoginMode, ClaudeCodeLoginSnapshot } from './types/ipc';
 import { generateConversationTitle } from './claude-code/generate-title';
 import { VoiceSessionManager } from './voice/session';
 import { TelegramBridge } from './telegram/bridge';
@@ -63,6 +66,7 @@ import {
 } from './updater';
 import type { UpdateAsset, UpdateActionResult } from './types/ipc';
 import { applyPendingRestore, consumeCompletionFlag } from './backup/swap';
+import { IntegrationStaging } from './files/staging';
 
 // Stdio EPIPE guard. When the Electron main process is launched under a
 // shell pipeline (`tail -f /dev/null | npm start`, electron-forge dev,
@@ -79,6 +83,38 @@ process.stderr.on('error', (err: NodeJS.ErrnoException) => {
 
 // Voice session manager (initialized after backend is healthy)
 let voiceSession: VoiceSessionManager | null = null;
+
+// Lazily-constructed staging for clipboard-pasted chat images.
+let chatStaging: IntegrationStaging | null = null;
+function getChatStaging(): IntegrationStaging {
+  if (!chatStaging) chatStaging = new IntegrationStaging(app.getPath('userData'));
+  return chatStaging;
+}
+
+// Magic-byte sniff so the renderer can't trick the main process into writing
+// arbitrary bytes through this channel. Cheap; covers the four MIME types we
+// allow on clipboard paste.
+function sniffImage(buf: Buffer, ext: string): boolean {
+  if (ext === 'png') {
+    return buf.length >= 8
+      && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47
+      && buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a;
+  }
+  if (ext === 'jpg') {
+    return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  }
+  if (ext === 'gif') {
+    return buf.length >= 6
+      && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38
+      && (buf[4] === 0x37 || buf[4] === 0x39) && buf[5] === 0x61;
+  }
+  if (ext === 'webp') {
+    return buf.length >= 12
+      && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+      && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50;
+  }
+  return false;
+}
 
 // Override Electron's default app identity in dev mode so the menu bar,
 // notifications, and dock label all read "Cerebro" instead of "Electron".
@@ -697,6 +733,15 @@ function registerIpcHandlers(): void {
     return backendStatus;
   });
 
+  // Bring the main window forward (e.g. from an OS notification click).
+  ipcMain.on(IPC_CHANNELS.WINDOW_FOCUS, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+
   // Start SSE stream
   ipcMain.handle(IPC_CHANNELS.STREAM_START, async (event, request: StreamRequest) => {
     const streamId = crypto.randomUUID();
@@ -833,6 +878,11 @@ function registerIpcHandlers(): void {
     return agentRuntime.cancelRun(runId);
   });
 
+  ipcMain.handle(IPC_CHANNELS.CHAT_RESET_SESSION, async (_event, conversationId: string) => {
+    if (!agentRuntime || !conversationId) return null;
+    return agentRuntime.rotateConversationSession(conversationId);
+  });
+
   ipcMain.handle(IPC_CHANNELS.AGENT_ACTIVE_RUNS, async () => {
     if (!agentRuntime) return [];
     return agentRuntime.getActiveRuns();
@@ -913,6 +963,37 @@ function registerIpcHandlers(): void {
     try { proc.kill(); } catch { /* already dead */ }
     shellSessions.delete(sessionKey);
   });
+
+  // --- Chat: clipboard image paste ---
+
+  // Persist clipboard-pasted image bytes to the chat staging dir so they can
+  // be referenced as an `@/abs/path` attachment by the agent runtime. Same
+  // staging root + 30-min TTL as the integration bridges.
+  ipcMain.handle(
+    IPC_CHANNELS.CHAT_SAVE_CLIPBOARD_IMAGE,
+    async (_event, input: { bytes: ArrayBuffer; mime: string }) => {
+      const ALLOWED: Record<string, string> = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/webp': 'webp',
+        'image/gif': 'gif',
+      };
+      const ext = ALLOWED[input?.mime ?? ''];
+      if (!ext) throw new Error(`Unsupported clipboard image type: ${input?.mime}`);
+
+      const buf = Buffer.from(input.bytes);
+      const MAX = 20 * 1024 * 1024;
+      if (buf.byteLength > MAX) throw new Error('clipboard image too large');
+      if (!sniffImage(buf, ext)) throw new Error('clipboard bytes are not a valid image');
+
+      const staging = getChatStaging();
+      const fileName = `clipboard-${crypto.randomUUID()}.${ext}`;
+      const filePath = staging.pathFor('chat', fileName);
+      await fs.promises.writeFile(filePath, buf);
+      staging.scheduleCleanup(filePath);
+      return { filePath, fileName, size: buf.byteLength };
+    },
+  );
 
   // --- Task Workspace (per-task isolated directory) ---
 
@@ -1209,66 +1290,48 @@ function registerIpcHandlers(): void {
     }, 2000);
   });
 
-  // Runtime auth probe. The detector tells us whether the binary exists;
-  // this tells us whether it's *usable*. Silent 5-min hangs in run_expert
-  // are most often Claude Code waiting on an auth that isn't there. We
-  // spawn a tiny `claude -p` and watch for the first stream-json line
-  // within 5 seconds. Result is cached for 60s so back-to-back routine
-  // runs don't keep spawning probe subprocesses.
-  let probeCache: { value: ClaudeCodeProbeResult; expiresAt: number } | null = null;
+  // Runtime auth probe. Delegates to the shared helper so other callers
+  // (ClaudeCodeRunner, single-shot) can use the same cached result.
   ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH, async (_event, opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult> => {
-    if (opts?.force) probeCache = null;
-    if (probeCache && probeCache.expiresAt > Date.now()) return probeCache.value;
-    const info = getCachedClaudeCodeInfo();
-    if (info.status !== 'available' || !info.path) {
-      const value: ClaudeCodeProbeResult = { ok: false, reason: 'Claude Code binary not found' };
-      probeCache = { value, expiresAt: Date.now() + 60_000 };
-      return value;
+    return probeClaudeAuth(opts);
+  });
+
+  // In-Cerebro login orchestrator — captures the OAuth URL from `claude
+  // /login` (or `claude setup-token`) and surfaces it through the chat
+  // sign-in card / bridge operator DMs. Bridges subscribe via the same
+  // event channel so a Slack operator can complete a setup-token paste
+  // without ever opening the renderer.
+  const loginOrchestrator = getLoginOrchestrator();
+  loginOrchestrator.on('update', (snap: ClaudeCodeLoginSnapshot) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try { win.webContents.send(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, snap); } catch { /* window closed */ }
     }
+  });
 
-    const result = await new Promise<ClaudeCodeProbeResult>((resolve) => {
-      const child = spawn(
-        info.path!,
-        ['-p', 'ping', '--max-turns', '1', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
-        { stdio: ['ignore', 'pipe', 'pipe'] },
-      );
-      let resolved = false;
-      let stderrTail = '';
-      const settle = (v: ClaudeCodeProbeResult) => {
-        if (resolved) return;
-        resolved = true;
-        if (!child.killed) {
-          child.kill('SIGTERM');
-          setTimeout(() => { if (!child.killed) child.kill('SIGKILL'); }, 1000);
-        }
-        resolve(v);
-      };
-      const timer = setTimeout(() => settle({ ok: false, reason: 'Probe timed out (5s) — Claude Code may not be authenticated.' }), 5000);
+  ipcMain.handle(
+    IPC_CHANNELS.CLAUDE_CODE_LOGIN_START,
+    async (_event, mode: ClaudeCodeLoginMode): Promise<ClaudeCodeLoginSnapshot> => {
+      if (mode !== 'oauth' && mode !== 'setup-token') {
+        throw new Error(`Unknown login mode: ${mode}`);
+      }
+      // If a stale attempt is still around, cancel it before kicking off a
+      // new one. The orchestrator otherwise rejects with a hard error.
+      if (loginOrchestrator.current()) {
+        loginOrchestrator.cancel();
+      }
+      return loginOrchestrator.start(mode);
+    },
+  );
 
-      child.stdout?.on('data', (chunk: Buffer) => {
-        const line = chunk.toString().trim();
-        if (line) {
-          clearTimeout(timer);
-          settle({ ok: true });
-        }
-      });
-      child.stderr?.on('data', (chunk: Buffer) => {
-        stderrTail = (stderrTail + chunk.toString()).slice(-300);
-      });
-      child.on('error', (err) => {
-        clearTimeout(timer);
-        settle({ ok: false, reason: `Spawn error: ${err.message}` });
-      });
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        settle({
-          ok: false,
-          reason: stderrTail.trim() || `Subprocess exited (code ${code}) before producing output.`,
-        });
-      });
-    });
-    probeCache = { value: result, expiresAt: Date.now() + 60_000 };
-    return result;
+  ipcMain.handle(
+    IPC_CHANNELS.CLAUDE_CODE_LOGIN_SUBMIT_CODE,
+    async (_event, payload: { loginId: string; code: string }): Promise<ClaudeCodeLoginSnapshot> => {
+      return loginOrchestrator.submitCode(payload.loginId, payload.code);
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_LOGIN_CANCEL, async (_event, loginId?: string): Promise<void> => {
+    loginOrchestrator.cancel(loginId);
   });
 
   // Open a terminal window running `claude` so the user can complete the
@@ -2017,6 +2080,11 @@ function registerIpcHandlers(): void {
     });
   });
 
+  ipcMain.handle(IPC_CHANNELS.SLACK_SET_OPERATOR_USER_ID, async (_event, userId: string | null) => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.setOperatorUserId(typeof userId === 'string' ? userId : null);
+  });
+
   ipcMain.handle(IPC_CHANNELS.SLACK_GET_MANIFEST, async () => {
     if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
     try {
@@ -2025,6 +2093,36 @@ function registerIpcHandlers(): void {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_LIST_WORKSPACE_USERS, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.listWorkspaceUsers();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_GET_EXPERT_ACCESS, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    try {
+      return { ok: true, config: slackBridge.getExpertAccessConfig() };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_SET_EXPERT_ACCESS, async (
+    _event,
+    args: {
+      defaultExpertAccess: string[] | null;
+      exceptions: Array<{ userId: string; expertIds: string[] }>;
+    },
+  ) => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.setExpertAccessConfig({
+      defaultExpertAccess: Array.isArray(args?.defaultExpertAccess) || args?.defaultExpertAccess === null
+        ? args.defaultExpertAccess
+        : null,
+      exceptions: Array.isArray(args?.exceptions) ? args.exceptions : [],
+    });
   });
 
   // --- WhatsApp bridge ---
@@ -2343,11 +2441,12 @@ const createWindow = () => {
     whatsAppBridge.setWebContents(mainWindow.webContents);
   }
 
-  // Open DevTools in dev mode — but never in E2E mode, where an extra
+  // Open DevTools only in local dev — never in packaged builds (end users
+  // shouldn't be greeted by it), and never in E2E mode, where an extra
   // DevTools WebContents exposes itself over CDP and Playwright can bind to
   // it instead of the actual renderer (the failing screenshots show only
   // DevTools with a blank left pane).
-  if (!process.env.CEREBRO_E2E_DEBUG_PORT) {
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL && !process.env.CEREBRO_E2E_DEBUG_PORT) {
     mainWindow.webContents.openDevTools();
   }
 

@@ -58,6 +58,16 @@ export interface AgentRunRequest {
    * the transcript from its own session file via `--resume`.
    */
   recentMessages?: MessageSnapshot[];
+  /**
+   * Explicit create-vs-resume hint for the Claude Code session. When set, it
+   * overrides the `recentMessages` heuristic the runtime would otherwise use
+   * (`true` → `--resume` an existing session, `false` → `--session-id` to
+   * create a fresh one). Callers that don't ship `recentMessages` (the Slack
+   * and Telegram bridges, which rely on Claude Code's own `--resume` to carry
+   * history) set this from whether the conversation already existed. Either
+   * way a wrong guess self-heals — the runtime falls back transparently
+   * (`session_missing` → create, `session_in_use` → resume). */
+  resume?: boolean;
   /** Routine proposals from earlier messages in this conversation. */
   routineProposals?: ProposalSnapshot[];
   /** Expert proposals from earlier messages in this conversation. */
@@ -104,12 +114,20 @@ export interface AgentRunRequest {
   interactiveResume?: boolean;
   /** Origin of this run — used to route approvals/errors back to the right surface. */
   source?: AgentRunSource;
+  /**
+   * Optional per-run expert allowlist (by expert id). When provided as a
+   * non-null array, the default Cerebro agent's `list-experts` roster and
+   * any `delegate_to_expert` call are restricted to these ids. Used by the
+   * Slack bridge to enforce per-person expert access. `null` / undefined
+   * keeps the unrestricted behaviour.
+   */
+  accessibleExpertIds?: string[] | null;
 }
 
 export type AgentRunSource =
   | { kind: 'ui' }
   | { kind: 'telegram'; chatId: number }
-  | { kind: 'slack'; channel: string; threadTs: string; teamId: string };
+  | { kind: 'slack'; channel: string; threadTs: string | undefined; teamId: string };
 
 // ── Events sent to renderer ─────────────────────────────────────
 

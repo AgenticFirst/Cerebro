@@ -18,6 +18,8 @@ import type {
   SlackVerifyResponse,
   SlackStatusResponse,
   SlackConversationUpdatedEvent,
+  SlackWorkspaceUser,
+  SlackExpertAccessConfig,
   WhatsAppStatusResponse,
   WhatsAppConversationUpdatedEvent,
   HubSpotStatusResponse,
@@ -41,7 +43,12 @@ import type {
 } from './types/ipc';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
-import type { ClaudeCodeInstallResult, ClaudeCodeProbeResult } from './types/ipc';
+import type {
+  ClaudeCodeInstallResult,
+  ClaudeCodeProbeResult,
+  ClaudeCodeLoginMode,
+  ClaudeCodeLoginSnapshot,
+} from './types/ipc';
 import type { VoiceSessionEvent } from './voice/types';
 
 const api: CerebroAPI = {
@@ -55,6 +62,14 @@ const api: CerebroAPI = {
 
   getPathForFile(file: File): string {
     return webUtils.getPathForFile(file);
+  },
+
+  saveClipboardImage(input) {
+    return ipcRenderer.invoke(IPC_CHANNELS.CHAT_SAVE_CLIPBOARD_IMAGE, input);
+  },
+
+  focusWindow(): void {
+    ipcRenderer.send(IPC_CHANNELS.WINDOW_FOCUS);
   },
 
   startStream(request: StreamRequest): Promise<string> {
@@ -164,6 +179,22 @@ const api: CerebroAPI = {
     },
     openLogin(): Promise<{ ok: boolean; reason?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_OPEN_LOGIN);
+    },
+    login: {
+      start(mode: ClaudeCodeLoginMode): Promise<ClaudeCodeLoginSnapshot> {
+        return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_LOGIN_START, mode);
+      },
+      submitCode(loginId: string, code: string): Promise<ClaudeCodeLoginSnapshot> {
+        return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_LOGIN_SUBMIT_CODE, { loginId, code });
+      },
+      cancel(loginId?: string): Promise<void> {
+        return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_LOGIN_CANCEL, loginId);
+      },
+      onEvent(callback: (snapshot: ClaudeCodeLoginSnapshot) => void): () => void {
+        const listener = (_e: Electron.IpcRendererEvent, snap: ClaudeCodeLoginSnapshot) => callback(snap);
+        ipcRenderer.on(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, listener);
+        return () => { ipcRenderer.removeListener(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, listener); };
+      },
     },
   },
 
@@ -362,8 +393,20 @@ const api: CerebroAPI = {
     setAllowlist(args: { channels: string[]; users: string[] }): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.SLACK_SET_ALLOWLIST, args);
     },
+    setOperatorUserId(userId: string | null): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_SET_OPERATOR_USER_ID, userId);
+    },
     getManifest(): Promise<{ ok: boolean; yaml?: string; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.SLACK_GET_MANIFEST);
+    },
+    listWorkspaceUsers(): Promise<{ ok: boolean; users?: SlackWorkspaceUser[]; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_LIST_WORKSPACE_USERS);
+    },
+    getExpertAccess(): Promise<{ ok: boolean; config?: SlackExpertAccessConfig; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_GET_EXPERT_ACCESS);
+    },
+    setExpertAccess(config: SlackExpertAccessConfig): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SLACK_SET_EXPERT_ACCESS, config);
     },
     onConversationUpdated(
       callback: (event: SlackConversationUpdatedEvent) => void,
@@ -521,6 +564,9 @@ const api: CerebroAPI = {
       assistantResponse?: string;
     }): Promise<string | null> {
       return ipcRenderer.invoke(IPC_CHANNELS.CHAT_GENERATE_TITLE, args);
+    },
+    resetSession(conversationId: string): Promise<string | null> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CHAT_RESET_SESSION, conversationId);
     },
   },
 

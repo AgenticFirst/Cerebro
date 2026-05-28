@@ -28,6 +28,7 @@ export interface AgentEventSink {
 }
 import { ClaudeCodeRunner, type RunnerErrorClass } from '../claude-code/stream-adapter';
 import { toUuidFormat } from '../claude-code/session-id';
+import { clearProbeCache } from '../claude-code/auth-probe';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
 import { isReplIdleTail } from './completion-detection';
@@ -40,6 +41,28 @@ import { buildSystemPrompt } from '../i18n/language-directive';
 
 /** Cap concurrent runs to prevent spawning a wall of subprocesses. */
 const MAX_CONCURRENT_RUNS = 5;
+
+/**
+ * Project per-request scoping policies (per-user expert allowlist, etc.)
+ * onto the subprocess environment so `list-experts.sh` and the
+ * `delegate_to_expert` chat-action can honour them without any shared state.
+ */
+function buildExtraEnv(request: AgentRunRequest): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  if (Array.isArray(request.accessibleExpertIds)) {
+    // Empty allowlist deliberately becomes an empty string — meaningful
+    // "no experts at all". `list-experts.sh` checks for the variable's
+    // presence (not just non-empty value).
+    out.CEREBRO_EXPERT_ALLOWLIST = request.accessibleExpertIds.join(',');
+    out.CEREBRO_EXPERT_ALLOWLIST_SET = '1';
+  }
+  if (request.conversationId) {
+    // `run-chat-action.sh` stamps this onto the action request body so the
+    // engine can attribute the approval back to this conversation's thread.
+    out.CEREBRO_CONVERSATION_ID = request.conversationId;
+  }
+  return Object.keys(out).length === 0 ? undefined : out;
+}
 
 /**
  * Thrown when a caller tries to spawn a chat run on a conversation that
@@ -95,6 +118,50 @@ function maxTurnsForTier(tier: QualityTier): number {
 /** Whether a runner error class warrants an automatic retry. */
 function isEscalatable(cls: RunnerErrorClass): boolean {
   return cls === 'max_turns' || cls === 'context' || cls === 'overload';
+}
+
+/**
+ * Map a terminal runner error class to the message we actually show the user.
+ * Cerebro mimics Claude Code, which never surfaces a raw CLI error — so every
+ * class except 'auth' (which drives the in-app login card / operator flow and
+ * is suppressed before it's shown raw) is rewritten to clean, bilingual copy
+ * with no "Claude Code (code N)" / "Session ID … in use" leakage. The raw
+ * detail is still written to the per-run log for debugging.
+ */
+function friendlySurfaceError(cls: RunnerErrorClass, lang: string | undefined, raw: string): string {
+  const es = lang === 'es';
+  switch (cls) {
+    case 'auth':
+      // Keep as-is: errorClass:'auth' renders the login card in-app and routes
+      // to the operator setup-token flow over Slack/Telegram; the raw text is
+      // suppressed on every surface before it would be shown.
+      return raw;
+    case 'session_in_use':
+      return es
+        ? 'Esa conversación todavía está ocupada con un mensaje anterior. Dale un momento e inténtalo de nuevo.'
+        : 'That conversation is still busy with a previous message. Give it a moment and try again.';
+    case 'idle_hang':
+      return es
+        ? 'Eso tardó más de lo esperado. Por favor, inténtalo de nuevo.'
+        : 'That took longer than expected. Please try again.';
+    case 'max_turns':
+      return es
+        ? 'No pude completar eso en los pasos disponibles. Intenta dividirlo en una solicitud más simple.'
+        : "I couldn't finish that within the available steps. Try breaking it into a simpler request.";
+    case 'context':
+      return es
+        ? 'Esta conversación es demasiado larga para procesarla de una vez. Empieza una nueva o resume el tema.'
+        : 'This conversation has grown too long to process at once. Start a new one or summarize the topic.';
+    case 'overload':
+      return es
+        ? 'El servicio está saturado en este momento. Espera un momento e inténtalo de nuevo.'
+        : 'The service is busy right now. Please wait a moment and try again.';
+    default:
+      // 'unknown', 'spawn', and any raw CLI exit dump.
+      return es
+        ? 'Algo salió mal de mi lado. Por favor, inténtalo de nuevo en un momento.'
+        : 'Something went wrong on my end. Please try again in a moment.';
+  }
 }
 
 /** Pick the next (model, tier) rung. Returns null when we're already at
@@ -1030,14 +1097,41 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       const initialModel = normalizeModel(request.model);
       const userOverrodeMaxTurns = typeof request.maxTurns === 'number';
 
-      // Each Cerebro conversation maps 1:1 to a Claude Code session. The
-      // session id is derived deterministically from conversationId so the
-      // same chat always lands in the same on-disk session file.
-      const sessionId = toUuidFormat(conversationId);
-      const hasPriorMessages = !!(request.recentMessages && request.recentMessages.length > 0);
+      // Each Cerebro conversation maps 1:1 to a Claude Code session. The id
+      // is normally derived deterministically from conversationId so the same
+      // chat always lands in the same on-disk session file. If a previous
+      // session got wedged (an orphaned on-disk lock that even --resume can't
+      // open), the recovery path below rotates to a fresh id and persists it
+      // under `claude_session:<conversationId>`; we honor that stored id here
+      // so future turns — and restarts — skip straight to the healthy session
+      // instead of re-colliding on the wedged deterministic one.
+      let sessionId = (await this.getStoredClaudeSessionId(conversationId)) ?? toUuidFormat(conversationId);
+      // Only resume when this conversation has at least one prior ASSISTANT
+      // turn — that's the load-bearing signal that a Claude Code session
+      // file exists on disk. The renderer may include the just-typed user
+      // message in `recentMessages` (state batching is more forgiving than
+      // its caller assumes), so a length>0 check would (wrongly) try to
+      // --resume a session that was never created on the first turn,
+      // surfacing a confusing "session not found" error.
+      // Callers that ship a transcript (the app) let the assistant-message
+      // heuristic decide; callers that don't (Slack/Telegram bridges) pass an
+      // explicit `resume` hint. Either guess self-heals via the bidirectional
+      // session recovery below.
+      const hasPriorMessages = request.resume ?? !!request.recentMessages?.some((m) => m.role === 'assistant');
       // Track whether the seed-on-missing-session fallback has already
       // fired for this run, so a misconfiguration can't loop us forever.
       let sessionSeedAttempted = false;
+      // Mirror guard for the reverse fallback: a --session-id spawn that
+      // collided with an existing on-disk session is retried once as --resume.
+      let sessionResumeAttempted = false;
+      // Last-resort guard: when even the --resume retry hits "already in use"
+      // (a genuinely orphaned/held lock), rotate to a brand-new session id
+      // once. A fresh UUID can't collide with anything, so the conversation
+      // can never stay permanently wedged.
+      let sessionRotated = false;
+      // A no-tool idle-watchdog kill (idle_hang) is retried once on a fresh
+      // probe, so a transient mid-turn stall never surfaces the raw CLI string.
+      let idleRetryAttempted = false;
 
       const spawnAttempt = (
         attempt: number,
@@ -1063,6 +1157,22 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
           if (event.type === 'text_delta') {
             attemptText += event.delta;
             activeRun.accumulatedText = attemptText;
+          }
+          // Swallow the error event when the matching 'error' handler is
+          // about to fire transparent session_missing recovery. Without
+          // this, the renderer's case 'error' handler runs first,
+          // unsubscribes from `agent:event:<runId>`, and writes the
+          // internal error string as the assistant message — the recovery
+          // attempt then streams to a dead listener.
+          if (event.type === 'error') {
+            const ec = runner.getLastErrorClass();
+            if (ec === 'session_missing' && !sessionSeedAttempted) return;
+            // `!sessionRotated` is the exact superset of "a session_in_use
+            // retry will fire below" — both the --resume retry and the
+            // rotation escape-hatch run while sessionRotated is still false,
+            // and only the post-rotation survivor is allowed to surface.
+            if (ec === 'session_in_use' && !sessionRotated) return;
+            if (ec === 'idle_hang' && !idleRetryAttempted) return;
           }
           this.deliverEvent(runId, webContents, event);
         });
@@ -1096,6 +1206,51 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
             return;
           }
 
+          // Mirror of the above: we spawned with --session-id but Claude Code
+          // already has an on-disk session for this conversation (an earlier
+          // turn created it; the create-vs-resume guess was stale). Retry the
+          // same id with --resume — Claude Code reloads the transcript itself,
+          // so no seed prompt is needed.
+          if (cls === 'session_in_use' && resume === false && !sessionResumeAttempted) {
+            sessionResumeAttempted = true;
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt, model, tier, turns, true, promptForAttempt);
+            return;
+          }
+
+          // Escape hatch: the --resume retry ALSO hit "already in use" (or the
+          // first turn was a --resume that did). The on-disk lock is orphaned
+          // or held and neither create nor resume can open the deterministic
+          // id. Rotate to a brand-new session UUID, persist it so future turns
+          // and restarts use it, and seed the fresh session with SQLite
+          // history. A new UUID can't collide, so the conversation can never
+          // stay permanently wedged.
+          if (cls === 'session_in_use' && !sessionRotated) {
+            sessionRotated = true;
+            sessionId = crypto.randomUUID();
+            void this.setStoredClaudeSessionId(conversationId, sessionId);
+            const seeded = buildSeedPrompt(request.recentMessages ?? [], resolvedContent);
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt, model, tier, turns, false, seeded);
+            return;
+          }
+
+          // A no-tool idle kill (the CLI went silent mid-turn). Retry once,
+          // first busting the auth-probe cache so the retry's pre-flight does a
+          // REAL credential check: a genuine mid-session auth expiry then routes
+          // to 'auth' (login card), while a transient stall just re-runs. Either
+          // way the user never sees the raw "produced no output" string.
+          if (cls === 'idle_hang' && !idleRetryAttempted) {
+            idleRetryAttempted = true;
+            clearProbeCache();
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt, model, tier, turns, resume, promptForAttempt);
+            return;
+          }
+
           const next = isEscalatable(cls) && attempt < MAX_ESCALATION_ATTEMPTS
             ? nextRung(model, tier)
             : null;
@@ -1121,16 +1276,21 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
             spawnAttempt(attempt + 1, next.model, next.tier, nextTurns, resume, promptForAttempt);
             return;
           }
-          // Non-retryable or ladder exhausted — surface the error.
-          // `errorClass` lets the chat UI render class-specific recovery
-          // affordances (e.g. "Sign in to Claude Code" for auth failures).
+          // Non-retryable or ladder exhausted — surface the error. We never
+          // leak the raw CLI string ("Claude Code error (code N): …"): Cerebro
+          // mimics Claude Code, which never shows the user a CLI error. The raw
+          // detail still lands in the per-run log (closeRunLog) for debugging.
+          // `errorClass` is preserved so the UI/bridges can still render
+          // class-specific recovery affordances (the in-app login card for
+          // 'auth', the operator setup-token flow over Slack/Telegram).
+          const surfacedError = friendlySurfaceError(cls, request.language, error);
           this.deliverEvent(runId, webContents, {
             type: 'error',
             runId,
-            error,
+            error: surfacedError,
             errorClass: cls === 'none' ? 'unknown' : cls,
           } as RendererAgentEvent);
-          this.finalizeRun(runId, 'error', activeRun.accumulatedText, error);
+          this.finalizeRun(runId, 'error', activeRun.accumulatedText, surfacedError);
           this.postRunSync(webContents);
         });
 
@@ -1145,6 +1305,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
           qualityTier: tier,
           sessionId,
           resume,
+          extraEnv: buildExtraEnv(request),
         });
       };
 
@@ -1328,6 +1489,50 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     const next = this.syncChain.then(op, op);
     this.syncChain = next.catch(() => {});
     await next;
+  }
+
+  // ── Claude Code session-id persistence ─────────────────────────
+  // A conversation's session id is normally the deterministic
+  // toUuidFormat(conversationId). When a session gets wedged (an orphaned
+  // on-disk lock that neither --session-id nor --resume can open), the
+  // recovery path rotates to a fresh id and persists it here so future turns
+  // and app restarts skip straight to the healthy session. Stored in the
+  // existing settings key/value table — no schema change, GET 404 → null.
+
+  private sessionSettingKey(conversationId: string): string {
+    return `claude_session:${conversationId}`;
+  }
+
+  /** Rotated session id for this conversation, or null to use the default. */
+  private async getStoredClaudeSessionId(conversationId: string): Promise<string | null> {
+    if (!conversationId) return null;
+    const row = await this.backendGet<{ value?: string }>(
+      `/settings/${encodeURIComponent(this.sessionSettingKey(conversationId))}`,
+    );
+    const v = row?.value;
+    // Only honor a well-formed UUID; anything else falls back to the default.
+    return v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+  }
+
+  private async setStoredClaudeSessionId(conversationId: string, uuid: string): Promise<void> {
+    if (!conversationId) return;
+    await this.backendRequest(
+      'PUT',
+      `/settings/${encodeURIComponent(this.sessionSettingKey(conversationId))}`,
+      { value: uuid },
+    );
+  }
+
+  /**
+   * Operator escape hatch: force a fresh Claude Code session for a
+   * conversation. Mints a new random UUID (NOT a delete — deleting would
+   * revert to the possibly-wedged deterministic id) and persists it; the next
+   * turn seeds the fresh session from SQLite history. Returns the new id.
+   */
+  async rotateConversationSession(conversationId: string): Promise<string> {
+    const uuid = crypto.randomUUID();
+    await this.setStoredClaudeSessionId(conversationId, uuid);
+    return uuid;
   }
 
   private backendGet<T>(path: string): Promise<T | null> {

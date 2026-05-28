@@ -12,7 +12,7 @@ import IntegrationSetupCard from './IntegrationSetupCard';
 import ExpertProposalCard from './ExpertProposalCard';
 import TeamProposalCard from './TeamProposalCard';
 import TeamRunCard from './TeamRunCard';
-import AuthRecoveryCard from './AuthRecoveryCard';
+import ClaudeCodeLoginCard from './ClaudeCodeLoginCard';
 import AttachmentChip from './AttachmentChip';
 import {
   parseFileRefs,
@@ -227,11 +227,13 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
         </div>
       )}
 
-      {/* Auth-recovery card — replaces the raw "Error: ..." string when
-          Claude Code lost its session. Renders a one-click Sign In + Retry
-          flow instead of leaving the user to copy a 401 stack trace. */}
+      {/* Sign-in card — replaces the raw "Error: ..." string when
+          Claude Code lost its session. Runs the login flow in-process
+          (captures the OAuth URL via PTY) so the user never has to drop
+          to a terminal — the bug that produced the leaked "run claude in
+          a terminal to sign in" message in Slack. */}
       {!isUser && message.errorClass === 'auth' && (
-        <AuthRecoveryCard
+        <ClaudeCodeLoginCard
           conversationId={message.conversationId}
           messageId={message.id}
         />

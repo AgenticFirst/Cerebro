@@ -30,6 +30,13 @@ vi.mock('./detector', () => ({
   getCachedClaudeCodeInfo: () => ({ status: 'available', path: '/fake/claude' }),
 }));
 
+// Pre-flight auth probe is async; force it to resolve `ok: true` so the
+// runner spawns the fake child without waiting on real subprocess IO.
+vi.mock('./auth-probe', () => ({
+  probeClaudeAuth: vi.fn(async () => ({ ok: true })),
+  clearProbeCache: vi.fn(),
+}));
+
 vi.mock('../sandbox/wrap-spawn', () => ({
   wrapClaudeSpawn: (input: { claudeBinary: string; claudeArgs: string[] }) => ({
     binary: input.claudeBinary,
@@ -54,7 +61,7 @@ vi.mock('../python/venv', () => ({
 // Import AFTER mocks are registered
 import { ClaudeCodeRunner } from './stream-adapter';
 
-function startRunner(opts?: Partial<{ runId: string; prompt: string; agentName: string; cwd: string }>) {
+async function startRunner(opts?: Partial<{ runId: string; prompt: string; agentName: string; cwd: string }>) {
   const runner = new ClaudeCodeRunner();
   const events: Array<{ type: string; payload: any }> = [];
   const errors: string[] = [];
@@ -68,6 +75,12 @@ function startRunner(opts?: Partial<{ runId: string; prompt: string; agentName: 
     agentName: opts?.agentName ?? 'design-expert-xyz',
     cwd: opts?.cwd ?? '/tmp/cerebro-data',
   });
+  // The pre-flight probe is async. Drain a few microtask cycles so the
+  // probe resolves and the runner reaches its `spawn` call before the
+  // test driver tries to write to `currentChild.stdout`.
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve();
+  }
   return { runner, events, errors, dones };
 }
 
@@ -82,7 +95,7 @@ describe('ClaudeCodeRunner error mapping', () => {
   });
 
   it('falls back to an enriched diagnostic when stderr/stdout/result are all empty', async () => {
-    const { events, errors } = startRunner();
+    const { events, errors } = await startRunner();
     currentChild!.emit('close', 1, null);
     await Promise.resolve();
 
@@ -103,7 +116,7 @@ describe('ClaudeCodeRunner error mapping', () => {
     // The close handler classifies off the payload and prefers a clean,
     // user-actionable string over the raw CLI text (which can include
     // confusing "success:" subtype prefixes or full API stack traces).
-    const { runner, errors } = startRunner();
+    const { runner, errors } = await startRunner();
     const resultErr = {
       type: 'result',
       is_error: true,
@@ -125,7 +138,7 @@ describe('ClaudeCodeRunner error mapping', () => {
     // authenticate..." string, which read like a bug in Cerebro. Now we
     // detect 401/unauthorized in the result tail and surface the canned
     // "not signed in" message instead, so the auth-recovery card fires.
-    const { runner, errors } = startRunner();
+    const { runner, errors } = await startRunner();
     const resultErr = {
       type: 'result',
       is_error: true,
@@ -136,13 +149,13 @@ describe('ClaudeCodeRunner error mapping', () => {
     await new Promise((r) => setImmediate(r));
     currentChild!.emit('close', 1, null);
     await Promise.resolve();
-    expect(errors[0]).toMatch(/not signed in/);
+    expect(errors[0]).toMatch(/Cerebro lost its Claude Code session/);
     expect(errors[0]).not.toMatch(/success:/);
     expect(runner.getLastErrorClass()).toBe('auth');
   });
 
   it('maps stderr "max turns" to a reached-max-turns message', async () => {
-    const { errors } = startRunner();
+    const { errors } = await startRunner();
     currentChild!.stderr.write('Agent exceeded max turns\n');
     // Give the listener a tick to append into stderrTail
     await new Promise((r) => setImmediate(r));
@@ -152,7 +165,7 @@ describe('ClaudeCodeRunner error mapping', () => {
   });
 
   it('maps stderr "rate limit" to the rate-limit message', async () => {
-    const { errors } = startRunner();
+    const { errors } = await startRunner();
     currentChild!.stderr.write('rate limit exceeded\n');
     await new Promise((r) => setImmediate(r));
     currentChild!.emit('close', 1, null);
@@ -161,7 +174,7 @@ describe('ClaudeCodeRunner error mapping', () => {
   });
 
   it('maps stderr "429" to the rate-limit message', async () => {
-    const { errors } = startRunner();
+    const { errors } = await startRunner();
     currentChild!.stderr.write('HTTP 429 Too Many Requests\n');
     await new Promise((r) => setImmediate(r));
     currentChild!.emit('close', 1, null);
@@ -170,32 +183,46 @@ describe('ClaudeCodeRunner error mapping', () => {
   });
 
   it('maps stderr "authentication" to the auth-error message', async () => {
-    const { errors } = startRunner();
+    const { errors } = await startRunner();
     currentChild!.stderr.write('authentication failed: token expired\n');
     await new Promise((r) => setImmediate(r));
     currentChild!.emit('close', 1, null);
     await Promise.resolve();
-    expect(errors[0]).toMatch(/not signed in/);
+    expect(errors[0]).toMatch(/Cerebro lost its Claude Code session/);
   });
 
   it('maps stderr "401" to the auth-error message', async () => {
-    const { errors } = startRunner();
+    const { errors } = await startRunner();
     currentChild!.stderr.write('HTTP 401 Unauthorized\n');
     await new Promise((r) => setImmediate(r));
     currentChild!.emit('close', 1, null);
     await Promise.resolve();
-    expect(errors[0]).toMatch(/not signed in/);
+    expect(errors[0]).toMatch(/Cerebro lost its Claude Code session/);
+  });
+
+  it('classifies a "Session ID … is already in use" stderr as session_in_use', async () => {
+    const { runner, errors } = await startRunner();
+    currentChild!.stderr.write(
+      'Error: Session ID d4ae5fa7-c4bb-4d11-af29-7f3032f75d51 is already in use.\n',
+    );
+    await new Promise((r) => setImmediate(r));
+    currentChild!.emit('close', 1, null);
+    await Promise.resolve();
+    expect(runner.getLastErrorClass()).toBe('session_in_use');
+    // The raw CLI string must not leak — the runtime recovers transparently.
+    expect(errors[0]).not.toMatch(/already in use/i);
+    expect(errors[0]).toMatch(/existing Claude Code session/i);
   });
 
   it('maps SIGTERM signal kill to "killed by" message', async () => {
-    const { errors } = startRunner();
+    const { errors } = await startRunner();
     currentChild!.emit('close', null, 'SIGTERM');
     await Promise.resolve();
     expect(errors[0]).toMatch(/killed by SIGTERM/);
   });
 
   it('treats numeric signal "0" as a normal exit (not an error)', async () => {
-    const { errors, dones } = startRunner();
+    const { errors, dones } = await startRunner();
     // macOS node-pty / some spawn paths report signal as the string "0" for clean exits.
     currentChild!.emit('close', 0, '0' as unknown as NodeJS.Signals);
     await Promise.resolve();
@@ -204,7 +231,7 @@ describe('ClaudeCodeRunner error mapping', () => {
   });
 
   it('propagates spawn ENOENT via process "error" event', async () => {
-    const { errors } = startRunner();
+    const { errors } = await startRunner();
     currentChild!.emit('error', new Error('spawn claude ENOENT'));
     await Promise.resolve();
     expect(errors[0]).toContain('ENOENT');
@@ -212,7 +239,7 @@ describe('ClaudeCodeRunner error mapping', () => {
 
   it('when stderr is empty but stdout has a non-JSON error line, the error detail should include that line (post-fix)', async () => {
     // This is the expected post-fix behavior. Pre-fix, the detail is generic.
-    const { errors } = startRunner();
+    const { errors } = await startRunner();
     currentChild!.stdout.write('Error: Unknown agent "design-expert-abc"\n');
     await new Promise((r) => setImmediate(r));
     currentChild!.emit('close', 1, null);
@@ -223,13 +250,13 @@ describe('ClaudeCodeRunner error mapping', () => {
   });
 
   it('treats signal "SIGKILL" as an error', async () => {
-    const { errors } = startRunner();
+    const { errors } = await startRunner();
     currentChild!.emit('close', null, 'SIGKILL');
     await Promise.resolve();
     expect(errors[0]).toMatch(/killed by SIGKILL/);
   });
 
-  it('when Claude Code is not available, emits an error event and does not spawn', () => {
+  it('when Claude Code is not available, emits an error event and does not spawn', async () => {
     // Re-mock detector to unavailable for this single test
     vi.doMock('./detector', () => ({
       getCachedClaudeCodeInfo: () => ({ status: 'not_installed', path: null }),
@@ -239,7 +266,7 @@ describe('ClaudeCodeRunner error mapping', () => {
     // direct code path: start a runner normally and confirm spawn was called.
     // (Full unavailable-path coverage is exercised at the runtime.ts level.)
     const before = spawnCalls.length;
-    startRunner();
+    await startRunner();
     expect(spawnCalls.length).toBe(before + 1);
     vi.doUnmock('./detector');
   });
@@ -251,8 +278,8 @@ describe('ClaudeCodeRunner happy path', () => {
     spawnCalls.length = 0;
   });
 
-  it('passes --agent, cwd, and strips CLAUDECODE env', () => {
-    startRunner({ agentName: 'my-expert-abc123', cwd: '/my/data/dir' });
+  it('passes --agent, cwd, and strips CLAUDECODE env', async () => {
+    await startRunner({ agentName: 'my-expert-abc123', cwd: '/my/data/dir' });
     expect(spawnCalls).toHaveLength(1);
     const call = spawnCalls[0];
     expect(call.args).toContain('--agent');
@@ -263,7 +290,7 @@ describe('ClaudeCodeRunner happy path', () => {
   });
 
   it('emits done with accumulated text on clean exit', async () => {
-    const { events, dones } = startRunner();
+    const { events, dones } = await startRunner();
     const assistantBlock = {
       type: 'assistant',
       message: { content: [{ type: 'text', text: 'Hello!' }] },
@@ -291,17 +318,23 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     vi.useRealTimers();
   });
 
-  it('kills the subprocess after 60s of total silence with the auth-hint error', () => {
-    const { events } = startRunner();
-    vi.advanceTimersByTime(60_001);
+  it('reclassifies a boot-time 90s silent hang (no output ever) as an auth wedge with a short, surface-agnostic message', async () => {
+    // Pre-fix behavior used to emit a long string instructing the user to
+    // "run `claude` in a terminal to sign in" — useless and confusing on
+    // Slack/Telegram surfaces. Post-fix the runner classifies the no-tool
+    // /no-output wedge as `errorClass: 'auth'` so consumers render their
+    // own recovery affordance (login card, operator DM, etc.).
+    const { runner, events } = await startRunner();
+    vi.advanceTimersByTime(90_001); // past IDLE_NO_TOOL_KILL_MS
     const errorEvents = events.filter((e) => e.type === 'error');
     expect(errorEvents).toHaveLength(1);
-    expect(errorEvents[0].payload.error).toMatch(/produced no output for 60 seconds/);
-    expect(errorEvents[0].payload.error).toMatch(/isn't authenticated/);
+    expect(errorEvents[0].payload.error).toMatch(/Cerebro lost its Claude Code session/);
+    expect(errorEvents[0].payload.error).not.toMatch(/in a terminal/);
+    expect(runner.getLastErrorClass()).toBe('auth');
   });
 
-  it('does not kill at 60s while a tool_use is in flight', () => {
-    const { events } = startRunner();
+  it('does not kill at 60s while a tool_use is in flight', async () => {
+    const { events } = await startRunner();
     const toolUse = {
       type: 'assistant',
       message: { content: [{ type: 'tool_use', id: 'tool-1', name: 'Bash', input: {} }] },
@@ -315,8 +348,8 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     expect(errorEvents).toHaveLength(0);
   });
 
-  it('kills at the tool ceiling (1800s) with a tool-aware error message', () => {
-    const { events } = startRunner();
+  it('kills at the tool ceiling (1800s) with a tool-aware error message', async () => {
+    const { events } = await startRunner();
     const toolUse = {
       type: 'assistant',
       message: { content: [{ type: 'tool_use', id: 'tool-1', name: 'Bash', input: {} }] },
@@ -332,8 +365,8 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     expect(errorEvents[0].payload.error).not.toMatch(/isn't authenticated/);
   });
 
-  it('reverts to the 60s idle ceiling after tool_result returns', () => {
-    const { events } = startRunner();
+  it('reverts to the no-tool idle ceiling (90s) after tool_result returns', async () => {
+    const { runner, events } = await startRunner();
     const toolUse = {
       type: 'assistant',
       message: { content: [{ type: 'tool_use', id: 'tool-1', name: 'Bash', input: {} }] },
@@ -341,7 +374,7 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     currentChild!.stdout.write(JSON.stringify(toolUse) + '\n');
     vi.advanceTimersByTime(0);
 
-    // Tool returned — drop back to 60s mode.
+    // Tool returned — drop back to the no-tool ceiling.
     const toolResult = {
       type: 'user',
       message: { content: [{ type: 'tool_result', tool_use_id: 'tool-1', content: 'ok' }] },
@@ -349,9 +382,12 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     currentChild!.stdout.write(JSON.stringify(toolResult) + '\n');
     vi.advanceTimersByTime(0);
 
-    vi.advanceTimersByTime(60_001);
+    vi.advanceTimersByTime(90_001);
     const errorEvents = events.filter((e) => e.type === 'error');
     expect(errorEvents).toHaveLength(1);
-    expect(errorEvents[0].payload.error).toMatch(/produced no output for 60 seconds/);
+    // Output was seen (the tool round-trip), so this is a retryable idle_hang,
+    // not the no-output-ever auth wedge.
+    expect(errorEvents[0].payload.error).toMatch(/produced no output for 90 seconds/);
+    expect(runner.getLastErrorClass()).toBe('idle_hang');
   });
 });

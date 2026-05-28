@@ -87,6 +87,16 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [refresh]);
 
+  // Safety net: re-sync whenever the window regains focus. Self-heals the badge
+  // if an approval event was ever missed (e.g. an approval created from a
+  // Slack/Telegram-driven chat while Cerebro was backgrounded, or the renderer
+  // was mid-reload when the IPC event fired).
+  useEffect(() => {
+    const onFocus = () => void refresh();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refresh]);
+
   const value: ApprovalContextValue = {
     pendingApprovals,
     pendingCount: pendingApprovals.length,

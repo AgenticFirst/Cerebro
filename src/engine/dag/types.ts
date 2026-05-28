@@ -81,6 +81,11 @@ export interface EngineRunRequest {
    *  Chat-triggered single-action runs use 'chat_action'. */
   runType?: 'routine' | 'preview' | 'ad_hoc' | 'orchestration' | 'task' | 'chat_action';
 
+  /** Conversation that originated this run, when known. Propagated onto the
+   *  emitted events' context so the Slack/Telegram bridges can route
+   *  approvals back to the exact originating thread. */
+  conversationId?: string;
+
   /** Dry-run mode: side-effecty actions are replaced with synthetic-success
    *  stubs and approval gates auto-pass, so the routine's wiring, schemas,
    *  and templates can be verified end-to-end without real API calls.
