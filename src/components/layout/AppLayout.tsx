@@ -20,6 +20,7 @@ import SkillsLibraryScreen from '../screens/SkillsLibraryScreen';
 import CallScreen from '../screens/CallScreen';
 import TasksScreen from '../screens/TasksScreen';
 import FilesScreen from '../screens/FilesScreen';
+import KnowledgeBaseScreen from '../screens/knowledge-base/KnowledgeBaseScreen';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
 
@@ -143,6 +144,9 @@ export default function AppLayout() {
     }
     if (activeScreen === 'marketplace') {
       return <SkillsLibraryScreen />;
+    }
+    if (activeScreen === 'knowledge-base') {
+      return <KnowledgeBaseScreen />;
     }
     if (activeScreen === 'call' && flags['voice-calls']) {
       return <CallScreen />;

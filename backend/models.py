@@ -467,3 +467,34 @@ class ExpertContextFile(Base):
     char_count: Mapped[int] = mapped_column(Integer, default=0)
     truncated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class KnowledgePage(Base):
+    """A single page in the Knowledge Base (Notion-style notes app).
+
+    We use the Notion model: there is no separate "folder" entity — every node
+    is a page, and pages nest via ``parent_id``. A "folder" is simply a page
+    that happens to have children. The page body is stored as one BlockNote
+    document JSON blob (``content_json``, whole-document debounced autosave)
+    plus a lossy markdown mirror (``content_markdown``) that the chat agent
+    reads/writes without ever touching BlockNote's internal JSON.
+    """
+
+    __tablename__ = "knowledge_pages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    parent_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("knowledge_pages.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), default="Untitled")
+    icon: Mapped[str | None] = mapped_column(String(32), nullable=True)        # emoji
+    cover_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    content_json: Mapped[str | None] = mapped_column(Text, nullable=True)      # BlockNote doc JSON
+    content_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)  # mirror for the agent
+    sort_order: Mapped[float] = mapped_column(default=0.0)                     # cheap reordering
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)          # trash
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)

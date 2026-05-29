@@ -16,6 +16,7 @@ import {
   Trash2,
   RotateCcw,
   FolderOpen,
+  BookOpen,
   type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -53,6 +54,11 @@ const NAV_PRIMARY: NavItemDef[] = [
 const NAV_OVERSIGHT_BASE: NavItemDef[] = [
   { id: 'activity', icon: Activity },
   { id: 'approvals', icon: ShieldCheck },
+];
+
+// Apps — embedded mini-apps (Knowledge Base, …)
+const NAV_APPS: NavItemDef[] = [
+  { id: 'knowledge-base', icon: BookOpen },
 ];
 
 // Extensions — setup & expand
@@ -208,6 +214,7 @@ const NAV_LABEL_KEYS: Record<string, string> = {
   approvals: 'nav.approvals',
   integrations: 'nav.integrations',
   marketplace: 'nav.skills',
+  'knowledge-base': 'nav.knowledgeBase',
   settings: 'nav.settings',
 };
 
@@ -256,6 +263,11 @@ export default function Sidebar() {
 
   const navExtensions = useMemo<NavItem[]>(() =>
     resolveLabels(NAV_EXTENSIONS),
+    [t],
+  );
+
+  const navApps = useMemo<NavItem[]>(() =>
+    resolveLabels(NAV_APPS),
     [t],
   );
 
@@ -339,6 +351,22 @@ export default function Sidebar() {
         {/* Primary: Chat, Tasks, Experts, Routines */}
         <NavGroup
           items={navPrimary}
+          activeScreen={activeScreen}
+          collapsed={collapsed}
+          onNavClick={handleNavClick}
+          spotlightedNavId={spotlightedNavId}
+        />
+
+        <GhostSeparator collapsed={collapsed} />
+
+        {/* Apps: Knowledge Base, … */}
+        {!collapsed && (
+          <div className="px-2 pb-1 text-[11px] font-semibold text-text-tertiary uppercase tracking-[0.08em] select-none">
+            {t('nav.apps')}
+          </div>
+        )}
+        <NavGroup
+          items={navApps}
           activeScreen={activeScreen}
           collapsed={collapsed}
           onNavClick={handleNavClick}

@@ -12,6 +12,7 @@ export type Screen =
   | 'approvals'
   | 'integrations'
   | 'marketplace'
+  | 'knowledge-base'
   | 'settings'
   | 'call';
 

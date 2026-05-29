@@ -259,6 +259,7 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram/WhatsApp/Slack **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — GitHub issue/PR/comment/review, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
 - \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, Slack, HubSpot, WhatsApp, GoHighLevel, GitHub, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
 - \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "when a Slack DM arrives…", "when a new GitHub issue opens…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
+- \`knowledge-base\` — read from and write to the Knowledge Base (the built-in Notion-style pages app under Apps → Knowledge Base). Use when the user wants to look something up in, find, create, add to, or update a Knowledge Base / wiki / docs page, or save notes as a page ("save this as a page", "add a doc about X to my knowledge base", "what does my KB say about Y", "guarda esto como una página", "busca en la base de conocimiento", "crea una nota sobre…"). You work in markdown; the editor renders it as rich blocks.
 - \`summarize-conversation\` — used by routines.
 
 ## Integration actions
@@ -652,6 +653,117 @@ else
   echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2
   echo "$BODY_RESPONSE" >&2
   exit 1
+fi
+`,
+    },
+    {
+      name: 'kb-list-pages.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Lists every Knowledge Base page as a flat {id, title, parent_id} array.
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+[ -f "$RUNTIME_JSON" ] || { echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2; exit 1; }
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+[ -n "$PORT" ] && [ "$PORT" != "null" ] || { echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2; exit 1; }
+
+curl -s "http://127.0.0.1:$PORT/knowledge/pages" 2>/dev/null | \\
+  jq '[.pages | .. | objects | select(has("id")) | {id, title, parent_id}]' || {
+  echo "ERROR: Cannot connect to backend at port $PORT (is the app running?)" >&2
+  exit 1
+}
+`,
+    },
+    {
+      name: 'kb-read-page.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Reads one Knowledge Base page as markdown.
+# Usage: bash kb-read-page.sh <page_id>
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+[ -f "$RUNTIME_JSON" ] || { echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2; exit 1; }
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+[ -n "$PORT" ] && [ "$PORT" != "null" ] || { echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2; exit 1; }
+
+PAGE_ID="\${1:-}"
+[ -n "$PAGE_ID" ] || { echo "ERROR: Provide a page id. Usage: bash kb-read-page.sh <page_id>" >&2; exit 1; }
+
+curl -s -w "\\n%{http_code}" "http://127.0.0.1:$PORT/knowledge/pages/$PAGE_ID" 2>/dev/null > /tmp/kb-read.out || {
+  echo "ERROR: Cannot connect to backend at port $PORT" >&2; exit 1; }
+HTTP_CODE=$(tail -1 /tmp/kb-read.out)
+BODY=$(sed '$ d' /tmp/kb-read.out)
+if [ "$HTTP_CODE" = "200" ]; then
+  echo "$BODY" | jq '{id, title, icon, content_markdown}'
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2; echo "$BODY" >&2; exit 1
+fi
+`,
+    },
+    {
+      name: 'kb-create-page.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Creates a Knowledge Base page from a JSON file.
+# The JSON may contain: title, parent_id (optional), icon (optional emoji),
+# content_markdown (optional — the page body as markdown).
+# Usage: bash kb-create-page.sh <json-file>
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+[ -f "$RUNTIME_JSON" ] || { echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2; exit 1; }
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+[ -n "$PORT" ] && [ "$PORT" != "null" ] || { echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2; exit 1; }
+
+JSON_FILE="\${1:-}"
+[ -n "$JSON_FILE" ] && [ -f "$JSON_FILE" ] || { echo "ERROR: Provide a path to a JSON file. Usage: bash kb-create-page.sh <json-file>" >&2; exit 1; }
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" -X POST "http://127.0.0.1:$PORT/knowledge/pages" \\
+  -H "Content-Type: application/json" -d @"$JSON_FILE" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT (is the app running?)" >&2; exit 1; }
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  PAGE_TITLE=$(echo "$BODY_RESPONSE" | jq -r '.title // "Untitled"')
+  PAGE_ID=$(echo "$BODY_RESPONSE" | jq -r '.id // "unknown"')
+  echo "SUCCESS: Created Knowledge Base page '$PAGE_TITLE' (id: $PAGE_ID)"
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2; echo "$BODY_RESPONSE" >&2; exit 1
+fi
+`,
+    },
+    {
+      name: 'kb-update-page.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Updates an existing Knowledge Base page from a JSON file.
+# The JSON may contain any of: title, icon, content_markdown.
+# Writing content_markdown clears the stored block JSON so the editor
+# re-renders from your markdown the next time the page is opened.
+# Usage: bash kb-update-page.sh <page_id> <json-file>
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+[ -f "$RUNTIME_JSON" ] || { echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2; exit 1; }
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+[ -n "$PORT" ] && [ "$PORT" != "null" ] || { echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2; exit 1; }
+
+PAGE_ID="\${1:-}"
+JSON_FILE="\${2:-}"
+[ -n "$PAGE_ID" ] || { echo "ERROR: Provide a page id. Usage: bash kb-update-page.sh <page_id> <json-file>" >&2; exit 1; }
+[ -n "$JSON_FILE" ] && [ -f "$JSON_FILE" ] || { echo "ERROR: Provide a JSON file as the second argument" >&2; exit 1; }
+
+# When content_markdown is provided, also null out content_json so the editor
+# reconverts from markdown on next open (markdown is the agent's source of truth).
+BODY=$(jq 'if has("content_markdown") then . + {content_json: null} else . end' "$JSON_FILE")
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" -X PATCH "http://127.0.0.1:$PORT/knowledge/pages/$PAGE_ID" \\
+  -H "Content-Type: application/json" -d "$BODY" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT" >&2; exit 1; }
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  echo "SUCCESS: Updated Knowledge Base page $PAGE_ID"
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2; echo "$BODY_RESPONSE" >&2; exit 1
 fi
 `,
     },
@@ -1493,6 +1605,51 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/create-skill.sh" "$CLAUDE_PROJECT_DIR/
 
 If the output says **SUCCESS**, tell the user the skill is ready — it appears in the Skills library.
 If the output says **ERROR**, report the error to the user.
+`,
+    },
+    {
+      name: 'knowledge-base',
+      description:
+        'Read from and write to the Knowledge Base (Notion-style pages app). Use when the user asks to look something up in, find, create, add, or update a Knowledge Base / wiki / docs page, or save notes as a page. Spanish: "busca en la base de conocimiento", "crea una página", "guarda esto como una nota/página", "añade a la base de conocimiento".',
+      body: `# Knowledge Base
+
+The Knowledge Base is Cerebro's built-in Notion-style notes app: a tree of pages (a "folder" is just a page with children). You work in **markdown** — never touch the editor's internal block JSON. All commands run with the **Bash** tool.
+
+## List pages
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/kb-list-pages.sh"
+\`\`\`
+Returns a flat array of \`{id, title, parent_id}\`. Use it to find a page id or to understand the existing structure before creating something new.
+
+## Read a page
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/kb-read-page.sh" <page_id>
+\`\`\`
+Returns the page's \`title\`, \`icon\`, and \`content_markdown\`.
+
+## Create a page
+Build the JSON first, then run the script. \`content_markdown\` is the page body; \`parent_id\` (optional) nests it under another page; \`icon\` (optional) is a single emoji.
+\`\`\`bash
+jq -n \\
+  --arg title "REPLACE_TITLE" \\
+  --arg icon "📝" \\
+  --arg md "REPLACE_MARKDOWN_BODY" \\
+  '{title: $title, icon: $icon, content_markdown: $md}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/kb-new-page.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/kb-create-page.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/kb-new-page.json"
+\`\`\`
+To nest under an existing page, add \`parent_id: $parent\` (with \`--arg parent "<id>"\`) to the jq object.
+
+## Update a page
+\`\`\`bash
+jq -n --arg md "REPLACE_MARKDOWN_BODY" '{content_markdown: $md}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/kb-update.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/kb-update-page.sh" <page_id> "$CLAUDE_PROJECT_DIR/.claude/tmp/kb-update.json"
+\`\`\`
+
+## Notes
+- Write normal markdown: \`#\`/\`##\`/\`###\` headings, \`-\` and \`1.\` lists, \`- [ ]\` checkboxes, \`>\` quotes, fenced code blocks, tables, and images. The editor converts your markdown into rich blocks when the page is opened.
+- On **SUCCESS**, tell the user the page is ready and where to find it (Apps → Knowledge Base). On **ERROR**, report what failed.
 `,
     },
     {

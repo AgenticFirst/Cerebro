@@ -1,0 +1,33 @@
+/* Knowledge Base editor surface.
+   Scoped to .kb-editor-container so BlockNote/Mantine styles never bleed into
+   the rest of the app. Column geometry mirrors the .md-doc-prose feel. */
+
+.kb-editor-container {
+  height: 100%;
+  overflow-y: auto;
+  background: var(--color-bg-base);
+}
+
+/* Center the editor in a comfortable reading column, like Notion. */
+.kb-editor-container .bn-editor {
+  max-width: 820px;
+  margin: 0 auto;
+  padding-inline: 0;
+}
+
+/* Let the page header + editor share the same column width. */
+.kb-page-column {
+  max-width: 820px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* BlockNote container should be transparent so our bg-base shows through. */
+.kb-editor-container .bn-container {
+  background: transparent;
+}
+
+/* Tighten the default top padding so the title sits close to the content. */
+.kb-editor-container .bn-editor {
+  padding-top: 0.5rem;
+}

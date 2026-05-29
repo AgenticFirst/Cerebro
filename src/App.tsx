@@ -17,6 +17,7 @@ import { UIPreferencesProvider } from './context/UIPreferencesContext';
 import { MarkdownDocumentProvider } from './context/MarkdownDocumentContext';
 import { ChatFilePreviewProvider } from './context/ChatFilePreviewContext';
 import { FilesProvider } from './context/FilesContext';
+import { KnowledgeBaseProvider } from './context/KnowledgeBaseContext';
 import { UpdateProvider } from './context/UpdateContext';
 import { OnboardingProvider } from './context/OnboardingContext';
 import AppLayout from './components/layout/AppLayout';
@@ -43,6 +44,7 @@ function App() {
                     <TaskProvider>
                       <ChatProvider>
                         <FilesProvider>
+                          <KnowledgeBaseProvider>
                           <VoiceProvider>
                             <MarkdownDocumentProvider>
                               <ChatFilePreviewProvider>
@@ -51,6 +53,7 @@ function App() {
                               </ChatFilePreviewProvider>
                             </MarkdownDocumentProvider>
                           </VoiceProvider>
+                          </KnowledgeBaseProvider>
                         </FilesProvider>
                       </ChatProvider>
                     </TaskProvider>
