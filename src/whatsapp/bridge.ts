@@ -55,6 +55,13 @@ import { IntegrationStaging } from '../files/staging';
 const OUTBOUND_RATE_PER_HOUR = 30;
 const ROUTINE_CACHE_TTL_MS = 30_000;
 const HISTORY_MESSAGES_IN_PAYLOAD = 20;
+// Liveness watchdog tunables. 20s per-probe sits well under Baileys' default
+// 60s query timeout (avoids false positives on a slow round-trip), while 3
+// consecutive misses recovers a dead socket in ~2-3 min without flapping on a
+// single transient blip.
+const WATCHDOG_INTERVAL_MS = 45_000;        // probe a connected socket every 45s
+const WATCHDOG_PROBE_TIMEOUT_MS = 20_000;   // a probe that hangs >20s counts as a failure
+const WATCHDOG_MAX_FAILURES = 3;            // ~2-3 min of silence before forced reconnect
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -124,6 +131,11 @@ export class WhatsAppBridge implements WhatsAppChannel {
    *  either pairing completes or cancelPairing() is called. */
   private pairingRequested = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Liveness watchdog: detects a connected-but-dead socket and forces a
+   *  reconnect. See WATCHDOG_* constants and startWatchdog(). */
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private watchdogFailures = 0;
+  private watchdogProbing = false;
 
   private mediaIngest: MediaIngestService;
   private staging: IntegrationStaging;
@@ -170,6 +182,7 @@ export class WhatsAppBridge implements WhatsAppChannel {
   }
 
   async stop(): Promise<void> {
+    this.stopWatchdog();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -439,6 +452,7 @@ export class WhatsAppBridge implements WhatsAppChannel {
 
   private async connect(opts: { pairing: boolean }): Promise<void> {
     // Clean up any prior socket.
+    this.stopWatchdog();
     try { this.sock?.ev?.removeAllListeners?.(); this.sock?.end?.(undefined); } catch { /* ignore */ }
     this.sock = null;
 
@@ -483,6 +497,19 @@ export class WhatsAppBridge implements WhatsAppChannel {
       printQRInTerminal: false,
       markOnlineOnConnect: false,
       syncFullHistory: false,
+      // Cerebro only acts on live `notify` messages (see the messages.upsert
+      // handler) — it never consumes history backfill or app-state sync.
+      // Returning false makes Baileys flush its event buffer immediately on
+      // connect instead of entering the Syncing state, whose resyncAppState()
+      // can hang on a 60s query timeout and strand the buffer so messages.upsert
+      // never fires again (the "connected but silent" zombie socket).
+      shouldSyncHistoryMessage: () => false,
+      // Fail any internal query fast (default is 60s). shouldSyncHistoryMessage
+      // suppresses history sync but not the app-state resyncAppState() queries
+      // that produce the ~60s connect-time stall; a shorter timeout makes those
+      // surface an error into the `connection: 'close'` reconnect path instead
+      // of hanging.
+      defaultQueryTimeoutMs: 30_000,
     });
     this.sock = sock;
 
@@ -514,8 +541,10 @@ export class WhatsAppBridge implements WhatsAppChannel {
           hasCreds: true,
         });
         log(`connected as ${me?.id ?? '(unknown)'}`);
+        this.startWatchdog();
       }
       if (connection === 'close') {
+        this.stopWatchdog();
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
         const loggedOut = statusCode === DisconnectReason?.loggedOut;
         log('connection closed, statusCode=', statusCode, 'loggedOut=', loggedOut);
@@ -550,6 +579,67 @@ export class WhatsAppBridge implements WhatsAppChannel {
         }
       }
     });
+  }
+
+  // ── Liveness watchdog ────────────────────────────────────────
+
+  /** Begin periodic liveness probing of the live socket. Idempotent: a second
+   *  call while a timer is already running is a no-op, so reconnects that re-open
+   *  the connection can't stack timers. */
+  private startWatchdog(): void {
+    if (this.watchdogTimer) return;
+    this.watchdogFailures = 0;
+    this.watchdogTimer = setInterval(() => { void this.probeLiveness(); }, WATCHDOG_INTERVAL_MS);
+    // Don't let the watchdog keep the process alive on its own.
+    if (typeof this.watchdogTimer.unref === 'function') this.watchdogTimer.unref();
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+    this.watchdogFailures = 0;
+    this.watchdogProbing = false;
+  }
+
+  /** Actively round-trip a cheap query against the socket. A hang or error past
+   *  WATCHDOG_PROBE_TIMEOUT_MS counts as a failure; after WATCHDOG_MAX_FAILURES
+   *  consecutive failures we tear the socket down and let the `connection:
+   *  'close'` handler schedule the reconnect (single reconnect funnel). */
+  private async probeLiveness(): Promise<void> {
+    if (this.watchdogProbing) return; // a prior probe is still in flight
+    if (!this.sock || this.state.state !== 'connected') return;
+    this.watchdogProbing = true;
+    const sock = this.sock;
+    try {
+      // fetchPrivacySettings(true) forces a real server round-trip (the
+      // unforced call can return a cached value and mask a dead socket).
+      await Promise.race([
+        sock.fetchPrivacySettings(true),
+        new Promise((_resolve, reject) =>
+          setTimeout(() => reject(new Error('watchdog probe timed out')), WATCHDOG_PROBE_TIMEOUT_MS),
+        ),
+      ]);
+      this.watchdogFailures = 0;
+    } catch (err) {
+      if (sock !== this.sock) return; // socket was swapped out from under us
+      this.watchdogFailures += 1;
+      logError(
+        `watchdog probe failed (${this.watchdogFailures}/${WATCHDOG_MAX_FAILURES}):`,
+        err instanceof Error ? err.message : String(err),
+      );
+      if (this.watchdogFailures >= WATCHDOG_MAX_FAILURES && this.settings.enabled && !this.pairingRequested) {
+        log('watchdog: socket unresponsive, forcing reconnect');
+        this.stopWatchdog();
+        // Ending the socket emits `connection: 'close'`, whose handler clears
+        // any prior timer and schedules the 5s reconnect — we don't schedule
+        // our own to avoid a double reconnect.
+        try { sock.end?.(new Error('watchdog: unresponsive socket')); } catch { /* ignore */ }
+      }
+    } finally {
+      this.watchdogProbing = false;
+    }
   }
 
   // ── Inbound dispatch ─────────────────────────────────────────
@@ -802,7 +892,7 @@ export class WhatsAppBridge implements WhatsAppChannel {
     if (now - this.routineCache.at < ROUTINE_CACHE_TTL_MS) {
       return this.routineCache.routines;
     }
-    const res = await backendRequest<{ routines?: BackendRoutineRecord[] } | BackendRoutineRecord[]>(
+    const res = await backendJsonRequest<{ routines?: BackendRoutineRecord[] } | BackendRoutineRecord[]>(
       this.deps.backendPort,
       'GET',
       '/routines',
