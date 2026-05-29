@@ -136,7 +136,7 @@ export default function CreateRoutineDialog({
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
               {t('createRoutine.trigger')}
             </label>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {triggers.map((trigger) => {
                 const Icon = trigger.icon;
                 return (
@@ -145,7 +145,7 @@ export default function CreateRoutineDialog({
                       type="button"
                       onClick={() => setTriggerType(trigger.type)}
                       className={clsx(
-                        'flex-1 flex flex-col items-center gap-1 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors border',
+                        'min-w-0 flex flex-col items-center gap-1 px-3 py-2.5 rounded-lg text-xs font-medium text-center break-words transition-colors border',
                         triggerType === trigger.type
                           ? 'bg-accent/10 border-accent/30 text-accent'
                           : 'bg-bg-surface border-border-subtle text-text-tertiary hover:text-text-secondary hover:border-border-default',
