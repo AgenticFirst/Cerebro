@@ -154,6 +154,32 @@ describe('ClaudeCodeRunner error mapping', () => {
     expect(runner.getLastErrorClass()).toBe('auth');
   });
 
+  it('treats an is_error 401 result as auth even when the process exits 0', async () => {
+    // Production regression: the CLI reports a 401 as
+    // `{ subtype: "success", is_error: true, result: "Failed to authenticate…" }`
+    // and then exits with code 0. The old close-handler only checked the exit
+    // code, so it took the success branch and emitted `done` with the raw 401
+    // text as the assistant reply — no auth class, no login card. Capturing a
+    // result.is_error payload must force the error path regardless of exit code.
+    const { runner, events, errors, dones } = await startRunner();
+    const resultErr = {
+      type: 'result',
+      is_error: true,
+      subtype: 'success',
+      result: 'Failed to authenticate. API Error: 401 Invalid authentication credentials',
+    };
+    currentChild!.stdout.write(JSON.stringify(resultErr) + '\n');
+    await new Promise((r) => setImmediate(r));
+    currentChild!.emit('close', 0, null);
+    await Promise.resolve();
+    expect(runner.getLastErrorClass()).toBe('auth');
+    expect(errors[0]).toMatch(/Cerebro lost its Claude Code session/);
+    // The raw 401 string must never surface as the reply.
+    expect(dones).toHaveLength(0);
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+    expect(errors[0]).not.toMatch(/401/);
+  });
+
   it('maps stderr "max turns" to a reached-max-turns message', async () => {
     const { errors } = await startRunner();
     currentChild!.stderr.write('Agent exceeded max turns\n');

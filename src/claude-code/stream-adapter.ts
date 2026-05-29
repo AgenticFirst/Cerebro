@@ -346,8 +346,13 @@ export class ClaudeCodeRunner extends EventEmitter {
       // When a process is killed by a signal (e.g. sandbox-exec SIGABRT),
       // code is null and signal is set — this is NOT a success.
       // Note: on some platforms signal can be 0 (number) for normal exits — ignore that.
+      // Also treat a captured `result.is_error: true` payload as an error even
+      // when the process exits 0: the CLI reports per-turn API errors (e.g. a
+      // 401) as `{ subtype: "success", is_error: true, result: "Failed to
+      // authenticate…" }` and still exits 0. Without this, that 401 text leaks
+      // out as a normal assistant reply instead of routing to the auth class.
       const realSignal = signal && String(signal) !== '0' ? signal : null;
-      const isError = (code !== 0 && code !== null) || realSignal != null;
+      const isError = (code !== 0 && code !== null) || realSignal != null || this.resultErrorTail.length > 0;
 
       if (isError) {
         let detail: string;
@@ -467,7 +472,7 @@ export class ClaudeCodeRunner extends EventEmitter {
         if (!this.closeHandled && !this.killed) {
           this.closeHandled = true;
           const realSignal = signal && String(signal) !== '0' ? signal : null;
-          const isError = (code !== 0 && code !== null) || realSignal != null;
+          const isError = (code !== 0 && code !== null) || realSignal != null || this.resultErrorTail.length > 0;
           if (isError) {
             let detail = `Claude Code exited (code ${code}, signal ${signal})`;
             if (this.logPath) detail += `\n\n(Details: ${this.logPath})`;
@@ -789,8 +794,11 @@ export class ClaudeCodeRunner extends EventEmitter {
         } as RendererAgentEvent);
       }
     } else if (type === 'result') {
-      // Final result event — ensure we have the final text
-      if (parsed.result) {
+      // Final result event — ensure we have the final text. Never adopt an
+      // `is_error` result as the reply body: on auth/API failures the CLI puts
+      // the raw error string here (and may still exit 0), so copying it would
+      // surface "Failed to authenticate. API Error: 401 …" as a normal answer.
+      if (parsed.result && parsed.is_error !== true) {
         if (!this.accumulatedText && typeof parsed.result === 'string') {
           this.accumulatedText = parsed.result;
         }

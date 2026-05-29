@@ -1132,6 +1132,10 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       // A no-tool idle-watchdog kill (idle_hang) is retried once on a fresh
       // probe, so a transient mid-turn stall never surfaces the raw CLI string.
       let idleRetryAttempted = false;
+      // An auth failure is retried once after busting the probe cache: a
+      // transient token-refresh blip then self-heals, while a genuine expiry
+      // re-fails the pre-flight probe and surfaces the login card.
+      let authRetryAttempted = false;
 
       const spawnAttempt = (
         attempt: number,
@@ -1158,22 +1162,17 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
             attemptText += event.delta;
             activeRun.accumulatedText = attemptText;
           }
-          // Swallow the error event when the matching 'error' handler is
-          // about to fire transparent session_missing recovery. Without
-          // this, the renderer's case 'error' handler runs first,
-          // unsubscribes from `agent:event:<runId>`, and writes the
-          // internal error string as the assistant message — the recovery
-          // attempt then streams to a dead listener.
-          if (event.type === 'error') {
-            const ec = runner.getLastErrorClass();
-            if (ec === 'session_missing' && !sessionSeedAttempted) return;
-            // `!sessionRotated` is the exact superset of "a session_in_use
-            // retry will fire below" — both the --resume retry and the
-            // rotation escape-hatch run while sessionRotated is still false,
-            // and only the post-rotation survivor is allowed to surface.
-            if (ec === 'session_in_use' && !sessionRotated) return;
-            if (ec === 'idle_hang' && !idleRetryAttempted) return;
-          }
+          // Never forward the runner's RAW error event. The stream-adapter
+          // emits a paired ('event' → 'error') for every terminal error, but
+          // the 'event' copy carries no errorClass and the raw CLI string.
+          // The renderer's case 'error' unsubscribes on the FIRST error it
+          // sees, so whichever fires first wins — and we want the friendly,
+          // classified one. The 'error' handler below is the SOLE authority:
+          // it runs recovery/escalation and, when terminal, delivers exactly
+          // one `friendlySurfaceError()`-rewritten event with the right
+          // errorClass (so 'auth' renders the login card). Dropping the raw
+          // 'event' error here guarantees no CLI string ever reaches chat.
+          if (event.type === 'error') return;
           this.deliverEvent(runId, webContents, event);
         });
 
@@ -1244,6 +1243,23 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
           // way the user never sees the raw "produced no output" string.
           if (cls === 'idle_hang' && !idleRetryAttempted) {
             idleRetryAttempted = true;
+            clearProbeCache();
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt, model, tier, turns, resume, promptForAttempt);
+            return;
+          }
+
+          // An auth failure (expired/invalid Claude Code session, surfaced as a
+          // 401 or unauthorized). Retry once after busting the probe cache so
+          // the retry's pre-flight does a REAL credential check: a transient
+          // token-refresh blip self-heals and the user never notices, while a
+          // genuine expiry re-fails the probe → 'auth' again, which then falls
+          // through to the surface path below and renders the login card
+          // (sign-in URL + auto-resend). This is the retry → ask → re-login
+          // flow with no raw "401" ever shown in chat.
+          if (cls === 'auth' && !authRetryAttempted) {
+            authRetryAttempted = true;
             clearProbeCache();
             attemptText = '';
             activeRun.accumulatedText = '';
