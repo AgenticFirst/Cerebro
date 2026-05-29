@@ -1,5 +1,24 @@
 export type ExpertType = 'expert' | 'team';
 
+export type ContextFileKind = 'reference' | 'template';
+
+export interface ExpertContextFile {
+  id: string;
+  expertId: string;
+  fileItemId: string;
+  kind: ContextFileKind;
+  sortOrder: number;
+  charCount: number;
+  truncated: boolean;
+  createdAt: string;
+  fileName: string;
+  fileExt: string;
+  fileMime: string | null;
+  fileSizeBytes: number;
+  fileStoragePath: string;
+  parsedTextPath: string | null;
+}
+
 export type ExpertSource = 'builtin' | 'user' | 'marketplace';
 
 export interface TeamMember {

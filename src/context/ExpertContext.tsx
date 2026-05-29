@@ -305,6 +305,16 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
     [updateExpert],
   );
 
+  // One-shot initial load. The provider mounts once at app startup, so this
+  // ensures the experts list is populated for every consumer regardless of
+  // which screen the user opens first. Without this, navigating straight
+  // to Routines (skipping Chat/Experts/Skills) produced an empty Run
+  // Expert dropdown — every existing expert showed up as "(unavailable)"
+  // because each consumer used to trigger its own lazy fetch.
+  useEffect(() => {
+    void loadExperts();
+  }, [loadExperts]);
+
   // Re-fetch experts when the installer syncs (e.g. after a skill creates one)
   useEffect(() => {
     const unsubscribe = window.cerebro.installer.onExpertsChanged(() => {

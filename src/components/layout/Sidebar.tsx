@@ -14,8 +14,10 @@ import {
   PanelLeftOpen,
   Pencil,
   Trash2,
+  RotateCcw,
   FolderOpen,
   BarChart3,
+  BookOpen,
   type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -54,6 +56,11 @@ const NAV_PRIMARY: NavItemDef[] = [
 const NAV_OVERSIGHT_BASE: NavItemDef[] = [
   { id: 'activity', icon: Activity },
   { id: 'approvals', icon: ShieldCheck },
+];
+
+// Apps — embedded mini-apps (Knowledge Base, …)
+const NAV_APPS: NavItemDef[] = [
+  { id: 'knowledge-base', icon: BookOpen },
 ];
 
 // Extensions — setup & expand
@@ -210,6 +217,7 @@ const NAV_LABEL_KEYS: Record<string, string> = {
   approvals: 'nav.approvals',
   integrations: 'nav.integrations',
   marketplace: 'nav.skills',
+  'knowledge-base': 'nav.knowledgeBase',
   settings: 'nav.settings',
 };
 
@@ -258,6 +266,11 @@ export default function Sidebar() {
 
   const navExtensions = useMemo<NavItem[]>(() =>
     resolveLabels(NAV_EXTENSIONS),
+    [t],
+  );
+
+  const navApps = useMemo<NavItem[]>(() =>
+    resolveLabels(NAV_APPS),
     [t],
   );
 
@@ -349,6 +362,22 @@ export default function Sidebar() {
 
         <GhostSeparator collapsed={collapsed} />
 
+        {/* Apps: Knowledge Base, … */}
+        {!collapsed && (
+          <div className="px-2 pb-1 text-[11px] font-semibold text-text-tertiary uppercase tracking-[0.08em] select-none">
+            {t('nav.apps')}
+          </div>
+        )}
+        <NavGroup
+          items={navApps}
+          activeScreen={activeScreen}
+          collapsed={collapsed}
+          onNavClick={handleNavClick}
+          spotlightedNavId={spotlightedNavId}
+        />
+
+        <GhostSeparator collapsed={collapsed} />
+
         {/* Oversight: Activity, Approvals */}
         <NavGroup
           items={navOversight}
@@ -394,6 +423,7 @@ export default function Sidebar() {
                       onSelect={() => setActiveConversation(conv.id)}
                       onRename={renameConversation}
                       onDelete={(e) => handleDelete(e, conv.id)}
+                      onResetSession={() => { void window.cerebro.chatActions.resetSession(conv.id); }}
                     />
                   ))}
                 </div>
@@ -425,6 +455,7 @@ interface ConversationRowProps {
   onSelect: () => void;
   onRename: (id: string, nextTitle: string) => void;
   onDelete: (e: React.MouseEvent) => void;
+  onResetSession: () => void;
 }
 
 function ConversationRow({
@@ -433,10 +464,12 @@ function ConversationRow({
   onSelect,
   onRename,
   onDelete,
+  onResetSession,
 }: ConversationRowProps) {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
-  const [draft, setDraft] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const displayTitle = isUntitledConversationTitle(conv.title)
@@ -444,27 +477,28 @@ function ConversationRow({
     : conv.title;
 
   useEffect(() => {
-    if (draft !== null) {
+    if (isEditing) {
       const input = inputRef.current;
       if (input) {
         input.focus();
         input.select();
       }
     }
-  }, [draft]);
+  }, [isEditing]);
 
   const beginRename = () => {
     setDraft(isUntitledConversationTitle(conv.title) ? '' : conv.title);
+    setIsEditing(true);
   };
 
   const commitRename = () => {
-    if (draft === null) return;
+    if (!isEditing) return;
     const next = draft.trim();
     if (next) onRename(conv.id, next);
-    setDraft(null);
+    setIsEditing(false);
   };
 
-  if (draft !== null) {
+  if (isEditing) {
     return (
       <div className="relative">
         <input
@@ -479,7 +513,7 @@ function ConversationRow({
               commitRename();
             } else if (e.key === 'Escape') {
               e.preventDefault();
-              setDraft(null);
+              setIsEditing(false);
             }
           }}
           maxLength={200}
@@ -543,6 +577,21 @@ function ConversationRow({
             aria-label={t('nav.renameConversation')}
           >
             <Pencil size={12} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onResetSession();
+            }}
+            className={clsx(
+              'p-1 rounded-md',
+              'text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]',
+              'transition-colors duration-100 cursor-pointer',
+            )}
+            title={t('nav.resetSession')}
+            aria-label={t('nav.resetSession')}
+          >
+            <RotateCcw size={12} />
           </button>
           <button
             onClick={onDelete}

@@ -94,16 +94,25 @@ function ensureSettings(paths: InstallerPaths): void {
 
 /**
  * Write the runtime info file every time the backend port changes.
- * Skill scripts read this to discover the current backend port.
+ * Skill scripts read this to discover the current backend port and the
+ * loopback chat-actions server (port + bearer token) when it's available.
  */
-export function writeRuntimeInfo(dataDir: string, backendPort: number): void {
+export function writeRuntimeInfo(
+  dataDir: string,
+  backendPort: number,
+  chatActions?: { port: number; token: string },
+): void {
   const paths = resolvePaths(dataDir);
   fs.mkdirSync(paths.claudeDir, { recursive: true });
-  const info = {
+  const info: Record<string, unknown> = {
     backend_port: backendPort,
     data_dir: dataDir,
     updated_at: new Date().toISOString(),
   };
+  if (chatActions) {
+    info.chat_actions_port = chatActions.port;
+    info.chat_actions_token = chatActions.token;
+  }
   fs.writeFileSync(paths.runtimeInfoPath, JSON.stringify(info, null, 2), 'utf-8');
 }
 
@@ -174,12 +183,13 @@ Never store secrets, API keys, or anything the user shouldn't trust on disk.`;
 function turnProtocol(memoryDir: string): string {
   return `## Turn Protocol
 
-At the start of every conversation turn:
-1. **Read your soul** — \`Read\` the file \`SOUL.md\` in your memory directory. It defines your persona, working style, and quality standards. If it doesn't exist yet, create it.
-2. **Read your memory** — \`Glob\` for \`*.md\` in your memory directory and \`Read\` any files present.
-3. **Do the work** — complete the user's request.
-4. **Update memory** — if you learned something about the user or made a decision worth remembering, write or update a file in your memory directory.
-5. **Evolve your soul** — if the user gives feedback about your style, tone, or approach, update \`SOUL.md\` to reflect it.
+Each conversation turn has one user-visible step (answering the latest user message) and four silent housekeeping steps. Do them in this order:
+
+1. **Read learned preferences** *(silent)* — \`Read\` the file \`SOUL.md\` in your memory directory for any communication preferences you've learned about this user. Your core persona and quality standards are already in this prompt above — \`SOUL.md\` only holds evolving notes. If the file doesn't exist yet, create it (seed it with an empty \`## Communication\` section).
+2. **Read your memory** *(silent)* — \`Glob\` for \`*.md\` in your memory directory and \`Read\` any files present.
+3. **Answer the user's latest message — and only that message.** This is the only step the user sees. Don't restate, re-list, or re-summarize content from earlier turns; the user can scroll up. Don't re-answer earlier questions in the conversation history. Don't narrate the silent steps (no "Memory read.", no "Now I'll save…"). **If you delegated to an expert this turn, the answer IS the expert's full deliverable, not a description of it — and no preamble describing what you asked them to do.**
+4. **Update memory** *(silent)* — if you learned something about the user or made a decision worth remembering, write or update a file in your memory directory. Confirming the save in your reply is fine ("Got it, saved."); re-listing what's now in memory is not.
+5. **Update learned preferences** *(silent)* — if the user gives feedback about your communication style or tone, update \`SOUL.md\`'s \`## Communication\` section. Do not try to rewrite your persona or quality standards there — those live in the prompt above.
 
 ${memoryInstructions(memoryDir)}`;
 }
@@ -188,7 +198,15 @@ function buildCerebroBody(memoryDir: string, skillsDir: string, teamsEnabled: bo
   const teamsBlock = teamsEnabled
     ? `
 
-Some subagents are **teams** — orchestrators that delegate to multiple member experts and synthesize their work into a single deliverable. Pick a team when the user's request spans multiple disciplines (e.g. "research and ship", "review across security/frontend/backend"). Teams take longer than a single expert but produce end-to-end artifacts. Their names usually end in "Team".`
+Some subagents are **teams** — orchestrators that delegate to multiple member experts and synthesize their work into a single deliverable. Pick a team when the user's request spans multiple disciplines (e.g. "research and ship", "review across security/frontend/backend"). Teams take longer than a single expert but produce end-to-end artifacts. Their names usually end in "Team".
+
+**Before invoking any team via the Agent tool, you MUST first announce it so the user can see who is working** — without this, the user stares at a blank screen for the entire (potentially multi-minute) run. Use \`list-experts\` (or your existing knowledge of the team) to discover the team's id, name, strategy, and member list, then run:
+
+\`\`\`
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/announce-team-run.sh" <team_id> "<team_name>" "<strategy>" '<members_json>'
+\`\`\`
+
+Where \`<members_json>\` is a JSON array like \`[{"member_id":"abc123","member_name":"Running Coach","role":"coach"}, ...]\`. Then proceed with the \`Agent\` tool call. The team coordinator will emit per-member status updates on its own.`
     : '';
 
   return `You are **Cerebro**, the user's personal AI assistant.
@@ -199,11 +217,34 @@ ${turnProtocol(memoryDir)}
 
 You have access to a roster of specialist experts as Claude Code subagents in the same project. Use the \`Agent\` tool to delegate when:
 
-- The user explicitly asks for a specific expert.
+- The user explicitly asks for a specific expert ("ask the manual-writer", "usa al experto en X", "que el experto X me cree…").
 - The task is clearly the specialty of one of your experts (e.g. fitness coaching → fitness coach).
 - A task would benefit from a focused, dedicated context window.
 
-When delegating, give the subagent the relevant context — don't just forward the user's literal words. Pass the question, what you already know, and what you want back.${teamsBlock}
+**When you delegate, the expert's deliverable IS your reply.** Paste the expert's full output back to the user verbatim. Never summarize a deliverable and ask "do you want to see it?" — the user already asked to see it by requesting the work.
+
+Pass the expert all the context it needs in the \`Agent\` call: the user's question, any uploaded files (their absolute \`@/path\` lines), what you already know, and what you want back. Don't just forward the user's literal words.
+
+**Announce the delegation in one short, generic sentence — never recap the briefing.** Before the \`Agent\` tool call you may emit one line so the user knows who's working (e.g. "El Creador de Manuales lo está preparando." / "Asking the fitness coach now."). Do **not** restate the user's request, list the context you're passing to the expert, enumerate the rules / template / files / defaults you included, or narrate "le paso la imagen y le especifico que…" / "voy a delegar al X con la descripción detallada de…" — that briefing belongs *inside* the \`Agent\` call, not in the chat. One short sentence, then the tool call. After the expert returns, paste its deliverable verbatim per the rule above — still with no recap of what you told it.
+
+### Using vs. changing an existing expert — read this carefully
+
+When the user references an existing expert, decide which of these three intents applies:
+
+| User intent (EN / ES) | What to do |
+| --- | --- |
+| "Use expert X to do Y" / "Usa al experto X para…", "Que el experto X me…" | Delegate via the \`Agent\` tool. Surface the expert's full output. |
+| "Expert X should ALWAYS use this document as a guide/format/template" / "que el experto X use siempre este documento como guía / formato" | Attach it permanently via the **\`attach-expert-context\`** skill (kind=\`template\` for format/structure, kind=\`reference\` for background knowledge). |
+| **User is configuring/setting up an expert and attaches a file** / "vamos a configurar al experto X, usa este formato", "let's set up expert X with this template", "use this as the template / reference for this expert" (no explicit "ALWAYS") | Treat the attachment as part of the expert's configuration — **not** as one-off context. Ask one short clarifier ("I'll attach \`<file>\` to \`<expert>\` as a **template** — every future output follows this format. Or **reference** — background only. Which?") and then call **\`attach-expert-context\`**. |
+| "Change expert X's prompt / personality / description / instructions" / "modifica/edita/cambia el prompt/persona del experto X" | Use the **\`update-expert\`** skill. Always confirm the new wording with the user before invoking. |
+
+**Default is delegation** — *unless* the user is configuring/setting up an expert and attached files: in that case the files are configuration material, not per-task context. If a request is ambiguous — e.g. "the manual-writer should make a manual from this diagram" with no setup framing — that is **use**, not **change**. Edit an expert only when the user explicitly asks to modify the expert itself (prompt, persona, description). When in doubt, ask one short clarifier.
+
+**Never ask the user to re-provide a file they already attached.** If you find yourself about to write something like *"¿Cuál es el formato que pasaste?"* / *"can you re-send the template?"*, stop. Either the path is still visible in the conversation history above — use it — or the user provided it during expert setup and you should have called \`attach-expert-context\` then. Apologize once, check \`list-experts\` for any context-files already attached to the expert, and only ask the user to re-attach as a last resort.
+
+**Hard rule — never touch the expert files.** Files under \`.claude/agents/*.md\` are generated by the backend from the expert's database row. Do **not** \`Read\`, \`Edit\`, or \`Write\` them. If you find yourself about to open one to "show what the expert looks like" or to draft a rewrite, stop — that is never the right action. Use \`update-expert\` to change persona, \`attach-expert-context\` for permanent docs, and the \`Agent\` tool for per-task work.
+
+**Only delegate to experts returned by \`list-experts\`.** That script is the authoritative roster for *this* conversation — depending on who the user is, the operator may have restricted which experts they can reach. If an expert you remember from past chats isn't there now, treat it as unavailable: don't invent a slug, don't try to invoke it via the Agent tool, and don't tell the user "the X expert says…". Either pick from what \`list-experts\` returned or tell the user the relevant expert isn't available to them and offer to do the work yourself.${teamsBlock}
 
 ## Skills
 
@@ -211,18 +252,69 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 
 - \`create-task\` — kick off a one-off, goal-oriented piece of work that produces a deliverable (markdown doc, runnable code app, or both). Tasks run autonomously: clarify → plan → execute. Confirm the title and goal with the user first, then invoke.
 - \`create-expert\` — create a new expert (a persistent specialist persona the user will talk to repeatedly) when the user describes a recurring need that no current expert covers. First confirm the proposed name, description, and system prompt with the user, then invoke.
+- \`attach-expert-context\` — permanently attach a document to an existing expert as a \`template\` (output must follow this format) or \`reference\` (background knowledge). Use only when the user says it should *always* be used by the expert — not for one-off per-task context, which goes through the \`Agent\` tool.
+- \`update-expert\` — modify an existing expert's name, description, or system prompt. Use only when the user explicitly asks to change the expert itself (not when they ask the expert to do work). Always confirm the new wording with the user before invoking.
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
+- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram/WhatsApp/Slack **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — GitHub issue/PR/comment/review, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
+- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, Slack, HubSpot, WhatsApp, GoHighLevel, GitHub, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
+- \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "when a Slack DM arrives…", "when a new GitHub issue opens…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
+- \`knowledge-base\` — read from and write to the Knowledge Base (the built-in Notion-style pages app under Apps → Knowledge Base). Use when the user wants to look something up in, find, create, add to, or update a Knowledge Base / wiki / docs page, or save notes as a page ("save this as a page", "add a doc about X to my knowledge base", "what does my KB say about Y", "guarda esto como una página", "busca en la base de conocimiento", "crea una nota sobre…"). You work in markdown; the editor renders it as rich blocks.
 - \`summarize-conversation\` — used by routines.
+
+## Integration actions
+
+When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), post a Slack message or file in a channel, DM a Slack user, open a GitHub issue, comment on a PR, submit a PR review, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "publica en #general en Slack", "mándale un DM a Pablo por Slack", "mándale el manual en PDF", "avísame en 30 minutos", "abre un issue en GitHub", "revisa el PR #42", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
+
+When sending media, prefer \`file_item_id\` (referencing a file Cerebro already has — e.g., one a previous step generated and registered). Use \`file_path\` only as an escape hatch for an absolute path Cerebro just wrote to disk.
+
+## Connecting integrations
+
+When the user asks to **set up, connect, or link** an integration ("set up Telegram", "set up Slack", "connect HubSpot", "configura WhatsApp", "conecta Slack", "conecta GoHighLevel", "connect GitHub", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, app-manifest paste for Slack, Private App for HubSpot, QR pairing for WhatsApp, Private Integration API key for GoHighLevel, Personal Access Token for GitHub). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`. Anything else — Gmail, Notion, Calendar, etc. — is on the roadmap; tell the user and stop.
 
 ### Task vs Routine vs Expert — choose the right one
 
 - **Task** = a card on the Kanban board, assigned to an Expert who executes it autonomously. Use \`create-task\` when the user wants something tracked, owned, and queued — not just answered in chat.
-- **Routine** = same steps repeating on a schedule or trigger ("every morning…", "on every push…"). Managed in the Routines screen — never \`create-task\`.
+- **Routine** = same steps repeating on a schedule or trigger ("every morning…", "on every push…", "cada lunes…"). Use the \`propose-routine\` skill, which always proposes first → confirms with the user → dry-runs end-to-end (a couple of minutes) → saves only on a clean test.
 - **Expert** = a persistent persona the user returns to ("I need a fitness coach"). Use \`create-expert\`.
 - A plain question or chat → answer directly or delegate to an existing expert via the \`Agent\` tool.
 
 If ambiguous, ask one short clarifier (e.g. "Do you want me to do this once now, or set it up to run every week?") before invoking any skill.
+
+## Doing the task — be autonomous, don't give up
+
+You have the same capabilities as a senior engineer running \`claude\` in their own terminal. Your \`Bash\` tool can install packages (\`pip install --user <pkg>\`, \`npm i\`, \`brew install\`, \`cargo add\`), compile, run scripts, hit any URL with \`WebFetch\`, and search the web with \`WebSearch\`. **If you don't know how to do something, research it and do it.** If a tool call fails, read the error and try a different approach — don't give up because the first attempt failed, and don't tell the user "I can't" without first attempting at least two distinct approaches.
+
+### Producing files for the user
+
+When the user asks for a file (\`.docx\`, CSV, polished spreadsheet, PDF, etc. — *"hazme un Word con esto"*, *"guárdalo en docx"*, *"exporta a Excel"*, *"sácalo en PDF"*):
+
+1. **Save location.** Try \`~/Desktop\` or \`~/Downloads\` first — that's where users expect deliverables. If the OS denies write permission there, fall back to the agent-memory directory under your personal memory dir and tell the user where the file landed plus how to grant disk access (System Settings → Privacy & Security → Files and Folders).
+2. **Pre-installed Python packages** (importable from \`python\` directly — no setup): \`docx\` (python-docx, .docx), \`openpyxl\` (.xlsx), \`pptx\` (python-pptx, .pptx), \`pypdf\` (read PDFs), \`httpx\`. Use them via \`Bash\`:
+   \`\`\`
+   python -c "from docx import Document; d = Document(); d.add_heading('Title', 0); d.add_paragraph('…'); d.save('/path/to/out.docx')"
+   \`\`\`
+3. **For anything not in the list above, install it.** \`pip install --user reportlab\` for PDF generation, \`npm i -g some-cli\`, \`brew install pandoc\`, etc. The sandbox permits writes into the standard package-manager dirs. Don't ask the user for permission first — just install and proceed.
+4. **Don't write binary file formats with the \`Write\` tool.** \`Write\` only handles UTF-8; it will silently corrupt \`.docx\`, \`.xlsx\`, \`.pdf\`, images, etc. Use \`Bash\` + the relevant library for any non-text output.
+5. **Deliver ONLY the file(s) the user asked for — nothing else.** End your reply with one literal \`@/absolute/path/to/file\` line per requested file, on the very last lines of the message, with nothing after them. Cerebro renders each trailing \`@/path\` as a clickable preview chip; without it, the file lives on disk but the user has no way to open it from chat.
+
+   The chips must match, exactly, what the user requested in their latest message:
+   - User asked for one file (*"hazme un manual"*, *"genera el reporte"*, *"exporta a Excel"*) → exactly one trailing \`@/path\` line.
+   - User asked for several specific files (*"dame el Word y el Excel"*) → one \`@/path\` line per requested file, in the order they asked.
+   - User asked a plain question and didn't ask for a file → zero \`@/path\` lines, even if you wrote something to disk while working.
+
+   **By-products of HOW you built the deliverable are never chips.** Do NOT surface as trailing \`@/path\`:
+   - build scripts you wrote to produce the file (\`.py\`, \`.sh\`, \`.js\`, helper notebooks)
+   - intermediate renders (a \`.pdf\` you only made to validate a \`.docx\`)
+   - prior version drafts (\`v1.0\` when you're handing off \`v1.1\`)
+   - source images, fonts, fixtures embedded inside the doc
+   - reference templates the user already gave you — the file they handed you is *not* your deliverable
+   - memory / housekeeping files (\`SOUL.md\`, anything under your agent-memory dir, notes-to-self)
+   - files an expert sub-agent created as scaffolding during its workflow
+
+   **Format default when the user didn't specify a format:** prefer editable formats so the user can edit if needed. Documents → \`.docx\`. Spreadsheets → \`.xlsx\`. Slides → \`.pptx\`. Only deliver \`.pdf\` when the user said *"PDF"* / *"en PDF"* / *"para imprimir"* / equivalent. If you generated both a \`.docx\` and a \`.pdf\` while working, surface only the editable one unless the user asked for the PDF.
+
+   Mentioning a path elsewhere in prose is fine; only the trailing \`@/path\` lines become chips. Example ending: \`\`\`\n@/Users/jane/Desktop/report.docx\n\`\`\` *(no extra text after the @-line)*.
 `;
 }
 
@@ -240,9 +332,9 @@ function buildTeamBody(
     const agentName = agentNameById[m.expert_id];
     const displayName = memberNamesById[m.expert_id] || m.role;
     if (!agentName) {
-      return `${idx + 1}. **${displayName}** — _${m.role}_ — \`[unavailable — skip and note in your final reply]\``;
+      return `${idx + 1}. **${displayName}** — _${m.role}_ — member_id=\`${m.expert_id}\` — \`[unavailable — skip and note in your final reply]\``;
     }
-    return `${idx + 1}. **${displayName}** — _${m.role}_ — invoke via Agent tool with subagent name \`${agentName}\``;
+    return `${idx + 1}. **${displayName}** — _${m.role}_ — member_id=\`${m.expert_id}\` — invoke via Agent tool with subagent name \`${agentName}\``;
   });
   const memberBlock = memberLines.join('\n');
 
@@ -263,15 +355,63 @@ Invoke members **strictly in the order listed above**, one Agent call per member
 
   const handoffBlock = `## Handoff Discipline
 
-- Members write their full artifacts (specs, code, reports) to disk via the \`Write\` tool at \`./team-run/{member-role}.md\` (or appropriate file paths for code).
-- Members return a **<500-word summary** for handoff — not the full artifact.
-- The synthesizer (final member) reads the on-disk artifacts via \`Read\` before producing the final deliverable.
-- Keep your own coordinator output focused on routing and synthesis — do **not** restate full member outputs in your own reply.`;
+The depth of this run is driven by a \`[QUALITY_TIER=fast|medium|slow]\` marker that Cerebro prepends to the prompt it sends you (look at the first line). When the marker is absent, treat it as \`medium\`.
+
+**\`[QUALITY_TIER=slow]\`** — the user wants depth and is willing to wait:
+- Each member writes their full artifact to disk at \`./team-run/{member-role}.md\` (or appropriate file paths for code) AND returns the FULL artifact text inline to you (no word cap).
+- Before composing the final deliverable, you MUST \`Read\` every member's artifact file and confirm the inline text matches.
+- Preserve day-by-day detail, embedded links (instructional videos, illustrated guides, references), and per-section depth from the members. Do not condense.
+- When concrete reference media (instructional videos, illustrated guides, links) would help the user, include them in the artifact.
+- The final deliverable MUST be at least as long as the longest individual member artifact.
+
+**\`[QUALITY_TIER=medium]\`** (default) — balanced depth:
+- Members write their full artifacts to disk AND return a **<500-word handoff summary**.
+- Before composing the final deliverable, you MUST \`Read\` every member's artifact via the \`Read\` tool. Synthesizing from the 500-word summaries alone is a contract violation — full detail lives in the on-disk files.
+
+**\`[QUALITY_TIER=fast]\`** — the user wants speed:
+- Cap the team to the first 2 members listed in **Members**; skip the rest.
+- Members return inline summaries only — no disk writes required.
+- Synthesize quickly; concise output is fine.
+
+## Live status reporting
+
+Cerebro is showing the user a live status card listing every member with a queued/running/completed indicator. You MUST emit per-member status updates so the card stays current — without these calls the user sees a frozen card for the entire run.
+
+- **At each member's start** (right before invoking the \`Agent\` tool for that member), run:
+  \`\`\`
+  bash "$CLAUDE_PROJECT_DIR/.claude/scripts/team-member-update.sh" <team_id> <member_id> running
+  \`\`\`
+- **At each member's completion** (right after the Agent tool returns):
+  \`\`\`
+  bash "$CLAUDE_PROJECT_DIR/.claude/scripts/team-member-update.sh" <team_id> <member_id> completed
+  \`\`\`
+- **If a member fails**, pass \`error\` plus a one-line message as a fourth argument:
+  \`\`\`
+  bash "$CLAUDE_PROJECT_DIR/.claude/scripts/team-member-update.sh" <team_id> <member_id> error "Brief reason"
+  \`\`\`
+
+The \`<team_id>\` is your team_id (\`${expert.id}\`) shown at the top of this prompt. The \`<member_id>\` is the \`member_id\` value listed for each entry in **Members** below.
+
+Keep your own coordinator output focused on routing and synthesis — do **not** restate full member outputs in your own reply (they will be surfaced separately).`;
 
   const coordinatorPrompt = (expert.coordinator_prompt || '').trim();
   const coordinatorBlock = coordinatorPrompt ? `## Coordinator Instructions\n\n${coordinatorPrompt}` : '';
 
+  const deliveryBlock = `## Delivering files
+
+Your synthesized reply becomes Cerebro's reply to the user verbatim. End it with literal \`@/absolute/path\` lines for ONLY the file(s) the user asked for — nothing else.
+
+- User asked for one file → exactly one trailing \`@/path\` line.
+- User asked for several specific files → one \`@/path\` line per requested file.
+- User asked a plain question and didn't ask for a file → no \`@/path\` lines.
+
+Members may write many artifacts to disk during their work — per-member handoff files, build scripts, intermediate renders, prior drafts, embedded source images, reference templates. None of those become chips in your final reply. Only the final artifact(s) the user actually asked for.
+
+**Format default when the user didn't specify:** prefer editable formats — \`.docx\` for documents, \`.xlsx\` for spreadsheets, \`.pptx\` for slides. Only deliver \`.pdf\` when the user explicitly asked for it. If both editable and PDF exist, surface only the editable one.`;
+
   return `You are the **${expert.name}**, a Cerebro orchestrator team.${domainLine} You do not do the work yourself — you delegate to your member experts via the \`Agent\` tool and synthesize their outputs.
+
+Your **team_id** is \`${expert.id}\`. Use this verbatim when calling \`team-member-update.sh\` (see "Live status reporting" below).
 
 ## Mandatory Delegation Policy (read this before anything else)
 
@@ -295,16 +435,83 @@ ${strategyBlock}
 
 ${handoffBlock}
 
+${deliveryBlock}
+
 ${coordinatorBlock}
 `;
 }
 
-function buildExpertBody(expert: ExpertData, memoryDir: string, skills: SkillData[] = []): string {
-  const domainLine = expert.domain ? ` Domain: ${expert.domain}.` : '';
-  let body = `You are **${expert.name}**, a Cerebro specialist expert.${domainLine}
+/** Per-file cap on injected context (chars). Reference docs ride EVERY chat
+ * turn's system prompt, so we cap lower than the per-attachment cap on
+ * one-shot uploads (60k) to keep total context predictable. */
+const MAX_CONTEXT_FILE_CHARS_PER_FILE = 40_000;
+/** Aggregate cap across all reference docs for one expert. */
+const MAX_CONTEXT_FILE_TOTAL_CHARS = 120_000;
 
-${turnProtocol(memoryDir)}
-`;
+function renderExpertContextSection(
+  contextFiles: ContextFileData[] = [],
+): string {
+  if (contextFiles.length === 0) return '';
+
+  const blocks: string[] = [];
+  let totalChars = 0;
+  for (const cf of contextFiles) {
+    let body = '';
+    let footer = '';
+    if (cf.parsed_text_path && fs.existsSync(cf.parsed_text_path)) {
+      try {
+        body = fs.readFileSync(cf.parsed_text_path, 'utf-8');
+      } catch {
+        body = '';
+      }
+    }
+    if (!body) {
+      // Image / text-passthrough / parse-failed: surface the file path so the
+      // expert can Read it on its own (safe for images and plain text).
+      body = `(File preserved at \`${cf.file_storage_path}\`. Use the Read tool only for text/image formats — never on binary office docs.)`;
+    } else {
+      if (body.length > MAX_CONTEXT_FILE_CHARS_PER_FILE) {
+        body = body.slice(0, MAX_CONTEXT_FILE_CHARS_PER_FILE)
+          + `\n\n[truncated — original was ${body.length} chars; raise expert.token_budget or split the file]`;
+      }
+      if (totalChars + body.length > MAX_CONTEXT_FILE_TOTAL_CHARS) {
+        footer = `\n\n[remaining reference files omitted — aggregate context cap of ${MAX_CONTEXT_FILE_TOTAL_CHARS} chars reached]`;
+        blocks.push(footer);
+        break;
+      }
+      totalChars += body.length;
+    }
+    const kindLabel = cf.kind === 'template' ? ' (TEMPLATE — always follow this format)' : '';
+    blocks.push(`### ${cf.file_name}${kindLabel}\n\n${body.trim()}`);
+  }
+
+  return (
+    '\n## Reference documents\n\n'
+    + 'These files were attached by the user as permanent reference for every turn. '
+    + 'Use them as authoritative context. When a file is marked TEMPLATE, your output MUST follow its structure (headings, sections, formatting) exactly.\n\n'
+    + blocks.join('\n\n')
+    + '\n'
+  );
+}
+
+function buildExpertBody(
+  expert: ExpertData,
+  memoryDir: string,
+  skills: SkillData[] = [],
+  contextFiles: ContextFileData[] = [],
+): string {
+  const domainLine = expert.domain ? ` Domain: ${expert.domain}.` : '';
+  let body = `You are **${expert.name}**, a Cerebro specialist expert.${domainLine}\n`;
+
+  const identity = (expert.system_prompt || '').trim();
+  if (identity) {
+    body += `\n## Identity\n\n${identity}\n`;
+  }
+
+  const policies = parsePolicies(expert.policies);
+  if (policies.length > 0) {
+    body += `\n## Quality Standards\n\n${policies.map((p) => `- ${p}`).join('\n')}\n`;
+  }
 
   if (skills.length > 0) {
     body += '\n## Skills\n\nYou have the following skills. Follow their instructions when relevant:\n\n';
@@ -312,6 +519,25 @@ ${turnProtocol(memoryDir)}
       body += `### ${skill.name}\n\n${skill.instructions.trimEnd()}\n\n`;
     }
   }
+
+  body += renderExpertContextSection(contextFiles);
+
+  body += `\n${turnProtocol(memoryDir)}\n`;
+
+  body += `\n## Delivering files
+
+Your reply becomes Cerebro's reply to the user verbatim. End it with literal \`@/absolute/path\` lines for ONLY the file(s) the user asked for — nothing else.
+
+- User asked for one file → exactly one trailing \`@/path\` line.
+- User asked for several specific files → one \`@/path\` line per requested file, in the order they asked.
+- User asked a plain question and didn't ask for a file → no \`@/path\` lines, even if you wrote something to disk while working.
+
+**By-products of your workflow are never chips**, even if they exist on disk: build scripts (\`.py\`, \`.sh\`, helper code), intermediate renders (a \`.pdf\` you made only to validate a \`.docx\`), prior version drafts, source images / fonts / fixtures embedded inside the doc, reference templates the user already gave you, and any memory / housekeeping files. Only the final artifact.
+
+**Format default when the user didn't specify:** prefer editable formats so the user can edit if needed. Documents → \`.docx\`. Spreadsheets → \`.xlsx\`. Slides → \`.pptx\`. Only deliver \`.pdf\` when the user explicitly asked for PDF. If you generated both \`.docx\` and \`.pdf\` while working, surface only the editable one.
+
+Mentioning a path in prose is fine; only the trailing \`@/path\` lines become chips.
+`;
 
   return body;
 }
@@ -337,33 +563,17 @@ function parsePolicies(raw: Record<string, unknown> | string[] | null): string[]
   return [];
 }
 
-function buildSoulFile(expert: ExpertData): string {
-  const sections: string[] = ['# Soul\n'];
-
-  const identity = (expert.system_prompt || '').trim();
-  if (identity) {
-    sections.push(`## Identity\n\n${identity}\n`);
-  }
-
-  if (expert.domain) {
-    sections.push(`## Domain\n\n${expert.domain}\n`);
-  }
-
-  sections.push(
+function buildSoulFile(_expert: ExpertData): string {
+  // Persona and quality standards live in the agent body now (see buildExpertBody).
+  // SOUL.md is purely for communication preferences the expert learns over time.
+  return [
+    '# Soul\n',
     '## Working Style\n\n'
     + '- Be direct and actionable\n'
     + "- Adapt to the user's level of expertise\n"
     + '- Ask clarifying questions when the request is ambiguous\n',
-  );
-
-  const policies = parsePolicies(expert.policies);
-  if (policies.length > 0) {
-    sections.push(`## Quality Standards\n\n${policies.map((p) => `- ${p}`).join('\n')}\n`);
-  }
-
-  sections.push("## Communication\n\n(Evolve this section as you learn the user's communication preferences.)\n");
-
-  return sections.join('\n');
+    "## Communication\n\n(Evolve this section as you learn the user's communication preferences.)\n",
+  ].join('\n');
 }
 
 function buildCerebroSoulFile(): string {
@@ -447,11 +657,125 @@ fi
 `,
     },
     {
+      name: 'kb-list-pages.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Lists every Knowledge Base page as a flat {id, title, parent_id} array.
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+[ -f "$RUNTIME_JSON" ] || { echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2; exit 1; }
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+[ -n "$PORT" ] && [ "$PORT" != "null" ] || { echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2; exit 1; }
+
+curl -s "http://127.0.0.1:$PORT/knowledge/pages" 2>/dev/null | \\
+  jq '[.pages | .. | objects | select(has("id")) | {id, title, parent_id}]' || {
+  echo "ERROR: Cannot connect to backend at port $PORT (is the app running?)" >&2
+  exit 1
+}
+`,
+    },
+    {
+      name: 'kb-read-page.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Reads one Knowledge Base page as markdown.
+# Usage: bash kb-read-page.sh <page_id>
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+[ -f "$RUNTIME_JSON" ] || { echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2; exit 1; }
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+[ -n "$PORT" ] && [ "$PORT" != "null" ] || { echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2; exit 1; }
+
+PAGE_ID="\${1:-}"
+[ -n "$PAGE_ID" ] || { echo "ERROR: Provide a page id. Usage: bash kb-read-page.sh <page_id>" >&2; exit 1; }
+
+curl -s -w "\\n%{http_code}" "http://127.0.0.1:$PORT/knowledge/pages/$PAGE_ID" 2>/dev/null > /tmp/kb-read.out || {
+  echo "ERROR: Cannot connect to backend at port $PORT" >&2; exit 1; }
+HTTP_CODE=$(tail -1 /tmp/kb-read.out)
+BODY=$(sed '$ d' /tmp/kb-read.out)
+if [ "$HTTP_CODE" = "200" ]; then
+  echo "$BODY" | jq '{id, title, icon, content_markdown}'
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2; echo "$BODY" >&2; exit 1
+fi
+`,
+    },
+    {
+      name: 'kb-create-page.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Creates a Knowledge Base page from a JSON file.
+# The JSON may contain: title, parent_id (optional), icon (optional emoji),
+# content_markdown (optional — the page body as markdown).
+# Usage: bash kb-create-page.sh <json-file>
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+[ -f "$RUNTIME_JSON" ] || { echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2; exit 1; }
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+[ -n "$PORT" ] && [ "$PORT" != "null" ] || { echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2; exit 1; }
+
+JSON_FILE="\${1:-}"
+[ -n "$JSON_FILE" ] && [ -f "$JSON_FILE" ] || { echo "ERROR: Provide a path to a JSON file. Usage: bash kb-create-page.sh <json-file>" >&2; exit 1; }
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" -X POST "http://127.0.0.1:$PORT/knowledge/pages" \\
+  -H "Content-Type: application/json" -d @"$JSON_FILE" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT (is the app running?)" >&2; exit 1; }
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  PAGE_TITLE=$(echo "$BODY_RESPONSE" | jq -r '.title // "Untitled"')
+  PAGE_ID=$(echo "$BODY_RESPONSE" | jq -r '.id // "unknown"')
+  echo "SUCCESS: Created Knowledge Base page '$PAGE_TITLE' (id: $PAGE_ID)"
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2; echo "$BODY_RESPONSE" >&2; exit 1
+fi
+`,
+    },
+    {
+      name: 'kb-update-page.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Updates an existing Knowledge Base page from a JSON file.
+# The JSON may contain any of: title, icon, content_markdown.
+# Writing content_markdown clears the stored block JSON so the editor
+# re-renders from your markdown the next time the page is opened.
+# Usage: bash kb-update-page.sh <page_id> <json-file>
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+[ -f "$RUNTIME_JSON" ] || { echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2; exit 1; }
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+[ -n "$PORT" ] && [ "$PORT" != "null" ] || { echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2; exit 1; }
+
+PAGE_ID="\${1:-}"
+JSON_FILE="\${2:-}"
+[ -n "$PAGE_ID" ] || { echo "ERROR: Provide a page id. Usage: bash kb-update-page.sh <page_id> <json-file>" >&2; exit 1; }
+[ -n "$JSON_FILE" ] && [ -f "$JSON_FILE" ] || { echo "ERROR: Provide a JSON file as the second argument" >&2; exit 1; }
+
+# When content_markdown is provided, also null out content_json so the editor
+# reconverts from markdown on next open (markdown is the agent's source of truth).
+BODY=$(jq 'if has("content_markdown") then . + {content_json: null} else . end' "$JSON_FILE")
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" -X PATCH "http://127.0.0.1:$PORT/knowledge/pages/$PAGE_ID" \\
+  -H "Content-Type: application/json" -d "$BODY" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT" >&2; exit 1; }
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  echo "SUCCESS: Updated Knowledge Base page $PAGE_ID"
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2; echo "$BODY_RESPONSE" >&2; exit 1
+fi
+`,
+    },
+    {
       name: 'list-experts.sh',
       content: `#!/usr/bin/env bash
 set -euo pipefail
 
-# Lists all enabled Cerebro experts from the backend API.
+# Lists Cerebro experts from the backend API. When the caller scopes this
+# run with CEREBRO_EXPERT_ALLOWLIST_SET=1, only experts whose id appears in
+# CEREBRO_EXPERT_ALLOWLIST (comma-separated) are returned — used by the
+# Slack bridge to enforce per-person expert access.
 # Usage: bash list-experts.sh
 
 RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
@@ -467,7 +791,13 @@ if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
   exit 1
 fi
 
-curl -s "http://127.0.0.1:$PORT/experts?is_enabled=true&limit=200" | jq '.experts[] | {id, name, slug, description}'
+if [ "\${CEREBRO_EXPERT_ALLOWLIST_SET:-}" = "1" ]; then
+  ALLOW="\${CEREBRO_EXPERT_ALLOWLIST:-}"
+  curl -s "http://127.0.0.1:$PORT/experts?is_enabled=true&limit=200" \\
+    | jq --arg allow "$ALLOW" '.experts[] | select(($allow | split(",")) | index(.id) != null) | {id, name, slug, description}'
+else
+  curl -s "http://127.0.0.1:$PORT/experts?is_enabled=true&limit=200" | jq '.experts[] | {id, name, slug, description}'
+fi
 `,
     },
     {
@@ -608,6 +938,615 @@ else
 fi
 `,
     },
+    {
+      name: 'dry-run-routine.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Tests a candidate routine end-to-end with side-effects stubbed so we can
+# tell the user "it works" before persisting. Long-poll: blocks until the
+# engine completes the dry-run (a couple of minutes on a heavy routine).
+#
+# Usage: bash dry-run-routine.sh <json-file>
+#   JSON body: { "dag": { "steps": [...] }, "trigger_payload"?: {...} }
+#
+# Exit codes:
+#   0 — dry-run completed (caller MUST inspect .ok in the body)
+#   1 — transport / validation error before the run started
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  exit 1
+fi
+
+curl -sf --max-time 600 \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/dry-run-routine" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE"
+`,
+    },
+    {
+      name: 'save-routine.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Persists a routine via the backend API. Use this AFTER dry-run-routine.sh
+# has returned ok=true.
+#
+# Usage: bash save-routine.sh <json-file>
+#   JSON body matches POST /routines: { name, description?, plain_english_steps?,
+#                                       dag_json (string), trigger_type, ... }
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
+  echo "ERROR: backend not running" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  exit 1
+fi
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" -X POST "http://127.0.0.1:$PORT/routines" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  ROUTINE_NAME=$(echo "$BODY_RESPONSE" | jq -r '.name // "unknown"')
+  ROUTINE_ID=$(echo "$BODY_RESPONSE" | jq -r '.id // "unknown"')
+  echo "SUCCESS: Saved routine '$ROUTINE_NAME' (id: $ROUTINE_ID)"
+  echo "$BODY_RESPONSE" | jq .
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2
+  echo "$BODY_RESPONSE" >&2
+  exit 1
+fi
+`,
+    },
+    {
+      name: 'list-chat-actions.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Lists every chat-exposable action with current availability ("available"
+# vs "not_connected") so Cerebro knows which integrations the user has
+# wired up before trying to invoke one.
+#
+# Usage: bash list-chat-actions.sh [en|es]
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat_actions_port/token missing from $RUNTIME_JSON (server not started?)" >&2
+  exit 1
+fi
+
+LANG_CODE="\${1:-en}"
+
+curl -sf "http://127.0.0.1:$PORT/chat-actions/catalog?lang=$LANG_CODE" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  | jq '.actions'
+`,
+    },
+    {
+      name: 'run-chat-action.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Runs a single chat-triggered integration action through Cerebro's routine
+# engine. Always pauses for human approval before the action executes — the
+# call below blocks until the user clicks Approve or Deny in the Approvals
+# tab, then prints the structured result.
+#
+# Usage: bash run-chat-action.sh <json-file>
+#
+# JSON body shape:
+#   { "type": "hubspot_create_ticket",
+#     "params": { "subject": "...", "content": "..." } }
+#
+# Exit codes:
+#   0   success — action executed and returned a result
+#   3   approval denied
+#   4   integration not connected
+#   1   any other failure (network, validation, runtime error)
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running (no chat_actions_port/token in $RUNTIME_JSON)" >&2
+  exit 1
+fi
+
+JSON_FILE="\${1:-}"
+if [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "ERROR: Provide a path to a JSON file as the first argument" >&2
+  echo "Usage: bash run-chat-action.sh <json-file>" >&2
+  exit 1
+fi
+
+# Stamp the originating conversation id (exported by the bridge/runtime as
+# CEREBRO_CONVERSATION_ID) onto the request body so the engine can route the
+# approval back to the exact Slack/Telegram thread that triggered it. Falls
+# back to the raw body when the variable is unset (e.g. desktop chat).
+PAYLOAD=$(cat "$JSON_FILE")
+if [ -n "\${CEREBRO_CONVERSATION_ID:-}" ]; then
+  PAYLOAD=$(echo "$PAYLOAD" | jq --arg cid "\${CEREBRO_CONVERSATION_ID}" '. + {conversation_id: $cid}') || {
+    echo "ERROR: Failed to stamp conversation id onto request body" >&2
+    exit 1
+  }
+fi
+
+# Long-poll: this curl call sits open until the user resolves the approval
+# (or the underlying run reaches a terminal state). Increase max-time to 30
+# minutes so a slow human reviewer doesn't trip the curl timeout.
+RESPONSE=$(curl -s --max-time 1800 -w "\\n%{http_code}" \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/run" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d "$PAYLOAD" 2>&1) || {
+  echo "ERROR: Cannot reach chat-actions server on port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+STATUS=$(echo "$BODY_RESPONSE" | jq -r '.status // ""')
+SUMMARY=$(echo "$BODY_RESPONSE" | jq -r '.summary // ""')
+ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
+
+case "$STATUS" in
+  succeeded)
+    echo "SUCCESS: $SUMMARY"
+    echo "$BODY_RESPONSE" | jq '.data // {}'
+    exit 0
+    ;;
+  denied)
+    echo "DENIED: \${ERROR:-Approval denied}"
+    exit 3
+    ;;
+  unavailable)
+    echo "NOT_CONNECTED: \${ERROR:-Integration is not connected.}"
+    exit 4
+    ;;
+  *)
+    echo "ERROR: \${ERROR:-Run did not complete successfully} (HTTP $HTTP_CODE)" >&2
+    echo "$BODY_RESPONSE" >&2
+    exit 1
+    ;;
+esac
+`,
+    },
+    {
+      name: 'propose-integration.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Asks the Cerebro UI to render an inline IntegrationSetupCard so the user
+# can connect an integration (Telegram, Slack, HubSpot, WhatsApp, GoHighLevel, …)
+# without leaving chat. The renderer owns credential entry — this script
+# never transmits secrets and the chat agent must not ask for tokens in chat.
+#
+# Usage: bash propose-integration.sh <integration_id> [reason]
+#
+# integration_id must match a manifest in src/integrations/registry.ts.
+# Currently: telegram | slack | hubspot | whatsapp | ghl | github.
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running" >&2
+  exit 1
+fi
+
+INTEGRATION_ID="\${1:-}"
+if [ -z "$INTEGRATION_ID" ]; then
+  echo "ERROR: integration_id is required (e.g. telegram, slack, hubspot, whatsapp, ghl, github)" >&2
+  exit 1
+fi
+REASON="\${2:-}"
+
+BODY=$(jq -n \\
+  --arg integration_id "$INTEGRATION_ID" \\
+  --arg reason "$REASON" \\
+  '{integration_id: $integration_id} + (if $reason == "" then {} else {reason: $reason} end)')
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/propose-integration" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d "$BODY") || {
+  echo "ERROR: Cannot reach chat-actions server on port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" = "200" ]; then
+  echo "SUCCESS: Setup card opened for $INTEGRATION_ID"
+  exit 0
+fi
+ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
+echo "ERROR: \${ERROR:-Could not open setup card} (HTTP $HTTP_CODE)" >&2
+exit 1
+`,
+    },
+    {
+      name: 'announce-team-run.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-populates the live TeamRunCard in the chat UI with the team and its
+# members in 'queued' state, so the user has visibility for the duration
+# of a (potentially multi-minute) team run. Cerebro must call this BEFORE
+# invoking the team via the Agent tool.
+#
+# Usage: bash announce-team-run.sh <team_id> <team_name> <strategy> <members_json>
+#
+# members_json is a JSON array of {member_id, member_name, role}, e.g.
+#   '[{"member_id":"abc","member_name":"Running Coach","role":"coach"}]'
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running" >&2
+  exit 1
+fi
+
+TEAM_ID="\${1:-}"
+TEAM_NAME="\${2:-}"
+STRATEGY="\${3:-}"
+MEMBERS_JSON="\${4:-}"
+if [ -z "$TEAM_ID" ] || [ -z "$TEAM_NAME" ] || [ -z "$STRATEGY" ] || [ -z "$MEMBERS_JSON" ]; then
+  echo "Usage: announce-team-run.sh <team_id> <team_name> <strategy> <members_json>" >&2
+  exit 1
+fi
+
+# Validate that members is parseable JSON.
+if ! echo "$MEMBERS_JSON" | jq -e 'type == "array"' >/dev/null 2>&1; then
+  echo "ERROR: <members_json> must be a JSON array" >&2
+  exit 1
+fi
+
+BODY=$(jq -n \\
+  --arg team_id "$TEAM_ID" \\
+  --arg team_name "$TEAM_NAME" \\
+  --arg strategy "$STRATEGY" \\
+  --argjson members "$MEMBERS_JSON" \\
+  '{team_id: $team_id, team_name: $team_name, strategy: $strategy, members: $members}')
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/announce-team-run" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d "$BODY") || {
+  echo "ERROR: Cannot reach chat-actions server on port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" = "200" ]; then
+  echo "SUCCESS: Announced team run for $TEAM_NAME"
+  exit 0
+fi
+ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
+echo "ERROR: \${ERROR:-Could not announce team run} (HTTP $HTTP_CODE)" >&2
+exit 1
+`,
+    },
+    {
+      name: 'team-member-update.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Flips the status of a single team member in the live TeamRunCard. The
+# team coordinator subprocess calls this at each member's start and end
+# so the user can see which expert is currently working.
+#
+# Usage: bash team-member-update.sh <team_id> <member_id> <status> [error_message]
+#
+# status: running | completed | error
+# error_message: optional one-line message when status=error
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running" >&2
+  exit 1
+fi
+
+TEAM_ID="\${1:-}"
+MEMBER_ID="\${2:-}"
+STATUS="\${3:-}"
+ERROR_MESSAGE="\${4:-}"
+if [ -z "$TEAM_ID" ] || [ -z "$MEMBER_ID" ] || [ -z "$STATUS" ]; then
+  echo "Usage: team-member-update.sh <team_id> <member_id> <status> [error_message]" >&2
+  exit 1
+fi
+
+case "$STATUS" in
+  running|completed|error) ;;
+  *)
+    echo "ERROR: status must be running, completed, or error (got: $STATUS)" >&2
+    exit 1
+    ;;
+esac
+
+BODY=$(jq -n \\
+  --arg team_id "$TEAM_ID" \\
+  --arg member_id "$MEMBER_ID" \\
+  --arg status "$STATUS" \\
+  --arg error_message "$ERROR_MESSAGE" \\
+  '{team_id: $team_id, member_id: $member_id, status: $status} + (if $error_message == "" then {} else {error_message: $error_message} end)')
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" \\
+  -X POST "http://127.0.0.1:$PORT/chat-actions/team-member-update" \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d "$BODY") || {
+  echo "ERROR: Cannot reach chat-actions server on port $PORT" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" = "200" ]; then
+  exit 0
+fi
+ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""')
+echo "ERROR: \${ERROR:-Could not update team member status} (HTTP $HTTP_CODE)" >&2
+exit 1
+`,
+    },
+    {
+      name: 'attach-expert-context.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Permanently attaches a file to an existing expert as a reference or template.
+# Use when the user says an expert should ALWAYS use a given document as
+# guide/format. For a one-off context pass (a diagram for THIS manual only),
+# pass the file directly in the Agent call instead — do not use this script.
+#
+# Usage: bash attach-expert-context.sh <expert_id> <file_path> <kind>
+#   kind: "template" (output MUST follow this format) | "reference" (background)
+#
+# The script registers the file with the backend's FileItem table (idempotent
+# by sha+path) and then attaches it to the expert's context-files list.
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
+  echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+EXPERT_ID="\${1:-}"
+FILE_PATH="\${2:-}"
+KIND="\${3:-}"
+if [ -z "$EXPERT_ID" ] || [ -z "$FILE_PATH" ] || [ -z "$KIND" ]; then
+  echo "Usage: bash attach-expert-context.sh <expert_id> <file_path> <kind>" >&2
+  echo "  kind: template | reference" >&2
+  exit 1
+fi
+
+if [ "$KIND" != "template" ] && [ "$KIND" != "reference" ]; then
+  echo "ERROR: kind must be 'template' or 'reference' (got: $KIND)" >&2
+  exit 1
+fi
+
+if [ ! -f "$FILE_PATH" ]; then
+  echo "ERROR: File not found: $FILE_PATH" >&2
+  exit 1
+fi
+
+ABS_PATH=$(cd "$(dirname "$FILE_PATH")" && pwd)/$(basename "$FILE_PATH")
+
+# Step 1: Register the file with the backend (idempotent — returns existing
+# row if same sha+path+source already exist).
+REG_BODY=$(jq -n --arg file_path "$ABS_PATH" '{file_path: $file_path, source: "expert-context"}')
+REG_RESPONSE=$(curl -s -w "\\n%{http_code}" -X POST "http://127.0.0.1:$PORT/files/items/from-path" \\
+  -H "Content-Type: application/json" \\
+  -d "$REG_BODY" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT (is the app running?)" >&2
+  exit 1
+}
+
+REG_CODE=$(echo "$REG_RESPONSE" | tail -1)
+REG_BODY_RESPONSE=$(echo "$REG_RESPONSE" | sed '$ d')
+
+if [ "$REG_CODE" -lt 200 ] 2>/dev/null || [ "$REG_CODE" -ge 300 ] 2>/dev/null; then
+  echo "ERROR: Could not register file (HTTP $REG_CODE)" >&2
+  echo "$REG_BODY_RESPONSE" >&2
+  exit 1
+fi
+
+FILE_ITEM_ID=$(echo "$REG_BODY_RESPONSE" | jq -r '.id // ""')
+if [ -z "$FILE_ITEM_ID" ]; then
+  echo "ERROR: Backend did not return a file id" >&2
+  exit 1
+fi
+
+# Step 2: Attach the FileItem to the expert.
+ATTACH_BODY=$(jq -n --arg fid "$FILE_ITEM_ID" --arg kind "$KIND" '{file_item_id: $fid, kind: $kind}')
+ATTACH_RESPONSE=$(curl -s -w "\\n%{http_code}" -X POST "http://127.0.0.1:$PORT/experts/$EXPERT_ID/context-files" \\
+  -H "Content-Type: application/json" \\
+  -d "$ATTACH_BODY" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT" >&2
+  exit 1
+}
+
+ATTACH_CODE=$(echo "$ATTACH_RESPONSE" | tail -1)
+ATTACH_BODY_RESPONSE=$(echo "$ATTACH_RESPONSE" | sed '$ d')
+
+if [ "$ATTACH_CODE" -ge 200 ] 2>/dev/null && [ "$ATTACH_CODE" -lt 300 ] 2>/dev/null; then
+  CTX_ID=$(echo "$ATTACH_BODY_RESPONSE" | jq -r '.id // "unknown"')
+
+  # Step 3: Re-render the expert's .md so the new context file is visible to
+  # the subagent on the NEXT turn — not only after the user restarts the app.
+  # The backend /sync/agent-files endpoint mirrors the TS installer's
+  # buildExpertBody including reference documents, so the .md picks up the
+  # template immediately. We surface a WARN (not ERROR) on failure: the
+  # attach itself is already persisted, so the user shouldn't see a hard
+  # failure — restarting the app would still pick it up.
+  SYNC_RESPONSE=$(curl -s -w "\\n%{http_code}" -X POST "http://127.0.0.1:$PORT/sync/agent-files" 2>&1) || {
+    echo "SUCCESS: Attached file as $KIND to expert $EXPERT_ID (context-file id: $CTX_ID)"
+    echo "WARN: could not reach /sync/agent-files — expert .md may be stale until restart" >&2
+    echo "$ATTACH_BODY_RESPONSE" | jq .
+    exit 0
+  }
+  SYNC_CODE=$(echo "$SYNC_RESPONSE" | tail -1)
+
+  echo "SUCCESS: Attached file as $KIND to expert $EXPERT_ID (context-file id: $CTX_ID)"
+  if [ "$SYNC_CODE" -lt 200 ] 2>/dev/null || [ "$SYNC_CODE" -ge 300 ] 2>/dev/null; then
+    echo "WARN: /sync/agent-files returned HTTP $SYNC_CODE — expert .md may be stale until restart" >&2
+  fi
+  echo "$ATTACH_BODY_RESPONSE" | jq .
+else
+  echo "ERROR: Backend returned HTTP $ATTACH_CODE" >&2
+  echo "$ATTACH_BODY_RESPONSE" >&2
+  exit 1
+fi
+`,
+    },
+    {
+      name: 'update-expert.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Updates an existing expert's name, description, and/or system_prompt via
+# PATCH /experts/{id}. Verified (built-in) experts only accept toggles
+# (is_enabled, is_pinned) and the backend will return HTTP 403 for any
+# attempt to change persona fields on them.
+#
+# Usage: bash update-expert.sh <expert_id> <json-file>
+#   The JSON file may contain any subset of: name, description, system_prompt.
+#   (For verified experts only: is_enabled, is_pinned.)
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
+  echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+EXPERT_ID="\${1:-}"
+JSON_FILE="\${2:-}"
+if [ -z "$EXPERT_ID" ] || [ -z "$JSON_FILE" ] || [ ! -f "$JSON_FILE" ]; then
+  echo "Usage: bash update-expert.sh <expert_id> <json-file>" >&2
+  exit 1
+fi
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" -X PATCH "http://127.0.0.1:$PORT/experts/$EXPERT_ID" \\
+  -H "Content-Type: application/json" \\
+  -d @"$JSON_FILE" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT (is the app running?)" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  EXPERT_NAME=$(echo "$BODY_RESPONSE" | jq -r '.name // "unknown"')
+  echo "SUCCESS: Updated expert '$EXPERT_NAME' (id: $EXPERT_ID)"
+  echo "$BODY_RESPONSE" | jq .
+elif [ "$HTTP_CODE" = "403" ]; then
+  DETAIL=$(echo "$BODY_RESPONSE" | jq -r '.detail // ""')
+  echo "ERROR: \${DETAIL:-Cannot modify this expert (likely a built-in/verified one)} (HTTP 403)" >&2
+  exit 1
+elif [ "$HTTP_CODE" = "404" ]; then
+  echo "ERROR: Expert $EXPERT_ID not found (HTTP 404)" >&2
+  exit 1
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2
+  echo "$BODY_RESPONSE" >&2
+  exit 1
+fi
+`,
+    },
   ];
 }
 
@@ -669,6 +1608,51 @@ If the output says **ERROR**, report the error to the user.
 `,
     },
     {
+      name: 'knowledge-base',
+      description:
+        'Read from and write to the Knowledge Base (Notion-style pages app). Use when the user asks to look something up in, find, create, add, or update a Knowledge Base / wiki / docs page, or save notes as a page. Spanish: "busca en la base de conocimiento", "crea una página", "guarda esto como una nota/página", "añade a la base de conocimiento".',
+      body: `# Knowledge Base
+
+The Knowledge Base is Cerebro's built-in Notion-style notes app: a tree of pages (a "folder" is just a page with children). You work in **markdown** — never touch the editor's internal block JSON. All commands run with the **Bash** tool.
+
+## List pages
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/kb-list-pages.sh"
+\`\`\`
+Returns a flat array of \`{id, title, parent_id}\`. Use it to find a page id or to understand the existing structure before creating something new.
+
+## Read a page
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/kb-read-page.sh" <page_id>
+\`\`\`
+Returns the page's \`title\`, \`icon\`, and \`content_markdown\`.
+
+## Create a page
+Build the JSON first, then run the script. \`content_markdown\` is the page body; \`parent_id\` (optional) nests it under another page; \`icon\` (optional) is a single emoji.
+\`\`\`bash
+jq -n \\
+  --arg title "REPLACE_TITLE" \\
+  --arg icon "📝" \\
+  --arg md "REPLACE_MARKDOWN_BODY" \\
+  '{title: $title, icon: $icon, content_markdown: $md}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/kb-new-page.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/kb-create-page.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/kb-new-page.json"
+\`\`\`
+To nest under an existing page, add \`parent_id: $parent\` (with \`--arg parent "<id>"\`) to the jq object.
+
+## Update a page
+\`\`\`bash
+jq -n --arg md "REPLACE_MARKDOWN_BODY" '{content_markdown: $md}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/kb-update.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/kb-update-page.sh" <page_id> "$CLAUDE_PROJECT_DIR/.claude/tmp/kb-update.json"
+\`\`\`
+
+## Notes
+- Write normal markdown: \`#\`/\`##\`/\`###\` headings, \`-\` and \`1.\` lists, \`- [ ]\` checkboxes, \`>\` quotes, fenced code blocks, tables, and images. The editor converts your markdown into rich blocks when the page is opened.
+- On **SUCCESS**, tell the user the page is ready and where to find it (Apps → Knowledge Base). On **ERROR**, report what failed.
+`,
+    },
+    {
       name: 'summarize-conversation',
       description: 'Summarize a conversation transcript into 1-2 paragraphs of key takeaways.',
       body: `# Summarize conversation
@@ -722,8 +1706,99 @@ jq -n \\
 bash "$CLAUDE_PROJECT_DIR/.claude/scripts/create-expert.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/new-expert.json"
 \`\`\`
 
-If the output says **SUCCESS**, tell the user the expert is ready — it appears in the sidebar automatically. If you set a domain, mention that matching skills from the library were auto-assigned.
-If the output says **ERROR**, report the error to the user.
+If the output says **SUCCESS**, capture the new expert's id from the JSON output — you need it in the next step.
+If the output says **ERROR**, report the error to the user and stop here.
+
+## After SUCCESS — handle any files the user attached during setup
+
+Before announcing the expert to the user, check whether the same message (or the most recent few messages framing the expert setup) contained \`@/absolute/path\` attachment lines. If yes, those files are part of the expert's *configuration* — they must be persisted, not used as one-off context. The user has already done the work of attaching them; do not make them re-upload.
+
+For each attached file, do not invoke \`attach-expert-context.sh\` blindly. Instead:
+
+1. **Ask once, consolidated.** If there is one file, ask: *"You attached \`<file>\` while setting up \`<expert_name>\` — should I attach it as a **template** (every future output must follow this format) or a **reference** (background knowledge only)? Or **skip** — it was only for the first task."* If there are multiple files, list them and ask per-file in the same message.
+2. **On a yes**, run \`attach-expert-context.sh\` per file with the chosen \`KIND\`. The script auto-re-renders the expert .md, so no extra rematerialize call is needed.
+3. **On skip or no reply yet**, do not attach.
+
+Only after this step — once any attachments are saved (or explicitly skipped) — tell the user the expert is ready. Mention which files were attached and as which kind. If you set a domain on creation, also mention that matching skills from the library were auto-assigned.
+`,
+    },
+    {
+      name: 'attach-expert-context',
+      description: 'Permanently attach a document to an existing expert as a template (output must follow this format) or reference (background knowledge). Use whenever the user wants the file to persist for future turns — including the implicit case where they are *configuring* an expert and attach a template/reference.',
+      body: `# Attach expert context
+
+Use this skill when the user wants an existing expert to use a specific document on future turns. Two common shapes:
+
+- **Explicit:** "siempre entrégame manuales en este formato", "use this as the template for every report", "ten siempre presente este documento", "always remember this brand guideline".
+- **Configuration intent:** the user is setting up or configuring an expert and attaches a file (\`@/path\`) as part of the setup — *"vamos a configurar al manual-writer, usa este formato"*, *"let's set this expert up with this template"*. Do **not** treat configuration attachments as one-off context; they are part of the expert's persistent setup.
+
+**Do not use this skill for genuinely one-off context.** If the user attached a diagram for THIS manual only, pass the file directly in your \`Agent\` call instead — the expert will read it for that single turn.
+
+## Decide the kind
+
+- **\`template\`** — the user wants future deliverables to **follow the file's structure / format / layout exactly**. Headers, sections, page format, branding, etc. (Cerebro injects it into the expert with a "your output MUST follow this format" instruction.)
+- **\`reference\`** — the user wants the expert to **know about** the file's content (brand guide, FAQ, product spec) but isn't dictating output structure.
+
+When in doubt, ask one short clarifier: *"I'll attach \`<file>\` to \`<expert>\` as a **template** (every output must follow this format) — or **reference** (background knowledge). Which?"* Wait for the answer before invoking.
+
+## Workflow
+
+1. **Identify the expert.** Run \`list-experts\` if you don't already know the expert_id.
+2. **Identify the file.** The user attached the file in the current message or in an earlier turn — its absolute path is in the message as an \`@/absolute/path\` line. Use that exact path. If the path was dropped from conversation history, ask the user to re-attach it once.
+3. **Confirm in one sentence.** "I'll attach \`<filename>\` to \`<expert>\` as a \`<kind>\` — every future turn that expert will use it. Confirm?" Wait for a yes.
+4. **Invoke.** Replace the three placeholders and run:
+
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/attach-expert-context.sh" "EXPERT_ID" "/absolute/path/to/file" "KIND"
+\`\`\`
+
+Where \`KIND\` is exactly \`template\` or \`reference\`. The script registers the file, attaches it, **and** re-renders the expert's agent file so the new context is live on the next turn — you do **not** need to call \`rematerialize-experts.sh\` separately.
+
+## Result
+
+- **SUCCESS** — tell the user it's saved and the expert will use it on every future turn from now on. Do not re-run the task in the same turn unless the user asked for it.
+- **SUCCESS … WARN: …** — the attach itself succeeded; only the live re-render failed. Tell the user the file is saved and the expert will pick it up on the next app start; if they want it active *right now* without restart, surface the WARN verbatim so they can report it.
+- **ERROR** — surface the message verbatim. The most likely cause is that the path is wrong or the expert id is wrong; verify with \`list-experts\`.
+`,
+    },
+    {
+      name: 'update-expert',
+      description: "Modify an existing expert's name, description, or system prompt via the backend. Use ONLY when the user explicitly asks to change the expert itself — never when they ask the expert to do work.",
+      body: `# Update expert
+
+Use this skill **only** when the user explicitly asks to change an existing expert — its persona, system prompt, name, or description.
+
+Trigger phrases (EN): "change the prompt for expert X", "update expert X's instructions", "rename expert X to Y", "edit expert X's description", "make expert X more formal".
+Trigger phrases (ES): "modifica el prompt del experto X", "actualiza las instrucciones del experto X", "cambia la descripción del experto X", "renombra al experto X", "haz al experto X más formal".
+
+**Never use this skill when the user asks the expert to do work** (create something, answer something, run something). That is delegation via the \`Agent\` tool. *"Use the manual-writer to create a manual from this diagram"* is **delegation**, not an update. *"Make the manual-writer always include a glossary section"* is also tricky — that's either an \`attach-expert-context\` (template file) or an \`update-expert\` depending on whether the user is providing a file. If the request is ambiguous, ask one short clarifier.
+
+## Workflow
+
+1. **Find the expert.** Run \`list-experts\` if you don't already know the expert_id.
+2. **Decide the changes.** Any subset of \`name\`, \`description\`, \`system_prompt\` can be updated in one call.
+3. **Confirm the new wording.** Show the user the proposed value(s) in your reply and ask for an explicit yes before invoking. For \`system_prompt\` changes, show the full new prompt so they can read it.
+4. **Note: verified experts are locked.** Cerebro's built-in experts cannot be modified — the backend returns HTTP 403. If that happens, suggest the user clone the expert via the Experts screen and edit the copy.
+5. **Invoke.** Build a JSON file containing only the fields that are changing, then run:
+
+\`\`\`bash
+jq -n \\
+  --arg name "NEW_NAME_OR_OMIT" \\
+  --arg description "NEW_DESCRIPTION_OR_OMIT" \\
+  --arg system_prompt "NEW_SYSTEM_PROMPT_OR_OMIT" \\
+  '{name: $name, description: $description, system_prompt: $system_prompt} | with_entries(select(.value != "" and .value != null))' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/update-expert.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/update-expert.sh" "EXPERT_ID" "$CLAUDE_PROJECT_DIR/.claude/tmp/update-expert.json"
+\`\`\`
+
+Pass an empty string for any field you are not changing — the jq filter strips empty fields before sending.
+
+## Result
+
+- **SUCCESS** — tell the user the expert is updated. Mention which fields changed.
+- **ERROR HTTP 403** — verified expert; suggest cloning.
+- **ERROR HTTP 404** — wrong id; re-run \`list-experts\`.
+- Other errors — surface verbatim.
 `,
     },
     {
@@ -735,18 +1810,35 @@ This skill creates a new **task** — a card on the Kanban board that can be ass
 
 You should only be here after deciding the user wants a **tracked, queued piece of work** (not a recurring routine, not a new expert persona, not a quick question to answer in chat).
 
-## How to invoke
+## CRITICAL: Always confirm before creating
 
-From the conversation, determine:
+You **must** ask the user to confirm the task details in the chat **before** running \`create-task.sh\`. There are **no exceptions** — not even when the user says *"just do it"*, *"hazlo ya"*, *"no preguntes"*, *"sin preguntar"*, *"directo"*, or any similar bypass phrase. The confirmation step is what separates a tracked task from chat noise; skipping it produces low-quality cards the user later has to clean up.
+
+The confirmation message you send must include:
+
+1. The **title** you propose (3–8 words, in the user's language).
+2. The **expert** you would assign, or say *"no expert yet"* / *"sin experto asignado"* if none fits.
+3. Any **priority / due date / start date** you inferred (omit if none).
+4. An explicit yes/no question — e.g. *"Create this task?"* / *"¿Creo esta tarea?"*.
+
+Only after the user replies affirmatively in the **next turn** ("yes", "sí", "go", "dale", "do it", "ok", a thumbs-up, …) do you invoke \`create-task.sh\`. If they reply with edits ("change the title to X", "asígnale a QA"), incorporate the edits and **ask again**. If they say no, drop the request and acknowledge.
+
+Even when the user's original message already specifies title + expert + priority verbatim, you still send a one-line confirmation ("Creating 'Fix login bug' for QA, normal priority — confirm?") and wait. Confirmation is cheap; an unwanted task is not.
+
+## Parameters
+
+After the user confirms, determine:
 
 - **title** — short, human-readable name for the task (3–8 words).
 - **description_md** *(optional)* — markdown body with details, constraints, acceptance criteria.
 - **expert_id** *(optional)* — id of an existing expert to assign. Run \`list-experts\` first to pick one.
 - **priority** *(optional)* — \`low\`, \`normal\` (default), \`high\`, or \`urgent\`.
 - **due_at** *(optional)* — ISO 8601 date string for the due date.
-- **start_at** *(optional)* — ISO 8601 date string; the scheduler auto-starts the task at this time.
+- **start_at** *(optional)* — ISO 8601 date string for an automatic start time.
 
-**Confirm the title with the user before invoking** (unless they explicitly said "just do it"). Then run:
+## How to invoke
+
+After confirmation, run:
 
 \`\`\`bash
 jq -n \\
@@ -759,8 +1851,320 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/create-task.sh" "$CLAUDE_PROJECT_DIR/.
 
 To assign an expert, add \`--arg expert_id "EXPERT_ID"\` and include \`expert_id: $expert_id\` in the jq object.
 
-If the output says **SUCCESS**, tell the user the task was created in the **Backlog** column on the Tasks board. They can drag it to "In Progress" to start the Expert, or set a start date for automatic scheduling.
+If the output says **SUCCESS**, tell the user the task was created in the **Backlog** column on the Tasks board. They can drag it to **In Progress** to start the Expert.
 If the output says **ERROR**, report the error to the user.
+
+## Worked examples
+
+### English — confirm-then-create
+
+> **User:** can you make a task to refactor the auth module
+>
+> **You:** I'll create a task **"Refactor auth module"** with no expert assigned yet, normal priority. Create it?
+>
+> **User:** yes
+>
+> *(now run create-task.sh)*
+>
+> **You:** Done — "Refactor auth module" is in the **Backlog** column. Drag it to **In Progress** to start the Expert.
+
+### Spanish — bypass phrase still requires confirmation
+
+> **Usuario:** hazlo ya, crea la tarea de migrar la base de datos
+>
+> **Tú:** Voy a crear la tarea **"Migrar base de datos"** sin experto asignado, prioridad normal. ¿La creo?
+>
+> **Usuario:** sí, dale
+>
+> *(ahora ejecuta create-task.sh)*
+>
+> **Tú:** Listo — "Migrar base de datos" está en la columna **Backlog**. Arrástrala a **In Progress** para iniciar al Experto.
+
+### Counter-example — do NOT do this
+
+> **User:** create a task for the login bug, just do it, don't ask
+>
+> **You (WRONG):** *(invokes create-task.sh immediately)*
+>
+> **You (RIGHT):** Quick check — title **"Fix login bug"**, no expert yet, normal priority. Confirm and I'll create it?
+`,
+    },
+    {
+      name: 'run-chat-action',
+      description: 'Invoke a connected integration action (HubSpot, Telegram, Slack, WhatsApp, …) directly from chat. Always pauses for human approval.',
+      body: `# Run chat action
+
+Use this skill whenever the user asks Cerebro to **do** something through a connected integration — anything that touches an external service (HubSpot, Telegram, Slack, WhatsApp, HTTP endpoints, desktop notifications, and any future integrations like GitHub or iMessage).
+
+The user may speak in **English or Spanish** (or mix them). Recognize natural-language intents and map them to the correct action \`type\`:
+
+| User says (EN / ES) | Action type |
+| --- | --- |
+| "Create a HubSpot ticket about X" / "Crea un ticket de HubSpot sobre X" | \`hubspot_create_ticket\` |
+| "Create a HubSpot ticket about X and link it to juan@…" / "Crea un ticket de HubSpot sobre X y asócialo a juan@…" | \`hubspot_create_ticket\` (pass \`contact_email\`) |
+| "Add Maria to HubSpot" / "Agrega a María a HubSpot" | \`hubspot_upsert_contact\` |
+| "Is juan@… a contact in HubSpot?" / "¿Está juan@… como contacto en HubSpot?" | \`hubspot_search_contact\` |
+| "Send Pablo a Telegram" / "Envíale un Telegram a Pablo" | \`send_telegram_message\` |
+| "Post in #general on Slack saying X" / "Publica en #general en Slack diciendo X" | \`send_slack_message\` |
+| "DM @Pablo on Slack about X" / "Mándale un DM a @Pablo por Slack sobre X" | \`send_slack_message\` (use the DM channel id, D…) |
+| "Send the report.pdf to #reports on Slack" / "Manda el report.pdf a #reportes en Slack" | \`send_slack_file\` |
+| "Which Slack channels can Cerebro post to?" / "¿En qué canales de Slack puede publicar Cerebro?" | \`list_slack_channels\` |
+| "Send a WhatsApp to +1…" / "Envía un WhatsApp a +1…" | \`send_whatsapp_message\` |
+| "Open a GitHub issue on owner/repo titled X" / "Abre un issue de GitHub en owner/repo titulado X" | \`github_create_issue\` |
+| "Comment on issue #N in owner/repo: …" / "Comenta en el issue #N de owner/repo: …" | \`github_comment_issue\` |
+| "Comment on PR #N in owner/repo: …" / "Comenta en el PR #N de owner/repo: …" | \`github_comment_pr\` |
+| "Review PR #N in owner/repo and approve/request changes saying X" / "Revisa el PR #N en owner/repo y aprueba/pide cambios diciendo X" | \`github_review_pr\` |
+| "Open a PR on owner/repo from feat/X to main titled Y" / "Abre un PR en owner/repo desde feat/X hacia main titulado Y" | \`github_open_pr\` |
+| "Notify me in 30 minutes" / "Avísame en 30 minutos" | \`send_notification\` |
+| "GET https://… and tell me the status" | \`http_request\` |
+
+**HubSpot — attaching a contact to a ticket.** To link a ticket to someone, pass \`contact_email\` straight to \`hubspot_create_ticket\` — it looks the contact up by email and creates them if they don't exist, then associates the ticket, all in this one action. Do **not** call \`hubspot_upsert_contact\` first and try to thread the id across calls; \`run-chat-action\` runs one action at a time. Use \`hubspot_search_contact\` only when the user just wants to *check* whether a contact exists (it changes nothing). Already have the HubSpot contact id? Pass \`contact_id\` instead — it takes precedence.
+
+## Workflow
+
+1. **List what's available.** Run \`list-chat-actions\` to see the current catalog and which integrations are connected. If the action the user wants shows \`availability: "not_connected"\`, tell them which integration to wire up (point to **Connections** / **Integrations**) and stop.
+2. **Gather parameters.** Inspect the action's \`inputSchema\` from the catalog and ask the user for any required fields you don't already have. Keep it conversational — don't dump JSON at them.
+3. **Confirm before invoking.** Restate what you're about to do in one sentence ("I'll create a HubSpot ticket with subject _X_ and body _Y_ — confirm?"). These actions are visible to other people, so the user must agree.
+4. **Invoke.** Write the request body to a tmp file and call \`run-chat-action.sh\`:
+
+\`\`\`bash
+jq -n \\
+  --arg type "ACTION_TYPE" \\
+  --argjson params 'PARAMS_JSON' \\
+  '{type: $type, params: $params}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/chat-action.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/run-chat-action.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/chat-action.json"
+\`\`\`
+
+5. **Tell the user the run is paused for approval.** The script blocks until the user clicks Approve or Deny in the **Approvals** tab. While you're waiting, do not start another action.
+
+## Interpreting the result
+
+- \`SUCCESS:\` — the action ran. Restate the outcome in natural language using the printed JSON (\`ticket_id\`, \`message_id\`, \`status\`, etc.). Reply in the user's language.
+- \`DENIED:\` — the user declined. Acknowledge briefly; do not retry without new instructions.
+- \`NOT_CONNECTED:\` — the integration was disconnected between catalog fetch and run. Tell the user and link to Connections.
+- \`ERROR:\` — surface the error message verbatim and offer next steps.
+
+## What this skill does NOT do
+
+- Skip approval. Every action runs through the human approval gate by design.
+- Compose multi-step workflows. Use **Routines** for anything that should run more than once.
+- Read or modify the file system, run code, or call experts — pick a different tool for that.
+`,
+    },
+    {
+      name: 'propose-routine',
+      description: 'Draft a Cerebro Routine from a natural-language request, confirm it with the user, dry-run it end-to-end (with side-effects stubbed), then save it on success.',
+      body: `# Propose routine
+
+Use this skill whenever the user asks for **recurring or triggered work** — anything they want Cerebro to run more than once on a schedule, on an inbound message, or by clicking Run. Phrases that should match (English **or** Spanish):
+
+- "every Monday morning…", "daily at 8…", "cada lunes…", "todos los días…"
+- "when a Telegram message arrives from…", "cuando llegue un WhatsApp…", "when someone DMs Cerebro on Slack…", "cuando alguien mencione @Cerebro en #soporte…"
+- "any time someone emails X, do Y", "set up a workflow that…"
+- "make a routine that…", "crea una rutina que…"
+
+For one-off work, use \`run-chat-action\` instead. For tracked tasks, use \`create-task\`.
+
+## Workflow (always in this order)
+
+### 1. Gather what you need
+
+Find these in the conversation. If anything is missing, **ask one short clarifying question at a time** — don't dump a checklist.
+
+- **name** — short title (3–8 words).
+- **description** — one sentence about what the routine does.
+- **trigger_type** — one of: \`manual\`, \`cron\`, \`webhook\`, \`telegram_message\`, \`slack_message\`, \`whatsapp_message\`, \`github_issue_opened\`, \`github_pr_review_requested\`. For \`slack_message\` the trigger config takes \`channel\` (C…/G…/D…, or \`*\` for any allowlisted channel/DM), optional \`user_id\` (U…/W…), optional \`surface\` (\`app_mention\` | \`message_im\` | \`any\`), and optional \`filter_type\`/\`filter_value\` (keyword/prefix/regex). Trigger payload exposes \`channel\`, \`channel_type\`, \`user_id\`, \`user_name\`, \`thread_ts\`, \`ts\`, \`message_text\`, \`received_at\`, \`conversation_id\` as \`{{__trigger__.<field>}}\`. The two GitHub triggers fire only for repos the user added to the watched-repo allowlist (Settings → Integrations → GitHub). Trigger payload (available as \`{{__trigger__.<field>}}\`): \`repo_full_name\`, \`repo_owner\`, \`repo_name\`, \`title\`, \`body\`, \`author_login\`, \`html_url\`, plus \`issue_number\` (issues) or \`pr_number\` (PRs).
+- **cron_expression** — required when \`trigger_type=cron\`. Use 5-field cron (minute hour day-of-month month day-of-week, e.g. \`0 9 * * 1\` for "every Monday at 9am").
+- **plain_english_steps** — array of human-readable step descriptions in order.
+- **DAG steps** — programmatic version of the steps. Each step is:
+  \`\`\`json
+  {
+    "id": "stable-id-1",
+    "name": "Fetch order from HubSpot",
+    "actionType": "<action_type>",
+    "params": { /* per-action inputs */ },
+    "dependsOn": [],
+    "inputMappings": [],
+    "requiresApproval": false,
+    "onError": "fail"
+  }
+  \`\`\`
+
+To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`hubspot_search_contact\`, \`send_telegram_message\`, \`send_slack_message\`, \`send_slack_file\`, \`list_slack_channels\`, \`send_whatsapp_message\`, \`send_notification\`, \`github_create_issue\`, \`github_comment_issue\`, \`github_comment_pr\`, \`github_review_pr\`, \`github_open_pr\`, \`github_fetch_issue\`, \`github_fetch_pr\`, \`github_clone_worktree\`, \`github_commit_and_push\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, Slack, HubSpot, WhatsApp, email) and for any GitHub mutation (\`github_create_issue\`, \`github_comment_*\`, \`github_review_pr\`, \`github_open_pr\`, \`github_commit_and_push\`).
+
+For the auto-fix-issue → PR pattern, the canonical DAG is: trigger \`github_issue_opened\` → \`github_fetch_issue\` (\`include_comments: true\`) → \`run_expert\` (analyze + plan) → \`github_clone_worktree\` → \`run_expert\` (write code in the worktree path) → \`github_commit_and_push\` (approval-gated) → \`github_open_pr\` (approval-gated). The expert step that writes code should pass \`workspacePath\` set to the worktree path so the file edits land in the cloned repo.
+
+### 2. Wire steps together
+
+Use \`inputMappings\` to feed an upstream step's output into a downstream step. Mapping shape:
+\`\`\`json
+{ "sourceStepId": "step-1", "sourceField": "result", "targetField": "input_field" }
+\`\`\`
+Use Mustache templates inside string params to read wired inputs: \`{{input_field}}\`.
+
+For triggered routines, the inbound payload is exposed as a synthetic step \`__trigger__\`. Example for a Telegram trigger:
+\`\`\`json
+{ "sourceStepId": "__trigger__", "sourceField": "chat_id", "targetField": "trigger.chat_id" }
+\`\`\`
+
+### 3. Propose the routine to the user — do NOT save anything yet
+
+Restate the routine in plain English with this structure:
+
+\`\`\`
+Here's the routine I'd build:
+
+**Name:** <name>
+**Trigger:** <human description, e.g. "Every Monday at 9 AM" or "When a Telegram message arrives from chat 123456">
+**Steps:**
+  1. <step 1 description>
+  2. <step 2 description>
+  …
+
+Want me to test and save this, or change something first?
+\`\`\`
+
+Then **wait for the user's reply**. Only continue once they say "yes / save / go ahead / sounds good / ship it" (or the Spanish equivalent). If they ask for changes, regenerate the proposal and ask again.
+
+### 4. Tell the user testing will take a moment
+
+Before you run the dry-run, say something like:
+
+> Testing the routine end-to-end now — this can take a couple of minutes while I exercise every step with safe stand-ins for the real integrations.
+
+### 5. Run the dry-run
+
+Build the dag JSON, write it to a tmp file, then test it:
+
+\`\`\`bash
+jq -n --argjson dag 'DAG_JSON' '{dag: $dag}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/dry-run-routine.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/dry-run-routine.sh" \\
+  "$CLAUDE_PROJECT_DIR/.claude/tmp/dry-run-routine.json"
+\`\`\`
+
+The script blocks until the engine finishes and prints a JSON object with \`{ok, runId, error?, failedStepId?, steps: [...] }\`. Inspect:
+
+- **\`ok: true\`** → every step completed (with side-effects stubbed). Move on to step 6.
+- **\`ok: false\`** → tell the user *which* step failed (look up the failed step in \`.steps\` by \`failedStepId\`) and what the error said. Offer to amend and re-run, or stop. **Never persist a routine that fails its dry-run.**
+
+### 6. Save the routine
+
+Build the final body. \`dag_json\` MUST be a JSON-encoded **string**, not an object. Then:
+
+\`\`\`bash
+jq -n \\
+  --arg name "ROUTINE_NAME" \\
+  --arg description "ROUTINE_DESCRIPTION" \\
+  --arg trigger_type "TRIGGER_TYPE" \\
+  --arg cron_expression "CRON_OR_EMPTY" \\
+  --arg dag_json "DAG_AS_JSON_STRING" \\
+  --argjson plain_english_steps 'PLAIN_STEPS_ARRAY' \\
+  --argjson required_connections 'CONNECTIONS_ARRAY' \\
+  --argjson approval_gates 'APPROVAL_STEP_IDS_ARRAY' \\
+  '{name: $name, description: $description, trigger_type: $trigger_type, cron_expression: (if $cron_expression == "" then null else $cron_expression end), dag_json: $dag_json, plain_english_steps: $plain_english_steps, required_connections: $required_connections, approval_gates: $approval_gates, source: "user"}' \\
+  > "$CLAUDE_PROJECT_DIR/.claude/tmp/save-routine.json" && \\
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/save-routine.sh" \\
+  "$CLAUDE_PROJECT_DIR/.claude/tmp/save-routine.json"
+\`\`\`
+
+If the output starts with \`SUCCESS:\`, tell the user the routine was saved (mention the name) and that it appears in the Routines screen. If it starts with \`ERROR:\`, surface the error and stop.
+
+## Hard rules
+
+- **Always propose first, then test, then save.** Skipping the proposal step is a contract violation.
+- **Never save a routine that failed dry-run.** Tell the user what broke and offer to fix it.
+- **Always tell the user testing takes a couple of minutes** before kicking off the dry-run.
+- **For external-facing actions** (Telegram, Slack, WhatsApp, HubSpot, email, run_command), **add an \`approval_gate\` step or set \`requiresApproval: true\`** on the action step so real runs pause for the user.
+- Reply in the user's language (English or Spanish) throughout.
+`,
+    },
+    {
+      name: 'connect-integration',
+      description:
+        'Open the inline setup card so the user can connect an integration (Telegram, Slack, HubSpot, WhatsApp, GoHighLevel, …) without leaving the chat. Never ask for tokens in chat — the card collects them securely.',
+      body: `# Connect an integration
+
+Use this skill whenever the user asks Cerebro to **connect, set up, link, or wire up** an external service — anything that needs credentials before \`run-chat-action\` or a routine can use it. Phrases that should match (English **or** Spanish):
+
+- "set up Telegram", "connect Telegram", "help me set up the Telegram bot"
+- "set up Slack", "connect Slack", "conecta Slack", "configura Slack"
+- "configura HubSpot", "conecta WhatsApp", "vincula mi cuenta de HubSpot"
+- "I want to use Telegram with Cerebro", "how do I connect HubSpot"
+- "connect GoHighLevel", "set up GHL", "conecta GoHighLevel", "vincula mi CRM de GHL"
+
+Currently supported \`integration_id\` values: \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`. Others — including everything listed as "coming soon" in the Integrations screen — are not yet implemented; tell the user it's on the roadmap and stop.
+
+## Workflow
+
+1. **Confirm intent and pick the integration_id.** Match the user's wording to one of \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`. "GoHighLevel" / "GHL" / "Lead Connector" all map to \`ghl\`. "GitHub" / "gh" / "git" (when context makes it clear they mean github.com) maps to \`github\`. If the user is ambiguous (e.g. "set up CRM"), ask one short clarifying question (HubSpot or GoHighLevel?).
+2. **Open the setup card.** Run:
+
+   \`\`\`bash
+   bash "$CLAUDE_PROJECT_DIR/.claude/scripts/propose-integration.sh" INTEGRATION_ID "WHY_THIS_INTEGRATION"
+   \`\`\`
+
+   Replace \`INTEGRATION_ID\` with one of \`telegram\` / \`slack\` / \`hubspot\` / \`whatsapp\` / \`ghl\` / \`github\`. The reason argument is optional and shown as the card subtitle ("So your team can talk to Cerebro in Slack", "So you can send WhatsApp from routines", "So Cerebro can drive your GitHub repos").
+
+3. **Tell the user the card is ready.** One short line in their language: "I'll help you connect Telegram. Open the setup card below." Don't dump instructions — the card already shows the BotFather/Private App walkthrough.
+
+4. **Answer follow-up questions conversationally.** While the card is open, the user may ask things like "what's BotFather?", "where do I find scopes in HubSpot?", "do I need WhatsApp Business?". Use this prose as your source of truth so you don't make things up:
+
+   ### Telegram (BotFather)
+   - Open Telegram and start a chat with **@BotFather** (the @ matters — confirm exactly that handle).
+   - Send \`/newbot\` and follow the prompts to name your bot and pick a unique username (must end in \`bot\`).
+   - BotFather replies with a token like \`123456789:AABBccDD…\`. Copy it.
+   - Paste the token in the card's step 2. Cerebro verifies it against Telegram's getMe API and stores it encrypted in the OS keychain.
+
+   ### Slack (App manifest + Socket Mode)
+   - Cerebro runs in Socket Mode (no public URL needed), so the customer creates their own Slack app from the manifest YAML Cerebro ships.
+   - In the inline card, click **Copy manifest** to copy the YAML, then click **Open Slack App builder** which takes them to \`api.slack.com/apps?new_app=1&manifest_yaml=…\` with the manifest pre-filled. They pick their workspace and click **Create**.
+   - Once the app exists, they open **Install App** in the sidebar and click **Install to Workspace** — Slack asks them to approve the requested scopes. After approval, they copy the **Bot User OAuth Token** (\`xoxb-…\`).
+   - Next, on **Basic Information → App-Level Tokens**, they click **Generate Token and Scopes**, name it (e.g. \`socket\`), add the **\`connections:write\`** scope, click **Generate**, and copy the \`xapp-…\` token.
+   - They paste both tokens into the card. Cerebro calls \`auth.test\` with the bot token and opens a quick Socket Mode handshake with the app token to verify everything works. Both tokens are stored encrypted in the OS keychain.
+   - After install: users DM the bot, mention \`@Cerebro\` in any channel (it replies in-thread visible to the channel), or use \`/cerebro help\` for the menu. Each Slack thread becomes its own Cerebro conversation.
+   - The Slack card has an **allowlist** for channels and users. Closed-by-default — empty allowlists mean the bridge ignores everyone. Tell the operator to add the Slack IDs (or \`*\`) of who can talk to Cerebro.
+
+   ### HubSpot (Private App access token)
+   - In HubSpot, open **Settings → Integrations → Private Apps** (also reachable via the Legacy Apps shortcut).
+   - Click **Create a private app**, name it (e.g. "Cerebro"), and click **Scopes**.
+   - Enable read+write on **tickets**, **contacts**, and **pipelines** (CRM scopes).
+   - Click **Create app**, then **Show token** and copy the \`pat-na1-…\` value.
+   - Paste the token in the card's step 2. Cerebro verifies it via the HubSpot account-info API.
+
+   ### WhatsApp (QR pairing)
+   - Open WhatsApp on the user's phone (regular or Business).
+   - Settings → **Linked devices** → **Link a device**.
+   - The card shows a QR code; scan it with the phone.
+   - Once paired, the card flips to "Connected".
+
+   ### GoHighLevel (Private Integration API key + Location ID)
+   - In GoHighLevel, open **Settings → Integrations → Private Integrations** in the sub-account they want to sync.
+   - Click **Create New Integration**, name it (e.g. "Cerebro"), and select the **contacts** + **notes** scopes (read + write).
+   - After creation GHL shows a Private Integration API key starting with \`pit-…\`. Copy it.
+   - The **Location ID** is the sub-account id — it appears in the GHL URL (\`/v2/location/<location-id>/…\`) and in **Settings → Business Profile**.
+   - Paste both values in the card's step 2. Cerebro verifies them by hitting GHL's contacts search API for that location.
+
+   ### GitHub (Personal Access Token)
+   - In GitHub, open **Settings → Developer settings → Personal access tokens**. Either **Tokens (classic)** or **Fine-grained tokens** works.
+   - For a **classic** token: enable the \`repo\` scope (and \`read:user\`, which is automatic). For a **fine-grained** token: select the repos Cerebro should touch and grant **Issues: read+write**, **Pull requests: read+write**, **Contents: read+write**.
+   - Generate the token. GitHub only shows it once — copy it before leaving the page.
+   - Paste it in the card's step 2. Cerebro verifies it by calling \`/user\`.
+   - After connecting, the user picks **watched repositories** (Settings → Connected Apps → GitHub). Routine triggers (\`github_issue_opened\`, \`github_pr_review_requested\`) only fire for repos in that list. Outbound chat actions can target any repo the token reaches.
+
+5. **Don't ask for credentials in chat.** The card's input fields collect tokens directly through the secure IPC bridge so secrets never reach the LLM context. If the user pastes a token in chat by mistake, ignore it and remind them to enter it in the card.
+
+## Interpreting the script output
+
+- \`SUCCESS:\` — card opened. Tell the user.
+- \`ERROR:\` — surface the message verbatim. Common causes: unknown \`integration_id\`, chat-actions server not running, main window not ready.
+
+## What this skill does NOT do
+
+- Walk the user through setup in plain text. The card owns the walkthrough.
+- Collect, store, or even read credentials. The card does that.
+- Connect integrations not in the registry yet. If the user asks for Gmail / Notion / Calendar, say it's on the roadmap and stop.
 `,
     },
   ];
@@ -814,6 +2218,27 @@ async function fetchExpertSkills(
   return (result?.skills ?? [])
     .filter((s) => s.is_active)
     .map((s) => s.skill);
+}
+
+interface ContextFileData {
+  id: string;
+  file_name: string;
+  file_ext: string;
+  kind: string;
+  parsed_text_path: string | null;
+  file_storage_path: string;
+  truncated: boolean;
+}
+
+async function fetchExpertContextFiles(
+  backendPort: number,
+  expertId: string,
+): Promise<ContextFileData[]> {
+  const result = await fetchJson<ContextFileData[]>(
+    backendPort,
+    `/experts/${expertId}/context-files`,
+  );
+  return result ?? [];
 }
 
 // ── Public API ───────────────────────────────────────────────────
@@ -876,10 +2301,17 @@ export async function installAll(options: InstallerOptions): Promise<void> {
   const regulars = experts.filter((e) => (e.type ?? 'expert') !== 'team');
   const teams = experts.filter((e) => e.type === 'team');
 
-  // Fetch skills only for regular experts (teams don't carry skills).
-  const regularSkillSets = await Promise.all(
-    regulars.map((expert) => fetchExpertSkills(options.backendPort, expert.id)),
-  );
+  // Fetch skills + context files for each regular expert (teams don't carry either).
+  const [regularSkillSets, regularContextSets] = await Promise.all([
+    Promise.all(
+      regulars.map((expert) => fetchExpertSkills(options.backendPort, expert.id)),
+    ),
+    Promise.all(
+      regulars.map((expert) =>
+        fetchExpertContextFiles(options.backendPort, expert.id),
+      ),
+    ),
+  ]);
 
   const agentNameById: Record<string, string> = {};
   const memberNamesById: Record<string, string> = {};
@@ -888,7 +2320,13 @@ export async function installAll(options: InstallerOptions): Promise<void> {
     const expert = regulars[i];
     const agentName = expertAgentName(expert.id, expert.name);
     seen.add(agentName);
-    writeExpertAgent(paths, expert, agentName, regularSkillSets[i]);
+    writeExpertAgent(
+      paths,
+      expert,
+      agentName,
+      regularSkillSets[i],
+      regularContextSets[i],
+    );
     index.experts[expert.id] = agentName;
     agentNameById[expert.id] = agentName;
     memberNamesById[expert.id] = expert.name;
@@ -957,8 +2395,11 @@ export async function installExpert(options: InstallerOptions, expert: ExpertDat
     }
     writeTeamAgent(paths, expert, agentName, agentNameById, memberNamesById);
   } else {
-    const skills = await fetchExpertSkills(options.backendPort, expert.id);
-    writeExpertAgent(paths, expert, agentName, skills);
+    const [skills, contextFiles] = await Promise.all([
+      fetchExpertSkills(options.backendPort, expert.id),
+      fetchExpertContextFiles(options.backendPort, expert.id),
+    ]);
+    writeExpertAgent(paths, expert, agentName, skills, contextFiles);
   }
   index.experts[expert.id] = agentName;
   writeIndex(paths.indexPath, index);
@@ -1210,6 +2651,7 @@ function writeExpertAgent(
   expert: ExpertData,
   agentName: string,
   skills: SkillData[] = [],
+  contextFiles: ContextFileData[] = [],
 ): void {
   const memoryDir = path.join(paths.memoryRoot, agentName);
   fs.mkdirSync(memoryDir, { recursive: true });
@@ -1222,7 +2664,7 @@ function writeExpertAgent(
     name: agentName,
     description: expert.description || expert.name,
     tools: allTools,
-    body: buildExpertBody(expert, memoryDir, skills),
+    body: buildExpertBody(expert, memoryDir, skills, contextFiles),
   };
   fs.writeFileSync(
     path.join(paths.agentsDir, `${agentName}.md`),

@@ -272,6 +272,70 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
             )}
           </>
         )}
+
+        {/* GitHub triggers (issue opened, PR review requested) */}
+        {(triggerType === 'trigger_github_issue_opened' ||
+          triggerType === 'trigger_github_pr_review_requested') && (
+          <>
+            <div>
+              <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
+                Repository
+              </label>
+              <input
+                type="text"
+                value={(config.repo as string) ?? ''}
+                onChange={(e) => updateConfig({ repo: e.target.value })}
+                placeholder="owner/repo  or  *"
+                className="w-full h-8 px-3 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 font-mono"
+              />
+              <p className="mt-1 text-[10px] text-text-tertiary">
+                "owner/repo" must be in the watched-repo list (Integrations → GitHub). Use <code>*</code> to match any watched repo.
+              </p>
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
+                Filter
+              </label>
+              <select
+                value={(config.filter_type as string) ?? 'none'}
+                onChange={(e) => updateConfig({ filter_type: e.target.value })}
+                className="w-full h-8 px-2 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
+              >
+                <option value="none">No filter (any event)</option>
+                <option value="keyword">Title/body contains keyword</option>
+                <option value="regex">Title/body matches regex</option>
+                <option value="label">Has label</option>
+              </select>
+            </div>
+            {((config.filter_type as string) ?? 'none') !== 'none' && (
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
+                  Filter Value
+                </label>
+                <input
+                  type="text"
+                  value={(config.filter_value as string) ?? ''}
+                  onChange={(e) => updateConfig({ filter_value: e.target.value })}
+                  placeholder={
+                    (config.filter_type as string) === 'regex'
+                      ? '^\\[bug\\]'
+                      : (config.filter_type as string) === 'label'
+                        ? 'bug'
+                        : 'crash'
+                  }
+                  className="w-full h-8 px-3 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 font-mono"
+                />
+              </div>
+            )}
+            <p className="text-[10px] text-text-tertiary">
+              Available in steps: <code>{'{{__trigger__.repo_full_name}}'}</code>, <code>{'{{__trigger__.title}}'}</code>,
+              <code>{'{{__trigger__.body}}'}</code>, <code>{'{{__trigger__.author_login}}'}</code>, <code>{'{{__trigger__.html_url}}'}</code>,
+              {triggerType === 'trigger_github_issue_opened'
+                ? <> <code>{'{{__trigger__.issue_number}}'}</code>.</>
+                : <> <code>{'{{__trigger__.pr_number}}'}</code>.</>}
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

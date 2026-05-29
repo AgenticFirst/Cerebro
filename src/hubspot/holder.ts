@@ -49,6 +49,9 @@ export class HubSpotHolder implements HubSpotChannel {
   getPortalId(): string | null { return this.portalId; }
   getDefaultPipeline(): string | null { return this.defaultPipeline; }
   getDefaultStage(): string | null { return this.defaultStage; }
+  isConnected(): boolean {
+    return Boolean(this.accessToken && this.defaultPipeline && this.defaultStage);
+  }
 
   /** Load from backend settings on startup. */
   async init(): Promise<void> {

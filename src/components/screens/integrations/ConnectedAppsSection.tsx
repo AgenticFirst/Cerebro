@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
   GHLIcon,
+  GitHubIcon,
   GoogleCalendarIcon,
   GmailIcon,
   HubSpotIcon,
@@ -13,6 +14,7 @@ import IntegrationCard from './IntegrationCard';
 import HubSpotSection from './HubSpotSection';
 import HubSpotConnectModal from './HubSpotConnectModal';
 import GHLSection from './GHLSection';
+import GitHubSection from './GitHubSection';
 import type { HubSpotStatusResponse } from '../../../types/ipc';
 
 interface Service {
@@ -131,6 +133,17 @@ export default function ConnectedAppsSection() {
       </p>
 
       <div className="mt-6 space-y-2">
+        <IntegrationCard
+          icon={GitHubIcon}
+          iconBg="bg-zinc-500/15"
+          iconColor="text-text-primary"
+          name="GitHub"
+          description={t('connectedApps.githubDesc')}
+          defaultExpanded={false}
+        >
+          <GitHubSection />
+        </IntegrationCard>
+
         <IntegrationCard
           icon={HubSpotIcon}
           iconBg="bg-orange-500/15"

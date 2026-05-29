@@ -623,6 +623,104 @@ describe('engine integration: approval summary propagation', () => {
   }, 10_000);
 });
 
+// ── Approval announce-ordering regression ───────────────────────
+//
+// Bug: pending approvals didn't appear live ("No aparecen las Aprobaciones").
+// The approval was POSTed fire-and-forget and `approval_requested` was emitted
+// synchronously right after. The renderer refreshes its pending list the instant
+// it sees that event, so its GET could race ahead of the still-in-flight insert,
+// come back empty, and leave the badge at 0 until the screen remounted.
+//
+// The fix awaits the approval POST (chained after the run record) BEFORE emitting.
+// This test gates the POST response and proves the emit is held until it resolves.
+describe('engine integration: approval persisted before announce', () => {
+  it('does not emit approval_requested until POST /engine/approvals has resolved', async () => {
+    const captured: CapturedRequest[] = [];
+    let approvalPostReceived: () => void = () => {};
+    const approvalPostReceivedP = new Promise<void>((r) => { approvalPostReceived = r; });
+    let releaseApprovalPost: () => void = () => {};
+    const approvalPostGate = new Promise<void>((r) => { releaseApprovalPost = r; });
+
+    const localServer = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', async () => {
+        let parsed: any = null;
+        try { parsed = JSON.parse(body); } catch { parsed = body; }
+        const url = req.url || '';
+        captured.push({ method: req.method || 'GET', path: url, body: parsed });
+
+        const ok201 = (payload: unknown) => {
+          res.writeHead(201, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(payload));
+        };
+
+        if (req.method === 'POST' && url === '/engine/approvals') {
+          // Signal receipt, then block the response until the test releases it.
+          approvalPostReceived();
+          await approvalPostGate;
+          ok201({ id: parsed?.id, status: 'pending' });
+        } else if (req.method === 'POST' && url === '/engine/runs') {
+          ok201({ id: parsed?.id, status: 'running' });
+        } else if (req.method === 'POST' && url.includes('/steps')) {
+          ok201(Array.isArray(parsed) ? parsed : []);
+        } else if (req.method === 'POST' && url.includes('/events')) {
+          ok201({ created: 0 });
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({}));
+        }
+      });
+    });
+    const port: number = await new Promise((resolve) => {
+      localServer.listen(0, '127.0.0.1', () => resolve((localServer.address() as any).port));
+    });
+
+    try {
+      const engine = new ExecutionEngine(port, makeMockRuntime());
+      const webContents = makeMockWebContents();
+
+      const wasApprovalEmitted = () =>
+        webContents.send.mock.calls.some((c: any) => c[1]?.type === 'approval_requested');
+
+      const runId = await engine.startRun(webContents, {
+        dag: {
+          steps: [
+            makeStep({ id: 'gate', actionType: 'approval_gate', requiresApproval: true, params: {} }),
+          ],
+        },
+      });
+
+      // The server has the POST but hasn't responded yet → the emit must be held.
+      await approvalPostReceivedP;
+      expect(wasApprovalEmitted()).toBe(false);
+
+      // Release the POST; only now may approval_requested be emitted.
+      releaseApprovalPost();
+      await new Promise<void>((resolve, reject) => {
+        const start = Date.now();
+        const check = () => {
+          if (wasApprovalEmitted()) resolve();
+          else if (Date.now() - start > 5000) reject(new Error('approval_requested never emitted'));
+          else setTimeout(check, 20);
+        };
+        check();
+      });
+      expect(wasApprovalEmitted()).toBe(true);
+
+      // And the approval POST was chained after the run record (no 404 risk).
+      const runIdx = captured.findIndex((r) => r.method === 'POST' && r.path === '/engine/runs');
+      const apprIdx = captured.findIndex((r) => r.method === 'POST' && r.path === '/engine/approvals');
+      expect(runIdx).toBeGreaterThanOrEqual(0);
+      expect(apprIdx).toBeGreaterThan(runIdx);
+
+      engine.resolveApproval(captured[apprIdx].body.id, false, 'test teardown');
+    } finally {
+      await new Promise<void>((resolve) => localServer.close(() => resolve()));
+    }
+  }, 10_000);
+});
+
 describe('engine integration: IPC events forwarded to webContents', () => {
   it('webContents.send receives all events on correct channel', async () => {
     resetCaptures();

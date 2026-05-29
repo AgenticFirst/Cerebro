@@ -55,6 +55,10 @@ interface OnboardingContextValue {
    *  an elevated z-index to the matching NavButton — guarantees the nav
    *  item is visible regardless of whether the SVG cutout punches through. */
   spotlightedNavId: string | null;
+  /** True when the install-check is being shown OUTSIDE the tour (existing
+   *  user who already completed onboarding but is missing the CLI). The
+   *  step renders a centered modal instead of advancing into a celebration. */
+  standaloneInstallCheck: boolean;
   /** Language picked during welcome (drives copy in this session). */
   language: TourLanguage;
   /** Open the tour from step 0. Used by the Settings → Appearance button. */
@@ -65,6 +69,10 @@ interface OnboardingContextValue {
   prev: () => void;
   /** Pick language during welcome step and advance. */
   setLanguageAndAdvance: (lang: TourLanguage) => void;
+  /** Persist `claude_code_install_seen=true`. Called by InstallCheckStep
+   *  the first time it renders any visible UI; suppresses the standalone
+   *  reopen on subsequent launches. */
+  markInstallSeen: () => void;
   /** Close + persist as completed (skipped flag = true if mid-tour). */
   finish: (opts?: { skipped?: boolean }) => void;
 }
@@ -79,6 +87,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [hasCompletedBefore, setHasCompletedBefore] = useState(false);
+  const [standaloneInstallCheck, setStandaloneInstallCheck] = useState(false);
   const [language, setLanguage] = useState<TourLanguage>(
     () => (i18n.language as TourLanguage) ?? 'en',
   );
@@ -86,17 +95,49 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   // Track auto-open scheduling so we don't fire after unmount.
   const autoOpenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-open on first launch if not yet seen.
+  // Auto-open on first launch if not yet seen, OR re-prompt the install
+  // step for v0.1.0 users who completed the tour before this gate existed
+  // and still don't have the CLI installed.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const persisted = await loadSetting<PersistedTourState>('tour_completed');
+      const [persisted, installSeen] = await Promise.all([
+        loadSetting<PersistedTourState>('tour_completed'),
+        loadSetting<boolean>('claude_code_install_seen'),
+      ]);
       if (cancelled) return;
-      if (persisted && persisted.version === TOUR_VERSION) {
+      const tourDone = !!persisted && persisted.version === TOUR_VERSION;
+      if (tourDone) {
         setHasCompletedBefore(true);
+
+        // Existing user with no install-seen flag yet: probe detection and
+        // open the standalone install-check if the CLI is missing. Cheap —
+        // the detector caches and runs `which claude` + a few stat()s.
+        if (!installSeen) {
+          try {
+            const info = await window.cerebro.claudeCode.detect();
+            if (cancelled) return;
+            if (info.status !== 'available') {
+              const installCheckIdx = TOUR_STEPS.findIndex(
+                (s) => s.kind === 'install-check',
+              );
+              if (installCheckIdx >= 0) {
+                autoOpenTimer.current = setTimeout(() => {
+                  if (cancelled) return;
+                  setStepIndex(installCheckIdx);
+                  setStandaloneInstallCheck(true);
+                  setIsOpen(true);
+                }, AUTO_OPEN_DELAY_MS);
+              }
+            }
+          } catch {
+            // Detection IPC failed (e.g. backend boot race) — silently skip.
+          }
+        }
         return;
       }
-      // Defer slightly so providers settle and the chat empty-state paints.
+      // First-launch: defer slightly so providers settle and the chat
+      // empty-state paints, then open the full tour from step 0.
       autoOpenTimer.current = setTimeout(() => {
         if (!cancelled) setIsOpen(true);
       }, AUTO_OPEN_DELAY_MS);
@@ -113,8 +154,16 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   }, [i18n.language]);
 
   const start = useCallback(() => {
+    // "Take the tour again" always replays the FULL tour, never the
+    // standalone install-check. Reset both flags so the install step runs
+    // fresh (idempotent — re-detects, no-ops if CLI is already installed).
+    setStandaloneInstallCheck(false);
     setStepIndex(0);
     setIsOpen(true);
+  }, []);
+
+  const markInstallSeen = useCallback(() => {
+    saveSetting('claude_code_install_seen', true);
   }, []);
 
   const next = useCallback(() => {
@@ -139,18 +188,27 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
   const finish = useCallback(
     (opts?: { skipped?: boolean }) => {
-      const payload: PersistedTourState = {
-        version: TOUR_VERSION,
-        completedAt: Date.now(),
-        language: (i18n.language as TourLanguage) ?? 'en',
-        skipped: opts?.skipped ?? false,
-      };
-      saveSetting('tour_completed', payload);
+      // Persist tour_completed UNLESS we were running in standalone-install
+      // mode for an existing user (their tour_completed flag already exists
+      // and we shouldn't bump completedAt every dismissal of the standalone
+      // step). Always mark install-seen regardless, so we don't reopen on
+      // every relaunch.
+      if (!standaloneInstallCheck) {
+        const payload: PersistedTourState = {
+          version: TOUR_VERSION,
+          completedAt: Date.now(),
+          language: (i18n.language as TourLanguage) ?? 'en',
+          skipped: opts?.skipped ?? false,
+        };
+        saveSetting('tour_completed', payload);
+      }
+      saveSetting('claude_code_install_seen', true);
       setHasCompletedBefore(true);
       setIsOpen(false);
+      setStandaloneInstallCheck(false);
       setStepIndex(0);
     },
-    [i18n.language],
+    [i18n.language, standaloneInstallCheck],
   );
 
   const step = TOUR_STEPS[stepIndex] ?? TOUR_STEPS[0];
@@ -173,11 +231,13 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       hasCompletedBefore,
       forcedSettingsSection,
       spotlightedNavId,
+      standaloneInstallCheck,
       language,
       start,
       next,
       prev,
       setLanguageAndAdvance,
+      markInstallSeen,
       finish,
     }),
     [
@@ -187,11 +247,13 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       hasCompletedBefore,
       forcedSettingsSection,
       spotlightedNavId,
+      standaloneInstallCheck,
       language,
       start,
       next,
       prev,
       setLanguageAndAdvance,
+      markInstallSeen,
       finish,
     ],
   );

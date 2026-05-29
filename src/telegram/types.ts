@@ -116,6 +116,11 @@ export interface TelegramSettings {
   chatExpertMap: Record<string, string>; // chatId → expertId
   chatUsernames: Record<string, string>; // chatId → @username (best effort, refreshed on each inbound message)
   lastUpdateId: number;
+  /** Telegram user/chat id of the Cerebro operator. Receives the Claude
+   *  sign-in link when the bundled CLI loses auth, and supplies the
+   *  paste-back code via the next DM in that chat. Null falls back to
+   *  the first numeric id in `allowlist`. */
+  operatorChatId: string | null;
 }
 
 export const TELEGRAM_SETTING_KEYS = {
@@ -127,6 +132,7 @@ export const TELEGRAM_SETTING_KEYS = {
   chatExpertMap: 'telegram_chat_expert_map',
   chatUsernames: 'telegram_chat_username_map',
   lastUpdateId: 'telegram_last_update_id',
+  operatorChatId: 'telegram_operator_chat_id',
 } as const;
 
 // ── IPC surface (re-exports of the canonical types in types/ipc.ts) ──

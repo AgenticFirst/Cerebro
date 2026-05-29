@@ -50,6 +50,7 @@ function buildChannel(token: string, opts: Partial<{ pipeline: string; stage: st
     getPortalId: () => opts.portalId ?? null,
     getDefaultPipeline: () => opts.pipeline ?? null,
     getDefaultStage: () => opts.stage ?? null,
+    isConnected: () => Boolean(token && opts.pipeline && opts.stage),
   };
 }
 
@@ -187,6 +188,56 @@ d('HubSpot integration (live)', () => {
     expect(fetched.ok).toBe(true);
     expect(fetched.data?.properties?.subject).toBe(subject);
     expect(fetched.data?.properties?.hs_pipeline).toBe(firstPipelineId);
+  });
+
+  it('6. hubspot_create_ticket: associates by contact_email, creating the contact when missing', async () => {
+    expect(firstPipelineId).toBeTruthy();
+    expect(firstStageId).toBeTruthy();
+
+    const action = createHubSpotCreateTicketAction({
+      getChannel: () => buildChannel(TOKEN, {
+        pipeline: firstPipelineId,
+        stage: firstStageId,
+        portalId: '123',
+      }),
+    });
+
+    // Brand-new email that doesn't exist yet — exercises the create-then-associate path.
+    const email = `cerebro-ticket-email-${RUN_ID}@example.com`;
+    const subject = `[Cerebro integration test ${RUN_ID} email-assoc] please ignore`;
+    const result = await action.execute(buildActionInput({
+      subject,
+      content: 'Created by Cerebro\'s automated integration tests. Safe to delete.',
+      priority: 'LOW',
+      contact_email: email,
+    }));
+
+    expect(result.data.created).toBe(true);
+    expect(result.data.error).toBeNull();
+    expect(result.data.contact_associated).toBe(true);
+    const ticketId = String(result.data.ticket_id);
+    const contactId = String(result.data.contact_id);
+    expect(ticketId).toBeTruthy();
+    expect(contactId).toBeTruthy();
+    createdTicketIds.add(ticketId);
+    createdContactIds.add(contactId);
+
+    // The contact was created from just the email — confirm it exists with that email.
+    const contact = await callHubSpotApi<{ properties?: { email?: string } }>(
+      TOKEN,
+      `/crm/v3/objects/contacts/${contactId}?properties=email`,
+    );
+    expect(contact.ok).toBe(true);
+    expect(contact.data?.properties?.email).toBe(email);
+
+    // The real proof: the ticket is actually associated to that contact in HubSpot.
+    const assoc = await callHubSpotApi<{ results?: Array<{ toObjectId?: number | string; id?: string }> }>(
+      TOKEN,
+      `/crm/v3/objects/tickets/${ticketId}/associations/contacts`,
+    );
+    expect(assoc.ok).toBe(true);
+    const associatedIds = (assoc.data?.results ?? []).map((r) => String(r.toObjectId ?? r.id));
+    expect(associatedIds).toContain(contactId);
   });
 });
 

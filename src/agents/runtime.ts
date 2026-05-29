@@ -13,8 +13,9 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 import { ipcMain } from 'electron';
-import type { AgentRunRequest, ActiveRunInfo, RendererAgentEvent } from './types';
+import type { AgentRunRequest, ActiveRunInfo, MessageSnapshot, RendererAgentEvent } from './types';
 
 /**
  * Minimal sink interface for run events. Both WebContents (renderer) and
@@ -25,16 +26,160 @@ export interface AgentEventSink {
   send(channel: string, ...args: unknown[]): void;
   isDestroyed(): boolean;
 }
-import { ClaudeCodeRunner } from '../claude-code/stream-adapter';
+import { ClaudeCodeRunner, type RunnerErrorClass } from '../claude-code/stream-adapter';
+import { toUuidFormat } from '../claude-code/session-id';
+import { clearProbeCache } from '../claude-code/auth-probe';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
+import { isReplIdleTail } from './completion-detection';
 import { getAgentNameForExpert, installAll, installExpert, expertAgentName } from '../claude-code/installer';
+import { MediaIngestService } from '../files/media-ingest';
+import type { ResolvedAttachment } from '../files/types';
 import fsSync from 'node:fs';
-import { IPC_CHANNELS } from '../types/ipc';
+import { IPC_CHANNELS, buildDeliverablePayload, type ParsedDeliverable } from '../types/ipc';
 import { buildSystemPrompt } from '../i18n/language-directive';
 
 /** Cap concurrent runs to prevent spawning a wall of subprocesses. */
 const MAX_CONCURRENT_RUNS = 5;
+
+/**
+ * Project per-request scoping policies (per-user expert allowlist, etc.)
+ * onto the subprocess environment so `list-experts.sh` and the
+ * `delegate_to_expert` chat-action can honour them without any shared state.
+ */
+function buildExtraEnv(request: AgentRunRequest): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  if (Array.isArray(request.accessibleExpertIds)) {
+    // Empty allowlist deliberately becomes an empty string — meaningful
+    // "no experts at all". `list-experts.sh` checks for the variable's
+    // presence (not just non-empty value).
+    out.CEREBRO_EXPERT_ALLOWLIST = request.accessibleExpertIds.join(',');
+    out.CEREBRO_EXPERT_ALLOWLIST_SET = '1';
+  }
+  if (request.conversationId) {
+    // `run-chat-action.sh` stamps this onto the action request body so the
+    // engine can attribute the approval back to this conversation's thread.
+    out.CEREBRO_CONVERSATION_ID = request.conversationId;
+  }
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
+/**
+ * Thrown when a caller tries to spawn a chat run on a conversation that
+ * already has one in flight. Each Cerebro conversation maps to a single
+ * Claude Code session id, and the CLI refuses to open the same session
+ * twice. Callers (Telegram bridge, chat IPC) catch this and surface a
+ * "still working" message instead of letting the raw session-collision
+ * reach the user.
+ */
+export class ConversationBusyError extends Error {
+  readonly conversationId: string;
+  readonly runId: string;
+  constructor(conversationId: string, runId: string) {
+    super(`Conversation ${conversationId} already has run ${runId} in flight`);
+    this.name = 'ConversationBusyError';
+    this.conversationId = conversationId;
+    this.runId = runId;
+  }
+}
+
+// ── Auto-escalation ladder ──────────────────────────────────────
+// When a chat run fails with a structured "model fell short" signal
+// (max-turns, context exhausted, transient overload), we retry on a
+// stronger rung. Cheapest path first: bump the model up the size
+// ladder, only then bump the tier (which mostly affects maxTurns and
+// the system-prompt directive). Capped at 3 total attempts.
+
+type QualityTier = 'fast' | 'medium' | 'slow';
+type ResponseModel = 'haiku' | 'sonnet' | 'opus';
+
+const MODEL_LADDER: ResponseModel[] = ['haiku', 'sonnet', 'opus'];
+const TIER_LADDER: QualityTier[] = ['fast', 'medium', 'slow'];
+const MAX_ESCALATION_ATTEMPTS = 3;
+
+/** Map a model id passed through `--model` back to a ladder rung. Falls
+ *  back to 'sonnet' for unknown strings so escalation still has a sensible
+ *  starting point. */
+function normalizeModel(model: string | undefined): ResponseModel {
+  if (!model) return 'sonnet';
+  const lower = model.toLowerCase();
+  if (lower.includes('haiku')) return 'haiku';
+  if (lower.includes('opus')) return 'opus';
+  return 'sonnet';
+}
+
+/** Default per-tier maxTurns matching the inline logic at runtime ~line 514. */
+function maxTurnsForTier(tier: QualityTier): number {
+  if (tier === 'fast') return 8;
+  if (tier === 'slow') return 25;
+  return 15;
+}
+
+/** Whether a runner error class warrants an automatic retry. */
+function isEscalatable(cls: RunnerErrorClass): boolean {
+  return cls === 'max_turns' || cls === 'context' || cls === 'overload';
+}
+
+/**
+ * Map a terminal runner error class to the message we actually show the user.
+ * Cerebro mimics Claude Code, which never surfaces a raw CLI error — so every
+ * class except 'auth' (which drives the in-app login card / operator flow and
+ * is suppressed before it's shown raw) is rewritten to clean, bilingual copy
+ * with no "Claude Code (code N)" / "Session ID … in use" leakage. The raw
+ * detail is still written to the per-run log for debugging.
+ */
+function friendlySurfaceError(cls: RunnerErrorClass, lang: string | undefined, raw: string): string {
+  const es = lang === 'es';
+  switch (cls) {
+    case 'auth':
+      // Keep as-is: errorClass:'auth' renders the login card in-app and routes
+      // to the operator setup-token flow over Slack/Telegram; the raw text is
+      // suppressed on every surface before it would be shown.
+      return raw;
+    case 'session_in_use':
+      return es
+        ? 'Esa conversación todavía está ocupada con un mensaje anterior. Dale un momento e inténtalo de nuevo.'
+        : 'That conversation is still busy with a previous message. Give it a moment and try again.';
+    case 'idle_hang':
+      return es
+        ? 'Eso tardó más de lo esperado. Por favor, inténtalo de nuevo.'
+        : 'That took longer than expected. Please try again.';
+    case 'max_turns':
+      return es
+        ? 'No pude completar eso en los pasos disponibles. Intenta dividirlo en una solicitud más simple.'
+        : "I couldn't finish that within the available steps. Try breaking it into a simpler request.";
+    case 'context':
+      return es
+        ? 'Esta conversación es demasiado larga para procesarla de una vez. Empieza una nueva o resume el tema.'
+        : 'This conversation has grown too long to process at once. Start a new one or summarize the topic.';
+    case 'overload':
+      return es
+        ? 'El servicio está saturado en este momento. Espera un momento e inténtalo de nuevo.'
+        : 'The service is busy right now. Please wait a moment and try again.';
+    default:
+      // 'unknown', 'spawn', and any raw CLI exit dump.
+      return es
+        ? 'Algo salió mal de mi lado. Por favor, inténtalo de nuevo en un momento.'
+        : 'Something went wrong on my end. Please try again in a moment.';
+  }
+}
+
+/** Pick the next (model, tier) rung. Returns null when we're already at
+ *  the top of both ladders — caller should stop retrying. */
+function nextRung(
+  model: ResponseModel,
+  tier: QualityTier,
+): { model: ResponseModel; tier: QualityTier } | null {
+  const mi = MODEL_LADDER.indexOf(model);
+  const ti = TIER_LADDER.indexOf(tier);
+  if (mi < MODEL_LADDER.length - 1) {
+    return { model: MODEL_LADDER[mi + 1], tier };
+  }
+  if (ti < TIER_LADDER.length - 1) {
+    return { model, tier: TIER_LADDER[ti + 1] };
+  }
+  return null;
+}
 
 const DELIVERABLE_EXAMPLE = `<deliverable kind="markdown|code_app|mixed" title="Short title">
 # Heading
@@ -52,7 +197,9 @@ const RUN_INFO_EXAMPLE = `<run_info>
 }
 </run_info>`;
 
-const DELIVERABLE_HARD_RULE = `**ALWAYS end every run with a \`<deliverable kind="…" title="…">…</deliverable>\` block.** \`kind\` MUST be exactly one of \`markdown\`, \`code_app\`, or \`mixed\` (no other values, no pipe-separated lists — pick ONE). Cerebro uses this block as the machine-readable completion sentinel — without it, your work is invisible to the user and the task will NOT complete. This applies to EVERY task no matter how trivial: a one-line haiku, a one-word answer, a "hello world" — wrap the final result in a deliverable block. Do NOT output your final answer as plain text outside the block. If you've already written the result as prose, your last action is still to emit the deliverable block with the same content inside.`;
+const DELIVERABLE_HARD_RULE = `**ALWAYS end every run with a \`<deliverable kind="…" title="…">…</deliverable>\` block.** \`kind\` MUST be exactly one of \`markdown\`, \`code_app\`, or \`mixed\` (no other values, no pipe-separated lists — pick ONE). Cerebro uses this block as the machine-readable completion sentinel — without it, your work is invisible to the user and the task will NOT complete. This applies to EVERY task no matter how trivial: a one-line haiku, a one-word answer, a "hello world" — wrap the final result in a deliverable block. Do NOT output your final answer as plain text outside the block. If you've already written the result as prose, your last action is still to emit the deliverable block with the same content inside.
+
+**Keep the workspace tidy.** Put scratch files, downloads, intermediate scripts, screenshots, and anything else that isn't a final artifact under a \`_work/\` directory — Cerebro hides that path from the user's Archivos tab. Only files that are part of the actual deliverable (the manual PDF, the source code, the final report) should live at the workspace root. A user opening the Archivos tab should see a handful of final artifacts, not a hundred build intermediates.`;
 
 interface ActiveRun {
   runId: string;
@@ -67,6 +214,42 @@ interface ActiveRun {
   ptyRunner: TaskPtyRunner | null;
   isTaskRun: boolean;
 }
+
+/**
+ * Pull the `<deliverable kind="…" title="…">BODY</deliverable>` block out of a
+ * finalized run's accumulated text. Mirrors the regex used by the completion
+ * poller so anything the poller would have recognised as completion is also
+ * what the renderer/backend see as the persisted result. Returns null if no
+ * valid deliverable block is present (caller treats absence as "no result").
+ */
+export function parseDeliverableBlock(text: string): ParsedDeliverable | null {
+  // Walk every deliverable in the buffer and keep the last one — handles
+  // retries where Claude Code re-emits the block, and is robust to attribute
+  // ordering (the completion poller only checks for kind="…", so we mirror
+  // that and then re-extract `title` independently).
+  const re = /<deliverable\s+([^>]*)>([\s\S]*?)<\/deliverable>/g;
+  let last: { attrs: string; body: string } | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    last = { attrs: m[1], body: m[2] };
+  }
+  if (!last) return null;
+  const kindMatch = last.attrs.match(/kind=["'](markdown|code_app|mixed)["']/);
+  if (!kindMatch) return null;
+  const titleMatch = last.attrs.match(/title=["']([^"']*)["']/);
+  const body = last.body.trim();
+  if (!body) return null;
+  // Same word-count floor as the completion detector (line ~787) so we don't
+  // capture the placeholder example block whose body is a single ellipsis.
+  const wordChars = (body.match(/\w/g) ?? []).length;
+  if (wordChars < 10) return null;
+  return {
+    kind: kindMatch[1] as ParsedDeliverable['kind'],
+    title: (titleMatch?.[1] ?? '').trim(),
+    body,
+  };
+}
+
 
 /**
  * Synthesize a `<deliverable>` envelope when the agent exited cleanly with
@@ -94,6 +277,34 @@ function wrapProseAsDeliverable(raw: string): string {
   return `<deliverable kind="markdown" title="Task Result">\n${body}\n</deliverable>`;
 }
 
+/**
+ * One-shot prompt builder used ONLY when a `--resume` attempt fails because
+ * the Claude Code session file isn't on disk yet (typical for chats created
+ * before sessions existed, or when the Claude Code data dir was wiped).
+ * Prepends the full conversation transcript from Cerebro's SQLite so the
+ * fresh session is seeded with the same context the user sees in the
+ * scrollback — no per-message truncation, only a 100 KB absolute ceiling.
+ * After this turn, the session exists on disk and future turns resume
+ * normally without any injection.
+ */
+const SEED_MAX_TOTAL_CHARS = 100_000;
+
+function buildSeedPrompt(history: MessageSnapshot[], newMessage: string): string {
+  const lines: string[] = [];
+  let totalChars = 0;
+  for (const m of history) {
+    const tag = m.role === 'user' ? 'human' : 'assistant';
+    const line = `<${tag}>\n${m.content}\n</${tag}>`;
+    if (totalChars + line.length > SEED_MAX_TOTAL_CHARS && lines.length > 0) {
+      lines.push('<truncated_history note="Earlier turns omitted; total exceeded the seed limit." />');
+      break;
+    }
+    lines.push(line);
+    totalChars += line.length;
+  }
+  return `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe block above is the full prior transcript of this conversation, reloaded once because your session was not on disk. Treat every previous turn as already answered. Respond ONLY to the new user message below. Do not re-answer earlier questions or recap prior content unless explicitly asked. For short follow-ups ("sí", "ok", "save that"), interpret them as confirmations of the most recent proposal in the history.\n</instructions>\n\n${newMessage}`;
+}
+
 interface ExpertNameLookup {
   id: string;
   name: string;
@@ -101,15 +312,58 @@ interface ExpertNameLookup {
 
 export class AgentRuntime {
   private activeRuns = new Map<string, ActiveRun>();
+  /**
+   * Single-flight registry keyed by conversationId. Chat runs map 1:1 to a
+   * Claude Code session id (`toUuidFormat(conversationId)`), so a second
+   * concurrent spawn would collide on the session lock and the CLI would
+   * return "Session ID … is already in use". Task and engine runs use
+   * per-run session ids, so they are intentionally excluded.
+   */
+  private activeConversations = new Map<string, string>();
   private backendPort: number;
   private dataDir: string;
   private syncChain: Promise<void> = Promise.resolve();
   public terminalBufferStore: TerminalBufferStore;
 
+  /**
+   * Main-process event bus. The Claude Code chat runner emits events to
+   * the renderer via `webContents.send`, but main-process consumers (the
+   * `expert_step` action in particular) cannot observe those — its
+   * `webContents.ipc.on` only fires for renderer→main messages. Without
+   * this bridge, every `run_expert` step in a routine waits forever for a
+   * `done` event that never arrives, and only the dag executor's 5-min
+   * wall clock frees the run. Subscribe via `runtime.on('event:<runId>',
+   * cb)` to receive every agent event in main.
+   */
+  private bus = new EventEmitter();
+
+  private mediaIngest: MediaIngestService;
+
   constructor(backendPort: number, dataDir: string) {
     this.backendPort = backendPort;
     this.dataDir = dataDir;
     this.terminalBufferStore = new TerminalBufferStore(dataDir);
+    this.mediaIngest = new MediaIngestService({
+      getBackendPort: () => this.backendPort,
+      transcriptDir: `${dataDir}/files/_transcripts`,
+    });
+    // Allow many step actions to listen on different runs concurrently.
+    this.bus.setMaxListeners(50);
+  }
+
+  /** Subscribe to agent events for a specific run from main-process code. */
+  onAgentEvent(runId: string, listener: (event: RendererAgentEvent) => void): () => void {
+    const channel = `event:${runId}`;
+    this.bus.on(channel, listener);
+    return () => this.bus.off(channel, listener);
+  }
+
+  /** Internal: emit a single agent event on both the main bus and the renderer channel. */
+  private deliverEvent(runId: string, webContents: AgentEventSink, event: RendererAgentEvent): void {
+    this.bus.emit(`event:${runId}`, event);
+    if (!webContents.isDestroyed()) {
+      webContents.send(`agent:event:${runId}`, event);
+    }
   }
 
   /**
@@ -127,6 +381,19 @@ export class AgentRuntime {
     const isTaskRun = request.runType === 'task';
     const runId = request.runIdOverride || crypto.randomUUID().replace(/-/g, '').slice(0, 32);
     const { conversationId, content, expertId } = request;
+
+    // Single-flight per conversation for chat runs. Engine runs use a
+    // synthetic per-run conversationId (`engine-run:<id>`) so they never
+    // collide; task runs key sessions off runId, not conversationId.
+    const isEngineRunPrefix = typeof conversationId === 'string' && conversationId.startsWith('engine-run:');
+    const gateConversation = !isTaskRun && !isEngineRunPrefix && !!conversationId;
+    if (gateConversation) {
+      const existing = this.activeConversations.get(conversationId!);
+      if (existing) {
+        throw new ConversationBusyError(conversationId!, existing);
+      }
+      this.activeConversations.set(conversationId!, runId);
+    }
 
     // Resolve which subagent to invoke. Default to the main "cerebro" agent
     // when no expert is specified. For experts, we must guarantee both (a) the
@@ -146,9 +413,30 @@ export class AgentRuntime {
     const isExternalWorkspace =
       isTaskRun && !!request.workspacePath && !request.workspacePath.startsWith(this.dataDir);
 
+    // Resolve any `@/abs/path` attachment refs in the user's content BEFORE
+    // we paste it into the `claude -p` argv. Office docs / PDFs / audio get
+    // pre-extracted to UTF-8 sidecars; binary files no longer reach Claude
+    // Code's Read tool, which would otherwise crash the subprocess (exit 1).
+    // The original `content` (with raw @paths) stays on `userContent` so the
+    // activity log shows what the user actually attached.
+    let resolvedContent = content;
+    let resolvedAttachments: ResolvedAttachment[] = [];
+    try {
+      const resolved = await this.mediaIngest.resolveContent(
+        content,
+        'chat-upload',
+        conversationId ?? null,
+      );
+      resolvedContent = resolved.content;
+      resolvedAttachments = resolved.attachments;
+    } catch (err) {
+      console.warn(`[AgentRuntime] media ingest failed for run ${runId}; falling back to raw content:`, err);
+    }
+
     // Build the prompt. Task runs get a structured envelope; chat runs
-    // get conversation-history context prepended.
-    let fullPrompt = content;
+    // get conversation-history context prepended. Use `resolvedContent` so
+    // every prompt template sees the attachment-rewritten string.
+    let fullPrompt = resolvedContent;
 
     if (isTaskRun && request.taskPhase === 'plan') {
       const maxQ = request.maxClarifyQuestions ?? 5;
@@ -219,7 +507,7 @@ The user sees this as an interactive checklist. Keep items short, concrete, and 
 
 ## Goal
 
-${content}
+${resolvedContent}
 ${answersSection}
 </task_plan>`;
     } else if (isTaskRun && request.taskPhase === 'follow_up') {
@@ -236,7 +524,7 @@ ${request.followUpContext ?? '(no context available)'}
 
 ## Follow-up instruction
 
-${content}
+${resolvedContent}
 
 ## Protocol
 
@@ -334,7 +622,7 @@ You previously started this task but did not finish with a \`<deliverable>\` blo
 
 ## Brief (for reference)
 
-${content}
+${resolvedContent}
 
 ## Protocol
 
@@ -372,7 +660,7 @@ You are an Expert executing a task autonomously. Your working directory is ${wor
 
 ## Brief
 
-${content}
+${resolvedContent}
 
 ## Protocol
 
@@ -428,40 +716,23 @@ Your FINAL output MUST be a deliverable block in this exact shape, with real con
 
 Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE — no pipes, no placeholder ellipsis). Replace \`title\` with a short task-specific label. Replace the inner \`…\` with your actual markdown result. Do not end with prose outside the block. Without this block the task is finalized as an error no matter how much work you did. This applies to every task, including trivial ones.
 </task_direct>`;
-    } else if (request.recentMessages && request.recentMessages.length > 0) {
-      // Chat mode: prepend recent conversation history
-      const MAX_MSG_CHARS = 500;
-      const MAX_MESSAGES = 10;
-      const MAX_TOTAL_CHARS = 2000;
-      const recent = request.recentMessages.slice(-MAX_MESSAGES);
-      const lines: string[] = [];
-      let totalChars = 0;
-      for (const m of recent) {
-        const tag = m.role === 'user' ? 'human' : 'assistant';
-        const text = m.content.length > MAX_MSG_CHARS
-          ? m.content.slice(0, MAX_MSG_CHARS) + '...(truncated)'
-          : m.content;
-        const line = `<${tag}>${text}</${tag}>`;
-        if (totalChars + line.length > MAX_TOTAL_CHARS && lines.length > 0) break;
-        lines.push(line);
-        totalChars += line.length;
-      }
-      fullPrompt = `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe above is prior conversation context for reference only. Do NOT continue the conversation or generate any text on behalf of the user. Do NOT output "User:" or simulate user messages. Only provide your single assistant response to the following request.\n</instructions>\n\n${content}`;
     }
+    // Chat mode does NOT inject conversation history anymore. We rely on
+    // Claude Code's own per-session transcript (--resume reloads it from
+    // disk). The lossy `<conversation_history>` block this used to build —
+    // capped at 10 messages, 500 chars each, 2 KB total — was the source of
+    // the "assistant forgets prior turns" bug. See buildSeedPrompt below
+    // for the one-shot migration path used when --resume can't find the
+    // session on disk (e.g., conversations created before sessions existed).
 
     const channel = `agent:event:${runId}`;
 
-    // Resolve maxTurns: plan=15, execute/follow_up=request.maxTurns or 30, chat=15
-    let maxTurns = 15;
-    if (isTaskRun) {
-      if (request.taskPhase === 'plan') {
-        maxTurns = 15;
-      } else {
-        maxTurns = request.maxTurns ?? 30;
-      }
-    } else if (request.maxTurns) {
-      maxTurns = request.maxTurns;
-    }
+    // We do NOT pass --max-turns by default — mirroring the interactive
+    // `claude` CLI. Auto-compaction (on by default in Claude Code) handles
+    // long conversations without surfacing error_max_turns. Explicit caller
+    // overrides (routine step config, expert maxTurns) still apply.
+    const maxTurns: number | undefined =
+      typeof request.maxTurns === 'number' ? request.maxTurns : undefined;
 
     // All task phases run inside the task workspace: plan writes PLAN.md
     // there, execute reads PLAN.md and produces deliverables, follow_up
@@ -490,22 +761,26 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     // bogus slug and surface the generic "Claude Code exited unexpectedly" to
     // the user.
     if (agentResolutionError) {
-      if (!webContents.isDestroyed()) {
-        webContents.send(channel, { type: 'run_start', runId } as RendererAgentEvent);
-        webContents.send(channel, {
-          type: 'error',
-          runId,
-          error: agentResolutionError,
-        } as RendererAgentEvent);
-      }
+      this.deliverEvent(runId, webContents, { type: 'run_start', runId } as RendererAgentEvent);
+      this.deliverEvent(runId, webContents, {
+        type: 'error',
+        runId,
+        error: agentResolutionError,
+      } as RendererAgentEvent);
       this.finalizeRun(runId, 'error', '', agentResolutionError);
       return runId;
     }
 
     // Persist agent_runs row (fire-and-forget — non-critical).
-    // For task runs the run_records row is already minted by POST /tasks/{id}/run,
-    // so we skip creating a duplicate.
-    if (!isTaskRun) {
+    // - Task runs already have a run_records row minted by POST /tasks/{id}/run.
+    // - Engine-spawned runs (run_expert step) use a synthetic conversation_id
+    //   like `engine-run:<run-id>` that doesn't match any row in the
+    //   `conversations` table, so the agent_runs.conversation_id FK fails
+    //   with `IntegrityError: FOREIGN KEY constraint failed`. Engine runs
+    //   are tracked by step_records + execution_events anyway, so the
+    //   agent_runs row would be redundant.
+    const isEngineRun = typeof conversationId === 'string' && conversationId.startsWith('engine-run:');
+    if (!isTaskRun && !isEngineRun) {
       this.backendPost('/agent-runs', {
         id: runId,
         expert_id: expertId || null,
@@ -516,9 +791,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     }
 
     // Emit run_start
-    if (!webContents.isDestroyed()) {
-      webContents.send(channel, { type: 'run_start', runId } as RendererAgentEvent);
-    }
+    this.deliverEvent(runId, webContents, { type: 'run_start', runId } as RendererAgentEvent);
 
     // Task runs use the PTY for authentic terminal output. ANSI-stripped text
     // is bridged as text_delta events so the stream parser can extract tags.
@@ -565,10 +838,20 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
           const messageContent = completionDetected
             ? activeRun.accumulatedText
             : wrapProseAsDeliverable(activeRun.accumulatedText);
+          // Parse the deliverable once and reuse it for both the renderer's
+          // `done` event (so Vista previa can show the result without re-scanning
+          // the buffer) and the backup run-event POST in finalizeRun (so the
+          // tasks row gets `result_md` even if the renderer is gone).
+          const deliverable = parseDeliverableBlock(messageContent);
           if (!webContents.isDestroyed()) {
-            webContents.send(channel, { type: 'done', runId, messageContent } as RendererAgentEvent);
+            webContents.send(channel, {
+              type: 'done',
+              runId,
+              messageContent,
+              deliverable,
+            } as RendererAgentEvent);
           }
-          this.finalizeRun(runId, 'completed', messageContent);
+          this.finalizeRun(runId, 'completed', messageContent, undefined, deliverable);
         } else {
           if (!webContents.isDestroyed()) {
             webContents.send(channel, { type: 'error', runId, error: errorDetail } as RendererAgentEvent);
@@ -626,6 +909,16 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       // susceptible to echo false-triggers.
       const QUIESCE_MS = 2_000;
       let lastTextAt = Date.now();
+
+      // Soft-completion detector — fires when the agent has gone quiet at the
+      // REPL prompt with substantive output but never emitted a parseable
+      // `<deliverable>` tag. Without this, the only signal of "agent finished
+      // but skipped the tag" is the IDLE_TIMEOUT_MS path below, which can
+      // compound to ~10 min when the agent emits late tokens every <2 min
+      // (each token resets the hard-idle clock). Soft-idle catches it in ~30 s.
+      const SOFT_IDLE_MS = 30 * 1000;
+      const SOFT_IDLE_MIN_CHARS = 500;
+
       const completionPollTimer = setInterval(() => {
         if (gracefulExitInitiated || ptyRunner.isAborted()) return;
         if (!resumeSettled) return;
@@ -652,6 +945,21 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
             initiateGracefulExit('completed');
             return;
           }
+        }
+
+        // Soft-completion: agent never emitted a parseable <deliverable> but
+        // the PTY tail looks like the REPL idle prompt. Treat as success and
+        // let wrapProseAsDeliverable package the accumulated prose. Gated on
+        // a 500-char floor and the REPL-tail check so we don't preempt a
+        // long-running tool call.
+        if (
+          !completionDetected &&
+          Date.now() - lastTextAt >= SOFT_IDLE_MS &&
+          activeRun.accumulatedText.trim().length >= SOFT_IDLE_MIN_CHARS &&
+          isReplIdleTail(activeRun.accumulatedText)
+        ) {
+          initiateGracefulExit('completed');
+          return;
         }
 
         // Claude Code's session-ended goodbye line. If we see it in a quiesced
@@ -781,45 +1089,243 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       // after the settle period completes).
       if (resumeSettled) resetIdleTimer();
     } else {
-      // Chat runs use stream-json mode (no PTY).
-      const runner = new ClaudeCodeRunner();
-      activeRun.runner = runner;
+      // Chat runs use stream-json mode (no PTY). Wrapped in an escalation
+      // loop: on structured "model fell short" failures (max-turns, context
+      // exhausted, transient overload), retry once on the next ladder rung
+      // (model first, then tier) up to MAX_ESCALATION_ATTEMPTS.
+      const initialTier = (request.qualityTier ?? 'medium') as QualityTier;
+      const initialModel = normalizeModel(request.model);
+      const userOverrodeMaxTurns = typeof request.maxTurns === 'number';
 
-      runner.on('event', (event: RendererAgentEvent) => {
-        if (event.type === 'text_delta') {
-          activeRun.accumulatedText += event.delta;
-        }
-        if (!webContents.isDestroyed()) {
-          webContents.send(channel, event);
-        }
-      });
+      // Each Cerebro conversation maps 1:1 to a Claude Code session. The id
+      // is normally derived deterministically from conversationId so the same
+      // chat always lands in the same on-disk session file. If a previous
+      // session got wedged (an orphaned on-disk lock that even --resume can't
+      // open), the recovery path below rotates to a fresh id and persists it
+      // under `claude_session:<conversationId>`; we honor that stored id here
+      // so future turns — and restarts — skip straight to the healthy session
+      // instead of re-colliding on the wedged deterministic one.
+      let sessionId = (await this.getStoredClaudeSessionId(conversationId)) ?? toUuidFormat(conversationId);
+      // Only resume when this conversation has at least one prior ASSISTANT
+      // turn — that's the load-bearing signal that a Claude Code session
+      // file exists on disk. The renderer may include the just-typed user
+      // message in `recentMessages` (state batching is more forgiving than
+      // its caller assumes), so a length>0 check would (wrongly) try to
+      // --resume a session that was never created on the first turn,
+      // surfacing a confusing "session not found" error.
+      // Callers that ship a transcript (the app) let the assistant-message
+      // heuristic decide; callers that don't (Slack/Telegram bridges) pass an
+      // explicit `resume` hint. Either guess self-heals via the bidirectional
+      // session recovery below.
+      const hasPriorMessages = request.resume ?? !!request.recentMessages?.some((m) => m.role === 'assistant');
+      // Track whether the seed-on-missing-session fallback has already
+      // fired for this run, so a misconfiguration can't loop us forever.
+      let sessionSeedAttempted = false;
+      // Mirror guard for the reverse fallback: a --session-id spawn that
+      // collided with an existing on-disk session is retried once as --resume.
+      let sessionResumeAttempted = false;
+      // Last-resort guard: when even the --resume retry hits "already in use"
+      // (a genuinely orphaned/held lock), rotate to a brand-new session id
+      // once. A fresh UUID can't collide with anything, so the conversation
+      // can never stay permanently wedged.
+      let sessionRotated = false;
+      // A no-tool idle-watchdog kill (idle_hang) is retried once on a fresh
+      // probe, so a transient mid-turn stall never surfaces the raw CLI string.
+      let idleRetryAttempted = false;
+      // An auth failure is retried once after busting the probe cache: a
+      // transient token-refresh blip then self-heals, while a genuine expiry
+      // re-fails the pre-flight probe and surfaces the login card.
+      let authRetryAttempted = false;
 
-      runner.on('done', (messageContent: string) => {
-        this.finalizeRun(runId, 'completed', messageContent);
-        this.postRunSync(webContents);
-      });
+      const spawnAttempt = (
+        attempt: number,
+        model: ResponseModel,
+        tier: QualityTier,
+        turns: number | undefined,
+        // Per-attempt overrides — escalation retries keep the same
+        // resume/prompt state, but a session_missing recovery flips to a
+        // fresh session and substitutes a seed prompt that re-injects the
+        // SQLite history one time.
+        resume: boolean,
+        promptForAttempt: string,
+      ): void => {
+        const runner = new ClaudeCodeRunner();
+        activeRun.runner = runner;
 
-      runner.on('error', (error: string) => {
-        if (!webContents.isDestroyed()) {
-          webContents.send(channel, {
+        // Per-attempt accumulator: we only commit text to activeRun on success.
+        // On a retry, partial output from the failed attempt is discarded so
+        // the final assistant message reflects only the successful run.
+        let attemptText = '';
+
+        runner.on('event', (event: RendererAgentEvent) => {
+          if (event.type === 'text_delta') {
+            attemptText += event.delta;
+            activeRun.accumulatedText = attemptText;
+          }
+          // Never forward the runner's RAW error event. The stream-adapter
+          // emits a paired ('event' → 'error') for every terminal error, but
+          // the 'event' copy carries no errorClass and the raw CLI string.
+          // The renderer's case 'error' unsubscribes on the FIRST error it
+          // sees, so whichever fires first wins — and we want the friendly,
+          // classified one. The 'error' handler below is the SOLE authority:
+          // it runs recovery/escalation and, when terminal, delivers exactly
+          // one `friendlySurfaceError()`-rewritten event with the right
+          // errorClass (so 'auth' renders the login card). Dropping the raw
+          // 'event' error here guarantees no CLI string ever reaches chat.
+          if (event.type === 'error') return;
+          this.deliverEvent(runId, webContents, event);
+        });
+
+        runner.on('done', (messageContent: string) => {
+          this.deliverEvent(runId, webContents, {
+            type: 'done',
+            runId,
+            messageContent,
+          } as RendererAgentEvent);
+          activeRun.accumulatedText = messageContent;
+          this.finalizeRun(runId, 'completed', messageContent);
+          this.postRunSync(webContents);
+        });
+
+        runner.on('error', (error: string) => {
+          const cls = runner.getLastErrorClass();
+
+          // --resume failed because Claude Code has no on-disk session for
+          // this conversation (typical for chats created before sessions
+          // existed, or after a data-dir wipe). Transparently fall back:
+          // spawn fresh with --session-id and a one-time seed prompt
+          // containing the full SQLite history. After this turn the
+          // session exists and every future turn resumes normally.
+          if (cls === 'session_missing' && !sessionSeedAttempted) {
+            sessionSeedAttempted = true;
+            const seeded = buildSeedPrompt(request.recentMessages ?? [], resolvedContent);
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt, model, tier, turns, false, seeded);
+            return;
+          }
+
+          // Mirror of the above: we spawned with --session-id but Claude Code
+          // already has an on-disk session for this conversation (an earlier
+          // turn created it; the create-vs-resume guess was stale). Retry the
+          // same id with --resume — Claude Code reloads the transcript itself,
+          // so no seed prompt is needed.
+          if (cls === 'session_in_use' && resume === false && !sessionResumeAttempted) {
+            sessionResumeAttempted = true;
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt, model, tier, turns, true, promptForAttempt);
+            return;
+          }
+
+          // Escape hatch: the --resume retry ALSO hit "already in use" (or the
+          // first turn was a --resume that did). The on-disk lock is orphaned
+          // or held and neither create nor resume can open the deterministic
+          // id. Rotate to a brand-new session UUID, persist it so future turns
+          // and restarts use it, and seed the fresh session with SQLite
+          // history. A new UUID can't collide, so the conversation can never
+          // stay permanently wedged.
+          if (cls === 'session_in_use' && !sessionRotated) {
+            sessionRotated = true;
+            sessionId = crypto.randomUUID();
+            void this.setStoredClaudeSessionId(conversationId, sessionId);
+            const seeded = buildSeedPrompt(request.recentMessages ?? [], resolvedContent);
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt, model, tier, turns, false, seeded);
+            return;
+          }
+
+          // A no-tool idle kill (the CLI went silent mid-turn). Retry once,
+          // first busting the auth-probe cache so the retry's pre-flight does a
+          // REAL credential check: a genuine mid-session auth expiry then routes
+          // to 'auth' (login card), while a transient stall just re-runs. Either
+          // way the user never sees the raw "produced no output" string.
+          if (cls === 'idle_hang' && !idleRetryAttempted) {
+            idleRetryAttempted = true;
+            clearProbeCache();
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt, model, tier, turns, resume, promptForAttempt);
+            return;
+          }
+
+          // An auth failure (expired/invalid Claude Code session, surfaced as a
+          // 401 or unauthorized). Retry once after busting the probe cache so
+          // the retry's pre-flight does a REAL credential check: a transient
+          // token-refresh blip self-heals and the user never notices, while a
+          // genuine expiry re-fails the probe → 'auth' again, which then falls
+          // through to the surface path below and renders the login card
+          // (sign-in URL + auto-resend). This is the retry → ask → re-login
+          // flow with no raw "401" ever shown in chat.
+          if (cls === 'auth' && !authRetryAttempted) {
+            authRetryAttempted = true;
+            clearProbeCache();
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt, model, tier, turns, resume, promptForAttempt);
+            return;
+          }
+
+          const next = isEscalatable(cls) && attempt < MAX_ESCALATION_ATTEMPTS
+            ? nextRung(model, tier)
+            : null;
+          if (next) {
+            // Preserve "no cap" semantics across escalation: when the run
+            // started without a turn budget (the default chat path), retries
+            // also run uncapped. Explicit caller overrides keep their number.
+            const nextTurns = userOverrodeMaxTurns
+              ? turns
+              : (typeof maxTurns === 'number' ? maxTurnsForTier(next.tier) : undefined);
+            this.deliverEvent(runId, webContents, {
+              type: 'agent_escalation',
+              runId,
+              attempt: attempt + 1,
+              reason: cls,
+              nextModel: next.model,
+              nextTier: next.tier,
+            } as RendererAgentEvent);
+            // Drop partial output — it's max-turn-truncated / context-broken
+            // and would mislead. The successful attempt produces the final text.
+            attemptText = '';
+            activeRun.accumulatedText = '';
+            spawnAttempt(attempt + 1, next.model, next.tier, nextTurns, resume, promptForAttempt);
+            return;
+          }
+          // Non-retryable or ladder exhausted — surface the error. We never
+          // leak the raw CLI string ("Claude Code error (code N): …"): Cerebro
+          // mimics Claude Code, which never shows the user a CLI error. The raw
+          // detail still lands in the per-run log (closeRunLog) for debugging.
+          // `errorClass` is preserved so the UI/bridges can still render
+          // class-specific recovery affordances (the in-app login card for
+          // 'auth', the operator setup-token flow over Slack/Telegram).
+          const surfacedError = friendlySurfaceError(cls, request.language, error);
+          this.deliverEvent(runId, webContents, {
             type: 'error',
             runId,
-            error,
+            error: surfacedError,
+            errorClass: cls === 'none' ? 'unknown' : cls,
           } as RendererAgentEvent);
-        }
-        this.finalizeRun(runId, 'error', activeRun.accumulatedText, error);
-        this.postRunSync(webContents);
-      });
+          this.finalizeRun(runId, 'error', activeRun.accumulatedText, surfacedError);
+          this.postRunSync(webContents);
+        });
 
-      runner.start({
-        runId,
-        prompt: fullPrompt,
-        agentName,
-        cwd,
-        maxTurns,
-        model: request.model,
-        language: request.language,
-      });
+        runner.start({
+          runId,
+          prompt: promptForAttempt,
+          agentName,
+          cwd,
+          maxTurns: turns,
+          model,
+          language: request.language,
+          qualityTier: tier,
+          sessionId,
+          resume,
+          extraEnv: buildExtraEnv(request),
+        });
+      };
+
+      spawnAttempt(1, initialModel, initialTier, maxTurns, hasPriorMessages, fullPrompt);
     }
 
     return runId;
@@ -872,6 +1378,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     status: 'completed' | 'error' | 'cancelled',
     messageContent: string,
     error?: string,
+    deliverable?: ParsedDeliverable | null,
   ): void {
     const run = this.activeRuns.get(runId);
     if (!run) return;
@@ -883,7 +1390,18 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     const taskId = isTaskRun ? run.conversationId : null;
     this.activeRuns.delete(runId);
 
-    if (!isTaskRun) {
+    // Release the per-conversation slot if this run claimed it. The
+    // `=== runId` check prevents a stale finalize from releasing a slot
+    // a newer run has since claimed (defensive — shouldn't happen given
+    // the single-flight guard, but cheap insurance).
+    if (run.conversationId && this.activeConversations.get(run.conversationId) === runId) {
+      this.activeConversations.delete(run.conversationId);
+    }
+
+    // Engine-spawned runs were never INSERT'd (see startRun) so don't PATCH
+    // either — the row doesn't exist.
+    const isEngineRun = typeof run.conversationId === 'string' && run.conversationId.startsWith('engine-run:');
+    if (!isTaskRun && !isEngineRun) {
       this.backendRequest('PATCH', `/agent-runs/${runId}`, {
         status,
         completed_at: new Date().toISOString(),
@@ -902,10 +1420,17 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         status === 'completed' ? 'run_completed'
           : status === 'cancelled' ? 'run_cancelled'
             : 'run_failed';
+      // Forward parsed deliverable on completion so the backend persists
+      // result_md/result_title/result_kind even when the renderer's POST is
+      // lost (destroyed webContents, crashed renderer, etc.).
+      const deliverablePayload = status === 'completed'
+        ? buildDeliverablePayload(deliverable)
+        : {};
       this.backendRequest('POST', `/tasks/${taskId}/run-event`, {
         type: eventType,
         run_id: runId,
         ...(error ? { error } : {}),
+        ...deliverablePayload,
       }).catch((err: unknown) => {
         // Best-effort: the renderer's POST and the TaskReconciler both cover
         // this path, so don't surface to the user — but log so diagnostic
@@ -980,6 +1505,50 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     const next = this.syncChain.then(op, op);
     this.syncChain = next.catch(() => {});
     await next;
+  }
+
+  // ── Claude Code session-id persistence ─────────────────────────
+  // A conversation's session id is normally the deterministic
+  // toUuidFormat(conversationId). When a session gets wedged (an orphaned
+  // on-disk lock that neither --session-id nor --resume can open), the
+  // recovery path rotates to a fresh id and persists it here so future turns
+  // and app restarts skip straight to the healthy session. Stored in the
+  // existing settings key/value table — no schema change, GET 404 → null.
+
+  private sessionSettingKey(conversationId: string): string {
+    return `claude_session:${conversationId}`;
+  }
+
+  /** Rotated session id for this conversation, or null to use the default. */
+  private async getStoredClaudeSessionId(conversationId: string): Promise<string | null> {
+    if (!conversationId) return null;
+    const row = await this.backendGet<{ value?: string }>(
+      `/settings/${encodeURIComponent(this.sessionSettingKey(conversationId))}`,
+    );
+    const v = row?.value;
+    // Only honor a well-formed UUID; anything else falls back to the default.
+    return v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+  }
+
+  private async setStoredClaudeSessionId(conversationId: string, uuid: string): Promise<void> {
+    if (!conversationId) return;
+    await this.backendRequest(
+      'PUT',
+      `/settings/${encodeURIComponent(this.sessionSettingKey(conversationId))}`,
+      { value: uuid },
+    );
+  }
+
+  /**
+   * Operator escape hatch: force a fresh Claude Code session for a
+   * conversation. Mints a new random UUID (NOT a delete — deleting would
+   * revert to the possibly-wedged deterministic id) and persists it; the next
+   * turn seeds the fresh session from SQLite history. Returns the new id.
+   */
+  async rotateConversationSession(conversationId: string): Promise<string> {
+    const uuid = crypto.randomUUID();
+    await this.setStoredClaudeSessionId(conversationId, uuid);
+    return uuid;
   }
 
   private backendGet<T>(path: string): Promise<T | null> {

@@ -21,6 +21,13 @@ export const ENGINE_EVENT = 'engine-event' as const;
 export interface EngineEventContext {
   runId: string;
   routineId?: string;
+  /**
+   * Conversation that originated this run, when known. Lets in-process
+   * subscribers (Slack/Telegram bridges) route events — notably
+   * `approval_requested` — back to the exact thread that triggered the
+   * action, instead of guessing from the active-run count.
+   */
+  conversationId?: string;
 }
 
 export class RunEventEmitter {

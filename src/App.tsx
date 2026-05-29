@@ -12,20 +12,25 @@ import { VoiceProvider } from './context/VoiceContext';
 import { SandboxProvider } from './context/SandboxContext';
 import { FeatureFlagsProvider } from './context/FeatureFlagsContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { QualityProvider } from './context/QualityContext';
 import { UIPreferencesProvider } from './context/UIPreferencesContext';
 import { MarkdownDocumentProvider } from './context/MarkdownDocumentContext';
+import { ChatFilePreviewProvider } from './context/ChatFilePreviewContext';
 import { FilesProvider } from './context/FilesContext';
+import { KnowledgeBaseProvider } from './context/KnowledgeBaseContext';
 import { UpdateProvider } from './context/UpdateContext';
 import { OnboardingProvider } from './context/OnboardingContext';
 import AppLayout from './components/layout/AppLayout';
 import ToastContainer from './components/ui/Toast';
 import OnboardingTour from './components/onboarding/OnboardingTour';
+import RestoreCompletionWatcher from './components/backup/RestoreCompletionWatcher';
 
 function App() {
   return (
     <ToastProvider>
       <OnboardingProvider>
       <ThemeProvider>
+      <QualityProvider>
       <UIPreferencesProvider>
       <UpdateProvider>
       <ProviderProvider>
@@ -39,12 +44,16 @@ function App() {
                     <TaskProvider>
                       <ChatProvider>
                         <FilesProvider>
+                          <KnowledgeBaseProvider>
                           <VoiceProvider>
                             <MarkdownDocumentProvider>
-                              <AppLayout />
-                              <OnboardingTour />
+                              <ChatFilePreviewProvider>
+                                <AppLayout />
+                                <OnboardingTour />
+                              </ChatFilePreviewProvider>
                             </MarkdownDocumentProvider>
                           </VoiceProvider>
+                          </KnowledgeBaseProvider>
                         </FilesProvider>
                       </ChatProvider>
                     </TaskProvider>
@@ -58,9 +67,11 @@ function App() {
       </ProviderProvider>
       </UpdateProvider>
       </UIPreferencesProvider>
+      </QualityProvider>
       </ThemeProvider>
       </OnboardingProvider>
       <ToastContainer />
+      <RestoreCompletionWatcher />
     </ToastProvider>
   );
 }

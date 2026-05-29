@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Copy, Check } from 'lucide-react';
+import { Loader2, Copy, Check, Pencil, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import type { Message } from '../../types/chat';
 import MarkdownContent from './MarkdownContent';
@@ -8,9 +8,11 @@ import ThinkingIndicator from './ThinkingIndicator';
 import ToolCallsGroup from './ToolCallsGroup';
 import RunLogCard from './RunLogCard';
 import RoutineProposalCard from './RoutineProposalCard';
+import IntegrationSetupCard from './IntegrationSetupCard';
 import ExpertProposalCard from './ExpertProposalCard';
 import TeamProposalCard from './TeamProposalCard';
 import TeamRunCard from './TeamRunCard';
+import ClaudeCodeLoginCard from './ClaudeCodeLoginCard';
 import AttachmentChip from './AttachmentChip';
 import {
   parseFileRefs,
@@ -18,19 +20,49 @@ import {
   getCopyableContent,
 } from '../../lib/message-content';
 import { useCopyMessage } from '../../hooks/useCopyMessage';
+import { useChat } from '../../context/ChatContext';
 
 interface ChatMessageProps {
   message: Message;
+  nodeRef?: (el: HTMLDivElement | null) => void;
 }
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
+  const { isStreaming: chatIsStreaming, regenerateFromUserMessage } = useChat();
+
+  const [isEditing, setIsEditing] = useState(false);
+  // Edit drafts hold the bare text without trailing @file refs — those are
+  // attachments, not user prose. Only the editable prose is shown in the
+  // textarea so saving a small typo fix doesn't blow the chip layout away.
+  const editableContent = useMemo(() => {
+    if (!isUser) return message.content;
+    return parseFileRefs(message.content).text;
+  }, [isUser, message.content]);
+  const [draft, setDraft] = useState(editableContent);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // If the message content changes externally (e.g. another reload/patch),
+  // sync the draft when not actively editing.
+  useEffect(() => {
+    if (!isEditing) setDraft(editableContent);
+  }, [editableContent, isEditing]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.focus();
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight, 6 * 24)}px`;
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  }, [isEditing]);
 
   // Parsing is O(N) per render and streaming re-renders this every chunk, so
   // cache on the content string.
@@ -47,15 +79,27 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     };
   }, [isUser, message.content]);
 
-  const hasContent = displayContent.length > 0;
+  // The auth-recovery card replaces the "Error: ..." prose entirely —
+  // showing both would duplicate the message and look broken.
+  const suppressContent = !isUser && message.errorClass === 'auth';
+  const hasContent = !suppressContent && displayContent.length > 0;
   const assistantBusy =
     !isUser && (message.isThinking || message.isStreaming === true) && !hasContent;
 
   const { copied, copy } = useCopyMessage();
   const canCopy = copyableMarkdown.length > 0 && !message.isStreaming;
 
+  // Long assistant messages (generated documents, lengthy prose) get a
+  // top-of-bubble toolbar + collapse toggle. Pure-text length is a coarse
+  // but predictable signal — ~1500 chars is roughly where scrollback starts
+  // to drown other messages on the default window height.
+  const LONG_CONTENT_THRESHOLD = 1500;
+  const isLong = !isUser && displayContent.length >= LONG_CONTENT_THRESHOLD;
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   return (
     <div
+      ref={nodeRef}
       className="group animate-fade-in"
       data-testid="chat-message"
       data-role={isUser ? 'user' : 'assistant'}
@@ -67,7 +111,58 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           {isUser ? t('chat.you') : t('chat.cerebro')}
         </span>
         <span className="text-xs text-text-tertiary">{formatTime(message.createdAt)}</span>
+        {isLong && !isEditing && (
+          <div className="ml-auto flex items-center gap-0.5">
+            {canCopy && (
+              <button
+                type="button"
+                onClick={() => copy(copyableMarkdown)}
+                className="flex items-center justify-center w-7 h-7 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+                title={copied ? t('chat.copied') : t('chat.copyMessage')}
+                aria-label={copied ? t('chat.copied') : t('chat.copyMessage')}
+              >
+                {copied ? (
+                  <Check size={13} className="text-accent" strokeWidth={2.25} />
+                ) : (
+                  <Copy size={13} strokeWidth={2} />
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsCollapsed((v) => !v)}
+              className="flex items-center justify-center w-7 h-7 rounded-md text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+              title={isCollapsed ? t('chat.expand') : t('chat.collapse')}
+              aria-label={isCollapsed ? t('chat.expand') : t('chat.collapse')}
+              aria-expanded={!isCollapsed}
+            >
+              {isCollapsed ? (
+                <ChevronDown size={14} strokeWidth={2} />
+              ) : (
+                <ChevronUp size={14} strokeWidth={2} />
+              )}
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Auto-escalation notices: shown before tool calls so the user
+          immediately sees that the system retried on a stronger rung. */}
+      {!isUser && message.escalations && message.escalations.length > 0 && (
+        <div className="mb-2 space-y-1">
+          {message.escalations.map((e, i) => (
+            <div
+              key={`esc-${i}`}
+              className="flex items-center gap-1.5 text-[11px] text-amber-300/90"
+            >
+              <Zap size={11} strokeWidth={2} className="flex-shrink-0" />
+              <span>
+                {t('liveActivity.escalationNotice', { model: e.model, tier: e.tier })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Tool calls (before text content) — hidden by default, user can opt in via Settings → Appearance */}
       {hasToolCalls && (
@@ -86,6 +181,17 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         <div className="mb-2">
           <RoutineProposalCard
             proposal={message.routineProposal}
+            messageId={message.id}
+            conversationId={message.conversationId}
+          />
+        </div>
+      )}
+
+      {/* Integration setup proposal card */}
+      {!isUser && message.integrationProposal && (
+        <div className="mb-2">
+          <IntegrationSetupCard
+            proposal={message.integrationProposal}
             messageId={message.id}
             conversationId={message.conversationId}
           />
@@ -121,6 +227,18 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         </div>
       )}
 
+      {/* Sign-in card — replaces the raw "Error: ..." string when
+          Claude Code lost its session. Runs the login flow in-process
+          (captures the OAuth URL via PTY) so the user never has to drop
+          to a terminal — the bug that produced the leaked "run claude in
+          a terminal to sign in" message in Slack. */}
+      {!isUser && message.errorClass === 'auth' && (
+        <ClaudeCodeLoginCard
+          conversationId={message.conversationId}
+          messageId={message.id}
+        />
+      )}
+
       {/* Thinking indicator — only when there are no tool calls; otherwise the
           ToolCallsGroup already surfaces a live "Working on it..." signal. */}
       {!isUser && message.isThinking && !hasContent && !hasToolCalls && <ThinkingIndicator />}
@@ -135,7 +253,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       )}
 
       {/* Message content */}
-      {hasContent && (
+      {hasContent && !isEditing && (
         <div
           className={clsx(
             'rounded-xl px-4 py-3',
@@ -144,9 +262,103 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         >
           {isUser ? (
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{displayContent}</p>
+          ) : isLong && isCollapsed ? (
+            <div className="relative">
+              <div className="max-h-[280px] overflow-hidden">
+                <MarkdownContent content={displayContent} />
+              </div>
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-bg-base to-transparent" />
+            </div>
           ) : (
             <MarkdownContent content={displayContent} />
           )}
+          {isLong && (
+            <div className="mt-2 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setIsCollapsed((v) => !v)}
+                className="inline-flex items-center gap-1 rounded-full border border-border-subtle bg-bg-base/60 px-2.5 py-1 text-[11px] font-medium text-text-tertiary hover:text-text-secondary hover:bg-bg-hover transition-colors"
+              >
+                {isCollapsed ? (
+                  <>
+                    <ChevronDown size={12} strokeWidth={2} />
+                    {t('chat.showMore')}
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp size={12} strokeWidth={2} />
+                    {t('chat.showLess')}
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Edit mode — user messages only */}
+      {isUser && isEditing && (
+        <div className="rounded-xl bg-accent-muted px-3 py-2">
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              const ta = e.currentTarget;
+              ta.style.height = 'auto';
+              ta.style.height = `${Math.min(ta.scrollHeight, 6 * 24)}px`;
+            }}
+            onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setDraft(editableContent);
+                setIsEditing(false);
+              } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                const trimmed = draft.trim();
+                if (!trimmed) return;
+                setIsEditing(false);
+                if (trimmed === editableContent.trim()) return;
+                regenerateFromUserMessage(message.id, trimmed).catch(console.error);
+              }
+            }}
+            placeholder={t('chat.editPlaceholder')}
+            className={clsx(
+              'w-full resize-none bg-transparent text-sm text-text-primary',
+              'leading-relaxed outline-none placeholder-text-tertiary',
+            )}
+            rows={1}
+          />
+          <div className="mt-2 flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(editableContent);
+                setIsEditing(false);
+              }}
+              className="px-2.5 py-1 rounded-md text-xs text-text-secondary hover:bg-bg-hover transition-colors"
+            >
+              {t('chat.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const trimmed = draft.trim();
+                if (!trimmed) return;
+                setIsEditing(false);
+                if (trimmed === editableContent.trim()) return;
+                regenerateFromUserMessage(message.id, trimmed).catch(console.error);
+              }}
+              disabled={!draft.trim()}
+              className={clsx(
+                'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+                'bg-accent text-bg-base hover:bg-accent-hover',
+                'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent',
+              )}
+            >
+              {t('chat.save')}
+            </button>
+          </div>
         </div>
       )}
 
@@ -174,10 +386,8 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         </div>
       )}
 
-      {/* Actions row — hover-reveal, mirrors bubble alignment. Copy is the only
-          action today; the row is structured so regenerate/thumbs can slot in
-          later without re-plumbing hover state. */}
-      {canCopy && (
+      {/* Actions row — hover-reveal, mirrors bubble alignment. */}
+      {canCopy && !isEditing && (
         <div
           className={clsx(
             'mt-1.5 flex items-center gap-0.5 opacity-0 transition-opacity duration-150',
@@ -198,6 +408,25 @@ export default function ChatMessage({ message }: ChatMessageProps) {
               <Copy size={13} strokeWidth={2} />
             )}
           </button>
+          {isUser && (
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(editableContent);
+                setIsEditing(true);
+              }}
+              disabled={chatIsStreaming}
+              className={clsx(
+                'flex items-center justify-center w-7 h-7 rounded-md transition-colors',
+                'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover',
+                'disabled:opacity-30 disabled:hover:text-text-tertiary disabled:hover:bg-transparent disabled:cursor-not-allowed',
+              )}
+              title={t('chat.edit')}
+              aria-label={t('chat.edit')}
+            >
+              <Pencil size={13} strokeWidth={2} />
+            </button>
+          )}
         </div>
       )}
     </div>

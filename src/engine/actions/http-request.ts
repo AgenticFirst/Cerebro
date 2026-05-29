@@ -31,6 +31,21 @@ export const httpRequestAction: ActionDefinition = {
   name: 'HTTP Request',
   description: 'Makes a REST API call to any URL.',
 
+  chatExposable: true,
+  chatGroup: 'http',
+  chatLabel: { en: 'Call an HTTP endpoint', es: 'Llamar a un endpoint HTTP' },
+  chatDescription: {
+    en: 'Make a REST API call (GET, POST, PUT, PATCH, DELETE) to any public URL. Supports bearer / basic / API-key auth.',
+    es: 'Realiza una llamada REST (GET, POST, PUT, PATCH, DELETE) a cualquier URL pública. Soporta autenticación bearer, básica o por API-key.',
+  },
+  chatExamples: [
+    {
+      en: 'Hit GET https://status.example.com/health and tell me if it returns 200.',
+      es: 'Haz un GET a https://status.example.com/health y dime si responde 200.',
+    },
+  ],
+  availabilityCheck: () => 'available',
+
   inputSchema: {
     type: 'object',
     properties: {

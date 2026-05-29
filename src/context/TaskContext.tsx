@@ -7,7 +7,13 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 import { stripMentionSyntax } from '../lib/mentions';
+import { generateId } from './chat-helpers';
+import { useToast } from './ToastContext';
+import { buildDeliverablePayload, type ParsedDeliverable } from '../types/ipc';
+
+export type DeliverableKind = ParsedDeliverable['kind'];
 
 function extractDetail(data: unknown, fallback: string): string {
   const detail = (data as { detail?: unknown } | null)?.detail;
@@ -33,7 +39,13 @@ export interface Task {
   run_id: string | null;
   last_error: string | null;
   project_path: string | null;
+  workspace_dir: string | null;
   tags: string[];
+  /** Parsed `<deliverable>` body from the latest successful run. Renders in
+   * the Vista previa tab. Null while running or if the run never produced one. */
+  result_md: string | null;
+  result_title: string | null;
+  result_kind: DeliverableKind | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -90,6 +102,26 @@ export interface TaskStats {
   to_review: number;
   completed: number;
   error: number;
+}
+
+export interface TaskAttachment {
+  id: string;
+  task_id: string;
+  name: string;
+  ext: string;
+  mime: string | null;
+  size_bytes: number;
+  storage_kind: 'managed';
+  storage_path: string;     // relative to <userData>/files
+  sha256: string | null;
+  created_at: string;
+}
+
+export interface MaterializeResult {
+  copied: string[];
+  skipped: string[];
+  errors: { name: string; error: string }[];
+  destination_dir: string;
 }
 
 interface CreateTaskInput {
@@ -151,17 +183,37 @@ interface TaskContextValue {
   dismissFailurePrompt: (taskId: string) => Promise<void>;
   loadComments: (taskId: string) => Promise<TaskComment[]>;
   addComment: (taskId: string, kind: string, bodyMd: string) => Promise<TaskComment>;
+  listAttachments: (taskId: string) => Promise<TaskAttachment[]>;
+  /**
+   * Stream-copy a host file into Cerebro's files root, register it as a
+   * task-attachment, and — if the task is already running — materialize the
+   * new attachment into the live agent cwd so the subprocess sees it
+   * immediately.
+   */
+  addAttachment: (taskId: string, hostPath: string) => Promise<TaskAttachment>;
+  removeAttachment: (taskId: string, attachmentId: string, storagePath: string) => Promise<void>;
+  /** Copy every live attachment into <cwd>/attachments/. Idempotent (sha-skip). */
+  materializeAttachments: (taskId: string, cwd: string) => Promise<MaterializeResult>;
   addChecklistItem: (taskId: string, body: string) => Promise<ChecklistItem>;
   updateChecklistItem: (taskId: string, itemId: string, updates: Partial<ChecklistItem>) => Promise<void>;
   deleteChecklistItem: (taskId: string, itemId: string) => Promise<void>;
   promoteChecklistItem: (taskId: string, itemId: string) => Promise<Task>;
   /** Get the active internal Electron runId for a task (may differ from task.run_id on re-runs). */
   getActiveRunId: (taskId: string) => string | null;
+  /**
+   * Task IDs that currently have a live agent run in the Electron runtime.
+   * A task at column='in_progress' whose ID is NOT in this set is "interrupted"
+   * (the subprocess died — typically because Cerebro was closed mid-run) and
+   * should be resumable from the card.
+   */
+  liveTaskIds: ReadonlySet<string>;
 }
 
 const TaskContext = createContext<TaskContextValue | null>(null);
 
 export function TaskProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+  const { addToast } = useToast();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stats, setStats] = useState<TaskStats>({
     backlog: 0,
@@ -180,6 +232,29 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   // Map of taskId -> internal Electron runId. On retries, task.run_id is pinned
   // to the ORIGINAL Claude session, so we can't use it to cancel the live run.
   const activeInternalRunIds = useRef<Map<string, string>>(new Map());
+
+  // Reactive mirror of which tasks have a live run right now. Drives the
+  // "Interrupted/Resume" card state — TaskCard checks liveTaskIds.has(task.id)
+  // and renders a Resume CTA when a task sits in_progress without a live run.
+  const [liveTaskIds, setLiveTaskIds] = useState<Set<string>>(() => new Set());
+
+  const markTaskLive = useCallback((taskId: string) => {
+    setLiveTaskIds((prev) => {
+      if (prev.has(taskId)) return prev;
+      const next = new Set(prev);
+      next.add(taskId);
+      return next;
+    });
+  }, []);
+
+  const markTaskNotLive = useCallback((taskId: string) => {
+    setLiveTaskIds((prev) => {
+      if (!prev.has(taskId)) return prev;
+      const next = new Set(prev);
+      next.delete(taskId);
+      return next;
+    });
+  }, []);
 
   // Monotonic counter so rapid drag-drops don't race: only the latest
   // moveTask call's loadTasks result is applied.
@@ -280,6 +355,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       }
       const internalRunId = activeInternalRunIds.current.get(id) ?? task?.run_id;
       activeInternalRunIds.current.delete(id);
+      markTaskNotLive(id);
       // Kill any active run
       if (internalRunId) {
         try { await window.cerebro.agent.cancel(internalRunId); } catch { /* noop */ }
@@ -296,7 +372,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       }
       // Permanent cleanup: workspace files + terminal buffer
       await Promise.all([
-        window.cerebro.taskTerminal.removeWorkspace(id).catch(() => { /* noop */ }),
+        window.cerebro.taskTerminal.removeWorkspace(task?.workspace_dir || id).catch(() => { /* noop */ }),
         task?.run_id
           ? window.cerebro.taskTerminal.removeBuffer(task.run_id).catch(() => { /* noop */ })
           : Promise.resolve(),
@@ -332,6 +408,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       // runId the runtime knows about to actually kill the PTY.
       const internalRunId = activeInternalRunIds.current.get(id) ?? task.run_id;
       activeInternalRunIds.current.delete(id);
+      markTaskNotLive(id);
       try {
         await window.cerebro.agent.cancel(internalRunId);
       } catch (err) {
@@ -355,22 +432,26 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     // Claude session on retries). Fall back to the internal runId for fresh runs.
     const backendRunId = reportedRunId ?? runId;
     activeInternalRunIds.current.set(taskId, runId);
+    markTaskLive(taskId);
     const unsub = window.cerebro.agent.onEvent(runId, async (event) => {
       if (event.type === 'done') {
-        await handleTermRef.current?.(taskId, backendRunId, 'done');
+        await handleTermRef.current?.(taskId, backendRunId, 'done', undefined, event.deliverable ?? null);
       } else if (event.type === 'error') {
         await handleTermRef.current?.(taskId, backendRunId, 'error', event.error);
       }
     });
     runListeners.current.set(taskId, unsub);
-  }, []);
+  }, [markTaskLive]);
 
   // Precedence: explicit task.project_path > hidden per-task workspace fallback.
   const resolveCwd = useCallback(async (task: Task): Promise<string> => {
     if (task.project_path && task.project_path.trim()) {
       return task.project_path;
     }
-    return window.cerebro.taskTerminal.createWorkspace(task.id);
+    return window.cerebro.taskTerminal.createWorkspace({
+      taskId: task.id,
+      workspaceDir: task.workspace_dir || task.id,
+    });
   }, []);
 
   // Helpers: build the direct-execution prompt from a task's fields.
@@ -435,6 +516,22 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     return lines.join('\n');
   }, []);
 
+  const materializeAttachments = useCallback(
+    async (taskId: string, cwd: string): Promise<MaterializeResult> => {
+      const res = await window.cerebro.invoke({
+        method: 'POST',
+        path: `/tasks/${taskId}/attachments/materialize`,
+        body: { cwd },
+      });
+      if (!res.ok) {
+        const detail = extractDetail(res.data, 'Failed to materialize attachments');
+        throw new Error(detail);
+      }
+      return res.data as MaterializeResult;
+    },
+    [],
+  );
+
   const startTask = useCallback(async (taskId: string, opts?: { interactive?: boolean }) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new Error(`Task ${taskId} not found`);
@@ -444,6 +541,25 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         loadComments(taskId),
         resolveCwd(task),
       ]);
+
+      // Copy task attachments into <cwd>/attachments/ so the Claude Code
+      // subprocess can read them with normal file tools. Non-blocking on
+      // errors — the run still starts even if one or more files fail.
+      try {
+        const matResult = await materializeAttachments(taskId, workspacePath);
+        if (matResult.copied.length > 0) {
+          addToast(
+            t('tasks.attachmentsCopied', { count: matResult.copied.length }),
+            'success',
+          );
+        }
+        if (matResult.errors.length > 0) {
+          addToast(t('tasks.attachmentsCopyFailed'), 'error');
+        }
+      } catch (err) {
+        console.warn('[task] materialize attachments failed:', err);
+      }
+
       const instructions = allComments.filter((c) => c.kind === 'instruction');
       const prompt = buildDirectPrompt(task, instructions);
       // Resume the prior Claude Code session on retry/rerun — preserves
@@ -498,7 +614,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       await loadTasks();
       throw err;
     }
-  }, [tasks, loadComments, buildDirectPrompt, registerRunListener, loadTasks, resolveCwd]);
+  }, [tasks, loadComments, buildDirectPrompt, registerRunListener, loadTasks, resolveCwd, materializeAttachments, addToast, t]);
 
   const spawnFollowUpRun = useCallback(async (
     task: Task,
@@ -613,11 +729,18 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     runId: string,
     outcome: 'done' | 'error' | 'cancelled',
     error?: string,
+    deliverable?: ParsedDeliverable | null,
   ): Promise<void> => {
     const eventType =
       outcome === 'done' ? 'run_completed'
         : outcome === 'error' ? 'run_failed'
           : 'run_cancelled';
+    // On successful completion, forward the parsed deliverable so the task row
+    // gets result_md/result_title/result_kind persisted. Vista previa reads
+    // these to render the result without re-scanning the PTY terminal buffer.
+    const deliverablePayload = outcome === 'done'
+      ? buildDeliverablePayload(deliverable)
+      : {};
     try {
       await window.cerebro.invoke({
         method: 'POST',
@@ -626,6 +749,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           type: eventType,
           run_id: runId,
           ...(error ? { error } : {}),
+          ...deliverablePayload,
         },
       });
     } catch (err) {
@@ -637,6 +761,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     if (u) u();
     runListeners.current.delete(taskId);
     activeInternalRunIds.current.delete(taskId);
+    markTaskNotLive(taskId);
 
     // Look for a pending queued instruction tied to this task.
     let pending: TaskComment | null = null;
@@ -667,7 +792,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
 
     await loadTasks();
-  }, [loadTasks, loadComments, drainQueuedInstruction, pushFailurePrompt]);
+  }, [loadTasks, loadComments, drainQueuedInstruction, pushFailurePrompt, markTaskNotLive]);
 
   // Keep the ref pointing at the latest handler so the stable onEvent closure
   // always invokes fresh state/deps.
@@ -675,9 +800,17 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     handleTermRef.current = handleRunTerminated;
   }, [handleRunTerminated]);
 
-  // Orphan recovery: on mount, mark any in_progress task whose run is no
-  // longer active as failed, then surface any queued instructions stranded by
-  // a crash/close mid-run.
+  // On-mount reconciliation. The backend's /engine/runs/recover-stale (called
+  // from the main process during boot) has already decided whether each
+  // formerly-running task should land in to_review, error, or stay at
+  // in_progress as "interrupted". Here we:
+  //   1. Seed liveTaskIds from the runtime's currently-live runs (covers a
+  //      TaskProvider remount mid-session).
+  //   2. Scan terminal-column tasks (to_review/completed/error) for queued
+  //      instructions left dangling by a previous run. Interrupted tasks at
+  //      in_progress are deliberately skipped — their queued instructions get
+  //      drained when the user clicks Resume (buildDirectPrompt re-attaches
+  //      every instruction comment to the resumed session).
   useEffect(() => {
     let cancelled = false;
     const recover = async () => {
@@ -687,37 +820,26 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           window.cerebro.invoke({ method: 'GET', path: '/tasks' }),
         ]);
         if (cancelled || !tasksNow.ok) return;
-        const activeRunIds = new Set(activeRuns.map((r) => r.runId));
         const list = tasksNow.data as Task[];
 
-        const staleRuns = list.filter(
-          (t) => t.column === 'in_progress' && t.run_id && !activeRunIds.has(t.run_id),
-        );
-        if (staleRuns.length > 0) {
-          await Promise.all(staleRuns.map((t) =>
-            window.cerebro.invoke({
-              method: 'POST',
-              path: `/tasks/${t.id}/run-event`,
-              body: {
-                type: 'run_failed',
-                run_id: t.run_id,
-                error: 'Run was interrupted by app restart',
-              },
-            }).catch(() => { /* noop */ }),
-          ));
+        // Seed live-task set from runtime. conversationId on a task run is the
+        // taskId (see startTask() above).
+        if (activeRuns.length > 0) {
+          const seed = new Set(activeRuns.map((r) => r.conversationId));
+          setLiveTaskIds((prev) => {
+            if (prev.size === 0) return seed;
+            const next = new Set(prev);
+            for (const id of seed) next.add(id);
+            return next;
+          });
         }
 
-        if (cancelled) return;
-
-        const refreshed = staleRuns.length > 0
-          ? await window.cerebro.invoke({ method: 'GET', path: '/tasks' })
-          : tasksNow;
-        if (cancelled) return;
-        const refreshedList = refreshed.ok ? (refreshed.data as Task[]) : list;
-
-        // Scan all terminally-stated tasks in parallel for a pending queued comment.
-        const scanTargets = refreshedList.filter(
-          (t) => !(t.column === 'in_progress' && t.run_id && activeRunIds.has(t.run_id)),
+        // Only scan terminal-state tasks for stranded queued instructions.
+        // Tasks still at in_progress are either genuinely running or are
+        // interrupted-pending-resume; in both cases the queued instruction
+        // stays pending and is delivered when the run terminates / is resumed.
+        const scanTargets = list.filter(
+          (t) => t.column === 'to_review' || t.column === 'completed' || t.column === 'error',
         );
         const scans = await Promise.all(
           scanTargets.map(async (t) => {
@@ -748,15 +870,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             });
           }
         }
-
-        if (!cancelled && staleRuns.length > 0) await loadTasks();
       } catch (err) {
         console.warn('[task] Orphan recovery failed:', err);
       }
     };
     recover();
     return () => { cancelled = true; };
-  }, [loadTasks, loadComments, drainQueuedInstruction, pushFailurePrompt]);
+  }, [loadComments, drainQueuedInstruction, pushFailurePrompt]);
 
   const confirmFailurePrompt = useCallback(async (taskId: string) => {
     const prompt = pendingFailurePrompts.find((p) => p.taskId === taskId);
@@ -840,6 +960,81 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     return res.data;
   }, []);
 
+  const listAttachments = useCallback(
+    async (taskId: string): Promise<TaskAttachment[]> => {
+      const res = await window.cerebro.invoke({
+        method: 'GET',
+        path: `/tasks/${taskId}/attachments`,
+      });
+      if (!res.ok) throw new Error(extractDetail(res.data, 'Failed to load attachments'));
+      return (res.data as TaskAttachment[]) ?? [];
+    },
+    [],
+  );
+
+  const addAttachment = useCallback(
+    async (taskId: string, hostPath: string): Promise<TaskAttachment> => {
+      const fileId = generateId();
+      const baseName = hostPath.split(/[\\/]/).pop() || 'file';
+      const dotIdx = baseName.lastIndexOf('.');
+      const ext = dotIdx > 0 ? baseName.slice(dotIdx + 1).toLowerCase() : '';
+
+      const imported = await window.cerebro.files.importToTask({
+        sourcePath: hostPath,
+        taskId,
+        fileId,
+        destExt: ext,
+      });
+
+      const createRes = await window.cerebro.invoke({
+        method: 'POST',
+        path: `/tasks/${taskId}/attachments`,
+        body: {
+          storage_path: imported.destRelPath,
+          name: baseName,
+          ext,
+          mime: imported.mime,
+          size_bytes: imported.sizeBytes,
+          sha256: imported.sha256,
+        },
+      });
+      if (!createRes.ok) {
+        // Best-effort cleanup of the bytes we just wrote — keeps disk clean.
+        await window.cerebro.files.deleteManaged(imported.destRelPath).catch(() => {});
+        throw new Error(extractDetail(createRes.data, 'Failed to register attachment'));
+      }
+      const attachment = createRes.data as TaskAttachment;
+
+      // If the task is running, immediately materialize so the agent sees
+      // the new file on its next file-listing call. Silent failure is OK —
+      // the user can still retry by canceling + re-starting.
+      const task = tasks.find((tk) => tk.id === taskId);
+      if (task && task.column === 'in_progress') {
+        try {
+          const cwd = await resolveCwd(task);
+          await materializeAttachments(taskId, cwd);
+        } catch (err) {
+          console.warn('[task] mid-run materialize failed:', err);
+        }
+      }
+      return attachment;
+    },
+    [tasks, resolveCwd, materializeAttachments],
+  );
+
+  const removeAttachment = useCallback(
+    async (taskId: string, attachmentId: string, storagePath: string): Promise<void> => {
+      const res = await window.cerebro.invoke({
+        method: 'DELETE',
+        path: `/tasks/${taskId}/attachments/${attachmentId}?hard=true`,
+      });
+      if (!res.ok) throw new Error(extractDetail(res.data, 'Failed to remove attachment'));
+      // Bytes live in <userData>/files — main is the only writer there.
+      await window.cerebro.files.deleteManaged(storagePath).catch(() => {});
+    },
+    [],
+  );
+
   const addChecklistItem = useCallback(async (taskId: string, body: string): Promise<ChecklistItem> => {
     const res = await window.cerebro.invoke({
       method: 'POST',
@@ -906,11 +1101,16 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         dismissFailurePrompt,
         loadComments,
         addComment,
+        listAttachments,
+        addAttachment,
+        removeAttachment,
+        materializeAttachments,
         addChecklistItem,
         updateChecklistItem,
         deleteChecklistItem,
         promoteChecklistItem,
         getActiveRunId,
+        liveTaskIds,
       }}
     >
       {children}

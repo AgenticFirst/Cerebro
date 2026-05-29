@@ -13,6 +13,7 @@ import {
 } from '@dnd-kit/core';
 import { X } from 'lucide-react';
 import { useTasks, type Task, type TaskColumn } from '../../../context/TaskContext';
+import { useToast } from '../../../context/ToastContext';
 import KanbanColumn from './KanbanColumn';
 import TaskCard from './TaskCard';
 
@@ -24,7 +25,8 @@ interface KanbanBoardProps {
 
 export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
   const { t } = useTranslation();
-  const { tasks, moveTask, startTask, deleteTask } = useTasks();
+  const { tasks, moveTask, startTask, deleteTask, liveTaskIds } = useTasks();
+  const { addToast } = useToast();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
 
@@ -112,7 +114,7 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
   );
 
   const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
+    async (event: DragEndEvent) => {
       setActiveTask(null);
       const { active, over } = event;
       if (!over) return;
@@ -152,14 +154,39 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
       else if (next === undefined) newPosition = prev + 1024;
       else newPosition = (prev + next) / 2;
 
-      if (
-        sourceTask.column !== targetColumn ||
-        Math.abs(sourceTask.position - newPosition) > 0.001
-      ) {
-        moveTask(taskId, targetColumn, newPosition);
+      const movedColumn = sourceTask.column !== targetColumn;
+      const movedPosition = Math.abs(sourceTask.position - newPosition) > 0.001;
+      if (!movedColumn && !movedPosition) return;
+
+      try {
+        await moveTask(taskId, targetColumn, newPosition);
+      } catch (err) {
+        console.error('[KanbanBoard] moveTask failed:', err);
+        return;
+      }
+
+      // Auto-start the Expert when a card lands in In Progress from another
+      // column. Mirrors the user's mental model: dropping into In Progress
+      // means "start the work now."
+      const shouldAutoStart =
+        targetColumn === 'in_progress' &&
+        movedColumn &&
+        sourceTask.column !== 'in_progress' &&
+        !liveTaskIds.has(taskId);
+      if (!shouldAutoStart) return;
+
+      if (!sourceTask.expert_id) {
+        addToast(t('tasks.startNeedsExpert'), 'error');
+        return;
+      }
+      try {
+        await startTask(taskId);
+      } catch (err) {
+        console.error('[KanbanBoard] auto-start on drag failed:', err);
+        addToast(t('tasks.startFailed'), 'error');
       }
     },
-    [tasks, fullTasksByColumn, moveTask],
+    [tasks, fullTasksByColumn, moveTask, startTask, liveTaskIds, addToast, t],
   );
 
   return (
@@ -229,7 +256,12 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
       <DragOverlay dropAnimation={null}>
         {activeTask ? (
           <div className="rotate-2 opacity-90">
-            <TaskCard task={activeTask} onClick={() => {}} isDragOverlay />
+            <TaskCard
+              task={activeTask}
+              onClick={() => {}}
+              isDragOverlay
+              isLiveRun={liveTaskIds.has(activeTask.id)}
+            />
           </div>
         ) : null}
       </DragOverlay>

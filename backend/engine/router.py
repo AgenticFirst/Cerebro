@@ -337,9 +337,37 @@ def resolve_approval(approval_id: str, body: ApprovalResolve, db=Depends(get_db)
 @router.post("/runs/recover-stale")
 def recover_stale_runs(db=Depends(get_db)):
     """Mark stale running/paused runs as failed and expire their pending approvals.
-    Also recovers stale tasks stuck in running/clarifying/planning status."""
+    Also reconciles tasks stuck in_progress with their RunRecord status:
+      - run completed but finalize event was dropped → move task to to_review
+      - run failed/cancelled                         → move task to error
+      - run still running/paused (i.e. interrupted by app close) → keep at
+        in_progress so the user can Resume the prior Claude Code session
+        from the card.
+    """
+    from models import Task, TaskComment  # local import: avoid circular deps
+
     now = _utcnow()
 
+    # ── Snapshot tasks BEFORE flipping their runs to failed, so we can tell
+    # the difference between "run already failed earlier" and "run was alive
+    # when the app died, and we are about to flip it to failed below".
+    stale_tasks = (
+        db.query(Task)
+        .filter(Task.column == "in_progress")
+        .filter(Task.run_id.isnot(None))
+        .all()
+    )
+    task_run_status: dict[str, tuple[str | None, str | None]] = {}
+    if stale_tasks:
+        task_run_ids = [t.run_id for t in stale_tasks]
+        run_lookup = {
+            r.id: r for r in db.query(RunRecord).filter(RunRecord.id.in_(task_run_ids)).all()
+        }
+        for t in stale_tasks:
+            r = run_lookup.get(t.run_id)
+            task_run_status[t.id] = (r.status if r else None, r.error if r else None)
+
+    # ── Flip stale runs → failed, expire their approvals.
     stale_runs = (
         db.query(RunRecord)
         .filter(RunRecord.status.in_(["running", "paused"]))
@@ -363,24 +391,52 @@ def recover_stale_runs(db=Depends(get_db)):
             approval.resolved_at = now
             expired_approvals += 1
 
-    # Recover stale tasks (no subprocess is alive after restart)
-    from models import Task
-    stale_tasks = (
-        db.query(Task)
-        .filter(Task.column == "in_progress")
-        .filter(Task.run_id.isnot(None))
-        .all()
-    )
-    recovered_tasks = 0
+    # ── Apply task decisions based on the snapshotted run status.
+    completed_tasks = 0
+    failed_tasks = 0
+    interrupted_tasks = 0
     for task in stale_tasks:
-        task.column = "error"
-        task.last_error = "Interrupted — app was closed while task was running"
-        task.completed_at = now
-        recovered_tasks += 1
+        prior_status, prior_error = task_run_status.get(task.id, (None, None))
+        if prior_status == "completed":
+            task.column = "to_review"
+            task.completed_at = now
+            db.add(TaskComment(
+                task_id=task.id,
+                kind="system",
+                author_kind="system",
+                body_md="Reconciled — run completed but event was dropped.",
+            ))
+            completed_tasks += 1
+        elif prior_status in ("failed", "cancelled"):
+            task.column = "error"
+            task.last_error = prior_error or "Run ended without a final event."
+            task.completed_at = now
+            db.add(TaskComment(
+                task_id=task.id,
+                kind="system",
+                author_kind="system",
+                body_md=f"Reconciled — run {prior_status}.",
+            ))
+            failed_tasks += 1
+        else:
+            # Subprocess was alive when Cerebro closed. Keep the task on
+            # in_progress so it stays visible in the same column the user
+            # left it in; the card renders an Interrupted/Resume state
+            # because the run is no longer in the live-run set.
+            task.last_error = "Cerebro was closed mid-run — click Resume to continue."
+            db.add(TaskComment(
+                task_id=task.id,
+                kind="system",
+                author_kind="system",
+                body_md="Run was interrupted when Cerebro closed.",
+            ))
+            interrupted_tasks += 1
 
     db.commit()
     return {
         "recovered_runs": recovered_runs,
         "expired_approvals": expired_approvals,
-        "recovered_tasks": recovered_tasks,
+        "interrupted_tasks": interrupted_tasks,
+        "completed_tasks": completed_tasks,
+        "failed_tasks": failed_tasks,
     }

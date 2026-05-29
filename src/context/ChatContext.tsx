@@ -8,20 +8,35 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import type { Conversation, Message, Screen, ToolCall } from '../types/chat';
+import type {
+  Conversation,
+  IntegrationSetupProposal,
+  Message,
+  Screen,
+  TeamRun,
+  TeamRunMember,
+  ToolCall,
+} from '../types/chat';
 import type { BackendResponse, RendererAgentEvent } from '../types/ipc';
 import { useProviders } from './ProviderContext';
+import { useQualityTier } from './QualityContext';
 import { useRoutines } from './RoutineContext';
 import i18n from '../i18n';
 import type { DAGDefinition } from '../engine/dag/types';
 import {
   generateId,
   titleFromContent,
+  isUntitledConversationTitle,
   fromApiConversation,
   toApiProposal,
   toApiExpertProposal,
   toApiTeamProposal,
+  toApiTeamRun,
+  toApiIntegrationProposal,
   resolveNewChatTarget,
+  apiPatchMessageMetadata,
+  apiPatchMessage,
+  apiDeleteMessagesAfter,
   type ApiConversationList,
 } from './chat-helpers';
 
@@ -57,6 +72,8 @@ interface ChatActions {
   deleteConversation: (id: string) => void;
   setActiveScreen: (screen: Screen) => void;
   sendMessage: (content: string) => void;
+  stopMessage: () => Promise<void>;
+  regenerateFromUserMessage: (messageId: string, newContent?: string) => Promise<void>;
   setActiveExpertId: (id: string | null) => void;
   dismissChatError: () => void;
   getConversationsForExpert: (expertId: string) => Conversation[];
@@ -120,9 +137,29 @@ function apiDeleteConversation(id: string): Promise<unknown> {
   });
 }
 
+/** Flip every still-open member to a terminal status without disturbing
+ *  members that already finished. Used as a safety-net sweep when the
+ *  parent Agent tool returns or a run finalizes — coordinators sometimes
+ *  skip per-member status calls under turn pressure. */
+function sweepOpenMembers(
+  members: TeamRunMember[],
+  toStatus: 'completed' | 'error',
+): TeamRunMember[] {
+  return members.map((mem) =>
+    mem.status === 'completed' || mem.status === 'error'
+      ? mem
+      : { ...mem, status: toStatus },
+  );
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { claudeCodeInfo } = useProviders();
   const { registerRunCallback } = useRoutines();
+  const { tier: qualityTier, model: responseModel } = useQualityTier();
+  const qualityTierRef = useRef(qualityTier);
+  qualityTierRef.current = qualityTier;
+  const responseModelRef = useRef(responseModel);
+  responseModelRef.current = responseModel;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -137,8 +174,34 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Keep ref in sync so async callbacks always see latest state
   conversationsRef.current = conversations;
 
+  // The currently-streaming agent run, exposed so the stop button can reach it.
+  // The closure inside runAgentForMessage mutates `state` so stopMessage can
+  // read the latest accumulated text and tool calls when finalizing the UI.
+  type ActiveRun = {
+    runId: string;
+    unsub: () => void;
+    conversationId: string;
+    assistantId: string;
+    state: { accumulated: string; toolCalls: ToolCall[] };
+  };
+  const activeRunRef = useRef<ActiveRun | null>(null);
+
+  const activeConversationIdRef = useRef<string | null>(null);
+  activeConversationIdRef.current = activeConversationId;
+
   const claudeCodeInfoRef = useRef(claudeCodeInfo);
   claudeCodeInfoRef.current = claudeCodeInfo;
+
+  // Tracks conversations whose title is still owned by the auto-titler.
+  // Inserted when a new conversation is created from sendMessage(); removed
+  // as soon as the user manually renames or deletes it, so the post-response
+  // refinement pass never clobbers a human edit.
+  const autoTitledIdsRef = useRef<Set<string>>(new Set());
+  // Last auto-generated title per conversation. Used during phase-2 refine to
+  // confirm the title hasn't drifted from what we set in phase 1 — if it has,
+  // someone else changed it (manual rename, telegram bridge, etc.) and we
+  // back off.
+  const autoTitledLastRef = useRef<Map<string, string>>(new Map());
 
   // Per-conversation write chain. Every backend write for a conversation is
   // appended to this promise so writes commit in the order the UI fires them.
@@ -270,6 +333,54 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [chainWrite],
   );
 
+  // Background auto-titler. Best-effort: any failure logs and exits — the
+  // truncated-first-40-chars title remains as the fallback. Honours manual
+  // renames via autoTitledIdsRef (the rename callback drops the id).
+  const runAutoTitle = useCallback(
+    async (convId: string, userMessage: string, assistantResponse?: string) => {
+      if (!autoTitledIdsRef.current.has(convId)) return;
+      let generated: string | null = null;
+      try {
+        generated = await window.cerebro.chatActions.generateTitle({
+          userMessage,
+          assistantResponse,
+        });
+      } catch (err) {
+        console.warn('[chat] auto-title failed:', err);
+        return;
+      }
+      if (!generated) return;
+      if (!autoTitledIdsRef.current.has(convId)) return;
+
+      const conv = conversationsRef.current.find((c) => c.id === convId);
+      if (!conv) return;
+
+      // Only overwrite if the title is still ours: either the original
+      // placeholder/truncated-first-40-chars OR the previous auto-title.
+      const previousAuto = autoTitledLastRef.current.get(convId);
+      const isStillOurs =
+        isUntitledConversationTitle(conv.title) ||
+        conv.title === titleFromContent(userMessage) ||
+        (previousAuto !== undefined && conv.title === previousAuto);
+      if (!isStillOurs) {
+        autoTitledIdsRef.current.delete(convId);
+        autoTitledLastRef.current.delete(convId);
+        return;
+      }
+
+      autoTitledLastRef.current.set(convId, generated);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convId ? { ...c, title: generated as string, updatedAt: new Date() } : c,
+        ),
+      );
+      chainWrite(convId, () => apiPatchConversation(convId, { title: generated as string })).catch(
+        console.error,
+      );
+    },
+    [chainWrite],
+  );
+
   const setActiveConversation = useCallback((id: string | null) => {
     setActiveConversationIdState(id);
   }, []);
@@ -324,6 +435,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setConversations((prev) => prev.filter((c) => c.id !== id));
     setActiveConversationIdState((current) => (current === id ? null : current));
     writeChainRef.current.delete(id);
+    autoTitledIdsRef.current.delete(id);
+    autoTitledLastRef.current.delete(id);
     apiDeleteConversation(id).catch(console.error);
   }, []);
 
@@ -331,6 +444,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (id: string, nextTitle: string) => {
       const trimmed = nextTitle.trim().slice(0, 200);
       if (!trimmed) return;
+      // Manual rename: hand ownership of the title back to the user so the
+      // post-response refine pass leaves it alone.
+      autoTitledIdsRef.current.delete(id);
+      autoTitledLastRef.current.delete(id);
       setConversations((prev) => {
         const target = prev.find((c) => c.id === id);
         if (!target || target.title === trimmed) return prev;
@@ -371,74 +488,49 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [createConversation]);
 
-  const sendMessage = useCallback(
-    (content: string) => {
-      // ── Guard: require Claude Code to be detected ──
-      if (claudeCodeInfoRef.current.status !== 'available') {
-        setChatError({
-          title: 'Claude Code not detected',
-          message:
-            'Cerebro uses the Claude Code CLI as its engine. Install it and re-detect from Integrations.',
-          navigateTo: 'integrations',
-        });
-        return;
-      }
-
-      let convId = activeConversationId;
-      if (!convId) {
-        // Auto-scope new conversations to the selected expert so threads
-        // started from the Experts > Messages tab are discoverable there.
-        convId = createConversation(content, { expertId: activeExpertId });
-      }
-      addMessage(convId, 'user', content);
-
-      const expertId = activeExpertId;
-
-      // Create placeholder assistant message
-      const assistantId = generateId();
-      const thinkingMessage: Message = {
-        id: assistantId,
-        conversationId: convId,
-        role: 'assistant',
-        content: '',
-        expertId: expertId ?? undefined,
-        createdAt: new Date(),
-        isThinking: true,
-      };
-
-      setIsThinking(true);
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === convId
-            ? {
-                ...c,
-                messages: [...c.messages, thinkingMessage],
-                updatedAt: new Date(),
-              }
-            : c,
-        ),
-      );
-
-      // Route through agent system
+  // Internal helper: launches an agent run for an existing user-message turn.
+  // Used by both sendMessage (after appending a fresh user message) and
+  // regenerateFromUserMessage (after truncating and reusing the edited one).
+  const runAgentForMessage = useCallback(
+    (
+      convId: string,
+      assistantId: string,
+      userContent: string,
+      expertId: string | null | undefined,
+    ) => {
       const runAgent = async () => {
         try {
           // Wait for the conversation row + user message insert to commit before
           // spawning the agent run. The runtime persists an `agent_runs` row with
           // a FK to `conversation_id`, so the conversation must exist first or
           // the insert fails with a FK violation.
-          await waitForConversation(convId!);
+          await waitForConversation(convId);
 
           // Collect conversation context so the LLM has multi-turn awareness.
           const conv = conversationsRef.current.find((c) => c.id === convId);
           const allMessages = conv?.messages ?? [];
 
-          // Recent messages — gives the LLM conversational continuity across turns.
-          // Note: React batches state updates, so conversationsRef still has the
-          // pre-addMessage state here. No need to exclude the just-added message.
-          const MAX_RECENT = 10;
-          const recentMessages = allMessages
-            .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isThinking)
-            .slice(-MAX_RECENT)
+          // Full conversation transcript. AgentRuntime uses Claude Code's
+          // native `--resume` to reload prior turns on its own, so this
+          // field is normally ignored — it only matters as a one-time seed
+          // when `--resume` fails because no on-disk session exists yet
+          // (e.g., conversations created before sessions existed). Send
+          // everything; the runtime applies an absolute 100 KB ceiling.
+          // Filter first (drops the just-added thinking placeholder), then
+          // drop the trailing user message if it matches what we're about
+          // to send. `await waitForConversation` above yields long enough
+          // for React to commit the just-added user message into
+          // conversationsRef, and including it would duplicate the prompt
+          // in the seed-recovery path AND wrongly mark this conversation
+          // as "having prior turns" before the assistant has responded.
+          const realMessages = allMessages
+            .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isThinking);
+          const lastReal = realMessages[realMessages.length - 1];
+          const priorMessages =
+            lastReal && lastReal.role === 'user' && lastReal.content === userContent
+              ? realMessages.slice(0, -1)
+              : realMessages;
+          const recentMessages = priorMessages
             .map((m) => {
               let enrichedContent = m.content;
               // Enrich assistant messages with successful tool call outputs
@@ -472,34 +564,40 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             }));
 
           const runId = await window.cerebro.agent.run({
-            conversationId: convId!,
-            content,
+            conversationId: convId,
+            content: userContent,
             expertId,
             recentMessages: recentMessages.length > 0 ? recentMessages : undefined,
             routineProposals: routineProposals.length > 0 ? routineProposals : undefined,
             expertProposals: expertProposals.length > 0 ? expertProposals : undefined,
             language: i18n.language !== 'en' ? i18n.language : undefined,
+            qualityTier: qualityTierRef.current,
+            model: responseModelRef.current,
           });
 
           // Keep isThinking true and message.isThinking true until first content arrives
           setIsStreaming(true);
 
-          let accumulated = '';
+          // Lifted into a single object so stopMessage can read the latest
+          // accumulated text and tool-call list when finalizing the UI.
+          const state: { accumulated: string; toolCalls: ToolCall[] } = {
+            accumulated: '',
+            toolCalls: [],
+          };
           let thinkingCleared = false;
-          const toolCalls: ToolCall[] = [];
           let accEngineRunId: string | undefined;
           let accRoutineProposal: import('../types/chat').RoutineProposal | undefined;
           let accExpertProposal: import('../types/chat').ExpertProposal | undefined;
           let accTeamProposal: import('../types/chat').TeamProposal | undefined;
-          // Paths the assistant produced via Write/Edit. Surfaced as Slack-style
-          // attachment chips below the reply on `done`. Deduped by absolute path.
-          const accFileRefs = new Set<string>();
+          // teamRun state is owned by the chat-actions HTTP listeners below;
+          // the on-Agent-end branch in tool_end below sweeps any still-open
+          // members as a safety net.
 
           const clearThinking = () => {
             if (!thinkingCleared) {
               thinkingCleared = true;
               setIsThinking(false);
-              updateMessage(convId!, assistantId, { isThinking: false, isStreaming: true });
+              updateMessage(convId, assistantId, { isThinking: false, isStreaming: true });
             }
           };
 
@@ -507,13 +605,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             switch (event.type) {
               case 'text_delta':
                 clearThinking();
-                accumulated += event.delta;
-                updateMessage(convId!, assistantId, { content: accumulated });
+                state.accumulated += event.delta;
+                updateMessage(convId, assistantId, { content: state.accumulated });
                 break;
 
               case 'tool_start':
                 clearThinking();
-                toolCalls.push({
+                state.toolCalls.push({
                   id: event.toolCallId,
                   name: event.toolName,
                   description: event.toolName,
@@ -521,33 +619,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   status: 'running',
                   startedAt: new Date(),
                 });
-                updateMessage(convId!, assistantId, { toolCalls: [...toolCalls] });
+                updateMessage(convId, assistantId, { toolCalls: [...state.toolCalls] });
                 break;
 
               case 'tool_end': {
-                const tc = toolCalls.find((t) => t.id === event.toolCallId);
+                const tc = state.toolCalls.find((t) => t.id === event.toolCallId);
                 if (tc) {
                   tc.status = event.isError ? 'error' : 'success';
                   tc.output = event.result;
                   tc.completedAt = new Date();
-                  updateMessage(convId!, assistantId, { toolCalls: [...toolCalls] });
+                  updateMessage(convId, assistantId, { toolCalls: [...state.toolCalls] });
                 }
                 // Resolve tool name: prefer event (may be empty for nested tool_result), fallback to tc
                 const resolvedToolName = event.toolName || tc?.name || '';
-                // Capture file paths from Write/Edit so we can render them as
-                // attachment chips. Only absolute paths — we don't resolve cwd.
-                if (!event.isError && (resolvedToolName === 'Write' || resolvedToolName === 'Edit')) {
-                  const p = tc?.arguments?.file_path;
-                  if (typeof p === 'string' && p.startsWith('/')) {
-                    accFileRefs.add(p);
-                  }
-                }
                 // Detect run_routine tool result and attach engineRunId
                 if (resolvedToolName === 'run_routine' && !event.isError) {
                   const marker = event.result.match(/\[ENGINE_RUN_ID:([^\]]+)\]/);
                   if (marker) {
                     accEngineRunId = marker[1];
-                    updateMessage(convId!, assistantId, { engineRunId: marker[1] });
+                    updateMessage(convId, assistantId, { engineRunId: marker[1] });
                   }
                 }
                 // Detect propose_routine tool result and attach proposal to message
@@ -566,7 +656,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         approvalGates: parsed.approvalGates ?? [],
                         status: 'proposed',
                       };
-                      updateMessage(convId!, assistantId, {
+                      updateMessage(convId, assistantId, {
                         routineProposal: accRoutineProposal,
                       });
                     }
@@ -586,43 +676,62 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         suggestedContextFile: parsed.suggestedContextFile,
                         status: 'proposed',
                       };
-                      updateMessage(convId!, assistantId, {
+                      updateMessage(convId, assistantId, {
                         expertProposal: accExpertProposal,
                       });
                     }
                   } catch { /* not valid JSON, treat as normal result */ }
+                }
+                // Agent tool finishing means a team (or single subagent)
+                // returned. If the announce listener pre-populated a teamRun,
+                // sweep any still-queued/running members to completed and
+                // mark the run completed — defensive against coordinators
+                // that skipped per-member team-member-update.sh calls.
+                if (resolvedToolName === 'Agent') {
+                  const conv = conversationsRef.current.find((c) => c.id === convId);
+                  const msg = conv?.messages.find((m) => m.id === assistantId);
+                  const teamRun = msg?.teamRun;
+                  if (teamRun && teamRun.status === 'running') {
+                    const sweptMembers = sweepOpenMembers(teamRun.members, event.isError ? 'error' : 'completed');
+                    updateMessage(convId, assistantId, {
+                      teamRun: {
+                        ...teamRun,
+                        members: sweptMembers,
+                        status: event.isError ? 'error' : 'completed',
+                        successCount: sweptMembers.filter((m) => m.status === 'completed').length,
+                        totalCount: sweptMembers.length,
+                      },
+                    });
+                  }
                 }
                 break;
               }
 
               case 'done': {
                 unsub();
+                if (activeRunRef.current?.runId === runId) activeRunRef.current = null;
                 clearThinking();
                 setIsStreaming(false);
                 // Safety net: force-complete any tool calls still running
-                for (const tc of toolCalls) {
+                for (const tc of state.toolCalls) {
                   if (tc.status === 'running') {
                     tc.status = 'success';
                     tc.completedAt = new Date();
                   }
                 }
-                // Compose the final message content. If the expert produced any
-                // files, append them as trailing `@/absolute/path` lines so
-                // parseTrailingFileRefs surfaces them as attachment chips.
-                const baseContent = event.messageContent || accumulated;
-                const trailingRefs = [...accFileRefs]
-                  .filter((p) => !baseContent.includes(`@${p}`)) // don't duplicate refs the model already wrote
-                  .map((p) => `@${p}`)
-                  .join('\n');
-                const finalContent = trailingRefs
-                  ? `${baseContent.trimEnd()}\n\n${trailingRefs}`
-                  : baseContent;
-                updateMessage(convId!, assistantId, {
+                // Final content is whatever the agent wrote — including any
+                // trailing `@/absolute/path` lines it chose to surface. The
+                // prompt rule (see installer.ts) is that the agent lists ONLY
+                // the file(s) the user asked for; we do not auto-append paths
+                // from tool calls, since that surfaces build scripts,
+                // intermediates, memory writes, and reference reads as chips.
+                const finalContent = event.messageContent || state.accumulated;
+                updateMessage(convId, assistantId, {
                   content: finalContent,
                   isThinking: false,
                   isStreaming: false,
                   agentRunId: runId,
-                  toolCalls: [...toolCalls],
+                  toolCalls: [...state.toolCalls],
                 });
                 // Build metadata for persistence
                 const doneMetadata: Record<string, unknown> = {};
@@ -630,10 +739,46 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 if (accRoutineProposal) doneMetadata.routine_proposal = toApiProposal(accRoutineProposal);
                 if (accExpertProposal) doneMetadata.expert_proposal = toApiExpertProposal(accExpertProposal);
                 if (accTeamProposal) doneMetadata.team_proposal = toApiTeamProposal(accTeamProposal);
+                {
+                  // Preserve escalation history on the persisted message so the
+                  // "Switched to …" chips survive a reload.
+                  const conv = conversationsRef.current.find((c) => c.id === convId);
+                  const msg = conv?.messages.find((m) => m.id === assistantId);
+                  if (msg?.escalations && msg.escalations.length > 0) {
+                    doneMetadata.escalations = msg.escalations.map((e) => ({
+                      attempt: e.attempt,
+                      model: e.model,
+                      tier: e.tier,
+                      reason: e.reason,
+                    }));
+                  }
+                }
+                {
+                  // Safety-net for the case where Cerebro announced a team
+                  // run but the parent Agent tool_end never fired — without
+                  // this, the card persists in a phantom 'running' state.
+                  const conv = conversationsRef.current.find((c) => c.id === convId);
+                  const msg = conv?.messages.find((m) => m.id === assistantId);
+                  if (msg?.teamRun) {
+                    let finalTeamRun = msg.teamRun;
+                    if (finalTeamRun.status === 'running') {
+                      const sweptMembers = sweepOpenMembers(finalTeamRun.members, 'completed');
+                      finalTeamRun = {
+                        ...finalTeamRun,
+                        members: sweptMembers,
+                        status: 'completed',
+                        successCount: sweptMembers.filter((m) => m.status === 'completed').length,
+                        totalCount: sweptMembers.length,
+                      };
+                      updateMessage(convId, assistantId, { teamRun: finalTeamRun });
+                    }
+                    doneMetadata.team_run = toApiTeamRun(finalTeamRun);
+                  }
+                }
                 // Persist final message — chained so it runs after the
                 // conversation/user-message inserts have committed.
-                chainWrite(convId!, () =>
-                  apiCreateMessage(convId!, {
+                chainWrite(convId, () =>
+                  apiCreateMessage(convId, {
                     id: assistantId,
                     role: 'assistant',
                     content: finalContent,
@@ -642,38 +787,114 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     metadata: Object.keys(doneMetadata).length > 0 ? doneMetadata : undefined,
                   }),
                 ).catch(console.error);
+                // Phase 2 auto-title refine: if the conversation is still
+                // auto-titled (no manual rename happened during the response),
+                // generate a richer title using both the user's first message
+                // and the assistant's reply.
+                if (autoTitledIdsRef.current.has(convId) && finalContent.trim()) {
+                  const conv = conversationsRef.current.find((c) => c.id === convId);
+                  const firstUserMessage = conv?.messages.find((m) => m.role === 'user')?.content;
+                  if (firstUserMessage) {
+                    runAutoTitle(convId, firstUserMessage, finalContent).catch((err) =>
+                      console.warn('[chat] auto-title phase-2 error:', err),
+                    );
+                  }
+                }
+                break;
+              }
+
+              case 'agent_escalation': {
+                // Auto-escalation: the previous attempt failed (max-turns,
+                // context, overload) and a new attempt is being spawned on a
+                // stronger model/tier. Reset per-attempt state — partial
+                // text and tool calls from the failed attempt are discarded.
+                state.accumulated = '';
+                state.toolCalls = [];
+                const conv = conversationsRef.current.find((c) => c.id === convId);
+                const msg = conv?.messages.find((m) => m.id === assistantId);
+                const prior = msg?.escalations ?? [];
+                updateMessage(convId, assistantId, {
+                  content: '',
+                  toolCalls: [],
+                  isThinking: true,
+                  isStreaming: true,
+                  escalations: [
+                    ...prior,
+                    {
+                      attempt: event.attempt,
+                      model: event.nextModel,
+                      tier: event.nextTier,
+                      reason: event.reason,
+                    },
+                  ],
+                });
+                thinkingCleared = false;
+                setIsThinking(true);
                 break;
               }
 
               case 'error': {
                 unsub();
+                if (activeRunRef.current?.runId === runId) activeRunRef.current = null;
                 clearThinking();
                 setIsStreaming(false);
                 // Safety net: mark any still-running tool calls as errored
-                for (const tc of toolCalls) {
+                for (const tc of state.toolCalls) {
                   if (tc.status === 'running') {
                     tc.status = 'error';
                     tc.output = tc.output || 'Interrupted';
                     tc.completedAt = new Date();
                   }
                 }
-                updateMessage(convId!, assistantId, {
-                  content: `Error: ${event.error}`,
+                // `errorClass` is read by ChatMessage to render the
+                // auth-recovery card when Claude Code lost its session
+                // (or other class-specific affordances we add later).
+                // Preserve any partial streamed text so the user doesn't
+                // lose what the agent already produced — append the error
+                // below a separator instead of overwriting the body.
+                const partial = state.accumulated.trim();
+                const content = partial
+                  ? `${partial}\n\n---\n_Error: ${event.error}_`
+                  : `Error: ${event.error}`;
+                updateMessage(convId, assistantId, {
+                  content,
                   isThinking: false,
                   isStreaming: false,
-                  toolCalls: [...toolCalls],
+                  toolCalls: [...state.toolCalls],
+                  errorClass: event.errorClass,
                 });
+                // Auth failures invalidate the cached probe — clear it
+                // so the next probe (triggered by the auth-recovery
+                // card after the user signs in) returns fresh data
+                // instead of the 60s-stale "not authenticated" result.
+                if (event.errorClass === 'auth') {
+                  window.cerebro.claudeCode.probeAuth({ force: true }).catch(() => undefined);
+                }
                 break;
               }
             }
           });
+
+          activeRunRef.current = {
+            runId,
+            unsub,
+            conversationId: convId,
+            assistantId,
+            state,
+          };
         } catch (e) {
-          const errorMsg =
-            e instanceof Error ? e.message : 'An error occurred while starting the agent.';
+          // Never surface a raw exception string. The common case is the
+          // runtime single-flight guard (a previous turn still in flight);
+          // everything else gets a generic, friendly retry message.
+          const rawMsg = e instanceof Error ? e.message : '';
+          activeRunRef.current = null;
           setIsStreaming(false);
           setIsThinking(false);
-          updateMessage(convId!, assistantId, {
-            content: `Error: ${errorMsg}`,
+          const friendly = /already has run|in flight|ConversationBusy/i.test(rawMsg)
+            ? i18n.t('chat.busyRetry')
+            : i18n.t('chat.startFailed');
+          updateMessage(convId, assistantId, {
+            content: friendly,
             isThinking: false,
             isStreaming: false,
           });
@@ -682,7 +903,209 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       runAgent();
     },
-    [activeConversationId, activeExpertId, createConversation, addMessage, updateMessage, chainWrite, waitForConversation],
+    [updateMessage, chainWrite, waitForConversation, runAutoTitle],
+  );
+
+  const sendMessage = useCallback(
+    (content: string) => {
+      // ── Guard: require Claude Code to be detected ──
+      if (claudeCodeInfoRef.current.status !== 'available') {
+        setChatError({
+          title: 'Claude Code not detected',
+          message:
+            'Cerebro uses the Claude Code CLI as its engine. Install it and re-detect from Integrations.',
+          navigateTo: 'integrations',
+        });
+        return;
+      }
+
+      let convId = activeConversationId;
+      let createdHere = false;
+      if (!convId) {
+        // Auto-scope new conversations to the selected expert so threads
+        // started from the Experts > Messages tab are discoverable there.
+        convId = createConversation(content, { expertId: activeExpertId });
+        createdHere = true;
+      }
+      addMessage(convId, 'user', content);
+
+      // Phase 1 auto-title: fire-and-forget the moment a new conversation is
+      // born. Runs in parallel with the assistant response. The renameConversation
+      // and deleteConversation callbacks invalidate the ref, so a manual edit
+      // mid-flight wins.
+      if (createdHere) {
+        autoTitledIdsRef.current.add(convId);
+        runAutoTitle(convId, content).catch((err) =>
+          console.warn('[chat] auto-title phase-1 error:', err),
+        );
+      }
+
+      const expertId = activeExpertId;
+
+      // Create placeholder assistant message
+      const assistantId = generateId();
+      const thinkingMessage: Message = {
+        id: assistantId,
+        conversationId: convId,
+        role: 'assistant',
+        content: '',
+        expertId: expertId ?? undefined,
+        createdAt: new Date(),
+        isThinking: true,
+      };
+
+      setIsThinking(true);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                messages: [...c.messages, thinkingMessage],
+                updatedAt: new Date(),
+              }
+            : c,
+        ),
+      );
+
+      runAgentForMessage(convId, assistantId, content, expertId);
+    },
+    [
+      activeConversationId,
+      activeExpertId,
+      createConversation,
+      addMessage,
+      runAgentForMessage,
+      runAutoTitle,
+    ],
+  );
+
+  const stopMessage = useCallback(async () => {
+    const active = activeRunRef.current;
+    if (!active) return;
+    // Detach the listener BEFORE killing so a late event from the dying
+    // subprocess can't double-post after we've reset the message.
+    active.unsub();
+    activeRunRef.current = null;
+
+    try {
+      await window.cerebro.agent.cancel(active.runId);
+    } catch (err) {
+      console.warn('[chat] Failed to cancel agent run:', err);
+    }
+
+    setIsStreaming(false);
+    setIsThinking(false);
+
+    // Mark any still-running tool call as 'stopped' so the card freezes with
+    // a neutral indicator rather than a misleading success/error.
+    const stoppedToolCalls = active.state.toolCalls.map((tc) =>
+      tc.status === 'running' || tc.status === 'pending'
+        ? { ...tc, status: 'stopped' as const, completedAt: new Date() }
+        : tc,
+    );
+
+    const stoppedMarker = i18n.t('chat.stoppedMarker');
+    const partial = active.state.accumulated;
+    const finalContent = partial
+      ? `${partial.trimEnd()}\n\n${stoppedMarker}`
+      : stoppedMarker;
+
+    updateMessage(active.conversationId, active.assistantId, {
+      content: finalContent,
+      isThinking: false,
+      isStreaming: false,
+      toolCalls: stoppedToolCalls,
+    });
+
+    // Persist the stopped reply so it survives reload — agent.cancel() does
+    // not emit a renderer event after killing the subprocess, so the regular
+    // `done` persist path won't fire.
+    chainWrite(active.conversationId, () =>
+      apiCreateMessage(active.conversationId, {
+        id: active.assistantId,
+        role: 'assistant',
+        content: finalContent,
+      }),
+    ).catch(console.error);
+  }, [updateMessage, chainWrite]);
+
+  const regenerateFromUserMessage = useCallback(
+    async (messageId: string, newContent?: string) => {
+      if (claudeCodeInfoRef.current.status !== 'available') {
+        setChatError({
+          title: 'Claude Code not detected',
+          message:
+            'Cerebro uses the Claude Code CLI as its engine. Install it and re-detect from Integrations.',
+          navigateTo: 'integrations',
+        });
+        return;
+      }
+      if (isStreamingRef.current) return;
+
+      const convId = activeConversationIdRef.current;
+      if (!convId) return;
+      const conv = conversationsRef.current.find((c) => c.id === convId);
+      if (!conv) return;
+      const target = conv.messages.find((m) => m.id === messageId);
+      if (!target || target.role !== 'user') return;
+
+      const trimmed = (newContent ?? target.content).trim();
+      if (!trimmed) return;
+      const contentChanged = trimmed !== target.content;
+
+      // Patch the stored content first so reload mirrors what's on screen.
+      if (contentChanged) {
+        try {
+          await chainWrite(convId, () => apiPatchMessage(convId, messageId, { content: trimmed }));
+        } catch (err) {
+          console.error('[chat] Failed to patch user message content:', err);
+          return;
+        }
+      }
+
+      // Drop everything after this user message, both locally and on the server.
+      try {
+        await chainWrite(convId, () => apiDeleteMessagesAfter(convId, messageId));
+      } catch (err) {
+        console.error('[chat] Failed to truncate messages after edit:', err);
+        return;
+      }
+
+      const expertId = target.expertId ?? conv.expertId ?? null;
+
+      const assistantId = generateId();
+      const thinkingMessage: Message = {
+        id: assistantId,
+        conversationId: convId,
+        role: 'assistant',
+        content: '',
+        expertId: expertId ?? undefined,
+        createdAt: new Date(),
+        isThinking: true,
+      };
+
+      setIsThinking(true);
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== convId) return c;
+          // Apply both the edited user content and the truncation in a single
+          // setState so the placeholder doesn't render against stale messages.
+          const pivotIdx = c.messages.findIndex((m) => m.id === messageId);
+          if (pivotIdx === -1) return c;
+          const kept = c.messages.slice(0, pivotIdx + 1).map((m) =>
+            m.id === messageId && contentChanged ? { ...m, content: trimmed } : m,
+          );
+          return {
+            ...c,
+            messages: [...kept, thinkingMessage],
+            updatedAt: new Date(),
+          };
+        }),
+      );
+
+      runAgentForMessage(convId, assistantId, trimmed, expertId);
+    },
+    [chainWrite, runAgentForMessage],
   );
 
   // ── Run routine from UI (triggered via "Run Now" button) ────────
@@ -723,6 +1146,123 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     registerRunCallback(runRoutineFromUi);
   }, [registerRunCallback, runRoutineFromUi]);
+
+  // ── Team-run live status listeners ──────────────────────────────
+  //
+  // The chat agent calls announce-team-run.sh BEFORE invoking a team via
+  // the Agent tool, then the team coordinator subprocess calls
+  // team-member-update.sh at each member start/end. Both flow through the
+  // chat-actions HTTP server and arrive here as IPC events.
+  //
+  // We attach team-run state to the latest assistant message in the active
+  // conversation. The on-Agent-tool-end sweep in `sendMessage` is a safety
+  // net for coordinators that skip the per-member calls.
+  useEffect(() => {
+    const findLatestAssistantMessageId = (convId: string): string | null => {
+      const conv = conversationsRef.current.find((c) => c.id === convId);
+      if (!conv) return null;
+      for (let i = conv.messages.length - 1; i >= 0; i--) {
+        if (conv.messages[i].role === 'assistant') return conv.messages[i].id;
+      }
+      return null;
+    };
+
+    const unsubAnnounce = window.cerebro.chatActions.onTeamRunAnnounced((payload) => {
+      const targetConvId = payload.conversationId ?? activeConversationIdRef.current;
+      if (!targetConvId) return;
+      const msgId = findLatestAssistantMessageId(targetConvId);
+      if (!msgId) return;
+      const teamRun: TeamRun = {
+        teamId: payload.teamId,
+        teamName: payload.teamName,
+        strategy: payload.strategy,
+        status: 'running',
+        startedAt: Date.now(),
+        members: payload.members.map((m) => ({
+          memberId: m.memberId,
+          memberName: m.memberName,
+          role: m.role,
+          status: 'queued',
+        })),
+      };
+      updateMessage(targetConvId, msgId, { teamRun });
+      apiPatchMessageMetadata(targetConvId, msgId, {
+        team_run: toApiTeamRun(teamRun),
+      }).catch(console.error);
+    });
+
+    const unsubMember = window.cerebro.chatActions.onTeamMemberUpdate((payload) => {
+      const targetConvId = payload.conversationId ?? activeConversationIdRef.current;
+      if (!targetConvId) return;
+      const conv = conversationsRef.current.find((c) => c.id === targetConvId);
+      if (!conv) return;
+      let target: Message | undefined;
+      for (let i = conv.messages.length - 1; i >= 0; i--) {
+        const m = conv.messages[i];
+        if (m.role === 'assistant' && m.teamRun?.teamId === payload.teamId) {
+          target = m;
+          break;
+        }
+      }
+      if (!target?.teamRun) return;
+      const existing = target.teamRun.members.find((m) => m.memberId === payload.memberId);
+      // Guard against duplicate or out-of-order updates — coordinators sometimes
+      // double-fire the same status, and a no-op PATCH is wasted bandwidth.
+      if (existing && existing.status === payload.status && !payload.errorMessage) return;
+
+      const updatedMembers = target.teamRun.members.map((mem) =>
+        mem.memberId === payload.memberId
+          ? { ...mem, status: payload.status, response: payload.errorMessage ?? mem.response }
+          : mem,
+      );
+      const next: TeamRun = { ...target.teamRun, members: updatedMembers };
+      updateMessage(targetConvId, target.id, { teamRun: next });
+      apiPatchMessageMetadata(targetConvId, target.id, {
+        team_run: toApiTeamRun(next),
+      }).catch(console.error);
+    });
+
+    return () => {
+      unsubAnnounce();
+      unsubMember();
+    };
+  }, [updateMessage]);
+
+  // Listen once for integration setup proposals fired by the chat-actions
+  // HTTP server when the chat agent runs propose-integration.sh. The
+  // listener reads the active conversation through a ref so we don't
+  // re-subscribe on every chat switch.
+  useEffect(() => {
+    const unsub = window.cerebro.chatActions.onIntegrationProposal((payload) => {
+      const targetConvId = payload.conversationId ?? activeConversationIdRef.current;
+      if (!targetConvId) return;
+      const conv = conversationsRef.current.find((c) => c.id === targetConvId);
+      if (!conv) return;
+      const proposal: IntegrationSetupProposal = {
+        integrationId: payload.integrationId,
+        reason: payload.reason,
+        status: 'proposed',
+      };
+      let lastAssistant: Message | undefined;
+      for (let i = conv.messages.length - 1; i >= 0; i--) {
+        if (conv.messages[i].role === 'assistant') {
+          lastAssistant = conv.messages[i];
+          break;
+        }
+      }
+      if (lastAssistant) {
+        updateMessage(targetConvId, lastAssistant.id, { integrationProposal: proposal });
+        apiPatchMessageMetadata(targetConvId, lastAssistant.id, {
+          integration_proposal: toApiIntegrationProposal(proposal),
+        }).catch(console.error);
+      } else {
+        addMessage(targetConvId, 'assistant', '', {
+          integration_proposal: toApiIntegrationProposal(proposal),
+        });
+      }
+    });
+    return unsub;
+  }, [addMessage, updateMessage]);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
 
@@ -772,6 +1312,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         deleteConversation,
         setActiveScreen,
         sendMessage,
+        stopMessage,
+        regenerateFromUserMessage,
         setActiveExpertId,
         dismissChatError,
         getConversationsForExpert,

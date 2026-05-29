@@ -157,6 +157,28 @@ describe('installer materialization', () => {
     expect(fs.existsSync(cerebroFile)).toBe(true);
   });
 
+  it('installAll writes the knowledge-base skill and its scripts', async () => {
+    await installAll({ dataDir, backendPort: backend.port });
+    const paths = resolvePaths(dataDir);
+
+    const skillFile = path.join(paths.skillsDir, 'knowledge-base', 'SKILL.md');
+    expect(fs.existsSync(skillFile), `expected KB skill at ${skillFile}`).toBe(true);
+    const skill = fs.readFileSync(skillFile, 'utf-8');
+    expect(skill).toContain('name: knowledge-base');
+    // Bilingual triggers must be present so the agent fires on Spanish too.
+    expect(skill).toContain('base de conocimiento');
+
+    for (const script of ['kb-list-pages.sh', 'kb-read-page.sh', 'kb-create-page.sh', 'kb-update-page.sh']) {
+      const p = path.join(paths.scriptsDir, script);
+      expect(fs.existsSync(p), `expected script at ${p}`).toBe(true);
+      expect(fs.readFileSync(p, 'utf-8')).toContain('/knowledge/pages');
+    }
+
+    // The main Cerebro agent should advertise the skill.
+    const cerebro = fs.readFileSync(path.join(paths.agentsDir, 'cerebro.md'), 'utf-8');
+    expect(cerebro).toContain('`knowledge-base`');
+  });
+
   it('installExpert writes a single expert .md file with valid frontmatter', async () => {
     await installExpert(
       { dataDir, backendPort: backend.port },

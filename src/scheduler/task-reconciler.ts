@@ -8,17 +8,18 @@
  * unfocused renderer, a crashed renderer, or an IPC hiccup can drop the
  * event and strand the task at in_progress indefinitely.
  *
- * This reconciler runs every 2 minutes (double the runtime's 2-min idle
- * timeout so it can't race the per-run watchdog) and gives the backend the
- * set of run IDs currently alive in AgentRuntime. The backend reconciles
- * any in_progress task whose run is NOT in that set, syncing its column
- * with the linked RunRecord's status.
+ * This reconciler polls every 30 seconds and gives the backend the set of
+ * run IDs currently alive in AgentRuntime. The backend reconciles any
+ * in_progress task whose run is NOT in that set, syncing its column with
+ * the linked RunRecord's status. The 30s cadence is fast enough to mask a
+ * dropped renderer IPC event without straining the backend (the reconcile
+ * endpoint is a single in-memory query over in_progress tasks).
  */
 
 import http from 'node:http';
 import type { AgentRuntime } from '../agents/runtime';
 
-const RECONCILE_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+const RECONCILE_INTERVAL_MS = 30 * 1000; // 30 seconds
 
 export class TaskReconciler {
   private runtime: AgentRuntime;

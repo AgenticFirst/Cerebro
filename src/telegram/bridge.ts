@@ -23,6 +23,7 @@ import { ENGINE_EVENT, type EngineEventContext } from '../engine/events/emitter'
 import type { ExecutionEngine } from '../engine/engine';
 import type { TelegramChannel } from '../engine/actions/telegram-channel';
 import { IPC_CHANNELS } from '../types/ipc';
+import { pickApprovalRun } from '../utils/approval-routing';
 import { TelegramApi, TelegramApiError, approvalKeyboard, scrubTokenish } from './api';
 import {
   encryptForStorage,
@@ -48,6 +49,10 @@ import {
   type TelegramStatus,
   type TelegramVerifyResult,
 } from './types';
+import { MediaIngestService } from '../files/media-ingest';
+import type { ResolvedAttachment } from '../files/types';
+import { IntegrationStaging } from '../files/staging';
+import { getLoginOrchestrator, type LoginSnapshot } from '../claude-code/login-orchestrator';
 
 // ── Tunables ──────────────────────────────────────────────────────
 
@@ -70,6 +75,15 @@ const ROUTINE_CACHE_TTL_MS = 30_000;
 // user isn't permanently blocked behind a "still working" message.
 const RUN_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const RUN_WATCHDOG_INTERVAL_MS = 30_000;
+// Dedupe inbound updates by Telegram message_id. Telegram can redeliver a
+// long-polled update if persistLastUpdateId hasn't landed before the next
+// poll, and rare edge cases (hot reload, double bridge instance) can produce
+// the same effect. Drop any message we've already touched in the last minute.
+const MESSAGE_DEDUPE_WINDOW_MS = 60_000;
+const MESSAGE_DEDUPE_MAX_ENTRIES = 200;
+// faster-whisper-base — the STT model Settings → Voice installs and the
+// /voice/stt/load endpoint expects. Defined in backend/voice/catalog.py.
+const STT_MODEL_ID = 'faster-whisper-base';
 
 const ALLOWED_MIME = new Set([
   'image/png',
@@ -207,6 +221,7 @@ class TelegramStreamSink implements AgentEventSink {
   private destroyed = false;
   private onDoneCb: (finalText: string, err?: string) => void;
   private onActivityCb: (() => void) | null;
+  private onAuthFailureCb: (() => Promise<boolean>) | null;
   private api: TelegramApi;
   private chatId: number;
   private replyToMessageId?: number;
@@ -218,12 +233,14 @@ class TelegramStreamSink implements AgentEventSink {
     replyToMessageId: number | undefined,
     onDone: (finalText: string, err?: string) => void,
     onActivity?: () => void,
+    onAuthFailure?: () => Promise<boolean>,
   ) {
     this.api = api;
     this.chatId = chatId;
     this.replyToMessageId = replyToMessageId;
     this.onDoneCb = onDone;
     this.onActivityCb = onActivity ?? null;
+    this.onAuthFailureCb = onAuthFailure ?? null;
     this.typingTimer = setInterval(() => {
       if (!this.destroyed) {
         this.api.sendChatAction(this.chatId, 'typing').catch(() => { /* non-fatal */ });
@@ -258,7 +275,8 @@ class TelegramStreamSink implements AgentEventSink {
     }
 
     if (event.type === 'error' && 'error' in event) {
-      void this.finalizeWithError(event.error);
+      const errorClass = ('errorClass' in event ? (event as { errorClass?: string }).errorClass : undefined);
+      void this.finalizeWithError(event.error, errorClass);
       return;
     }
     // tool_start / tool_end / turn_start / system → ignore for now;
@@ -384,9 +402,29 @@ class TelegramStreamSink implements AgentEventSink {
     this.onDoneCb(finalText);
   }
 
-  private async finalizeWithError(error: string): Promise<void> {
+  private async finalizeWithError(error: string, errorClass?: string): Promise<void> {
     if (this.destroyed) return;
     if (this.editTimer) { clearTimeout(this.editTimer); this.editTimer = null; }
+
+    // Auth failures get a brief reply in the chat + the bridge routes the
+    // actual recovery to the operator's DM. The raw "Cerebro lost its
+    // Claude Code session" tells the user nothing they can act on,
+    // especially when they have no terminal access to the host.
+    if (errorClass === 'auth' && this.onAuthFailureCb) {
+      let handled = false;
+      try { handled = await this.onAuthFailureCb(); } catch { /* fall through */ }
+      if (handled) {
+        const brief = "I'm reconnecting to Claude — operator notified. Try again in a moment.";
+        try {
+          await this.api.sendMessage(this.chatId, brief, {
+            reply_to_message_id: this.replyToMessageId,
+          });
+        } catch { /* ignore */ }
+        this.teardown();
+        this.onDoneCb(this.accumulated, error);
+        return;
+      }
+    }
 
     const text = `⚠️ ${scrubTokenish(error)}`;
     if (this.currentMessageId !== null) {
@@ -450,8 +488,30 @@ export class TelegramBridge implements TelegramChannel {
 
   private activeRuns = new Map<number, ActiveTelegramRun>(); // chatId → run
   private runWatchdogTimer: NodeJS.Timeout | null = null;
+
+  /** In-flight Claude Code re-authentication. While set, inbound messages
+   *  from the operator chat are treated as the paste-back code instead of
+   *  being dispatched to the runner. See handleAuthFailure / handleOperatorAuthCode. */
+  private pendingLogin: {
+    loginId: string;
+    operatorChatId: string;
+    originalMsg: TelegramMessage;
+    originalText: string;
+    timeoutTimer: NodeJS.Timeout;
+    unsubscribe: () => void;
+  } | null = null;
   private approvalChatMap = new Map<string, number>(); // approvalId → chatId
   private tempFiles = new Map<string, NodeJS.Timeout>();
+
+  // Recently-handled Telegram message IDs (insertion-ordered for FIFO eviction).
+  // Idempotency guard against duplicate-delivery: if we've already processed
+  // this message_id within MESSAGE_DEDUPE_WINDOW_MS, drop the redelivery.
+  private recentlyHandledMessageIds = new Map<number, number>();
+
+  // Voice STT lazy-load: shared in-flight promise so a burst of voice notes
+  // from any chat coalesces to a single load attempt instead of triggering
+  // parallel /voice/stt/load calls.
+  private sttLoadInFlight: Promise<boolean> | null = null;
 
   private engineListener: ((event: ExecutionEvent, ctx: EngineEventContext) => void) | null = null;
 
@@ -462,8 +522,16 @@ export class TelegramBridge implements TelegramChannel {
    *  Required for routine dispatch (the engine forwards step events here). */
   private webContents: WebContents | null = null;
 
+  private mediaIngest: MediaIngestService;
+  private staging: IntegrationStaging;
+
   constructor(deps: TelegramBridgeDeps) {
     this.deps = deps;
+    this.mediaIngest = new MediaIngestService({
+      getBackendPort: () => this.deps.backendPort,
+      transcriptDir: path.join(this.deps.dataDir, 'files', '_transcripts'),
+    });
+    this.staging = new IntegrationStaging(this.deps.dataDir);
   }
 
   /** Late-bind the engine for routine dispatch. The engine is constructed before
@@ -617,6 +685,173 @@ export class TelegramBridge implements TelegramChannel {
     };
   }
 
+  // ── Claude Code re-auth (operator paste-back) ───────────────────
+
+  getOperatorChatId(): string | null {
+    return this.settings.operatorChatId;
+  }
+
+  async setOperatorChatId(chatId: string | null): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const trimmed = (chatId ?? '').trim() || null;
+      this.settings.operatorChatId = trimmed;
+      await backendPutSetting(this.deps.backendPort, TELEGRAM_SETTING_KEYS.operatorChatId, trimmed ?? '');
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /**
+   * Resolve which Telegram chat id receives the auth re-login DM. Prefers
+   * the explicit `operatorChatId` setting; falls back to the first numeric
+   * id in `allowlist` so existing deployments work without configuration.
+   */
+  private resolveOperatorChatId(): string | null {
+    const explicit = this.settings.operatorChatId;
+    if (explicit) return explicit;
+    const first = this.settings.allowlist.find((u) => /^-?\d+$/.test(u));
+    return first ?? null;
+  }
+
+  private async handleAuthFailure(originalMsg: TelegramMessage, originalText: string): Promise<boolean> {
+    if (!this.api) return false;
+    if (this.pendingLogin) return true; // another auth attempt already in flight
+
+    const operatorChatId = this.resolveOperatorChatId();
+    if (!operatorChatId) {
+      logError('auth failure: no operator chat id configured — falling back to default error post');
+      return false;
+    }
+
+    const orchestrator = getLoginOrchestrator();
+    if (orchestrator.current()) return false; // already in flight from another surface
+
+    let snap: LoginSnapshot;
+    try {
+      snap = await orchestrator.start('setup-token');
+    } catch (err) {
+      logError('auth failure: login start failed', err instanceof Error ? err.message : String(err));
+      return false;
+    }
+
+    if (!snap.url) {
+      logError('auth failure: login orchestrator returned no URL');
+      orchestrator.cancel(snap.loginId);
+      return false;
+    }
+
+    try {
+      await this.api.sendMessage(
+        Number(operatorChatId),
+        '🔑 *Cerebro needs you to re-authenticate Claude.*\n\n'
+        + `1. Open this link in your browser: ${snap.url}\n`
+        + '2. Complete the sign-in.\n'
+        + '3. Reply to this chat with the code shown on the page.\n\n'
+        + "I'll resume the original request automatically once you reply.",
+      );
+    } catch (err) {
+      logError('auth failure: operator DM send failed', err instanceof Error ? err.message : String(err));
+      orchestrator.cancel(snap.loginId);
+      return false;
+    }
+
+    const update = (s: LoginSnapshot): void => {
+      if (s.loginId !== snap.loginId) return;
+      if (s.status === 'success') void this.completeAuthRecovery();
+      else if (s.status === 'failure' || s.status === 'cancelled') void this.failAuthRecovery(s.reason ?? 'Sign-in failed.');
+    };
+    orchestrator.on('update', update);
+    const unsubscribe = (): void => { orchestrator.off('update', update); };
+
+    const timeoutTimer = setTimeout(() => {
+      void this.failAuthRecovery('Sign-in timed out after 10 minutes.');
+    }, 10 * 60_000);
+
+    this.pendingLogin = {
+      loginId: snap.loginId,
+      operatorChatId,
+      originalMsg,
+      originalText,
+      timeoutTimer,
+      unsubscribe,
+    };
+    return true;
+  }
+
+  private async handleOperatorAuthCode(code: string): Promise<void> {
+    const pending = this.pendingLogin;
+    if (!pending || !this.api) return;
+    const trimmed = (code ?? '').trim();
+    if (!trimmed) return;
+    try {
+      await getLoginOrchestrator().submitCode(pending.loginId, trimmed);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      try {
+        await this.api.sendMessage(
+          Number(pending.operatorChatId),
+          `⚠️ Couldn't verify that code: ${scrubTokenish(msg)}\n\nPaste the code again, or open the link again to start over.`,
+        );
+      } catch { /* ignore */ }
+    }
+  }
+
+  private async completeAuthRecovery(): Promise<void> {
+    const pending = this.pendingLogin;
+    if (!pending) return;
+    this.pendingLogin = null;
+    clearTimeout(pending.timeoutTimer);
+    pending.unsubscribe();
+
+    if (this.api) {
+      try {
+        await this.api.sendMessage(
+          Number(pending.operatorChatId),
+          '✅ Reconnected to Claude. Resuming the original request now.',
+        );
+      } catch { /* ignore */ }
+    }
+
+    // Re-dispatch the original inbound. The dedupe layer would normally
+    // drop a replay of the same message_id, so allocate a synthetic one
+    // outside the real Telegram id space (numeric, well above any real
+    // update id) for the retry pass.
+    const replay: TelegramMessage = {
+      ...pending.originalMsg,
+      message_id: pending.originalMsg.message_id + 1_000_000_000,
+    };
+    try {
+      await this.handleMessage(replay);
+    } catch (err) {
+      logError('auth recovery replay failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async failAuthRecovery(reason: string): Promise<void> {
+    const pending = this.pendingLogin;
+    if (!pending) return;
+    this.pendingLogin = null;
+    clearTimeout(pending.timeoutTimer);
+    pending.unsubscribe();
+    try { getLoginOrchestrator().cancel(pending.loginId); } catch { /* noop */ }
+
+    if (this.api) {
+      try {
+        await this.api.sendMessage(
+          Number(pending.operatorChatId),
+          `⚠️ Claude sign-in didn't complete: ${scrubTokenish(reason)}`,
+        );
+      } catch { /* ignore */ }
+      try {
+        await this.api.sendMessage(
+          pending.originalMsg.chat.id,
+          "⚠️ Couldn't reconnect to Claude. The operator has been notified.",
+        );
+      } catch { /* ignore */ }
+    }
+  }
+
   // ── TelegramChannel implementation (consumed by send_telegram_message) ──
 
   /** Allowlist gate — exposed so the engine action can reject before sending. */
@@ -675,6 +910,118 @@ export class TelegramBridge implements TelegramChannel {
     }
   }
 
+  // ── Outbound media (chat-action surface) ─────────────────────
+  // All seven methods share the same allowlist + rate-limit + numeric-id
+  // checks as `sendActionMessage`. The TelegramApi multipart helpers handle
+  // size-cap rejection (50 MB) and surface as a structured error here so the
+  // chat agent can apologize cleanly instead of throwing.
+
+  async sendPhotoActionMessage(
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendPhoto', chatId, filePath, caption);
+  }
+
+  async sendDocumentActionMessage(
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendDocument', chatId, filePath, caption);
+  }
+
+  async sendAudioActionMessage(
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendAudio', chatId, filePath, caption);
+  }
+
+  async sendVideoActionMessage(
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendVideo', chatId, filePath, caption);
+  }
+
+  async sendVoiceActionMessage(
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendVoice', chatId, filePath, caption);
+  }
+
+  async sendStickerActionMessage(
+    chatId: string,
+    filePath: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    return this.sendMediaWithFile('sendSticker', chatId, filePath);
+  }
+
+  async sendLocationActionMessage(
+    chatId: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    const guard = this.outboundGuard(chatId);
+    if (guard.error || guard.numericChatId === null) return { messageId: null, error: guard.error };
+    try {
+      const sent = await this.api!.sendLocation(guard.numericChatId, latitude, longitude);
+      return { messageId: sent.message_id, error: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { messageId: null, error: scrubTokenish(msg) };
+    }
+  }
+
+  /** Common gates for outbound: bridge ready + allowlist + rate-limit + numeric chat id. */
+  private outboundGuard(chatId: string): {
+    numericChatId: number | null;
+    error: string | null;
+  } {
+    if (!this.api || !this.polling) {
+      return { numericChatId: null, error: 'Telegram bridge not running' };
+    }
+    const recipient = String(chatId).trim();
+    if (!this.isAllowlisted(recipient)) {
+      return { numericChatId: null, error: `chat_id ${recipient} not in allowlist` };
+    }
+    if (!this.proactiveRateLimiter.allow(recipient)) {
+      return { numericChatId: null, error: `chat_id ${recipient} rate-limited` };
+    }
+    const numericChatId = Number(recipient);
+    if (!Number.isFinite(numericChatId)) {
+      return { numericChatId: null, error: `chat_id ${recipient} is not a numeric Telegram id` };
+    }
+    return { numericChatId, error: null };
+  }
+
+  private async sendMediaWithFile(
+    method: 'sendPhoto' | 'sendDocument' | 'sendAudio' | 'sendVideo' | 'sendVoice' | 'sendSticker',
+    chatId: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: number | null; error: string | null }> {
+    const guard = this.outboundGuard(chatId);
+    if (guard.error || guard.numericChatId === null) return { messageId: null, error: guard.error };
+    if (!fs.existsSync(filePath)) return { messageId: null, error: `file not found: ${filePath}` };
+    try {
+      const safeCaption = caption ? this.redactForChat(caption) : undefined;
+      const sent = method === 'sendSticker'
+        ? await this.api![method](guard.numericChatId, filePath)
+        : await this.api![method](guard.numericChatId, filePath, safeCaption);
+      return { messageId: sent.message_id, error: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { messageId: null, error: scrubTokenish(msg) };
+    }
+  }
+
   /**
    * Send a proactive message from a routine's `channel` action.
    * Returns summary counts so the step record has useful output.
@@ -719,7 +1066,7 @@ export class TelegramBridge implements TelegramChannel {
   private subscribeToEngineEvents(): void {
     const listener = (event: ExecutionEvent, ctx: EngineEventContext): void => {
       if (event.type === 'approval_requested' && 'approvalId' in event) {
-        void this.handleApprovalRequested(event);
+        void this.handleApprovalRequested(event, ctx);
         return;
       }
       if (event.type === 'approval_granted' || event.type === 'approval_denied') {
@@ -740,12 +1087,13 @@ export class TelegramBridge implements TelegramChannel {
 
   private async handleApprovalRequested(
     event: Extract<ExecutionEvent, { type: 'approval_requested' }>,
+    ctx: EngineEventContext,
   ): Promise<void> {
     if (!this.api) return;
 
     // Route to: the chat that originated the run, OR broadcast when
     // forwardAllApprovals is on and we don't know the origin.
-    const originChatId = this.findOriginChatIdForRun();
+    const originChatId = this.findOriginChatIdForRun(ctx.conversationId);
     const targets: number[] = [];
     if (originChatId !== null) {
       targets.push(originChatId);
@@ -794,16 +1142,28 @@ export class TelegramBridge implements TelegramChannel {
     await this.sendProactive(telegramRecipients, summary);
   }
 
-  // v1 heuristic: if there's exactly one active Telegram run, the approval
-  // almost certainly belongs to it. Otherwise fall through to forwardAllApprovals.
-  private findOriginChatIdForRun(): number | null {
-    if (this.activeRuns.size !== 1) return null;
-    return this.activeRuns.keys().next().value ?? null;
+  // Attribute an approval to the chat that triggered it. Chat-action runs
+  // carry their originating conversationId (stamped by run-chat-action.sh), so
+  // we match it precisely even with several runs in flight; if it can't be
+  // matched we fall back to the most recently started run rather than dropping
+  // the approval (a dropped chat-action approval pauses the engine forever).
+  // Without a conversationId (e.g. a routine-triggered approval) we keep the
+  // single-run heuristic so we don't hijack it into an unrelated chat — the
+  // caller then falls through to forwardAllApprovals.
+  private findOriginChatIdForRun(conversationId?: string): number | null {
+    return pickApprovalRun(
+      [...this.activeRuns.entries()].map(([chatId, run]) => ({
+        id: chatId,
+        conversationId: run.conversationId,
+        startedAt: run.startedAt,
+      })),
+      conversationId,
+    );
   }
 
   private async loadSettings(): Promise<void> {
     const port = this.deps.backendPort;
-    const [storedToken, allowlist, enabled, forwardAll, chatMap, chatExpertMap, chatUsernames, lastUpdate] = await Promise.all([
+    const [storedToken, allowlist, enabled, forwardAll, chatMap, chatExpertMap, chatUsernames, lastUpdate, operatorChatId] = await Promise.all([
       backendGetSetting<string>(port, TELEGRAM_SETTING_KEYS.token),
       backendGetSetting<string[]>(port, TELEGRAM_SETTING_KEYS.allowlist),
       backendGetSetting<boolean>(port, TELEGRAM_SETTING_KEYS.enabled),
@@ -812,6 +1172,7 @@ export class TelegramBridge implements TelegramChannel {
       backendGetSetting<Record<string, string>>(port, TELEGRAM_SETTING_KEYS.chatExpertMap),
       backendGetSetting<Record<string, string>>(port, TELEGRAM_SETTING_KEYS.chatUsernames),
       backendGetSetting<number>(port, TELEGRAM_SETTING_KEYS.lastUpdateId),
+      backendGetSetting<string>(port, TELEGRAM_SETTING_KEYS.operatorChatId),
     ]);
 
     const token = decryptFromStorage(storedToken);
@@ -834,6 +1195,7 @@ export class TelegramBridge implements TelegramChannel {
       chatExpertMap: chatExpertMap ?? {},
       chatUsernames: chatUsernames ?? {},
       lastUpdateId: typeof lastUpdate === 'number' ? lastUpdate : 0,
+      operatorChatId: typeof operatorChatId === 'string' && operatorChatId ? operatorChatId : null,
     };
   }
 
@@ -870,6 +1232,12 @@ export class TelegramBridge implements TelegramChannel {
   /** True if a token is configured (without revealing the value). */
   hasToken(): boolean {
     return Boolean(this.settings.token);
+  }
+
+  /** True if the bridge is actively polling Telegram (token configured,
+   *  enabled, and started successfully). Used by the chat-actions catalog. */
+  isConnected(): boolean {
+    return this.polling && this.api !== null && this.settings.enabled === true;
   }
 
   private async persistLastUpdateId(id: number): Promise<void> {
@@ -944,9 +1312,32 @@ export class TelegramBridge implements TelegramChannel {
     if (!this.api) return;
     if (msg.chat.type !== 'private') return; // v1: DMs only
 
+    // Idempotency guard — drop redelivered updates before doing any backend
+    // I/O. Without this, two `handleMessage` invocations for the same
+    // Telegram message would both pass the activeRuns peek below (the gap
+    // between check and claim spans multiple awaits), both spawn Claude
+    // Code with the same per-conversation session id, and the CLI would
+    // reject the second with "Session ID … is already in use".
+    if (this.isDuplicateMessage(msg.message_id)) {
+      log(`dropping duplicate update for message_id=${msg.message_id} chat=${msg.chat.id}`);
+      return;
+    }
+
     const fromId = msg.from?.id;
     if (fromId === undefined) return;
     const fromIdStr = String(fromId);
+
+    // Auth paste-back intercept. If Claude Code is re-authenticating and
+    // this DM is the configured operator replying with the code, route it
+    // to the orchestrator instead of dispatching to the runner (which
+    // would just hit the same auth failure again).
+    if (
+      this.pendingLogin
+      && this.pendingLogin.operatorChatId === String(msg.chat.id)
+    ) {
+      await this.handleOperatorAuthCode((msg.text ?? msg.caption ?? '').trim());
+      return;
+    }
 
     if (!this.settings.allowlist.includes(fromIdStr)) {
       if (this.shouldReplyUnknown(fromIdStr)) {
@@ -974,6 +1365,28 @@ export class TelegramBridge implements TelegramChannel {
     const textOrCaption = (msg.text ?? msg.caption ?? '').trim();
     if (textOrCaption.startsWith('/')) {
       await this.handleCommand(msg, textOrCaption);
+      return;
+    }
+
+    // Early concurrency peek — short-circuit before the slow async chain
+    // (ensureConversation → postUserMessage → buildPromptFromMessage → STT).
+    // The activeRuns Map is still mutated under the same event-loop turn as
+    // the spawn below, so this is a fast best-effort check, not a perfect
+    // guard. The load-bearing single-flight lives in AgentRuntime (see
+    // ConversationBusyError) and the catch below.
+    const earlyExisting = this.activeRuns.get(msg.chat.id);
+    if (earlyExisting) {
+      const elapsedSec = Math.round((Date.now() - earlyExisting.startedAt) / 1000);
+      const elapsedLabel = elapsedSec < 60
+        ? `${elapsedSec}s`
+        : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+      try {
+        await this.api.sendMessage(
+          msg.chat.id,
+          `⏳ Still working on the previous message (${elapsedLabel} so far).\n`
+          + 'Send /cancel to abort it and try a different request.',
+        );
+      } catch { /* ignore */ }
       return;
     }
 
@@ -1062,6 +1475,7 @@ export class TelegramBridge implements TelegramChannel {
         }
       },
       bumpActivity,
+      async () => this.handleAuthFailure(msg, textOrCaption),
     );
 
     const expertId = this.settings.chatExpertMap[String(msg.chat.id)] || null;
@@ -1070,6 +1484,10 @@ export class TelegramBridge implements TelegramChannel {
       conversationId,
       content: prompt,
       expertId,
+      // No transcript is shipped — Claude Code's own --resume carries history —
+      // so hint the create-vs-resume decision: resume unless this is the first
+      // message we've ever seen for this chat.
+      resume: !isFirstContact,
       source: { kind: 'telegram', chatId: msg.chat.id },
     };
 
@@ -1086,9 +1504,22 @@ export class TelegramBridge implements TelegramChannel {
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      // Runtime-level single-flight: another run on this conversation is
+      // already in flight. Surface the same "still working" UX as the
+      // early peek above instead of leaking the raw error to the user.
+      if (err instanceof Error && err.name === 'ConversationBusyError') {
+        try {
+          await this.api.sendMessage(
+            msg.chat.id,
+            '⏳ Still working on the previous message.\n'
+            + 'Send /cancel to abort it and try a different request.',
+          );
+        } catch { /* ignore */ }
+        return;
+      }
       logError('startRun failed', errMsg);
       try {
-        await this.api.sendMessage(msg.chat.id, `⚠️ Failed to start: ${scrubTokenish(errMsg)}`);
+        await this.api.sendMessage(msg.chat.id, '⚠️ Something went wrong starting that. Please try again in a moment.');
       } catch { /* ignore */ }
     }
   }
@@ -1440,58 +1871,107 @@ export class TelegramBridge implements TelegramChannel {
   ): Promise<{ prompt: string; attachmentNote?: string }> {
     if (!this.api) return { prompt: text };
 
-    // Voice → transcribe
+    // Pick the single attachment Telegram sent. We don't combine — Telegram's
+    // message model is one media object per message (voice OR photo OR document
+    // OR audio). Caption text comes in via `text`.
+    let downloaded: { path: string; isVoice: boolean } | null = null;
+
     if (msg.voice) {
-      const filePath = await this.downloadAttachment(msg.voice.file_id, 'audio/ogg', msg.voice.file_size);
-      if (!filePath) return { prompt: text || '(voice note could not be downloaded)' };
-      const transcript = await this.transcribeAudio(filePath);
-      if (transcript) {
+      const p = await this.downloadAttachment(msg.voice.file_id, 'audio/ogg', msg.voice.file_size);
+      if (p) downloaded = { path: p, isVoice: true };
+    } else if (msg.photo && msg.photo.length > 0) {
+      const largest = msg.photo[msg.photo.length - 1];
+      const p = await this.downloadAttachment(largest.file_id, 'image/jpeg', largest.file_size);
+      if (p) downloaded = { path: p, isVoice: false };
+    } else if (msg.document) {
+      const mime = msg.document.mime_type ?? 'application/octet-stream';
+      const p = await this.downloadAttachment(msg.document.file_id, mime, msg.document.file_size);
+      if (p) downloaded = { path: p, isVoice: false };
+    } else if (msg.audio) {
+      const mime = msg.audio.mime_type ?? 'audio/mpeg';
+      const p = await this.downloadAttachment(msg.audio.file_id, mime, msg.audio.file_size);
+      if (p) downloaded = { path: p, isVoice: false };
+    }
+
+    if (!downloaded) return { prompt: text };
+
+    // For voice notes, make sure the STT engine is warm before we hit
+    // /voice/stt/transcribe-file. The first voice note in a session may
+    // need to download the Whisper model — ensureSTTReady() sends a
+    // one-time "loading…" notice to the chat so the user knows why
+    // there's a delay. If we can't get it ready, surface a clear,
+    // user-actionable message and skip the agent entirely.
+    if (downloaded.isVoice) {
+      const ready = await this.ensureSTTReady(msg.chat.id);
+      if (!ready) {
         return {
-          prompt: transcript + (text ? `\n\n${text}` : ''),
-          attachmentNote: `🎙️ Heard: ${transcript.length > 200 ? transcript.slice(0, 200) + '…' : transcript}`,
+          prompt: '',
+          attachmentNote:
+            '🎙️ Voice transcription is unavailable right now. '
+            + 'Try typing your message, or open Settings → Voice to set it up.',
         };
       }
+    }
+
+    // Route through MediaIngestService — same path as chat uploads. Office
+    // docs / PDFs get pre-extracted to markdown sidecars; images and text
+    // pass through; audio is transcribed via /voice/stt/transcribe-file.
+    let resolved: ResolvedAttachment;
+    try {
+      resolved = await this.mediaIngest.ingest({
+        filePath: downloaded.path,
+        source: 'telegram-inbound',
+      });
+    } catch (err) {
+      logError('media ingest failed', err instanceof Error ? err.message : String(err));
+      return { prompt: `[attachment at ${downloaded.path}]${text ? `\n\n${text}` : ''}` };
+    }
+
+    return this.composePromptFromResolved(resolved, text, downloaded.isVoice);
+  }
+
+  private composePromptFromResolved(
+    att: ResolvedAttachment,
+    text: string,
+    isVoice: boolean,
+  ): { prompt: string; attachmentNote?: string } {
+    const trailingText = text ? `\n\n${text}` : '';
+
+    // Voice notes / audio: transcript IS the message. Echo a confirmation back
+    // to the Telegram user so they know we heard them, and let the agent see
+    // both the transcript and any caption the user typed.
+    if (att.category === 'audio') {
+      const transcript = att.inlineText ?? '';
+      if (transcript) {
+        return {
+          prompt: transcript + trailingText,
+          attachmentNote: `${isVoice ? '🎙️' : '🎵'} ${this.snippet(transcript)}`,
+        };
+      }
+      // Empty transcript = STT ran but produced nothing usable (silent
+      // recording, unsupported language, etc.). Don't hand the raw .ogg
+      // path to Claude Code — its Read tool can't decode audio and the
+      // agent would either hallucinate or surface a confusing error.
+      // If the user typed a caption, fall back to that alone.
+      if (text.trim()) {
+        return { prompt: text };
+      }
       return {
-        prompt: `[voice note: ${filePath}]${text ? `\n\n${text}` : ''}`,
-        attachmentNote: '🎙️ Could not transcribe automatically — passing the audio file to the agent.',
+        prompt: '',
+        attachmentNote: isVoice
+          ? "🎙️ Couldn't transcribe that — try typing your message."
+          : "🎵 Couldn't transcribe that — try typing your message.",
       };
     }
 
-    // Photo → pick largest variant, download, inline path
-    if (msg.photo && msg.photo.length > 0) {
-      const largest = msg.photo[msg.photo.length - 1];
-      const filePath = await this.downloadAttachment(largest.file_id, 'image/jpeg', largest.file_size);
-      if (filePath) {
-        return { prompt: `[image attached at ${filePath}]${text ? `\n\n${text}` : ''}` };
-      }
-    }
+    // Office / PDF / image / text / unknown all flow the same: paste the
+    // injection (which is either an @sidecar or a safe descriptive marker)
+    // and append the user's caption.
+    return { prompt: att.promptInjection + trailingText };
+  }
 
-    // Document
-    if (msg.document) {
-      const mime = msg.document.mime_type ?? 'application/octet-stream';
-      const filePath = await this.downloadAttachment(msg.document.file_id, mime, msg.document.file_size);
-      if (filePath) {
-        return { prompt: `[document attached at ${filePath}]${text ? `\n\n${text}` : ''}` };
-      }
-    }
-
-    // Audio (non-voice)
-    if (msg.audio) {
-      const mime = msg.audio.mime_type ?? 'audio/mpeg';
-      const filePath = await this.downloadAttachment(msg.audio.file_id, mime, msg.audio.file_size);
-      if (filePath) {
-        const transcript = await this.transcribeAudio(filePath);
-        if (transcript) {
-          return {
-            prompt: transcript + (text ? `\n\n${text}` : ''),
-            attachmentNote: `🎙️ Heard: ${transcript.length > 200 ? transcript.slice(0, 200) + '…' : transcript}`,
-          };
-        }
-        return { prompt: `[audio attached at ${filePath}]${text ? `\n\n${text}` : ''}` };
-      }
-    }
-
-    return { prompt: text };
+  private snippet(s: string): string {
+    return s.length > 200 ? s.slice(0, 200) + '…' : s;
   }
 
   private async downloadAttachment(
@@ -1538,26 +2018,151 @@ export class TelegramBridge implements TelegramChannel {
     return dest;
   }
 
-  private async transcribeAudio(filePath: string): Promise<string | null> {
-    // Ensure the STT model is loaded. /voice/stt/transcribe-file lazy-loads too
-    // but the explicit load keeps errors on our side surface-able.
-    const status = await backendRequest<{ stt: string }>(this.deps.backendPort, 'GET', '/voice/status');
-    if (status.data?.stt !== 'ready') {
-      await backendRequest(this.deps.backendPort, 'POST', '/voice/stt/load');
+
+  /**
+   * Ensure the Whisper STT model is loaded and ready to transcribe. Idempotent
+   * and safe to call from concurrent voice-note handlers — all callers share
+   * a single in-flight load promise. On a cold start the helper sends a
+   * one-time "loading transcription model" notice to `chatId` so the user
+   * knows to expect a delay; downstream voice notes that arrive after the
+   * model is loaded skip the notice and complete instantly.
+   *
+   * Returns true once `/voice/stt/transcribe-file` is safe to call. Returns
+   * false on any unrecoverable failure (network, missing model that can't be
+   * auto-downloaded, etc.) — callers should surface a graceful message and
+   * skip the agent invocation entirely.
+   */
+  private async ensureSTTReady(chatId: number): Promise<boolean> {
+    const port = this.deps.backendPort;
+
+    // Fast path: already loaded.
+    const status = await backendRequest<{ stt: { is_loaded: boolean } }>(port, 'GET', '/voice/status');
+    if (status.ok && status.data?.stt?.is_loaded) return true;
+
+    // Coalesce a burst of voice notes onto one load attempt.
+    if (this.sttLoadInFlight) {
+      return this.sttLoadInFlight;
     }
 
-    const res = await backendRequest<{ text: string }>(
-      this.deps.backendPort,
+    const load = (async (): Promise<boolean> => {
+      // Tell the user this first one is slow before we start downloading.
+      if (this.api) {
+        try {
+          await this.api.sendMessage(
+            chatId,
+            '🎙️ First voice note in this session — loading the transcription model. '
+            + 'Future voice notes will be instant. (~30–60s if downloading for the first time.)',
+          );
+        } catch { /* non-fatal */ }
+      }
+
+      // Try loading directly. 404 means the model isn't on disk → auto-download.
+      let loadRes = await backendRequest(port, 'POST', '/voice/stt/load');
+      if (loadRes.status === 404) {
+        const downloaded = await this.downloadSTTModel();
+        if (!downloaded) return false;
+        loadRes = await backendRequest(port, 'POST', '/voice/stt/load');
+      }
+      return loadRes.ok;
+    })();
+
+    this.sttLoadInFlight = load.finally(() => {
+      this.sttLoadInFlight = null;
+    });
+    return this.sttLoadInFlight;
+  }
+
+  /**
+   * Trigger and wait for the Whisper STT model download via the existing
+   * /voice/download SSE stream. Resolves true when the catalog reports the
+   * model installed, false on any error or unexpected terminal state.
+   */
+  private async downloadSTTModel(): Promise<boolean> {
+    const port = this.deps.backendPort;
+    const start = await backendRequest<{ state: { status: string } }>(
+      port,
       'POST',
-      '/voice/stt/transcribe-file',
-      { file_path: filePath },
+      '/voice/download/start',
+      { model_id: STT_MODEL_ID },
     );
-    if (!res.ok || !res.data) {
-      logError('transcribe-file failed', res.status);
-      return null;
+    // 409 = already in progress — fine, we'll just attach to the stream.
+    if (!start.ok && start.status !== 409) return false;
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (ok: boolean): void => {
+        if (settled) return;
+        settled = true;
+        req.destroy();
+        resolve(ok);
+      };
+      const req = http.get(
+        `http://127.0.0.1:${port}/voice/download/stream/${STT_MODEL_ID}`,
+        (res) => {
+          if (res.statusCode !== 200) {
+            res.resume();
+            finish(false);
+            return;
+          }
+          let buf = '';
+          res.on('data', (c: Buffer) => {
+            buf += c.toString();
+            // SSE frames are `data: <json>\n\n`. Process complete frames.
+            let idx;
+            while ((idx = buf.indexOf('\n\n')) !== -1) {
+              const frame = buf.slice(0, idx);
+              buf = buf.slice(idx + 2);
+              const line = frame.split('\n').find((l) => l.startsWith('data: '));
+              if (!line) continue;
+              try {
+                const evt = JSON.parse(line.slice(6)) as { state?: string; status?: string };
+                const state = evt.state || evt.status;
+                if (state === 'installed' || state === 'completed' || state === 'done') {
+                  finish(true);
+                  return;
+                }
+                if (state === 'failed' || state === 'cancelled' || state === 'error') {
+                  finish(false);
+                  return;
+                }
+              } catch { /* ignore malformed frame */ }
+            }
+          });
+          res.on('end', () => finish(false));
+          res.on('error', () => finish(false));
+        },
+      );
+      req.on('error', () => finish(false));
+      // Allow plenty of time — the model is ~150MB.
+      req.setTimeout(5 * 60 * 1000, () => finish(false));
+    });
+  }
+
+  /**
+   * Idempotency check for inbound Telegram updates. Returns true if this
+   * message_id was handled within MESSAGE_DEDUPE_WINDOW_MS; otherwise records
+   * it and returns false. Bounded to MESSAGE_DEDUPE_MAX_ENTRIES with FIFO
+   * eviction so we don't grow unbounded on a busy bridge.
+   */
+  private isDuplicateMessage(messageId: number): boolean {
+    const now = Date.now();
+    // Lazy GC: drop expired entries before checking. The Map iteration order
+    // is insertion-order, so the oldest entries come first.
+    for (const [id, ts] of this.recentlyHandledMessageIds) {
+      if (now - ts <= MESSAGE_DEDUPE_WINDOW_MS) break;
+      this.recentlyHandledMessageIds.delete(id);
     }
-    const text = (res.data.text ?? '').trim();
-    return text || null;
+    const seenAt = this.recentlyHandledMessageIds.get(messageId);
+    if (seenAt !== undefined && now - seenAt <= MESSAGE_DEDUPE_WINDOW_MS) {
+      return true;
+    }
+    // FIFO eviction if we've hit the cap.
+    if (this.recentlyHandledMessageIds.size >= MESSAGE_DEDUPE_MAX_ENTRIES) {
+      const oldest = this.recentlyHandledMessageIds.keys().next().value;
+      if (oldest !== undefined) this.recentlyHandledMessageIds.delete(oldest);
+    }
+    this.recentlyHandledMessageIds.set(messageId, now);
+    return false;
   }
 
   private redactForChat(text: string): string {
@@ -1579,7 +2184,7 @@ export class TelegramBridge implements TelegramChannel {
   }
 
   private tempDir(): string {
-    return path.join(this.deps.dataDir, 'telegram-tmp');
+    return this.staging.dirFor('telegram');
   }
 }
 
@@ -1599,6 +2204,7 @@ function emptySettings(): TelegramSettings {
     chatExpertMap: {},
     chatUsernames: {},
     lastUpdateId: 0,
+    operatorChatId: null,
   };
 }
 

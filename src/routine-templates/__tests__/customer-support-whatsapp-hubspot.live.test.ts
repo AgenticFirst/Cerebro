@@ -182,6 +182,7 @@ function buildHubSpotChannel(): HubSpotChannel {
     getPortalId: () => '0',
     getDefaultPipeline: () => PIPELINE,
     getDefaultStage: () => STAGE,
+    isConnected: () => true,
   };
 }
 
@@ -193,6 +194,7 @@ interface CapturedSend {
 function buildWhatsAppStub(captured: CapturedSend[]): WhatsAppChannel {
   return {
     isAllowlisted: () => true,
+    isConnected: () => true,
     sendActionMessage: async (phone: string, text: string) => {
       captured.push({ phone, message: text });
       return {

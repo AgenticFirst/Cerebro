@@ -22,6 +22,21 @@ export const sendNotificationAction: ActionDefinition = {
   name: 'Send Notification',
   description: 'Shows a desktop notification.',
 
+  chatExposable: true,
+  chatGroup: 'system',
+  chatLabel: { en: 'Show desktop notification', es: 'Mostrar notificación de escritorio' },
+  chatDescription: {
+    en: 'Display a desktop notification on your machine. Useful for reminders and timers.',
+    es: 'Muestra una notificación de escritorio en tu equipo. Útil para recordatorios y temporizadores.',
+  },
+  chatExamples: [
+    {
+      en: 'Notify me in 30 minutes to check on the build.',
+      es: 'Avísame en 30 minutos para revisar el build.',
+    },
+  ],
+  availabilityCheck: () => 'available',
+
   inputSchema: {
     type: 'object',
     properties: {

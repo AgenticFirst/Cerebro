@@ -675,3 +675,79 @@ def test_reconcile_respects_idempotent_terminal_tasks(client):
     # Second tick finds nothing — task is already terminal, not in_progress.
     r = client.post("/tasks/reconcile", json={"live_run_ids": []})
     assert r.json()["reconciled"] == 0
+
+
+# ── A9. Startup recovery (interrupted-by-shutdown) ────────────────
+
+
+def test_recover_stale_keeps_interrupted_task_at_in_progress(client):
+    """Subprocess was alive when Cerebro closed — task must stay visible on
+    the In Progress column so the user can Resume it; only last_error and a
+    system comment change.
+    """
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+
+    r = client.post("/engine/runs/recover-stale")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["interrupted_tasks"] == 1
+    assert body["completed_tasks"] == 0
+    assert body["failed_tasks"] == 0
+
+    got = client.get(f"/tasks/{task['id']}").json()
+    assert got["column"] == "in_progress"
+    assert got["run_id"] == run_id
+    assert got["completed_at"] is None
+    assert "resume" in (got["last_error"] or "").lower()
+
+    # System comment was recorded.
+    comments = client.get(f"/tasks/{task['id']}/comments").json()
+    bodies = [c["body_md"] for c in comments if c["kind"] == "system"]
+    assert any("interrupted" in b.lower() for b in bodies)
+
+
+def test_recover_stale_routes_completed_run_to_review(client):
+    """If the run actually finished but its finalize IPC event was dropped,
+    recover-stale should land the task in To Review — not error.
+    """
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _set_run_status(run_id, "completed")
+
+    r = client.post("/engine/runs/recover-stale")
+    body = r.json()
+    assert body["completed_tasks"] == 1
+    assert body["interrupted_tasks"] == 0
+
+    got = client.get(f"/tasks/{task['id']}").json()
+    assert got["column"] == "to_review"
+    assert got["completed_at"] is not None
+
+
+def test_recover_stale_routes_failed_run_to_error(client):
+    """A genuine prior failure still surfaces in the Error column with the
+    real error message, not the friendly interrupted phrasing.
+    """
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _set_run_status(run_id, "failed", error="kaboom")
+
+    r = client.post("/engine/runs/recover-stale")
+    body = r.json()
+    assert body["failed_tasks"] == 1
+    assert body["interrupted_tasks"] == 0
+
+    got = client.get(f"/tasks/{task['id']}").json()
+    assert got["column"] == "error"
+    assert got["last_error"] == "kaboom"
+    assert got["completed_at"] is not None
+
+
+def test_recover_stale_no_in_progress_tasks(client):
+    """When nothing is in_progress, the task buckets are all zero."""
+    r = client.post("/engine/runs/recover-stale")
+    body = r.json()
+    assert body["interrupted_tasks"] == 0
+    assert body["completed_tasks"] == 0
+    assert body["failed_tasks"] == 0

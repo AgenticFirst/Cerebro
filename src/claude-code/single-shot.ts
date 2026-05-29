@@ -16,6 +16,7 @@
 import { spawn } from 'node:child_process';
 import { getCachedClaudeCodeInfo } from './detector';
 import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
+import { probeClaudeAuth } from './auth-probe';
 
 // ── Module-level config ──────────────────────────────────────────
 //
@@ -64,33 +65,54 @@ export class ClaudeCodeUnavailableError extends Error {
   }
 }
 
+export class ClaudeCodeNotSignedInError extends Error {
+  constructor(reason?: string) {
+    super(reason ? `Cerebro lost its Claude Code session: ${reason}` : 'Cerebro lost its Claude Code session.');
+    this.name = 'ClaudeCodeNotSignedInError';
+  }
+}
+
 /**
  * Spawn `claude -p <prompt> --agent <name>` and return the trimmed stdout.
  *
  * Throws `ClaudeCodeUnavailableError` if the binary hasn't been detected.
+ * Throws `ClaudeCodeNotSignedInError` if the cached auth probe says the
+ * CLI is unauthenticated — avoids the 60 s silent-wedge that used to leak
+ * a "run claude in a terminal" message into chat surfaces.
  * Throws on non-zero exit, abort, or stderr-only failures.
  */
-export function singleShotClaudeCode(options: SingleShotOptions): Promise<string> {
+export async function singleShotClaudeCode(options: SingleShotOptions): Promise<string> {
   const info = getCachedClaudeCodeInfo();
   if (info.status !== 'available' || !info.path) {
-    return Promise.reject(new ClaudeCodeUnavailableError());
+    throw new ClaudeCodeUnavailableError();
   }
 
   const cwd = options.cwd ?? defaultCwd;
   if (!cwd) {
-    return Promise.reject(
-      new Error(
-        'singleShotClaudeCode: cwd not set. Call setClaudeCodeCwd(dataDir) at startup.',
-      ),
+    throw new Error(
+      'singleShotClaudeCode: cwd not set. Call setClaudeCodeCwd(dataDir) at startup.',
     );
+  }
+
+  // Pre-flight: if the cached probe already knows the CLI is unauthenticated,
+  // skip the spawn entirely. Routine/extract callers see a fast, classified
+  // failure instead of a 60 s idle-watchdog kill.
+  const probe = await probeClaudeAuth();
+  if (!probe.ok) {
+    throw new ClaudeCodeNotSignedInError(probe.reason);
   }
 
   const args: string[] = [
     '-p', options.prompt,
     '--agent', options.agent,
     '--output-format', 'text',
-    '--max-turns', String(options.maxTurns ?? 5),
   ];
+
+  // Mirror plain `claude -p`: no --max-turns unless the caller explicitly
+  // budgeted one. Auto-compaction handles long runs.
+  if (typeof options.maxTurns === 'number') {
+    args.push('--max-turns', String(options.maxTurns));
+  }
 
   if (options.model) {
     args.push('--model', options.model);
@@ -105,7 +127,7 @@ export function singleShotClaudeCode(options: SingleShotOptions): Promise<string
   const env = { ...process.env } as Record<string, string>;
   delete env.CLAUDECODE;
 
-  return new Promise<string>((resolve, reject) => {
+  return await new Promise<string>((resolve, reject) => {
     if (options.signal?.aborted) {
       reject(new Error('Aborted'));
       return;

@@ -8,15 +8,22 @@ import {
 
 export type ToastType = 'error' | 'success' | 'info';
 
+/** Optional clickable affordance rendered as a button inside the toast. */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: string;
   message: string;
   type: ToastType;
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
   toasts: Toast[];
-  addToast: (message: string, type?: ToastType) => void;
+  addToast: (message: string, type?: ToastType, action?: ToastAction) => void;
   dismissToast: (id: string) => void;
 }
 
@@ -32,10 +39,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addToast = useCallback(
-    (message: string, type: ToastType = 'info') => {
+    (message: string, type: ToastType = 'info', action?: ToastAction) => {
       const id = String(++nextId);
-      setToasts((prev) => [...prev, { id, message, type }]);
-      setTimeout(() => dismissToast(id), 4000);
+      setToasts((prev) => [...prev, { id, message, type, action }]);
+      // Actionable toasts linger a little longer so the user has time to click.
+      setTimeout(() => dismissToast(id), action ? 8000 : 4000);
     },
     [dismissToast],
   );

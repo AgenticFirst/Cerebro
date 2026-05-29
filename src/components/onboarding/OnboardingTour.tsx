@@ -16,9 +16,19 @@ import { TOUR_STEPS } from './tour-steps';
 import WelcomeStep from './WelcomeStep';
 import SpotlightStep from './SpotlightStep';
 import CompletionStep from './CompletionStep';
+import InstallCheckStep from './InstallCheckStep';
 
 export default function OnboardingTour() {
-  const { isOpen, step, stepIndex, next, prev, finish } = useOnboarding();
+  const {
+    isOpen,
+    step,
+    stepIndex,
+    next,
+    prev,
+    finish,
+    standaloneInstallCheck,
+    markInstallSeen,
+  } = useOnboarding();
   const { setActiveScreen } = useChat();
 
   // Drive the active screen from the current step.
@@ -61,6 +71,25 @@ export default function OnboardingTour() {
 
   if (step.kind === 'welcome') {
     return <WelcomeStep />;
+  }
+
+  if (step.kind === 'install-check') {
+    return (
+      <InstallCheckStep
+        standalone={standaloneInstallCheck}
+        onSeen={markInstallSeen}
+        onAdvance={() => {
+          // In standalone mode (existing user, missing CLI) we just close —
+          // there's no celebration to advance to. In tour mode we hand off
+          // to the next step (which is the celebration).
+          if (standaloneInstallCheck) {
+            finish({ skipped: false });
+          } else {
+            next();
+          }
+        }}
+      />
+    );
   }
 
   if (step.kind === 'completion') {

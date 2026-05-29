@@ -11,40 +11,11 @@ import { EventEmitter } from 'node:events';
 import * as pty from 'node-pty';
 import { getCachedClaudeCodeInfo } from '../claude-code/detector';
 import { wrapClaudeSpawn } from '../sandbox/wrap-spawn';
+import { toUuidFormat } from '../claude-code/session-id';
+import { stripAnsi, stripAnsiFull } from '../utils/ansi';
 
 const PTY_BUFFER_INTERVAL_MS = 16; // ~60fps
 const MAX_ACCUMULATED_TEXT = 512 * 1024; // cap ANSI-stripped text in memory
-
-/**
- * Format a 32-char hex ID (as produced by Python's `uuid.uuid4().hex`) into
- * the dashed UUID form that Claude Code's `--session-id` / `--resume` flags
- * require. Leaves already-dashed UUIDs untouched.
- */
-function toUuidFormat(id: string): string {
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-    return id;
-  }
-  if (/^[0-9a-f]{32}$/i.test(id)) {
-    return `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
-  }
-  return id;
-}
-
-/** Strip CSI codes used for coloring/cursor. Fast path for 'text' events. */
-function stripAnsi(data: string): string {
-  return data
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-    .replace(/\x1b\][^\x07]*\x07/g, '');
-}
-
-/** Aggressive strip including OSC, DCS, and 1-char ESC sequences for plaintext matching. */
-function stripAnsiAggressive(data: string): string {
-  return data
-    .replace(/\x1b\[[0-9;?]*[a-zA-Z@]/g, '')
-    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '')
-    .replace(/\x1b[PX^_][^\x1b]*\x1b\\/g, '')
-    .replace(/\x1b[=>NOc78]/g, '');
-}
 
 export interface TaskPtyRunOptions {
   runId: string;
@@ -92,11 +63,14 @@ export class TaskPtyRunner extends EventEmitter {
 
     if (options.resume && options.sessionId) {
       args.push('--resume', toUuidFormat(options.sessionId));
-      args.push('--max-turns', String(options.maxTurns ?? 10));
     } else {
       args.push('--session-id', toUuidFormat(options.sessionId || options.runId));
       args.push('--agent', options.agentName);
-      args.push('--max-turns', String(options.maxTurns ?? 10));
+    }
+    // Mirror plain `claude -p`: no --max-turns unless the caller explicitly
+    // budgeted one. Auto-compaction handles long runs.
+    if (typeof options.maxTurns === 'number') {
+      args.push('--max-turns', String(options.maxTurns));
     }
 
     args.push('--verbose');
@@ -198,7 +172,7 @@ export class TaskPtyRunner extends EventEmitter {
 
     this.ptyProcess.onData((data: string) => {
       if (!trustHandled) {
-        strippedAccum += stripAnsiAggressive(data);
+        strippedAccum += stripAnsiFull(data);
         if (/trust\s+this\s+folder/i.test(strippedAccum) || /Yes,\s*I\s*trust/i.test(strippedAccum)) {
           trustHandled = true;
           strippedAccum = '';
@@ -207,7 +181,7 @@ export class TaskPtyRunner extends EventEmitter {
       }
 
       if (!resumePromptInjected && !resumeInjectScheduled) {
-        resumeStripped += stripAnsiAggressive(data);
+        resumeStripped += stripAnsiFull(data);
         // Cap the buffer — the indicator match only needs the tail and the
         // stream can spew megabytes of history replay before the prompt shows.
         if (resumeStripped.length > 4096) {

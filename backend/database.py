@@ -31,7 +31,11 @@ def _migrate(eng) -> None:
         ("step_records", "approval_status", "VARCHAR(20)"),
         ("routines", "notify_channels", "TEXT"),
         ("tasks", "project_path", "VARCHAR(1024)"),
+        ("tasks", "workspace_dir", "VARCHAR(120)"),
         ("tasks", "tags", "TEXT"),
+        ("tasks", "result_md", "TEXT"),
+        ("tasks", "result_title", "VARCHAR(200)"),
+        ("tasks", "result_kind", "VARCHAR(16)"),
         ("task_comments", "queue_status", "VARCHAR(20)"),
         ("task_comments", "pending_expert_id", "VARCHAR(32) REFERENCES experts(id) ON DELETE SET NULL"),
         ("conversations", "expert_id", "VARCHAR(32) REFERENCES experts(id) ON DELETE SET NULL"),
@@ -55,6 +59,7 @@ def _migrate(eng) -> None:
             ("ix_task_comments_queue", "task_comments", "task_id, queue_status"),
             ("ix_conversations_expert_id", "conversations", "expert_id"),
             ("ix_conversations_source_chat", "conversations", "source, external_chat_id"),
+            ("ix_tasks_workspace_dir", "tasks", "workspace_dir"),
         ]
         for idx_name, table, column in index_migrations:
             try:

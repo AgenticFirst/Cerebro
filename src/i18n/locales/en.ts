@@ -11,6 +11,8 @@ const en = {
     delete: 'Delete',
     dismiss: 'Dismiss',
     retry: 'Retry',
+    apply: 'Apply',
+    more: 'More',
     or: 'or',
     search: 'Search...',
     optional: '(optional)',
@@ -34,12 +36,15 @@ const en = {
     integrations: 'Integrations',
     pipeline: 'Pipeline',
     skills: 'Skills',
+    apps: 'Apps',
+    knowledgeBase: 'Knowledge Base',
     settings: 'Settings',
     newChat: 'New Chat',
     expandSidebar: 'Expand sidebar',
     collapseSidebar: 'Collapse sidebar',
     deleteConversation: 'Delete conversation',
     renameConversation: 'Rename conversation',
+    resetSession: 'Start a fresh session',
     untitledConversation: 'New conversation',
     noConversationsYet: 'No conversations yet',
   },
@@ -67,15 +72,128 @@ const en = {
     welcomeCapMemoryDesc: 'Builds context about you, your customers, and your projects over time',
     welcomeHint: 'To message one specific expert directly, open Experts \u2192 Messages.',
     sendPlaceholder: 'Send a message...',
+    send: 'Send',
+    stop: 'Stop',
+    stoppedMarker: '_(stopped)_',
+    busyRetry: 'I’m still finishing your previous message — give it a moment and try again.',
+    startFailed: 'Something went wrong on my end. Please try again in a moment.',
+    edit: 'Edit message',
+    save: 'Save',
+    cancel: 'Cancel',
+    editPlaceholder: 'Edit your message',
     copyMessage: 'Copy message',
     copied: 'Copied',
     messageCopied: 'Message copied',
     copyFailed: 'Couldn\u2019t copy to clipboard',
+    expand: 'Expand',
+    collapse: 'Collapse',
+    showMore: 'Show more',
+    showLess: 'Show less',
     attachFiles: 'Attach files',
     dropToAttach: 'Drop files to attach',
+    pasteImageFailed: 'Couldn’t paste image',
+    pasteImageTooLarge: 'Image too large to paste (max 20 MB)',
     thinking: 'Cerebro is thinking',
     you: 'You',
     cerebro: 'Cerebro',
+    helpChip: {
+      label: 'Help',
+      tooltip: 'See what Cerebro can do',
+    },
+    speedSelector: {
+      label: 'Response settings',
+      tooltipFormat: '{{tier}} · {{model}}',
+      separator: ' · ',
+      sections: {
+        speed: 'Response speed',
+        speedHint: 'How long Cerebro spends on the answer.',
+        model: 'Model',
+        modelHint: 'Which Claude model answers. Independent of speed.',
+      },
+      tiers: {
+        fast: {
+          label: 'Fast',
+          eta: '~30s',
+          description: 'One expert, one pass. Good for quick questions.',
+        },
+        medium: {
+          label: 'Medium',
+          eta: '~1–2m',
+          description: 'Team handoff, balanced depth. Default.',
+        },
+        slow: {
+          label: 'Slow',
+          eta: '~5m+',
+          description: 'Full team, deep synthesis, day-by-day detail.',
+        },
+      },
+      models: {
+        haiku: {
+          label: 'Haiku',
+          description: 'Fastest and cheapest. Good for simple questions.',
+        },
+        sonnet: {
+          label: 'Sonnet',
+          description: 'Balanced quality and cost. Default.',
+        },
+        opus: {
+          label: 'Opus',
+          description: 'Smartest, most expensive. Use for hard problems.',
+        },
+      },
+    },
+    claudeCodeLogin: {
+      title: 'Sign in to Claude',
+      body: 'Cerebro lost its connection to Claude. Click the button to start the sign-in flow — we’ll open the link in your browser and resume your message automatically.',
+      startButton: 'Start sign-in',
+      openLinkButton: 'Open sign-in link',
+      waitingBrowser: 'Waiting for browser sign-in to complete…',
+      codePlaceholder: 'Paste the code from your browser',
+      submitCodeButton: 'Submit code',
+      verifying: 'Verifying…',
+      retryButton: 'Try again',
+      codeFailed: 'That code wasn’t accepted. Open the link again to get a fresh one.',
+      successTitle: 'Signed in to Claude',
+      successBody: 'Resending your message…',
+    },
+  },
+
+  // ── Capabilities help modal ─────────────────────────────────
+  capabilitiesModal: {
+    title: 'What Cerebro can do',
+    subtitle: 'Ask in plain English or Spanish — Cerebro picks the right tool, asks for missing details, and pauses for your approval before running anything that touches the outside world.',
+    sections: {
+      actions: 'Integration actions',
+      skills: 'Skills',
+      experts: 'Experts',
+      examples: 'Try saying',
+    },
+    availability: {
+      connected: 'Connected',
+      notConnected: 'Not connected',
+      setUp: 'Set up',
+    },
+    emptyActions: 'No connected integrations yet. Visit Connections to wire up HubSpot, Telegram, WhatsApp, or any other supported service.',
+    emptySkills: 'No skills installed yet.',
+    emptyExperts: 'No experts yet.',
+    examplesIntro: 'Try saying any of these:',
+    examples: [
+      'Create a HubSpot ticket: customer X can’t log in.',
+      'Crea un ticket de HubSpot: el cliente X no puede iniciar sesión.',
+      'Send a Telegram to chat 123456789 saying I’ll be 10 minutes late.',
+      'Envía un Telegram al chat 123456789 diciendo que llegaré 10 minutos tarde.',
+      'Send a WhatsApp to +14155552671 saying the package arrived.',
+      'GET https://status.example.com/health and tell me if it returns 200.',
+    ],
+    close: 'Close',
+  },
+
+  // ── Chat actions (status messages) ──────────────────────────
+  chatActions: {
+    approval: {
+      pending: 'Waiting for your approval in the Approvals tab…',
+      denied: 'You denied this action.',
+    },
   },
 
   // ── Tool call card ──────────────────────────────────────────
@@ -88,6 +206,7 @@ const en = {
     runningElapsed: 'Running... {{seconds}}s',
     running: 'Running...',
     workingOnIt: 'Working on it\u2026',
+    stopped: 'Stopped',
     actionsCount_one: '{{count}} action',
     actionsCount_other: '{{count}} actions',
   },
@@ -155,6 +274,8 @@ const en = {
   // ── Team run card ───────────────────────────────────────────
   teamRun: {
     completedProgress: '{{done}}/{{total}} completed',
+    elapsedSeconds: 'Running for {{seconds}}s',
+    elapsedMinutes: 'Running for {{minutes}}m {{seconds}}s',
   },
 
   // ── Expert tray ─────────────────────────────────────────────
@@ -169,10 +290,15 @@ const en = {
     webhook: 'Webhook',
     chat: 'Chat',
     telegramMessage: 'Telegram Message',
+    whatsappMessageTrigger: 'WhatsApp Message Trigger',
+    githubIssueOpened: 'GitHub: Issue Opened',
+    githubPrReviewRequested: 'GitHub: PR Review Requested',
     scheduleTrigger: 'Schedule Trigger',
     manualTrigger: 'Manual Trigger',
     webhookTrigger: 'Webhook Trigger',
     telegramMessageTrigger: 'Telegram Message Trigger',
+    githubIssueOpenedTrigger: 'GitHub Issue Opened Trigger',
+    githubPrReviewRequestedTrigger: 'GitHub PR Review Requested Trigger',
     appEventTrigger: 'App Event Trigger',
     trigger: 'Trigger',
     noScheduleSet: 'No schedule set',
@@ -250,7 +376,11 @@ const en = {
     startTask: 'Start',
     rerunTask: 'Re-run',
     retryTask: 'Retry',
+    resumeTask: 'Resume',
+    interruptedBadge: 'Interrupted',
+    interruptedHint: 'Cerebro was closed while this task was running. Click Resume to continue.',
     startNeedsExpert: 'Assign an Expert before starting this task',
+    startFailed: 'Could not start the Expert. Check the task and try again.',
     moveTo: 'Move to',
     previewWaiting: 'Waiting for files',
     previewWaitingHint: 'The preview will appear here once the Expert creates files in the workspace, or when a dev server URL is detected.',
@@ -315,6 +445,25 @@ const en = {
     drawerArtifacts: 'Artifacts',
     drawerArtifactsEmpty: 'No artifacts yet',
     drawerArtifactsMore: '+{{count}} more',
+    // Result / Files tabs
+    tabFiles: 'Files',
+    tabFilesWithCount: 'Files · {{count}}',
+    previewResultTitle: 'Result',
+    previewResultUntitled: 'Task result',
+    previewResultCopy: 'Copy result',
+    previewResultCopied: 'Copied',
+    previewResultEmpty: "Waiting for the expert's delivery. In the meantime, check the **Console** to see what it's doing.",
+    previewResultRunning: 'The expert is still working — open the **Console** to follow along.',
+    previewSeeAllFiles: 'See all files →',
+    filesEmpty: "The expert hasn't written any files yet.",
+    filesEmptyHint: "When the expert saves a file in its workspace, it'll show up here.",
+    filesRecent: 'Recent',
+    filesAll: 'All files',
+    filesCount_one: '{{count}} file in workspace',
+    filesCount_other: '{{count}} files in workspace',
+    filesRevealWorkspace: 'Reveal workspace in Finder',
+    filesBack: 'Back to list',
+    filesPreviewUnavailable: "This file can't be previewed here. Reveal it in Finder.",
     // Mentions + Activity
     mentionPlaceholder: 'Mention an expert\u2026',
     mentionNoResults: 'No matching experts',
@@ -330,6 +479,18 @@ const en = {
     queueFailedPromptMessage: 'The previous run did not finish ({{reason}}). Still send the queued instruction to {{expert}}?',
     queueFailedSend: 'Send to {{expert}}',
     queueFailedDiscard: 'Discard',
+    // Attachments
+    attachmentsLabel: 'Attachments',
+    attachmentsAdd: 'Attach',
+    attachmentsAddTitle: 'Attach files to this task',
+    attachmentsEmpty: 'Drag files here or click Attach',
+    attachmentsDropHint: 'Drop to attach',
+    attachmentsRemove: 'Remove attachment',
+    attachmentsReveal: 'Reveal in Finder',
+    attachmentsOpen: 'Open',
+    attachmentsCopied_one: '{{count}} file added to the task workspace',
+    attachmentsCopied_other: '{{count}} files added to the task workspace',
+    attachmentsCopyFailed: 'Some attachments could not be copied',
   },
 
   // ── Files screen ────────────────────────────────────────────
@@ -396,6 +557,20 @@ const en = {
     previewBinary: 'No preview available for {{ext}} files',
     previewOpenExternal: 'Open with default app',
     previewTooLarge: 'File too large to preview ({{size}})',
+    previewClose: 'Close preview',
+    previewMissing: 'File no longer exists at this location.',
+    previewOutsideSafeRoot: 'This file is outside the previewable area.',
+    previewParseFailed: "Couldn't parse this file. Open externally to view it.",
+    previewParsing: 'Parsing document…',
+    previewLoading: 'Loading preview…',
+    previewActionDownload: 'Download to ~/Downloads',
+    previewActionSaveToFiles: 'Save to Files',
+    previewActionReveal: 'Reveal in Finder',
+    previewActionOpenExternal: 'Open with default app',
+    previewTabRendered: 'Rendered',
+    previewTabRaw: 'Raw',
+    previewTabExtractedText: 'Extracted text',
+    chatPreviewOpen: 'Preview file',
   },
 
   // ── Routine editor ──────────────────────────────────────────
@@ -468,6 +643,16 @@ const en = {
     skills: 'SKILLS',
     systemContext: 'SYSTEM CONTEXT',
     systemPromptPlaceholder: "Define this expert's behavior and personality...",
+    referenceDocs: 'REFERENCE DOCUMENTS',
+    referenceDocsHelp:
+      'Files attached here are pre-parsed and injected into the expert’s system prompt for every chat. Mark a file as a TEMPLATE to require the expert to follow its structure exactly.',
+    addReferenceFile: 'Add file',
+    noReferenceFiles: 'No reference documents yet.',
+    referenceKindReference: 'Reference',
+    referenceKindTemplate: 'Template',
+    referenceTruncated: 'Truncated to fit context budget',
+    removeReferenceFile: 'Remove',
+    addingReferenceFile: 'Uploading…',
     settingsSection: 'SETTINGS',
     enabled: 'Enabled',
     pinnedLabel: 'Pinned',
@@ -584,6 +769,9 @@ const en = {
     runNow: 'Run Now',
     deleteRoutine: 'Delete routine',
     deleteConfirm: 'Delete "{{name}}"? This cannot be undone.',
+    issuesOne: '1 fix needed before this can run',
+    issuesOther: '{{count}} fixes needed before this can run',
+    issueOpenEditor: 'Open editor',
   },
 
   // ── Create routine dialog ───────────────────────────────────
@@ -598,6 +786,8 @@ const en = {
     triggerScheduledDesc: 'Run on a schedule',
     triggerWebhookDesc: 'Run via webhook',
     triggerTelegramDesc: 'Run when a Telegram message arrives',
+    triggerGithubIssueOpenedDesc: 'Run when a new issue opens on a watched GitHub repo',
+    triggerGithubPrReviewDesc: 'Run when a reviewer is requested on a GitHub PR',
     schedule: 'Schedule',
     createRoutine: 'Create Routine',
   },
@@ -648,6 +838,8 @@ const en = {
     triggerScheduled: 'Run this routine on a time-based schedule',
     triggerWebhook: 'Start this routine from an external HTTP call',
     triggerTelegram: 'Start this routine when an inbound Telegram message matches the filter',
+    triggerGithubIssueOpened: 'Start this routine when a new issue opens on a watched GitHub repo',
+    triggerGithubPrReview: 'Start this routine when someone requests a review on a GitHub PR',
     cancel: 'Cancel without creating',
     create: 'Create this routine and open the editor',
     // ActionSidebar / items
@@ -795,8 +987,19 @@ const en = {
     runNotFound: 'Run not found.',
     failedToLoadDetails: 'Failed to load run details.',
     tabSteps: 'Steps',
+    tabLogs: 'Logs',
     tabEvents: 'Events',
     tabChildren: 'Children',
+    logsEmpty: 'No errors logged. Try the Events tab for the full timeline.',
+    logsCopy: 'Copy all',
+    logsCopied: 'Copied',
+    openInLogs: 'Open in Logs',
+    eventFilterAll: 'All',
+    eventFilterErrors: 'Errors',
+    eventFilterTools: 'Tools',
+    eventFilterLogs: 'Logs',
+    eventFilterLifecycle: 'Lifecycle',
+    eventFilterEmpty: 'No events match this filter.',
     noStepsRecorded: 'No steps recorded.',
     today: 'Today, {{time}}',
     yesterday: 'Yesterday, {{time}}',
@@ -821,6 +1024,62 @@ const en = {
     },
   },
 
+  // ── Steps tab: live state, config preview, activity feed ────
+  stepStatus: {
+    queued: 'Queued',
+    queuedWaitingFor: 'Waiting for: {{name}}',
+    runningElapsed: 'Running for {{elapsed}}',
+    lastActivity: 'last activity {{ago}}',
+    completedIn: 'Completed in {{duration}}',
+    skipped: 'Skipped',
+  },
+
+  stepConfig: {
+    expert: 'Expert',
+    globalCerebro: 'Global Cerebro',
+    model: 'Model',
+    modelDefault: 'default',
+    prompt: 'Prompt',
+    maxTurns: 'Max turns',
+    agent: 'Agent',
+    subject: 'Subject',
+    priority: 'Priority',
+    pipeline: 'Pipeline',
+    stage: 'Stage',
+    contact: 'Contact',
+    email: 'Email',
+    phone: 'Phone',
+    firstName: 'First name',
+    lastName: 'Last name',
+    method: 'Method',
+    url: 'URL',
+    auth: 'Auth',
+    target: 'Target',
+    message: 'Message',
+    title: 'Title',
+    body: 'Body',
+    urgency: 'Urgency',
+    chatId: 'Chat ID',
+    notSet: 'not set',
+    useDefaults: 'use defaults',
+    rawInput: 'Raw input',
+    rawOutput: 'Raw output',
+  },
+
+  liveActivity: {
+    title: 'Live activity',
+    idleWarning: 'Still thinking…',
+    idleWarningLong: 'Working on a tough one…',
+    idleWarningVeryLong: 'Almost there…',
+    toolStart: 'Tool: {{tool}}',
+    toolEnd: 'Tool done: {{tool}}',
+    textDelta: 'LLM text output',
+    hungTitle: 'This step has been silent longer than usual.',
+    hungBody: 'Claude is still working. You can wait, or cancel and try again.',
+    escalationNotice: 'Switched to {{model}} ({{tier}}) for a stronger answer.',
+    authRequired: 'Sign in to Claude Code in your terminal (run `claude`), then retry.',
+  },
+
   // ── Approvals screen ────────────────────────────────────────
   approvals: {
     title: 'Approvals',
@@ -841,6 +1100,10 @@ const en = {
     confirm: 'Confirm',
     deny: 'Deny',
     approve: 'Approve',
+    newToast: 'A new approval is waiting for your review.',
+    newToastAction: 'Review',
+    newNotificationTitle: 'Approval pending',
+    newNotificationBody: 'An action needs your review before it can run.',
   },
 
   // ── Integrations screen ─────────────────────────────────────
@@ -854,6 +1117,124 @@ const en = {
       "Enable inbound events and remote triggers to reach Cerebro when you're away.",
     remoteAccessComingSoon:
       'Outbound relay, webhook endpoints, and identity pairing will be available in a future release.',
+    card: {
+      cardTitle: 'Connect {{name}}',
+      proposedSubtitle: 'Cerebro can walk you through this setup.',
+      connectingSubtitle: 'Setup in progress…',
+      connectedSubtitle: 'Connected.',
+      connectButton: 'Connect',
+      dismissButton: 'Dismiss',
+      manageInSettings: 'Manage in Settings',
+      learnMore: 'Learn more',
+      reopen: 'Reopen setup',
+    },
+    generic: {
+      stepLabel: 'Step {{current}} of {{total}}',
+      next: 'Continue',
+      back: 'Back',
+      cancel: 'Cancel',
+      verify: 'Verify',
+      verifying: 'Verifying…',
+      verified: 'Verified.',
+      save: 'Save & connect',
+      saving: 'Saving…',
+      done: 'Done',
+      stepsTitle: 'Get your credentials',
+      fieldsTitle: 'Enter credentials',
+      docsLink: 'Open documentation',
+    },
+    telegram: {
+      name: 'Telegram',
+      description: 'Message Cerebro via a Telegram bot.',
+      fields: { botToken: 'Bot token' },
+      hints: { botToken: 'Looks like 123456789:AA…' },
+      steps: {
+        openBotFather: 'Open Telegram and start a chat with @BotFather.',
+        runNewbot: 'Send /newbot and follow the prompts to name your bot.',
+        copyToken: 'Copy the token BotFather sends back — it looks like 123456789:AA…',
+        pasteHere: 'Paste the token in the next step. Cerebro verifies it and stores it encrypted.',
+      },
+    },
+    slack: {
+      name: 'Slack',
+      description: 'Talk to Cerebro from Slack — DMs, channel mentions, and /cerebro.',
+      fields: {
+        botToken: 'Bot User OAuth Token',
+        appToken: 'App-Level Token',
+      },
+      hints: {
+        botToken: 'Starts with xoxb-… (from Install App → Bot User OAuth Token)',
+        appToken: 'Starts with xapp-… (from Basic Information → App-Level Tokens, scope connections:write)',
+      },
+      steps: {
+        copyManifest: 'Copy the Slack manifest YAML Cerebro provides — it preconfigures scopes, events, and the /cerebro slash command.',
+        createApp: 'In Slack, open api.slack.com/apps → Create New App → From an app manifest. Paste the YAML and pick your workspace.',
+        installWorkspace: 'In the new app, open Install App in the sidebar and click Install to Workspace.',
+        copyBotToken: 'On Install App, copy the Bot User OAuth Token (starts with xoxb-).',
+        generateAppToken: 'On Basic Information → App-Level Tokens, click Generate. Name it (e.g. socket), add scope connections:write, and copy the xapp- token.',
+        pasteHere: 'Paste both tokens in the next step. Cerebro verifies them via auth.test and stores them encrypted.',
+      },
+    },
+    hubspot: {
+      name: 'HubSpot',
+      description: 'Create tickets and update contacts in your HubSpot CRM.',
+      fields: { accessToken: 'Private app access token' },
+      hints: { accessToken: 'pat-na1-… (HubSpot private-app token)' },
+      steps: {
+        openSettings: 'In HubSpot, open Settings → Integrations → Private Apps.',
+        createPrivateApp: 'Click Create a private app and give it a name.',
+        grantScopes: 'Under Scopes, enable tickets, contacts, and pipelines (read + write).',
+        copyToken: 'Click Create app, then Show token and copy it.',
+        pasteHere: 'Paste the token in the next step.',
+      },
+    },
+    whatsapp: {
+      name: 'WhatsApp',
+      description: 'Pair a WhatsApp account so Cerebro can send and receive messages.',
+      fields: {},
+      hints: {},
+      steps: {
+        openWhatsApp: 'Open WhatsApp on your phone.',
+        linkedDevices: 'Go to Settings → Linked devices → Link a device.',
+        scanQr: 'Scan the QR code Cerebro shows in the next step.',
+      },
+    },
+    ghl: {
+      name: 'GoHighLevel',
+      description: 'Sync contacts and push intel briefs to your GoHighLevel CRM.',
+      fields: {
+        apiKey: 'Private Integration API key',
+        locationId: 'Location ID',
+      },
+      hints: {
+        apiKey: 'pit-… (Private Integration token from GoHighLevel)',
+        locationId: 'The sub-account (location) id, e.g. abc123…',
+      },
+      steps: {
+        openSettings: 'In GoHighLevel, open Settings → Integrations → Private Integrations.',
+        createPrivateApp: 'Create a Private Integration with the contacts and notes scopes (read + write).',
+        copyApiKey: 'Copy the API key it shows after creation — it starts with pit-….',
+        copyLocationId: 'Grab the location id from the GHL URL of the sub-account you want to sync.',
+        pasteHere: 'Paste both values in the next step. Cerebro verifies them by hitting the GHL contacts API.',
+      },
+    },
+    github: {
+      name: 'GitHub',
+      description: 'Drive issues, pull requests, and code reviews from chat and routines.',
+      fields: {
+        personalAccessToken: 'Personal access token',
+      },
+      hints: {
+        personalAccessToken: 'ghp_… (classic) or github_pat_… (fine-grained)',
+      },
+      steps: {
+        openSettings: 'In GitHub, open Settings → Developer settings → Personal access tokens.',
+        createPersonalAccessToken: 'Generate a new token (classic or fine-grained).',
+        grantScopes: 'Grant the repo scope (or fine-grained Issues, Pull Requests, Contents read+write on the repos you want Cerebro to touch).',
+        copyToken: 'Copy the token — GitHub only shows it once.',
+        pasteHere: 'Paste it in the next step. Cerebro verifies it by calling /user.',
+      },
+    },
   },
 
   // ── Engine section ──────────────────────────────────────────
@@ -893,6 +1274,8 @@ const en = {
     slackDesc: 'Team messaging and notifications',
     ghl: 'GoHighLevel',
     ghlDesc: 'Sync contacts and push intel briefs to your GHL CRM.',
+    github: 'GitHub',
+    githubDesc: 'Manage issues, pull requests, and code reviews from chat and routines.',
   },
 
   // ── GoHighLevel section ─────────────────────────────────────
@@ -913,6 +1296,46 @@ const en = {
     testFailed: 'Connection test failed.',
   },
 
+  // ── GitHub section (within Connected Apps) ──────────────────
+  githubSection: {
+    title: 'GitHub',
+    description:
+      'Drive GitHub from chat ("review PR #42", "open an issue") and trigger routines on inbound events (new issue, review requested). Cerebro polls watched repos every minute — no public webhook URL required.',
+    tokenLabel: 'Personal access token',
+    tokenPlaceholder: 'ghp_… or github_pat_…',
+    tokenHelp: 'Token is encrypted at rest. Required scopes: repo (classic) or Issues + Pull Requests + Contents (fine-grained).',
+    verify: 'Verify',
+    verifying: 'Verifying…',
+    verified: 'Verified',
+    replaceToken: 'Replace',
+    clearToken: 'Disconnect',
+    cancel: 'Cancel',
+    save: 'Save',
+    saved: 'Saved',
+    connectedAs: 'Connected as @{{login}}',
+    notConnected: 'Not connected',
+    watchedReposLabel: 'Watched repositories',
+    watchedReposHelp:
+      'Routines only fire for repos in this list. Outbound chat actions can target any repo your token can reach.',
+    addRepoPlaceholder: 'owner/repo',
+    addRepo: 'Add',
+    removeRepo: 'Remove',
+    pickFromList: 'Pick from your repos',
+    refreshRepoList: 'Refresh',
+    noRepos: 'No repositories watched yet.',
+    statusRunning: 'Polling',
+    statusStopped: 'Stopped',
+    lastPoll: 'Last poll',
+    lastError: 'Last error',
+    rateLimit: 'API quota',
+    rateLimitRemaining: '{{remaining}} req/hr remaining',
+    never: 'never',
+    storageEncrypted:
+      'Token is encrypted at rest using your operating system’s keychain (Keychain on macOS, DPAPI on Windows, libsecret on Linux).',
+    storagePlaintextFallback:
+      'Your OS keychain isn’t available, so the token is stored in plaintext on disk. Install libsecret (Linux) or run as a normal user session to enable encrypted storage.',
+  },
+
   // ── Channels section ────────────────────────────────────────
   channelsSection: {
     title: 'Channels',
@@ -921,6 +1344,9 @@ const en = {
     telegram: 'Telegram',
     telegramDesc: 'Message Cerebro via Telegram bot',
     telegramDescConnected: 'Connected as @{{username}}',
+    slack: 'Slack',
+    slackDesc: 'DM Cerebro, mention @Cerebro in channels, or use /cerebro.',
+    slackDescConnected: 'Connected to {{teamName}}.',
     whatsapp: 'WhatsApp',
     whatsappDesc: 'Pair a WhatsApp Business number for customer-support routines.',
     whatsappDescConnected: 'Connected as {{phone}}.',
@@ -988,6 +1414,138 @@ const en = {
     enableDiscoveryMode: 'Enable in discovery mode',
   },
 
+  // ── Slack connect modal (onboarding tour) ──────────────────
+  slackConnect: {
+    stepLabel: 'Step {{current}} of {{total}}',
+    back: 'Back',
+    continue: 'Continue',
+    skip: 'Skip',
+    enableAndFinish: 'Enable & finish',
+    enabling: 'Enabling…',
+    enableFailed: 'Could not start the bridge.',
+    verifiedAs: 'Verified on workspace {{teamName}}',
+    storageLabel: 'Storage',
+    storageKeychain: 'OS keychain',
+    storagePlaintext: 'Plaintext fallback',
+
+    step1Title: 'Create your Slack app',
+    step1Body:
+      'Cerebro ships a manifest YAML that preconfigures everything: bot user, slash command, scopes, and Socket Mode. You\'ll paste it into Slack\'s "Create from manifest" flow.',
+    step1Item1: 'Copy the manifest below.',
+    step1Item2: 'Open api.slack.com/apps → Create New App → From an app manifest.',
+    step1Item3: 'Pick the workspace where Cerebro should live.',
+    step1Item4: 'Paste the manifest and click Create.',
+    copyManifest: 'Copy manifest YAML',
+    copyManifestDone: 'Copied!',
+    openSlackApps: 'Open Slack App builder',
+
+    step2Title: 'Install to your workspace',
+    step2Body:
+      'In your new app, go to Install App in the left sidebar and click Install to Workspace. Slack will ask you to approve the requested scopes. After approval you\'ll see a Bot User OAuth Token starting with xoxb-.',
+
+    step3Title: 'Paste your bot token',
+    step3Body:
+      'On the Install App page, copy the Bot User OAuth Token (starts with xoxb-) and paste it here.',
+    botTokenLabel: 'Bot User OAuth Token',
+    botTokenPlaceholder: 'xoxb-…',
+
+    step4Title: 'Generate your app-level token',
+    step4Body:
+      'Go to Basic Information → App-Level Tokens → Generate Token and Scopes. Name it (e.g. socket), add the connections:write scope, and click Generate. Copy the xapp- token.',
+    appTokenLabel: 'App-Level Token',
+    appTokenPlaceholder: 'xapp-…',
+    openBasicInformation: 'Open Basic Information page',
+
+    step5Title: 'Verify & enable',
+    step5Body:
+      'Cerebro will call auth.test with your bot token and open a quick connection with your app token to verify Socket Mode works.',
+    step5VerifyFailed: 'Could not verify the tokens. Double-check that the manifest installed cleanly and both tokens were copied without trailing spaces.',
+    verify: 'Verify',
+    verifying: 'Verifying…',
+
+    step6Title: 'You\'re ready',
+    step6Body:
+      'The bridge is online. DM Cerebro, mention @Cerebro in any channel, or type /cerebro help to see the menu. You can change any setting later from the Slack card.',
+    setAllowlistLater: 'Set up the allowlist later from the Slack card.',
+  },
+
+  // ── Slack section (within Channels) ───────────────────────
+  slackSection: {
+    title: 'Slack',
+    description:
+      'Cerebro talks to your team in Slack via Socket Mode — no public URL needed. Each Slack thread is its own conversation, so many people can chat with Cerebro in parallel.',
+    tokensLabel: 'Tokens',
+    tokensVerified: 'Both tokens verified.',
+    botTokenLabel: 'Bot token',
+    appTokenLabel: 'App-level token',
+    botTokenPlaceholder: 'xoxb-…',
+    appTokenPlaceholder: 'xapp-…',
+    verify: 'Verify',
+    verifying: 'Verifying…',
+    save: 'Save',
+    saving: 'Saving…',
+    clear: 'Clear tokens',
+    cleared: 'Tokens cleared.',
+    allowlistChannelsLabel: 'Allowed channels',
+    allowlistChannelsHelp:
+      'Slack channel IDs (Cnnn / Gnnn) where Cerebro can be mentioned. Use * to allow any channel the bot is in.',
+    allowlistUsersLabel: 'Allowed users',
+    allowlistUsersHelp:
+      'Slack user IDs (Unnn) who can DM Cerebro or trigger /cerebro. Use * to allow any workspace member.',
+    operatorUserIdLabel: 'Operator user ID',
+    operatorUserIdHelp:
+      'Slack user ID who receives the Claude sign-in link when the bundled CLI loses authentication. Leave blank to use the first allowlisted user.',
+    saveAllowlist: 'Save allowlist',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    enableLabel: 'Enable bridge',
+    disableLabel: 'Disable bridge',
+    enable: 'Enable',
+    disable: 'Disable',
+    reconnect: 'Reconnect',
+    statusRunning: 'Online — last event {{at}}',
+    statusOffline: 'Offline',
+    statusError: 'Error: {{message}}',
+    connectedAs: 'Connected to {{teamName}}',
+    botUserLabel: 'Bot user',
+    docsLink: 'Slack Socket Mode docs',
+    workspaceLabel: 'Workspace',
+    helpHint:
+      'Need to talk to Cerebro from Slack? DM the bot, mention @Cerebro in any channel, or type /cerebro help.',
+    expertAccessTitle: 'Who can use which experts',
+    expertAccessIntro:
+      'Set what every person in your Slack workspace can use by default — no need to add each person one by one. Then add exceptions only for the few who need something different.',
+    expertAccessExample:
+      'Example: by default your team only sees the Sales Coach. Then add your admin as an exception with full access, and your interns as exceptions limited to a single expert. Everyone else follows the default.',
+    expertAccessDefaultTitle: 'Default access',
+    expertAccessDefaultHelp: 'Applies to everyone in Slack who isn\'t listed as an exception below.',
+    expertAccessDefaultAll: 'All experts',
+    expertAccessDefaultAllHint: 'Anyone in Slack can use any expert. (Current behaviour.)',
+    expertAccessDefaultCustom: 'Only the experts I pick',
+    expertAccessDefaultCustomHint: 'Curate the baseline. Pick once — it applies to your whole team.',
+    expertAccessDefaultCustomEmpty: 'Pick at least one expert below, or no one will have access to anything.',
+    expertAccessExceptionsTitle: 'Exceptions',
+    expertAccessExceptionsHelp:
+      'People who get different access from the default — admins who need everything, contractors who should be limited, etc.',
+    expertAccessNoExceptions:
+      'No exceptions yet. Everyone in Slack follows the default above.',
+    expertAccessAddException: 'Add exception',
+    expertAccessModeAll: 'Full access',
+    expertAccessModeCustom: 'Only specific experts',
+    userExpertAccessLoading: 'Loading…',
+    userExpertAccessLoadingPeople: 'Loading workspace members…',
+    userExpertAccessTapRefresh: 'Press the refresh icon to load your Slack workspace members.',
+    userExpertAccessBridgeOffline: 'Enable the Slack bridge below to load workspace members.',
+    userExpertAccessAddExperts: 'Add experts',
+    userExpertAccessRemovePerson: 'Remove from list',
+    userExpertAccessRemoveExpert: 'Remove {{name}}',
+    userExpertAccessNoneAssigned: 'No experts picked yet — this person cannot use any expert.',
+    userExpertAccessSearchPlaceholder: 'Search by name or email…',
+    userExpertAccessRefresh: 'Refresh',
+    userExpertAccessNoMatch: 'No one matches that search.',
+    userExpertAccessAllAdded: 'Everyone in the workspace is already an exception.',
+  },
+
   // ── Telegram section (within Channels) ──────────────────────
   telegramSection: {
     title: 'Telegram',
@@ -1000,6 +1558,9 @@ const en = {
     verified: 'Verified',
     allowlistLabel: 'Allowed user IDs',
     allowlistHelp: 'Only these Telegram user IDs can chat with the bot. Separate multiple IDs with commas.',
+    operatorChatIdLabel: 'Operator chat ID',
+    operatorChatIdHelp:
+      'Telegram chat ID that receives the Claude sign-in link when the bundled CLI loses authentication. Leave blank to use the first allowlisted user.',
     allowlistHintOption2:
       'Enable the bridge below — even with no IDs it runs in discovery mode. Send any message to your bot from Telegram and it will reply with your numeric ID, which you can paste above.',
     allowlistPlaceholder: '123456789, 987654321',
@@ -1102,10 +1663,66 @@ const en = {
     memory: 'Memory',
     sandbox: 'Sandbox',
     voice: 'Voice',
+    backup: 'Backup',
     appearance: 'Appearance',
     beta: 'Beta Features',
     about: 'About',
     aboutComingSoon: 'About Cerebro coming soon',
+  },
+
+  // ── Backup & restore section ────────────────────────────────
+  backup: {
+    title: 'Backup & Restore',
+    description:
+      'Save everything in Cerebro — conversations, tasks, experts, memory, and attachments — into a single file you can keep safe or move to another machine.',
+    create: {
+      title: 'Create backup',
+      description:
+        'Writes one .cerebro-backup file you can store anywhere. Includes the database and all attached files.',
+      cta: 'Create backup',
+      inProgress: 'Creating…',
+      includeModels:
+        'Include downloaded models (large — GBs). Off by default; models re-download automatically when needed.',
+      estimatedSize: 'Estimated size: {{size}}',
+    },
+    restore: {
+      title: 'Restore from backup',
+      description:
+        'Replaces everything currently in Cerebro with the contents of a backup file. The app will restart after the restore.',
+      cta: 'Restore from file',
+      inspecting: 'Reading backup…',
+    },
+    preview: {
+      title: 'Restore from backup?',
+      stats: '{{conversations}} conversations · {{tasks}} tasks · {{experts}} experts · {{size}} of files',
+      created: 'Created {{when}}',
+      version: 'Cerebro version: {{version}}',
+      warning:
+        'This will REPLACE all current data. A rollback snapshot will be saved first so you can undo if needed.',
+      cancel: 'Cancel',
+      confirm: 'Restore and restart',
+      applying: 'Applying…',
+    },
+    rollbacks: {
+      title: 'Rollback snapshots',
+      description:
+        'Cerebro keeps a snapshot of your state from before each restore so you can undo. Snapshots older than the most recent two are pruned automatically.',
+      undo: 'Undo to this snapshot',
+    },
+    lastBackup: 'Last backup: {{when}} · {{size}}',
+    revealFile: 'Reveal in Finder',
+    crossMachineNote:
+      'Heads up: integrations that store credentials in your OS keychain (Telegram, HubSpot, GitHub, etc.) will need to be re-authenticated after restoring to a different machine.',
+    toasts: {
+      restoreComplete: 'Backup restored. Welcome back.',
+      undoComplete: 'Undo applied. Your previous state is back.',
+    },
+    exportSucceeded: 'Backup saved ({{size}})',
+    exportFailed: 'Backup failed: {{detail}}',
+    inspectFailed: 'Could not read backup: {{detail}}',
+    applyFailed: 'Restore failed: {{detail}}',
+    applyDidNotRelaunch: 'Restore staged but the app did not restart. Please quit and reopen Cerebro.',
+    undoFailed: 'Undo failed: {{detail}}',
   },
 
   // ── Beta features section ──────────────────────────────────
@@ -1676,12 +2293,143 @@ const en = {
         body: "Tell me about you, your team, your goals — once. I'll keep that context across every conversation.",
       },
     },
+    installCheck: {
+      checking: 'Checking Claude Code…',
+      prompt: {
+        title: 'One last thing 🧠',
+        body: 'Cerebro thinks through the Claude Code CLI on your machine. The official installer takes about 30 seconds and doesn’t need Node or admin access.',
+        installCta: 'Install for me',
+        manualToggle: 'Prefer to do it yourself?',
+        manualBody: 'Run this in your terminal, then click verify below:',
+        copy: 'Copy',
+        copied: 'Copied',
+        verifyCta: 'Verify installation',
+        skipLater: "I'll install later",
+        dismissLater: 'Dismiss for now',
+      },
+      installing: {
+        title: 'Installing Claude Code…',
+        body: 'Hang tight — Anthropic’s installer is downloading the binary.',
+        starting: 'Starting installer…',
+        cancel: 'Cancel install',
+      },
+      success: {
+        title: 'Claude Code is ready 🚀',
+        body: 'You’re all set to start chatting.',
+        continuing: 'Continuing…',
+      },
+      failure: {
+        title: 'The installer hit a snag',
+        body: 'No worries — you can retry, or install it manually using the command below.',
+        manualHint: 'Run this in your terminal, then click "Try again" or "Verify":',
+        retry: 'Try again',
+        openDocs: 'Open install docs',
+      },
+    },
     completion: {
       title: "You're all set! 🚀",
       body: "Take me to the chat and let's build something. You can replay this tour anytime from Settings.",
       cta: 'Open Cerebro Chat',
       replayHint: 'Tip: revisit this tour from Settings → Appearance.',
     },
+  },
+
+  // ── In-app update banner ────────────────────────────────────
+  updateBanner: {
+    available: {
+      title: 'Cerebro {{version}} is available',
+      updateNow: 'Update now',
+      viewReleaseNotes: 'View release notes',
+    },
+    downloading: {
+      title: 'Downloading Cerebro {{version}}…',
+      progress: '{{transferred}} / {{total}} ({{percent}}%)',
+      starting: 'Starting download…',
+    },
+    ready: {
+      titleReady: 'Cerebro {{version}} is ready to install',
+      titleDownloaded: 'Cerebro {{version}} downloaded',
+      detailAppImage:
+        'Your chats, tasks, settings, and memory will be preserved. Cerebro will restart to apply the update.',
+      detailLinuxPackage:
+        "Open the installer in your file manager to finish installing, then relaunch Cerebro. Your data is stored separately and won't be touched.",
+      detailDefault:
+        "Open the installer to finish installing, then relaunch Cerebro. Your data is stored separately and won't be touched.",
+      restartToUpdate: 'Restart to update',
+      revealInstaller: 'Reveal installer',
+      openInstaller: 'Open installer',
+      releaseNotes: 'Release notes',
+    },
+    applying: {
+      title: 'Restarting Cerebro {{version}}…',
+      detail:
+        'Verifying the new version can launch. If anything goes wrong the previous version will be restored automatically.',
+    },
+    error: {
+      titleApply: "Couldn't apply the update",
+      titleDownload: "Couldn't download the update",
+      unknownError: 'Unknown error.',
+      detailApply:
+        'Your previous version is still installed. You can try again, or download the installer manually.',
+      detailDownload: 'You can grab the installer manually from the release page.',
+      openReleasePage: 'Open release page',
+      retry: 'Retry',
+      // Kind-aware copy. Picked by the banner based on UpdateErrorKind so
+      // every failure feels specific and reassuring instead of generic.
+      networkTitle: 'The download didn’t complete',
+      networkBody:
+        'This usually clears up on its own — a slow connection, a corporate proxy, or GitHub hiccupping. Your current version is unaffected; we can try again now.',
+      networkRetryCountdown: 'Retry in {{seconds}}s',
+      verifyTitle: 'The download didn’t arrive cleanly',
+      verifyBody:
+        'A check on the downloaded file didn’t match what GitHub published. Nothing has changed on your machine. Let’s grab a fresh copy.',
+      applyTitle: 'The new version couldn’t start',
+      applyBody:
+        'Your current version is still running normally — nothing changed. You can retry from here, or install the new version from the release page when it’s convenient.',
+      disabledTitle: 'Auto-updates are disabled on this machine',
+      disabledBody:
+        'An administrator turned off in-app updates. Open the release page if you want to install manually.',
+      unknownTitle: 'Something went wrong with the update',
+      unknownBody:
+        'Your current version is still working. Try again, and if it keeps happening, open the release page to install manually.',
+    },
+    dismissAria: 'Dismiss update banner',
+  },
+
+  // ── Knowledge Base (Notion-style app) ───────────────────────
+  knowledgeBase: {
+    title: 'Knowledge Base',
+    pagesHeading: 'Pages',
+    newPage: 'New page',
+    newSubpage: 'New subpage',
+    untitled: 'Untitled',
+    rename: 'Rename',
+    delete: 'Delete',
+    moveToTrash: 'Move to trash',
+    duplicate: 'Duplicate',
+    addIcon: 'Add icon',
+    changeIcon: 'Change icon',
+    removeIcon: 'Remove',
+    addCover: 'Add cover',
+    changeCover: 'Change cover',
+    removeCover: 'Remove cover',
+    titlePlaceholder: 'Untitled',
+    searchEmoji: 'Filter…',
+    emptyTreeTitle: 'No pages yet',
+    emptyTreeSubtitle: 'Create your first page to start building your knowledge base.',
+    emptyStateTitle: 'Select a page',
+    emptyStateSubtitle: 'Choose a page from the sidebar or create a new one.',
+    createFirstPage: 'Create a page',
+    saving: 'Saving…',
+    saved: 'Saved',
+    trash: 'Trash',
+    restore: 'Restore',
+    deletePermanently: 'Delete permanently',
+    trashEmpty: 'Trash is empty',
+    confirmDeleteTitle: 'Delete page?',
+    confirmDeleteMessage: 'This page and all of its subpages will be permanently deleted. This cannot be undone.',
+    confirmDelete: 'Delete',
+    cancel: 'Cancel',
   },
 } as const;
 

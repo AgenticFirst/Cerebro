@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Hand, Clock, Webhook } from 'lucide-react';
-import { TelegramIcon } from '../../icons/BrandIcons';
+import { TelegramIcon, GitHubIcon } from '../../icons/BrandIcons';
 import clsx from 'clsx';
 import type { CreateRoutineInput, TriggerType } from '../../../types/routines';
 import type { DayOfWeek } from '../../../utils/cron-helpers';
@@ -72,6 +72,8 @@ export default function CreateRoutineDialog({
     { type: 'cron', icon: Clock, label: t('triggers.scheduled'), desc: t('createRoutine.triggerScheduledDesc'), tipKey: 'routineTooltips.triggerScheduled' },
     { type: 'webhook', icon: Webhook, label: t('triggers.webhook'), desc: t('createRoutine.triggerWebhookDesc'), tipKey: 'routineTooltips.triggerWebhook' },
     { type: 'telegram_message', icon: TelegramIcon as unknown as typeof Hand, label: t('triggers.telegramMessage'), desc: t('createRoutine.triggerTelegramDesc'), tipKey: 'routineTooltips.triggerTelegram' },
+    { type: 'github_issue_opened', icon: GitHubIcon as unknown as typeof Hand, label: t('triggers.githubIssueOpened'), desc: t('createRoutine.triggerGithubIssueOpenedDesc'), tipKey: 'routineTooltips.triggerGithubIssueOpened' },
+    { type: 'github_pr_review_requested', icon: GitHubIcon as unknown as typeof Hand, label: t('triggers.githubPrReviewRequested'), desc: t('createRoutine.triggerGithubPrReviewDesc'), tipKey: 'routineTooltips.triggerGithubPrReview' },
   ];
 
   return (
@@ -134,7 +136,7 @@ export default function CreateRoutineDialog({
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
               {t('createRoutine.trigger')}
             </label>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {triggers.map((trigger) => {
                 const Icon = trigger.icon;
                 return (
@@ -143,7 +145,7 @@ export default function CreateRoutineDialog({
                       type="button"
                       onClick={() => setTriggerType(trigger.type)}
                       className={clsx(
-                        'flex-1 flex flex-col items-center gap-1 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors border',
+                        'min-w-0 flex flex-col items-center gap-1 px-3 py-2.5 rounded-lg text-xs font-medium text-center break-words transition-colors border',
                         triggerType === trigger.type
                           ? 'bg-accent/10 border-accent/30 text-accent'
                           : 'bg-bg-surface border-border-subtle text-text-tertiary hover:text-text-secondary hover:border-border-default',

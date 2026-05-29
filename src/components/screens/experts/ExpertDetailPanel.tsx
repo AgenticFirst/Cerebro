@@ -7,6 +7,7 @@ import { useFeatureFlags } from '../../../context/FeatureFlagsContext';
 import type { Expert } from '../../../context/ExpertContext';
 import ExpertMemoryTab from '../../experts/ExpertMemoryTab';
 import ExpertSkillsSection from './ExpertSkillsSection';
+import ExpertContextFilesSection from './ExpertContextFilesSection';
 import AvatarPicker from './AvatarPicker';
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -397,6 +398,11 @@ export default function ExpertDetailPanel({
                 disabled={isLocked}
                 className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2 text-xs text-text-secondary font-mono leading-relaxed placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors resize-none disabled:opacity-60 disabled:cursor-not-allowed"
               />
+            </Section>
+
+            {/* Reference documents (per-expert context files) */}
+            <Section label={t('experts.referenceDocs')}>
+              <ExpertContextFilesSection expertId={expert.id} isLocked={isLocked} />
             </Section>
 
             {/* Settings */}

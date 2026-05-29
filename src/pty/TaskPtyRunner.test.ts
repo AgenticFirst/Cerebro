@@ -143,12 +143,11 @@ describe('TaskPtyRunner — command construction', () => {
     expect(options.cwd).toBe('/tmp/workspace');
   });
 
-  it('defaults maxTurns to 10 when not provided', () => {
+  it('omits --max-turns entirely when not provided (mirrors interactive `claude`)', () => {
     runner.start({ ...DEFAULT_OPTIONS, maxTurns: undefined });
 
     const args = mockSpawn.mock.calls[0][1] as string[];
-    const idx = args.indexOf('--max-turns');
-    expect(args[idx + 1]).toBe('10');
+    expect(args).not.toContain('--max-turns');
   });
 
   it('formats a 32-char hex runId into a dashed UUID for --session-id', () => {

@@ -21,10 +21,12 @@ export type RequiredConnection =
   | 'whatsapp'
   | 'hubspot'
   | 'telegram'
+  | 'slack'
   | 'tavily'
   | 'anthropic'
   | 'openai'
   | 'google'
+  | 'github'
   | string;
 
 export type TemplateVariableType =

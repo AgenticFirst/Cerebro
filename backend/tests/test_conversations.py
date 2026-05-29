@@ -272,6 +272,67 @@ def test_patch_nonexistent_message_returns_404(client):
     assert r.status_code == 404
 
 
+def test_patch_message_content(client):
+    conv_id = _hex_id()
+    client.post("/conversations", json={"id": conv_id, "title": "EditContent"})
+
+    msg_id = _hex_id()
+    client.post(
+        f"/conversations/{conv_id}/messages",
+        json={"id": msg_id, "role": "user", "content": "old text"},
+    )
+
+    r = client.patch(
+        f"/conversations/{conv_id}/messages/{msg_id}",
+        json={"content": "new text"},
+    )
+    assert r.status_code == 200
+    assert r.json()["content"] == "new text"
+
+
+def test_delete_messages_after_drops_subsequent_messages(client):
+    conv_id = _hex_id()
+    client.post("/conversations", json={"id": conv_id, "title": "Truncate"})
+
+    pivot_id = _hex_id()
+    after_id_1 = _hex_id()
+    after_id_2 = _hex_id()
+
+    # Insert sequentially so created_at strictly increases.
+    client.post(
+        f"/conversations/{conv_id}/messages",
+        json={"id": pivot_id, "role": "user", "content": "first"},
+    )
+    import time as _time
+    _time.sleep(0.01)
+    client.post(
+        f"/conversations/{conv_id}/messages",
+        json={"id": after_id_1, "role": "assistant", "content": "second"},
+    )
+    _time.sleep(0.01)
+    client.post(
+        f"/conversations/{conv_id}/messages",
+        json={"id": after_id_2, "role": "user", "content": "third"},
+    )
+
+    r = client.delete(f"/conversations/{conv_id}/messages/after/{pivot_id}")
+    assert r.status_code == 204
+
+    # The conversations list endpoint nests messages.
+    listing = client.get("/conversations").json()
+    target = next(c for c in listing["conversations"] if c["id"] == conv_id)
+    remaining_ids = [m["id"] for m in target["messages"]]
+    assert remaining_ids == [pivot_id]
+
+
+def test_delete_messages_after_unknown_pivot_returns_404(client):
+    conv_id = _hex_id()
+    client.post("/conversations", json={"id": conv_id, "title": "GhostPivot"})
+
+    r = client.delete(f"/conversations/{conv_id}/messages/after/{_hex_id()}")
+    assert r.status_code == 404
+
+
 # ── Expert-scoped conversations (Messages tab) ────────────────────
 
 

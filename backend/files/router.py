@@ -7,7 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Bucket, FileItem
+from models import Bucket, FileItem, Task
 
 from .schemas import (
     BucketCreate,
@@ -19,9 +19,51 @@ from .schemas import (
     FileItemUpdate,
 )
 
+
+def _to_read(item: FileItem, db: Session) -> FileItemRead:
+    workspace_dir: str | None = None
+    if item.source_task_id:
+        workspace_dir = (
+            db.query(Task.workspace_dir)
+            .filter(Task.id == item.source_task_id)
+            .scalar()
+        )
+    read = FileItemRead.model_validate(item)
+    read.source_task_workspace_dir = workspace_dir
+    return read
+
+
+def _list_to_read(items: list[FileItem], db: Session) -> list[FileItemRead]:
+    task_ids = {i.source_task_id for i in items if i.source_task_id}
+    workspace_dirs: dict[str, str | None] = {}
+    if task_ids:
+        rows = (
+            db.query(Task.id, Task.workspace_dir)
+            .filter(Task.id.in_(task_ids))
+            .all()
+        )
+        workspace_dirs = {tid: wd for tid, wd in rows}
+    reads: list[FileItemRead] = []
+    for item in items:
+        read = FileItemRead.model_validate(item)
+        if item.source_task_id:
+            read.source_task_workspace_dir = workspace_dirs.get(item.source_task_id)
+        reads.append(read)
+    return reads
+
 router = APIRouter()
 
-VALID_SOURCES = {"upload", "chat-save", "workspace-save", "manual"}
+VALID_SOURCES = {
+    "upload",
+    "chat-save",
+    "workspace-save",
+    "manual",
+    "chat-upload",
+    "telegram-inbound",
+    "whatsapp-inbound",
+    "expert-context",
+    "task-attachment",
+}
 VALID_STORAGE_KINDS = {"managed", "workspace"}
 VALID_ORDERS = {"created", "updated", "name", "opened"}
 
@@ -250,7 +292,7 @@ def list_items(
         query = query.order_by(FileItem.created_at.desc())
 
     items = query.offset(offset).limit(limit).all()
-    return [FileItemRead.model_validate(i) for i in items]
+    return _list_to_read(items, db)
 
 
 @router.get("/items/recent", response_model=list[FileItemRead])
@@ -268,7 +310,126 @@ def recent_items(
         .limit(limit)
         .all()
     )
-    return [FileItemRead.model_validate(i) for i in items]
+    return _list_to_read(items, db)
+
+
+class FileItemFromPathRequest(BaseModel):
+    file_path: str  # absolute path on disk; not copied — registered as workspace
+    bucket_id: str | None = None
+    source: str = "manual"
+    source_conversation_id: str | None = None
+    source_message_id: str | None = None
+    source_task_id: str | None = None
+
+
+@router.post("/items/from-path", response_model=FileItemRead, status_code=201)
+def create_item_from_path(body: FileItemFromPathRequest, db: Session = Depends(get_db)):
+    """Convenience: hash + sniff + register a file already on disk in one call.
+
+    Used by MediaIngestService so the TS side doesn't have to re-implement
+    sha256 hashing and MIME guessing.
+    """
+    import hashlib
+    import mimetypes
+
+    if body.source not in VALID_SOURCES:
+        raise HTTPException(400, f"Invalid source: {body.source}")
+    if not os.path.exists(body.file_path):
+        raise HTTPException(404, f"File not found: {body.file_path}")
+    if body.bucket_id and not db.get(Bucket, body.bucket_id):
+        raise HTTPException(400, f"Bucket {body.bucket_id} not found")
+
+    abs_path = os.path.abspath(body.file_path)
+    name = os.path.basename(abs_path)
+    ext = os.path.splitext(name)[1].lower().lstrip(".")
+    size_bytes = os.path.getsize(abs_path)
+
+    # MIME from magic bytes when we can, fall back to extension. Only sniff
+    # the first 512 bytes so we don't slurp a 50 MB video into memory.
+    mime: str | None = None
+    try:
+        with open(abs_path, "rb") as f:
+            head = f.read(512)
+        mime = _sniff_mime(head, ext)
+    except OSError:
+        pass
+    if not mime:
+        mime = mimetypes.guess_type(name)[0]
+
+    h = hashlib.sha256()
+    with open(abs_path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    sha = h.hexdigest()
+
+    # De-dup: if the same sha + same path is already registered with the same
+    # source, return it instead of stacking duplicates.
+    existing = (
+        db.query(FileItem)
+        .filter(
+            FileItem.sha256 == sha,
+            FileItem.storage_path == abs_path,
+            FileItem.source == body.source,
+            FileItem.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if existing is not None:
+        return _to_read(existing, db)
+
+    item = FileItem(
+        bucket_id=body.bucket_id,
+        name=name,
+        ext=ext,
+        mime=mime,
+        size_bytes=size_bytes,
+        sha256=sha,
+        storage_kind="workspace",  # we don't copy bytes — pointer only
+        storage_path=abs_path,
+        source=body.source,
+        source_conversation_id=body.source_conversation_id,
+        source_message_id=body.source_message_id,
+        source_task_id=body.source_task_id,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _to_read(item, db)
+
+
+def _sniff_mime(head: bytes, ext_hint: str) -> str | None:
+    """Identify Office/PDF/image/audio by magic bytes. Returns None on no match
+    so the caller falls back to extension-based guessing."""
+    if head.startswith(b"%PDF-"):
+        return "application/pdf"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    if head[:4] == b"OggS":
+        return "audio/ogg"
+    if head[:4] == b"fLaC":
+        return "audio/flac"
+    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+        return "audio/wav"
+    if head[4:8] == b"ftyp":
+        return "audio/mp4"  # could also be video/mp4 — caller can refine on ext
+    if head[:3] == b"ID3" or (len(head) >= 2 and head[0] == 0xFF and (head[1] & 0xE0) == 0xE0):
+        return "audio/mpeg"
+    if head.startswith(b"PK\x03\x04"):
+        # Zip container — narrow by extension hint for office formats.
+        if ext_hint == "docx":
+            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        if ext_hint == "xlsx":
+            return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        if ext_hint == "pptx":
+            return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        return "application/zip"
+    return None
 
 
 @router.post("/items", response_model=FileItemRead, status_code=201)
@@ -297,7 +458,7 @@ def create_item(body: FileItemCreate, db: Session = Depends(get_db)):
     db.add(item)
     db.commit()
     db.refresh(item)
-    return FileItemRead.model_validate(item)
+    return _to_read(item, db)
 
 
 @router.get("/items/{item_id}", response_model=FileItemRead)
@@ -305,7 +466,7 @@ def get_item(item_id: str, db: Session = Depends(get_db)):
     item = db.get(FileItem, item_id)
     if not item:
         raise HTTPException(404, "File not found")
-    return FileItemRead.model_validate(item)
+    return _to_read(item, db)
 
 
 @router.patch("/items/{item_id}", response_model=FileItemRead)
@@ -333,7 +494,7 @@ def update_item(item_id: str, body: FileItemUpdate, db: Session = Depends(get_db
 
     db.commit()
     db.refresh(item)
-    return FileItemRead.model_validate(item)
+    return _to_read(item, db)
 
 
 @router.post("/items/{item_id}/copy", response_model=FileItemRead, status_code=201)
@@ -362,7 +523,7 @@ def copy_item(item_id: str, body: FileItemCopyRequest, db: Session = Depends(get
     db.add(copy)
     db.commit()
     db.refresh(copy)
-    return FileItemRead.model_validate(copy)
+    return _to_read(copy, db)
 
 
 @router.delete("/items/{item_id}", status_code=204)
@@ -392,7 +553,7 @@ def touch_item(item_id: str, db: Session = Depends(get_db)):
     item.last_opened_at = _utcnow()
     db.commit()
     db.refresh(item)
-    return FileItemRead.model_validate(item)
+    return _to_read(item, db)
 
 
 @router.post("/trash/empty", response_model=list[str])

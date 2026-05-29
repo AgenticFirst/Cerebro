@@ -309,6 +309,10 @@ export class DAGExecutor {
         const enriched = { ...event, runId: this.ctx.runId } as ExecutionEvent;
         this.emitter.emit(enriched);
       },
+      // Pass the full DAG so actions like run_expert can describe their
+      // workflow position to the LLM. Read-only — actions must not
+      // mutate this.
+      dag: this.dag,
     };
 
     // Execute with timeout

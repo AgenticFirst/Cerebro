@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Users,
@@ -49,11 +49,27 @@ function RunStatusBadge({ status }: { status: TeamRun['status'] }) {
   );
 }
 
+function formatElapsed(t: ReturnType<typeof useTranslation>['t'], ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return t('teamRun.elapsedSeconds', { seconds: totalSeconds });
+  return t('teamRun.elapsedMinutes', { minutes, seconds });
+}
+
 export default function TeamRunCard({ teamRun }: TeamRunCardProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [expandedMember, setExpandedMember] = useState<string | null>(null);
   const isRunning = teamRun.status === 'running';
+  const startedAt = teamRun.startedAt;
+
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (!isRunning || !startedAt) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [isRunning, startedAt]);
 
   return (
     <div
@@ -129,6 +145,15 @@ export default function TeamRunCard({ teamRun }: TeamRunCardProps) {
         <div className="border-t border-border-subtle px-3 py-1.5">
           <span className="text-[10px] text-text-tertiary">
             {t('teamRun.completedProgress', { done: teamRun.successCount, total: teamRun.totalCount })}
+          </span>
+        </div>
+      )}
+
+      {/* Elapsed counter while running */}
+      {isRunning && startedAt && (
+        <div className="border-t border-border-subtle px-3 py-1.5">
+          <span className="text-[10px] text-text-tertiary tabular-nums">
+            {formatElapsed(t, now - startedAt)}
           </span>
         </div>
       )}

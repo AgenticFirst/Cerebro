@@ -46,12 +46,22 @@ import {
   type WhatsAppTriggerPayload,
   type WhatsAppTriggerRoutine,
 } from './types';
+import crypto from 'node:crypto';
+import { MediaIngestService } from '../files/media-ingest';
+import { IntegrationStaging } from '../files/staging';
 
 // ── Tunables ────────────────────────────────────────────────────
 
 const OUTBOUND_RATE_PER_HOUR = 30;
 const ROUTINE_CACHE_TTL_MS = 30_000;
 const HISTORY_MESSAGES_IN_PAYLOAD = 20;
+// Liveness watchdog tunables. 20s per-probe sits well under Baileys' default
+// 60s query timeout (avoids false positives on a slow round-trip), while 3
+// consecutive misses recovers a dead socket in ~2-3 min without flapping on a
+// single transient blip.
+const WATCHDOG_INTERVAL_MS = 45_000;        // probe a connected socket every 45s
+const WATCHDOG_PROBE_TIMEOUT_MS = 20_000;   // a probe that hangs >20s counts as a failure
+const WATCHDOG_MAX_FAILURES = 3;            // ~2-3 min of silence before forced reconnect
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -121,10 +131,25 @@ export class WhatsAppBridge implements WhatsAppChannel {
    *  either pairing completes or cancelPairing() is called. */
   private pairingRequested = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Liveness watchdog: detects a connected-but-dead socket and forces a
+   *  reconnect. See WATCHDOG_* constants and startWatchdog(). */
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private watchdogFailures = 0;
+  private watchdogProbing = false;
+
+  private mediaIngest: MediaIngestService;
+  private staging: IntegrationStaging;
+  // Lazily-cached Baileys helper for downloading inbound media bytes.
+  private downloadMedia: ((msg: any) => Promise<Buffer>) | null = null;
 
   constructor(deps: BridgeDeps) {
     this.deps = deps;
     this.sessionDir = path.join(deps.dataDir, 'whatsapp-session');
+    this.mediaIngest = new MediaIngestService({
+      getBackendPort: () => this.deps.backendPort,
+      transcriptDir: path.join(this.deps.dataDir, 'files', '_transcripts'),
+    });
+    this.staging = new IntegrationStaging(this.deps.dataDir);
   }
 
   setWebContents(wc: WebContents): void {
@@ -157,6 +182,7 @@ export class WhatsAppBridge implements WhatsAppChannel {
   }
 
   async stop(): Promise<void> {
+    this.stopWatchdog();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -258,6 +284,10 @@ export class WhatsAppBridge implements WhatsAppChannel {
     return isAllowed(phoneOrJid, this.settings.allowlist);
   }
 
+  isConnected(): boolean {
+    return this.sock !== null && this.state.state === 'connected';
+  }
+
   async sendActionMessage(
     phoneOrJid: string,
     text: string,
@@ -287,6 +317,131 @@ export class WhatsAppBridge implements WhatsAppChannel {
     }
   }
 
+  // ── Outbound media (chat-action surface) ─────────────────────
+  // All seven share the same pre-flight (`outboundGuard`). Baileys sends
+  // media synchronously on the WhatsApp Web socket — long-lived uploads can
+  // drop on multi-MB sends, so callers should treat send errors as recoverable
+  // and let the chat agent retry with permission.
+
+  async sendPhotoActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, (jid) => ({
+      image: { url: filePath },
+      caption,
+    }));
+  }
+
+  async sendDocumentActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+    caption?: string,
+    fileName?: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, () => ({
+      document: { url: filePath },
+      caption,
+      fileName: fileName ?? path.basename(filePath),
+    }));
+  }
+
+  async sendAudioActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, () => ({
+      audio: { url: filePath },
+      mimetype: 'audio/mpeg',
+    }));
+  }
+
+  async sendVideoActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, () => ({
+      video: { url: filePath },
+      caption,
+    }));
+  }
+
+  async sendVoiceActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, () => ({
+      audio: { url: filePath },
+      ptt: true,
+      mimetype: 'audio/ogg; codecs=opus',
+    }));
+  }
+
+  async sendStickerActionMessage(
+    phoneOrJid: string,
+    filePath: string,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    return this.sendBaileysMedia(phoneOrJid, filePath, () => ({
+      sticker: { url: filePath },
+    }));
+  }
+
+  async sendLocationActionMessage(
+    phoneOrJid: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    const guard = this.outboundGuard(phoneOrJid);
+    if (guard.error || !guard.jid) return { messageId: null, error: guard.error };
+    try {
+      const result = await this.sock.sendMessage(guard.jid, {
+        location: { degreesLatitude: latitude, degreesLongitude: longitude },
+      });
+      return { messageId: result?.key?.id ?? null, error: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { messageId: null, error: msg };
+    }
+  }
+
+  /** Common pre-flight for outbound: socket connected + allowlist + rate-limit. */
+  private outboundGuard(phoneOrJid: string): { jid: string | null; digits: string | null; error: string | null } {
+    if (!this.sock || this.state.state !== 'connected') {
+      return { jid: null, digits: null, error: 'WhatsApp bridge is not connected.' };
+    }
+    const digits = normalizePhone(phoneOrJid);
+    if (!digits) return { jid: null, digits: null, error: 'Invalid phone number.' };
+    if (!this.outboundLimiter.allow(digits)) {
+      return { jid: null, digits: null, error: 'Rate limit exceeded for this number.' };
+    }
+    return { jid: toUserJid(digits), digits, error: null };
+  }
+
+  /** Build the Baileys payload via a callback so each media kind can supply
+   * its own field (`image`/`document`/etc.), then send + persist. */
+  private async sendBaileysMedia(
+    phoneOrJid: string,
+    filePath: string,
+    buildPayload: (jid: string) => Record<string, unknown>,
+  ): Promise<{ messageId: string | null; error: string | null }> {
+    const guard = this.outboundGuard(phoneOrJid);
+    if (guard.error || !guard.jid) return { messageId: null, error: guard.error };
+    if (!fs.existsSync(filePath)) {
+      return { messageId: null, error: `file not found: ${filePath}` };
+    }
+    try {
+      const payload = buildPayload(guard.jid);
+      const result = await this.sock.sendMessage(guard.jid, payload);
+      return { messageId: result?.key?.id ?? null, error: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError('sendMedia failed:', msg);
+      return { messageId: null, error: msg };
+    }
+  }
+
   // ── Connection management ────────────────────────────────────
 
   private hasSessionOnDisk(): boolean {
@@ -297,6 +452,7 @@ export class WhatsAppBridge implements WhatsAppChannel {
 
   private async connect(opts: { pairing: boolean }): Promise<void> {
     // Clean up any prior socket.
+    this.stopWatchdog();
     try { this.sock?.ev?.removeAllListeners?.(); this.sock?.end?.(undefined); } catch { /* ignore */ }
     this.sock = null;
 
@@ -315,7 +471,9 @@ export class WhatsAppBridge implements WhatsAppChannel {
       useMultiFileAuthState,
       DisconnectReason,
       fetchLatestBaileysVersion,
+      downloadMediaMessage,
     } = baileys;
+    this.downloadMedia = downloadMediaMessage as (msg: any) => Promise<Buffer>;
 
     await fs.promises.mkdir(this.sessionDir, { recursive: true });
     const { state: authState, saveCreds } = await useMultiFileAuthState(this.sessionDir);
@@ -339,6 +497,19 @@ export class WhatsAppBridge implements WhatsAppChannel {
       printQRInTerminal: false,
       markOnlineOnConnect: false,
       syncFullHistory: false,
+      // Cerebro only acts on live `notify` messages (see the messages.upsert
+      // handler) — it never consumes history backfill or app-state sync.
+      // Returning false makes Baileys flush its event buffer immediately on
+      // connect instead of entering the Syncing state, whose resyncAppState()
+      // can hang on a 60s query timeout and strand the buffer so messages.upsert
+      // never fires again (the "connected but silent" zombie socket).
+      shouldSyncHistoryMessage: () => false,
+      // Fail any internal query fast (default is 60s). shouldSyncHistoryMessage
+      // suppresses history sync but not the app-state resyncAppState() queries
+      // that produce the ~60s connect-time stall; a shorter timeout makes those
+      // surface an error into the `connection: 'close'` reconnect path instead
+      // of hanging.
+      defaultQueryTimeoutMs: 30_000,
     });
     this.sock = sock;
 
@@ -370,8 +541,10 @@ export class WhatsAppBridge implements WhatsAppChannel {
           hasCreds: true,
         });
         log(`connected as ${me?.id ?? '(unknown)'}`);
+        this.startWatchdog();
       }
       if (connection === 'close') {
+        this.stopWatchdog();
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
         const loggedOut = statusCode === DisconnectReason?.loggedOut;
         log('connection closed, statusCode=', statusCode, 'loggedOut=', loggedOut);
@@ -408,6 +581,67 @@ export class WhatsAppBridge implements WhatsAppChannel {
     });
   }
 
+  // ── Liveness watchdog ────────────────────────────────────────
+
+  /** Begin periodic liveness probing of the live socket. Idempotent: a second
+   *  call while a timer is already running is a no-op, so reconnects that re-open
+   *  the connection can't stack timers. */
+  private startWatchdog(): void {
+    if (this.watchdogTimer) return;
+    this.watchdogFailures = 0;
+    this.watchdogTimer = setInterval(() => { void this.probeLiveness(); }, WATCHDOG_INTERVAL_MS);
+    // Don't let the watchdog keep the process alive on its own.
+    if (typeof this.watchdogTimer.unref === 'function') this.watchdogTimer.unref();
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+    this.watchdogFailures = 0;
+    this.watchdogProbing = false;
+  }
+
+  /** Actively round-trip a cheap query against the socket. A hang or error past
+   *  WATCHDOG_PROBE_TIMEOUT_MS counts as a failure; after WATCHDOG_MAX_FAILURES
+   *  consecutive failures we tear the socket down and let the `connection:
+   *  'close'` handler schedule the reconnect (single reconnect funnel). */
+  private async probeLiveness(): Promise<void> {
+    if (this.watchdogProbing) return; // a prior probe is still in flight
+    if (!this.sock || this.state.state !== 'connected') return;
+    this.watchdogProbing = true;
+    const sock = this.sock;
+    try {
+      // fetchPrivacySettings(true) forces a real server round-trip (the
+      // unforced call can return a cached value and mask a dead socket).
+      await Promise.race([
+        sock.fetchPrivacySettings(true),
+        new Promise((_resolve, reject) =>
+          setTimeout(() => reject(new Error('watchdog probe timed out')), WATCHDOG_PROBE_TIMEOUT_MS),
+        ),
+      ]);
+      this.watchdogFailures = 0;
+    } catch (err) {
+      if (sock !== this.sock) return; // socket was swapped out from under us
+      this.watchdogFailures += 1;
+      logError(
+        `watchdog probe failed (${this.watchdogFailures}/${WATCHDOG_MAX_FAILURES}):`,
+        err instanceof Error ? err.message : String(err),
+      );
+      if (this.watchdogFailures >= WATCHDOG_MAX_FAILURES && this.settings.enabled && !this.pairingRequested) {
+        log('watchdog: socket unresponsive, forcing reconnect');
+        this.stopWatchdog();
+        // Ending the socket emits `connection: 'close'`, whose handler clears
+        // any prior timer and schedules the 5s reconnect — we don't schedule
+        // our own to avoid a double reconnect.
+        try { sock.end?.(new Error('watchdog: unresponsive socket')); } catch { /* ignore */ }
+      }
+    } finally {
+      this.watchdogProbing = false;
+    }
+  }
+
   // ── Inbound dispatch ─────────────────────────────────────────
 
   private async handleIncomingMessage(msg: any): Promise<void> {
@@ -418,8 +652,11 @@ export class WhatsAppBridge implements WhatsAppChannel {
     const remoteJid: string | undefined = msg.key?.remoteJid;
     if (!remoteJid || !remoteJid.endsWith('@s.whatsapp.net')) return;
 
-    const text = extractMessageText(msg);
-    if (!text) return;
+    const inbound = extractInbound(msg);
+    let text = inbound.text;
+
+    // If there's no text AND no media, nothing for us to do.
+    if (!text && !inbound.media) return;
 
     const phone = normalizePhone(remoteJid);
     if (!phone) return;
@@ -428,6 +665,24 @@ export class WhatsAppBridge implements WhatsAppChannel {
       log(`ignoring message from non-allowlisted ${phone}`);
       return;
     }
+
+    // Download + ingest media (if present) BEFORE we persist or dispatch.
+    // Concatenates the resolved attachment's prompt injection ahead of any
+    // caption so the agent sees image/document context first, then the
+    // user's typed words.
+    if (inbound.media) {
+      const ingested = await this.ingestInboundMedia(msg, inbound.media);
+      if (ingested) {
+        text = text ? `${ingested}\n\n${text}` : ingested;
+      } else if (!text) {
+        // Media download failed AND no caption — bail rather than start a run
+        // with empty content.
+        log('media ingest failed and no caption — skipping');
+        return;
+      }
+    }
+
+    if (!text) return;
 
     const pushName: string | undefined = msg.pushName;
     if (pushName && pushName !== this.settings.phoneUsernames[phone]) {
@@ -493,6 +748,54 @@ export class WhatsAppBridge implements WhatsAppChannel {
       } catch (err) {
         logError(`routine ${routine.name} failed to start:`, err);
       }
+    }
+  }
+
+  // ── Inbound media ────────────────────────────────────────────
+
+  /** Download a Baileys media message to staging, route through MediaIngestService,
+   *  return the attachment's prompt injection. Returns null on any failure
+   *  (no media downloader, write fail, ingest fail). */
+  private async ingestInboundMedia(
+    msg: any,
+    media: { kind: string; mime: string | null; filename: string | null },
+  ): Promise<string | null> {
+    if (!this.downloadMedia) {
+      logError('Baileys not connected — cannot download inbound media');
+      return null;
+    }
+    let bytes: Buffer;
+    try {
+      bytes = await this.downloadMedia(msg);
+    } catch (err) {
+      logError('downloadMediaMessage failed:', err instanceof Error ? err.message : String(err));
+      return null;
+    }
+    if (!bytes || bytes.length === 0) return null;
+
+    const ext = media.filename
+      ? path.extname(media.filename).replace(/^\./, '').toLowerCase()
+      : extForMime(media.mime ?? '', media.kind);
+    const fname = `${crypto.randomUUID()}.${ext || 'bin'}`;
+    const dest = this.staging.pathFor('whatsapp', fname);
+    try {
+      await fs.promises.writeFile(dest, bytes);
+    } catch (err) {
+      logError('failed to write inbound media:', err instanceof Error ? err.message : String(err));
+      return null;
+    }
+    // TTL cleanup mirrors Telegram (30 min).
+    this.staging.scheduleCleanup(dest);
+
+    try {
+      const resolved = await this.mediaIngest.ingest({
+        filePath: dest,
+        source: 'whatsapp-inbound',
+      });
+      return resolved.promptInjection;
+    } catch (err) {
+      logError('media ingest failed:', err instanceof Error ? err.message : String(err));
+      return `[attachment at ${dest}]`;
     }
   }
 
@@ -589,7 +892,7 @@ export class WhatsAppBridge implements WhatsAppChannel {
     if (now - this.routineCache.at < ROUTINE_CACHE_TTL_MS) {
       return this.routineCache.routines;
     }
-    const res = await backendRequest<{ routines?: BackendRoutineRecord[] } | BackendRoutineRecord[]>(
+    const res = await backendJsonRequest<{ routines?: BackendRoutineRecord[] } | BackendRoutineRecord[]>(
       this.deps.backendPort,
       'GET',
       '/routines',
@@ -630,22 +933,125 @@ export class WhatsAppBridge implements WhatsAppChannel {
   }
 }
 
-// ── Message-extraction helper ───────────────────────────────────
+// ── Message-extraction helpers ──────────────────────────────────
+
+interface InboundMedia {
+  /** Baileys media kind, drives ext + outbound display. */
+  kind: 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker';
+  mime: string | null;
+  /** Suggested filename (documents) or null — we'll synthesize one. */
+  filename: string | null;
+  /** Caption that came with the media (also returned in `text`). */
+  caption: string;
+}
+
+interface InboundMessage {
+  /** Plain text the user typed, OR a media caption. Empty if no text and no caption. */
+  text: string;
+  /** Single inbound media descriptor — WhatsApp sends one media kind per message. */
+  media: InboundMedia | null;
+}
 
 function extractMessageText(msg: any): string {
+  // Backwards-compat shim retained for any external callers; new code should
+  // use extractInbound() to also see media.
+  return extractInbound(msg).text;
+}
+
+function extForMime(mime: string, fallbackKind: string): string {
+  const map: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'audio/ogg': 'ogg',
+    'audio/mpeg': 'mp3',
+    'audio/mp4': 'm4a',
+    'audio/wav': 'wav',
+    'video/mp4': 'mp4',
+    'video/quicktime': 'mov',
+    'application/pdf': 'pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  };
+  if (map[mime]) return map[mime];
+  // Fall back to a kind-based guess for media WhatsApp doesn't mime-tag well.
+  const kindFallback: Record<string, string> = {
+    image: 'jpg',
+    voice: 'ogg',
+    audio: 'mp3',
+    video: 'mp4',
+    document: 'bin',
+    sticker: 'webp',
+  };
+  return kindFallback[fallbackKind] || 'bin';
+}
+
+export function extractInbound(msg: any): InboundMessage {
   const m = msg?.message;
-  if (!m) return '';
-  if (typeof m.conversation === 'string' && m.conversation.trim()) return m.conversation;
-  if (typeof m.extendedTextMessage?.text === 'string') return m.extendedTextMessage.text;
-  if (typeof m.imageMessage?.caption === 'string') return m.imageMessage.caption;
-  if (typeof m.videoMessage?.caption === 'string') return m.videoMessage.caption;
-  if (typeof m.documentMessage?.caption === 'string') return m.documentMessage.caption;
-  // Buttons / list responses — take the selected row title if present.
+  if (!m) return { text: '', media: null };
+
+  if (typeof m.conversation === 'string' && m.conversation.trim()) {
+    return { text: m.conversation, media: null };
+  }
+  if (typeof m.extendedTextMessage?.text === 'string') {
+    return { text: m.extendedTextMessage.text, media: null };
+  }
+  if (m.imageMessage) {
+    const caption = (m.imageMessage.caption ?? '') as string;
+    return {
+      text: caption,
+      media: { kind: 'image', mime: m.imageMessage.mimetype ?? 'image/jpeg', filename: null, caption },
+    };
+  }
+  if (m.videoMessage) {
+    const caption = (m.videoMessage.caption ?? '') as string;
+    return {
+      text: caption,
+      media: { kind: 'video', mime: m.videoMessage.mimetype ?? 'video/mp4', filename: null, caption },
+    };
+  }
+  if (m.documentMessage) {
+    const caption = (m.documentMessage.caption ?? '') as string;
+    return {
+      text: caption,
+      media: {
+        kind: 'document',
+        mime: m.documentMessage.mimetype ?? 'application/octet-stream',
+        filename: m.documentMessage.fileName ?? null,
+        caption,
+      },
+    };
+  }
+  if (m.audioMessage) {
+    const isVoice = !!m.audioMessage.ptt;
+    return {
+      text: '',
+      media: {
+        kind: isVoice ? 'voice' : 'audio',
+        mime: m.audioMessage.mimetype ?? (isVoice ? 'audio/ogg' : 'audio/mpeg'),
+        filename: null,
+        caption: '',
+      },
+    };
+  }
+  if (m.stickerMessage) {
+    return {
+      text: '',
+      media: {
+        kind: 'sticker',
+        mime: m.stickerMessage.mimetype ?? 'image/webp',
+        filename: null,
+        caption: '',
+      },
+    };
+  }
   if (typeof m.buttonsResponseMessage?.selectedDisplayText === 'string') {
-    return m.buttonsResponseMessage.selectedDisplayText;
+    return { text: m.buttonsResponseMessage.selectedDisplayText, media: null };
   }
   if (typeof m.listResponseMessage?.title === 'string') {
-    return m.listResponseMessage.title;
+    return { text: m.listResponseMessage.title, media: null };
   }
-  return '';
+  return { text: '', media: null };
 }

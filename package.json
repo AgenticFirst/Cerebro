@@ -1,7 +1,7 @@
 {
   "name": "cerebro",
   "productName": "Cerebro",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Open-source AI studio for solopreneurs and small teams — ship like a 50-person team, on your own machine.",
   "main": ".vite/build/main.js",
   "private": true,
@@ -83,12 +83,16 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@blocknote/core": "^0.51.3",
+    "@blocknote/mantine": "^0.51.3",
+    "@blocknote/react": "^0.51.3",
     "@dagrejs/dagre": "^2.0.4",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@mariozechner/pi-agent-core": "^0.55.3",
     "@sinclair/typebox": "^0.34.48",
+    "@slack/bolt": "^4.7.2",
     "@tailwindcss/postcss": "^4.2.1",
     "@tailwindcss/typography": "^0.5.19",
     "@whiskeysockets/baileys": "^6.7.9",

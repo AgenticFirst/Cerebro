@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, protocol, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { spawn, ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import http from 'node:http';
@@ -19,11 +20,13 @@ import type {
   BackendStatus,
   StreamRequest,
   StreamEvent,
+  ClaudeCodeProbeResult,
 } from './types/ipc';
 import { AgentRuntime } from './agents';
 import type { AgentRunRequest } from './agents';
 import { ExecutionEngine } from './engine/engine';
 import type { EngineRunRequest } from './engine/dag/types';
+import { ChatActionServer } from './chat-actions/server';
 import { RoutineScheduler } from './scheduler/scheduler';
 import { TaskReconciler } from './scheduler/task-reconciler';
 import { detectClaudeCode, getCachedClaudeCodeInfo } from './claude-code/detector';
@@ -35,10 +38,17 @@ import {
   migrateLegacyContextFiles,
 } from './claude-code/installer';
 import { setClaudeCodeCwd } from './claude-code/single-shot';
+import { probeClaudeAuth } from './claude-code/auth-probe';
+import { getLoginOrchestrator } from './claude-code/login-orchestrator';
+import type { ClaudeCodeLoginMode, ClaudeCodeLoginSnapshot } from './types/ipc';
+import { generateConversationTitle } from './claude-code/generate-title';
 import { VoiceSessionManager } from './voice/session';
 import { TelegramBridge } from './telegram/bridge';
+import { SlackBridge } from './slack/bridge';
 import { WhatsAppBridge } from './whatsapp/bridge';
 import { HubSpotHolder } from './hubspot/holder';
+import { GHLHolder } from './ghl/holder';
+import { GitHubBridge } from './github/bridge';
 import { registerChannelSender, unregisterChannelSender } from './engine/actions/channel';
 import { initializeSandbox } from './sandbox/initialize';
 import { getCachedSandboxConfig, setCachedSandboxConfig } from './sandbox/config-cache';
@@ -47,13 +57,64 @@ import type { SandboxConfig } from './sandbox/types';
 import {
   startUpdateChecker,
   checkNow as checkForUpdate,
-  downloadAndOpen as downloadUpdate,
+  downloadUpdate,
+  applyUpdate,
   ackUpdateBanner,
+  recordBannerDismissed,
+  autoUpdatesDisabled,
+  toErrorEvent,
 } from './updater';
-import type { UpdateAsset } from './types/ipc';
+import type { UpdateAsset, UpdateActionResult } from './types/ipc';
+import { applyPendingRestore, consumeCompletionFlag } from './backup/swap';
+import { IntegrationStaging } from './files/staging';
+
+// Stdio EPIPE guard. When the Electron main process is launched under a
+// shell pipeline (`tail -f /dev/null | npm start`, electron-forge dev,
+// detached background tasks, etc.) and the consumer of stdout/stderr is
+// closed for any reason, the next `console.log` throws EPIPE — which
+// crashes the app. We swallow EPIPE and any pipe errors silently so the
+// app stays alive even when its log destination goes away.
+process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE' || err.code === 'EBADF') return;
+});
+process.stderr.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EPIPE' || err.code === 'EBADF') return;
+});
 
 // Voice session manager (initialized after backend is healthy)
 let voiceSession: VoiceSessionManager | null = null;
+
+// Lazily-constructed staging for clipboard-pasted chat images.
+let chatStaging: IntegrationStaging | null = null;
+function getChatStaging(): IntegrationStaging {
+  if (!chatStaging) chatStaging = new IntegrationStaging(app.getPath('userData'));
+  return chatStaging;
+}
+
+// Magic-byte sniff so the renderer can't trick the main process into writing
+// arbitrary bytes through this channel. Cheap; covers the four MIME types we
+// allow on clipboard paste.
+function sniffImage(buf: Buffer, ext: string): boolean {
+  if (ext === 'png') {
+    return buf.length >= 8
+      && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47
+      && buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a;
+  }
+  if (ext === 'jpg') {
+    return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  }
+  if (ext === 'gif') {
+    return buf.length >= 6
+      && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38
+      && (buf[4] === 0x37 || buf[4] === 0x39) && buf[5] === 0x61;
+  }
+  if (ext === 'webp') {
+    return buf.length >= 12
+      && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+      && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50;
+  }
+  return false;
+}
 
 // Override Electron's default app identity in dev mode so the menu bar,
 // notifications, and dock label all read "Cerebro" instead of "Electron".
@@ -69,6 +130,7 @@ if (started) {
 // Register privileged schemes BEFORE app is ready.
 // - cerebro-workspace:// serves files from per-task workspaces for live preview.
 // - cerebro-files://     serves managed bucket files (image thumbnails, html previews).
+// - cerebro-chat://      serves arbitrary chat-attached files within SAFE-ROOTS.
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'cerebro-workspace',
@@ -88,11 +150,34 @@ protocol.registerSchemesAsPrivileged([
       corsEnabled: true,
     },
   },
+  {
+    scheme: 'cerebro-chat',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
 ]);
 
-// Helper: resolve the base directory for a task's workspace
-function getTaskWorkspaceDir(taskId: string): string {
-  return path.join(app.getPath('userData'), 'task-workspaces', taskId);
+// Helper: resolve the base directory for a task's workspace.
+// The folder name is `task.workspace_dir` (a human-readable `slug-xxxxxxxx`)
+// for tasks created after the workspace-dir migration, or the raw 32-hex
+// task id for legacy rows / fallback before the renderer has the new field.
+function getTaskWorkspaceDir(workspaceDir: string): string {
+  return path.join(app.getPath('userData'), 'task-workspaces', workspaceDir);
+}
+
+// Folder name validator. Accepts the legacy 32-hex form (e.g.
+// `15acbf488b8248ca9cca7791492153eb`) and the new slug-hex form (e.g.
+// `creacion-manual-crear-ticket-15acbf48`). Rejects anything that could
+// escape the task-workspaces root (dots, slashes, leading/trailing hyphens).
+const WORKSPACE_DIR_RE = /^[a-z0-9](?:[a-z0-9-]{0,118}[a-z0-9])?$/;
+function assertWorkspaceDir(name: string): void {
+  if (!WORKSPACE_DIR_RE.test(name)) {
+    throw new Error(`Invalid workspace dir: ${name}`);
+  }
 }
 
 // Helper: root directory holding all managed bucket files
@@ -109,6 +194,27 @@ function resolveManagedPath(relPath: string): string {
     throw new Error(`Refusing path outside files root: ${relPath}`);
   }
   return abs;
+}
+
+// Roots the chat preview pipe is allowed to read from. Anything else gets a
+// 403 from the cerebro-chat:// protocol handler. Resolved on each call so
+// app.getPath returns its post-ready value.
+function getChatPreviewSafeRoots(): string[] {
+  const roots = [
+    app.getPath('userData'),
+    app.getPath('downloads'),
+    app.getPath('documents'),
+    app.getPath('desktop'),
+    os.tmpdir(),
+  ];
+  return roots.map((r) => path.normalize(r));
+}
+
+function isInsideSafeRoot(absPath: string): boolean {
+  const normalized = path.normalize(absPath);
+  return getChatPreviewSafeRoots().some(
+    (root) => normalized === root || normalized.startsWith(root + path.sep),
+  );
 }
 
 // Minimal MIME-type map for files served via cerebro-workspace://
@@ -178,10 +284,19 @@ engineEventBus.setMaxListeners(50);
 
 // Telegram bridge (initialized after backend is healthy)
 let telegramBridge: TelegramBridge | null = null;
+let slackBridge: SlackBridge | null = null;
 // WhatsApp bridge (Baileys / WhatsApp Web)
 let whatsAppBridge: WhatsAppBridge | null = null;
 // HubSpot credential holder
 let hubSpotHolder: HubSpotHolder | null = null;
+// GoHighLevel credential holder
+let ghlHolder: GHLHolder | null = null;
+// GitHub bridge (credentials + per-repo poller)
+let gitHubBridge: GitHubBridge | null = null;
+
+// Loopback HTTP bridge for chat-triggered integration actions.
+let chatActionServer: ChatActionServer | null = null;
+let chatActionServerInfo: { port: number; token: string } | null = null;
 
 // --- Utility functions ---
 
@@ -378,6 +493,20 @@ async function startPythonBackend(): Promise<void> {
     console.error('[Cerebro] Telegram bridge start failed:', err);
   });
 
+  // Slack bridge — starts only if the user has pasted tokens + enabled it.
+  slackBridge = new SlackBridge({
+    backendPort: port,
+    agentRuntime,
+    dataDir,
+    engineEventBus,
+    executionEngine,
+  });
+  registerChannelSender('slack', slackBridge);
+  executionEngine.setSlackChannel(slackBridge);
+  slackBridge.start().catch((err) => {
+    console.error('[Cerebro] Slack bridge start failed:', err);
+  });
+
   // WhatsApp bridge — starts only if the user has paired + enabled it.
   whatsAppBridge = new WhatsAppBridge({
     backendPort: port,
@@ -396,12 +525,46 @@ async function startPythonBackend(): Promise<void> {
     console.error('[Cerebro] HubSpot holder init failed:', err);
   });
 
+  // GoHighLevel holder — pulls credentials from the backend integrations
+  // config so the Sales Intel Analyst push and the Settings card share state.
+  ghlHolder = new GHLHolder({ backendPort: port });
+  ghlHolder.init().catch((err) => {
+    console.error('[Cerebro] GHL holder init failed:', err);
+  });
+
+  // GitHub bridge — credential lifecycle + per-repo polling for routine triggers.
+  gitHubBridge = new GitHubBridge({ backendPort: port, executionEngine });
+  executionEngine.setGitHubChannel(gitHubBridge);
+  gitHubBridge.init()
+    .then(() => { gitHubBridge?.start(); })
+    .catch((err) => {
+      console.error('[Cerebro] GitHub bridge init failed:', err);
+    });
+
   // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
   // Cerebro's project-scoped subagents and skills.
   setClaudeCodeCwd(dataDir);
 
+  // Stand up the loopback chat-actions HTTP server before writing the
+  // runtime info file so the port + token are recorded for the chat skill
+  // to discover.
+  try {
+    chatActionServer = new ChatActionServer({
+      engine: executionEngine,
+      getMainWebContents: () => {
+        const wins = BrowserWindow.getAllWindows();
+        return wins.length > 0 ? wins[0].webContents : null;
+      },
+    });
+    chatActionServerInfo = await chatActionServer.start();
+    console.log(`[Cerebro] chat-actions server on port ${chatActionServerInfo.port}`);
+  } catch (err) {
+    console.error('[Cerebro] Failed to start chat-actions server:', err);
+    chatActionServerInfo = null;
+  }
+
   // Refresh the runtime info file (skill scripts read this for the port).
-  writeRuntimeInfo(dataDir, port);
+  writeRuntimeInfo(dataDir, port, chatActionServerInfo ?? undefined);
 
   // Sync project-scoped subagents and skills under <dataDir>/.claude/.
   // Requires Claude Code detection to have run first (handled in `app.on('ready')`).
@@ -421,6 +584,7 @@ async function startPythonBackend(): Promise<void> {
     voiceSession.setWebContents(windows[0].webContents);
     telegramBridge?.setWebContents(windows[0].webContents);
     whatsAppBridge?.setWebContents(windows[0].webContents);
+    gitHubBridge?.setWebContents(windows[0].webContents);
   }
 
   // Initial scheduler sync + start periodic re-sync
@@ -569,6 +733,15 @@ function registerIpcHandlers(): void {
     return backendStatus;
   });
 
+  // Bring the main window forward (e.g. from an OS notification click).
+  ipcMain.on(IPC_CHANNELS.WINDOW_FOCUS, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+
   // Start SSE stream
   ipcMain.handle(IPC_CHANNELS.STREAM_START, async (event, request: StreamRequest) => {
     const streamId = crypto.randomUUID();
@@ -705,6 +878,11 @@ function registerIpcHandlers(): void {
     return agentRuntime.cancelRun(runId);
   });
 
+  ipcMain.handle(IPC_CHANNELS.CHAT_RESET_SESSION, async (_event, conversationId: string) => {
+    if (!agentRuntime || !conversationId) return null;
+    return agentRuntime.rotateConversationSession(conversationId);
+  });
+
   ipcMain.handle(IPC_CHANNELS.AGENT_ACTIVE_RUNS, async () => {
     if (!agentRuntime) return [];
     return agentRuntime.getActiveRuns();
@@ -786,15 +964,61 @@ function registerIpcHandlers(): void {
     shellSessions.delete(sessionKey);
   });
 
+  // --- Chat: clipboard image paste ---
+
+  // Persist clipboard-pasted image bytes to the chat staging dir so they can
+  // be referenced as an `@/abs/path` attachment by the agent runtime. Same
+  // staging root + 30-min TTL as the integration bridges.
+  ipcMain.handle(
+    IPC_CHANNELS.CHAT_SAVE_CLIPBOARD_IMAGE,
+    async (_event, input: { bytes: ArrayBuffer; mime: string }) => {
+      const ALLOWED: Record<string, string> = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/webp': 'webp',
+        'image/gif': 'gif',
+      };
+      const ext = ALLOWED[input?.mime ?? ''];
+      if (!ext) throw new Error(`Unsupported clipboard image type: ${input?.mime}`);
+
+      const buf = Buffer.from(input.bytes);
+      const MAX = 20 * 1024 * 1024;
+      if (buf.byteLength > MAX) throw new Error('clipboard image too large');
+      if (!sniffImage(buf, ext)) throw new Error('clipboard bytes are not a valid image');
+
+      const staging = getChatStaging();
+      const fileName = `clipboard-${crypto.randomUUID()}.${ext}`;
+      const filePath = staging.pathFor('chat', fileName);
+      await fs.promises.writeFile(filePath, buf);
+      staging.scheduleCleanup(filePath);
+      return { filePath, fileName, size: buf.byteLength };
+    },
+  );
+
   // --- Task Workspace (per-task isolated directory) ---
 
-  // Create the workspace directory and symlink .claude from parent dataDir
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_CREATE, async (_event, taskId: string): Promise<string> => {
+  // Create the workspace directory and symlink .claude from parent dataDir.
+  // Accepts `{ taskId, workspaceDir }`: taskId is the 32-hex DB id, used only
+  // to detect a pre-migration folder we should rename in place. workspaceDir
+  // is the actual on-disk folder name (slug-hex, or the legacy 32-hex for
+  // tasks that haven't been backfilled yet).
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_CREATE, async (_event, args: { taskId: string; workspaceDir: string }): Promise<string> => {
+    const { taskId, workspaceDir } = args ?? { taskId: '', workspaceDir: '' };
     if (!/^[a-z0-9]{32}$/i.test(taskId)) {
       throw new Error(`Invalid taskId: ${taskId}`);
     }
+    assertWorkspaceDir(workspaceDir);
     const dataDir = app.getPath('userData');
-    const workspacePath = getTaskWorkspaceDir(taskId);
+    const workspacePath = getTaskWorkspaceDir(workspaceDir);
+    // Lazy migration: if a legacy folder exists at <task-workspaces>/<taskId>
+    // and the new <workspace_dir> folder doesn't, rename it. Preserves any
+    // files the agent already wrote there.
+    if (workspaceDir !== taskId) {
+      const legacyPath = getTaskWorkspaceDir(taskId);
+      if (fs.existsSync(legacyPath) && !fs.existsSync(workspacePath)) {
+        fs.renameSync(legacyPath, workspacePath);
+      }
+    }
     fs.mkdirSync(workspacePath, { recursive: true });
     // Symlink .claude/ from parent so skills/agents are discoverable
     const claudeSrc = path.join(dataDir, '.claude');
@@ -810,20 +1034,31 @@ function registerIpcHandlers(): void {
   });
 
   // Return the derived workspace path without creating it
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_PATH, async (_event, taskId: string): Promise<string> => {
-    return getTaskWorkspaceDir(taskId);
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_PATH, async (_event, workspaceDir: string): Promise<string> => {
+    assertWorkspaceDir(workspaceDir);
+    return getTaskWorkspaceDir(workspaceDir);
   });
 
   // List files in the workspace as a nested tree (excluding .claude symlink and node_modules).
   // `overridePath` (optional) routes the listing to an external project folder; the backend
   // sandbox validator already canonicalized and vetted the path at task create/update time.
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, async (_event, taskId: string, overridePath?: string) => {
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, async (_event, workspaceDir: string, overridePath?: string) => {
+    if (!(overridePath && overridePath.trim() && path.isAbsolute(overridePath))) {
+      assertWorkspaceDir(workspaceDir);
+    }
     const baseDir = overridePath && overridePath.trim() && path.isAbsolute(overridePath)
       ? overridePath
-      : getTaskWorkspaceDir(taskId);
+      : getTaskWorkspaceDir(workspaceDir);
     if (!fs.existsSync(baseDir)) return [];
 
-    const SKIP_DIRS = new Set(['.claude', 'node_modules', '.git', '.next', 'dist', 'build', '.venv', '__pycache__']);
+    // `_work` is the convention the deliverable prompt asks experts to use for
+    // scratch/intermediates; keeping it out of the listing is what makes the
+    // expert's "keep workspace tidy" instruction actually visible. The rest
+    // are standard caches/tmp folders we never want to show as deliverables.
+    const SKIP_DIRS = new Set([
+      '.claude', 'node_modules', '.git', '.next', 'dist', 'build',
+      '.venv', '__pycache__', '_work', '.tmp', 'tmp', '.cache', '.pytest_cache',
+    ]);
     const MAX_DEPTH = 6;
 
     function walk(dir: string, depth: number): Array<{ name: string; path: string; type: 'dir' | 'file'; size?: number; mtime?: number; children?: unknown[] }> {
@@ -874,8 +1109,9 @@ function registerIpcHandlers(): void {
   });
 
   // Read a file from the workspace as text (1MB cap)
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_READ_FILE, async (_event, taskId: string, relativePath: string): Promise<string | null> => {
-    const baseDir = getTaskWorkspaceDir(taskId);
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_READ_FILE, async (_event, workspaceDir: string, relativePath: string): Promise<string | null> => {
+    assertWorkspaceDir(workspaceDir);
+    const baseDir = getTaskWorkspaceDir(workspaceDir);
     const filePath = path.normalize(path.join(baseDir, relativePath));
     if (!filePath.startsWith(baseDir + path.sep) && filePath !== baseDir) return null;
     if (!fs.existsSync(filePath)) return null;
@@ -889,8 +1125,9 @@ function registerIpcHandlers(): void {
   });
 
   // Remove the workspace directory (on task deletion)
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_REMOVE, async (_event, taskId: string): Promise<void> => {
-    const baseDir = getTaskWorkspaceDir(taskId);
+  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_REMOVE, async (_event, workspaceDir: string): Promise<void> => {
+    assertWorkspaceDir(workspaceDir);
+    const baseDir = getTaskWorkspaceDir(workspaceDir);
     if (fs.existsSync(baseDir)) {
       fs.rmSync(baseDir, { recursive: true, force: true });
     }
@@ -930,6 +1167,28 @@ function registerIpcHandlers(): void {
     return executionEngine.resolveApproval(approvalId, false, reason);
   });
 
+  // --- Chat actions catalog (renderer-side discovery) ---
+
+  ipcMain.handle(IPC_CHANNELS.CHAT_ACTIONS_CATALOG, async (_event, lang?: string) => {
+    if (!executionEngine) return [];
+    const safeLang: 'en' | 'es' = lang === 'es' ? 'es' : 'en';
+    return executionEngine.getChatActionCatalog(safeLang);
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.CHAT_GENERATE_TITLE,
+    async (
+      _event,
+      args: { userMessage: string; assistantResponse?: string },
+    ): Promise<string | null> => {
+      if (!args || typeof args.userMessage !== 'string') return null;
+      return generateConversationTitle({
+        userMessage: args.userMessage,
+        assistantResponse: args.assistantResponse,
+      });
+    },
+  );
+
   // --- Scheduler ---
 
   ipcMain.handle(IPC_CHANNELS.SCHEDULER_SYNC, async () => {
@@ -947,6 +1206,185 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_STATUS, async () => {
     return getCachedClaudeCodeInfo();
+  });
+
+  // Anthropic's official curl install script. We spawn it in a login bash
+  // shell (`bash -lc`) so it picks up the user's full PATH from their shell
+  // rc files — Electron started from Finder on macOS otherwise misses
+  // homebrew/nvm/custom npm prefixes. The script installs `claude` to
+  // ~/.local/bin which is user-writable, so no sudo prompt.
+  let activeInstall: ChildProcess | null = null;
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_INSTALL, async (event) => {
+    if (activeInstall) {
+      // Refuse concurrent installs — caller should cancel first.
+      return {
+        ok: false,
+        exitCode: -1,
+        outputTail: 'Install already in progress.',
+        info: getCachedClaudeCodeInfo(),
+      };
+    }
+    const sender = event.sender;
+    const installCmd = 'curl -fsSL https://claude.ai/install.sh | bash';
+    const child = spawn('bash', ['-lc', installCmd], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    activeInstall = child;
+
+    // Ring-buffer the last ~2 KB of combined output for inline error display.
+    let outputTail = '';
+    const appendTail = (chunk: string) => {
+      outputTail = (outputTail + chunk).slice(-2048);
+    };
+
+    const sendLine = (line: string) => {
+      if (!sender.isDestroyed()) {
+        sender.send(IPC_CHANNELS.CLAUDE_CODE_INSTALL_LOG, line);
+      }
+    };
+
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (data: string) => {
+      appendTail(data);
+      for (const line of data.split('\n')) {
+        if (line.length > 0) sendLine(line);
+      }
+    });
+    child.stderr?.on('data', (data: string) => {
+      appendTail(data);
+      for (const line of data.split('\n')) {
+        if (line.length > 0) sendLine(line);
+      }
+    });
+
+    const exitCode: number = await new Promise((resolve) => {
+      child.on('close', (code, signal) => {
+        resolve(typeof code === 'number' ? code : signal ? -1 : 0);
+      });
+      child.on('error', (err) => {
+        appendTail(`spawn error: ${err.message}`);
+        resolve(-1);
+      });
+    });
+    activeInstall = null;
+
+    // Re-detect so the cache reflects post-install state for every other
+    // surface (Engine section, ChatContext block-modal, etc.) immediately.
+    const info = await detectClaudeCode();
+    return {
+      ok: exitCode === 0 && info.status === 'available',
+      exitCode,
+      outputTail,
+      info,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_INSTALL_CANCEL, async () => {
+    if (!activeInstall) return;
+    const child = activeInstall;
+    child.kill('SIGTERM');
+    // Force-kill if it doesn't exit within 2 s (mirrors the single-shot pattern).
+    setTimeout(() => {
+      if (!child.killed) child.kill('SIGKILL');
+    }, 2000);
+  });
+
+  // Runtime auth probe. Delegates to the shared helper so other callers
+  // (ClaudeCodeRunner, single-shot) can use the same cached result.
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH, async (_event, opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult> => {
+    return probeClaudeAuth(opts);
+  });
+
+  // In-Cerebro login orchestrator — captures the OAuth URL from `claude
+  // /login` (or `claude setup-token`) and surfaces it through the chat
+  // sign-in card / bridge operator DMs. Bridges subscribe via the same
+  // event channel so a Slack operator can complete a setup-token paste
+  // without ever opening the renderer.
+  const loginOrchestrator = getLoginOrchestrator();
+  loginOrchestrator.on('update', (snap: ClaudeCodeLoginSnapshot) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try { win.webContents.send(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, snap); } catch { /* window closed */ }
+    }
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.CLAUDE_CODE_LOGIN_START,
+    async (_event, mode: ClaudeCodeLoginMode): Promise<ClaudeCodeLoginSnapshot> => {
+      if (mode !== 'oauth' && mode !== 'setup-token') {
+        throw new Error(`Unknown login mode: ${mode}`);
+      }
+      // If a stale attempt is still around, cancel it before kicking off a
+      // new one. The orchestrator otherwise rejects with a hard error.
+      if (loginOrchestrator.current()) {
+        loginOrchestrator.cancel();
+      }
+      return loginOrchestrator.start(mode);
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.CLAUDE_CODE_LOGIN_SUBMIT_CODE,
+    async (_event, payload: { loginId: string; code: string }): Promise<ClaudeCodeLoginSnapshot> => {
+      return loginOrchestrator.submitCode(payload.loginId, payload.code);
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_LOGIN_CANCEL, async (_event, loginId?: string): Promise<void> => {
+    loginOrchestrator.cancel(loginId);
+  });
+
+  // Open a terminal window running `claude` so the user can complete the
+  // sign-in flow (browser handshake) and come back. We can't run the
+  // login inside Cerebro because Claude Code's auth flow opens a browser
+  // and binds a local callback — best handled by the OS terminal.
+  // Renderer should call this from the auth-error recovery card, then
+  // re-probe with `{ force: true }` once the user reports success.
+  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_OPEN_LOGIN, async (): Promise<{ ok: boolean; reason?: string }> => {
+    const info = getCachedClaudeCodeInfo();
+    if (info.status !== 'available' || !info.path) {
+      return { ok: false, reason: 'Claude Code binary not found' };
+    }
+    const binary = info.path;
+    try {
+      if (process.platform === 'darwin') {
+        // AppleScript: open Terminal.app, run the binary at its full
+        // path so the user doesn't need it on PATH. Quoting the path
+        // protects against spaces (`/Application Support/...`).
+        const escaped = binary.replace(/"/g, '\\"');
+        const script = `tell application "Terminal" to do script "${escaped}"\ntell application "Terminal" to activate`;
+        const proc = spawn('osascript', ['-e', script], { stdio: 'ignore', detached: true });
+        proc.unref();
+        return { ok: true };
+      }
+      if (process.platform === 'linux') {
+        // Try a few common terminal emulators; fall through to a hint
+        // if none are present.
+        for (const term of ['gnome-terminal', 'konsole', 'xterm']) {
+          try {
+            const args = term === 'gnome-terminal' ? ['--', binary] : ['-e', binary];
+            const proc = spawn(term, args, { stdio: 'ignore', detached: true });
+            proc.unref();
+            return { ok: true };
+          } catch {
+            /* try next */
+          }
+        }
+        return { ok: false, reason: 'No supported terminal emulator found. Open one manually and run `claude`.' };
+      }
+      if (process.platform === 'win32') {
+        const proc = spawn('cmd.exe', ['/c', 'start', '""', 'cmd.exe', '/k', `"${binary}"`], {
+          stdio: 'ignore',
+          detached: true,
+          windowsHide: false,
+        });
+        proc.unref();
+        return { ok: true };
+      }
+      return { ok: false, reason: `Unsupported platform: ${process.platform}` };
+    } catch (err) {
+      return { ok: false, reason: (err as Error).message };
+    }
   });
 
   // --- Installer sync (called by renderer after expert CRUD) ---
@@ -1100,6 +1538,36 @@ function registerIpcHandlers(): void {
     },
   );
 
+  // Cheap pre-check the chat preview hook uses to decide between the binary
+  // body and the "outside previewable area" fallback.
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_IS_PATH_PREVIEWABLE,
+    async (_event, absolutePath: string) => {
+      if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
+        return false;
+      }
+      return isInsideSafeRoot(path.normalize(absolutePath));
+    },
+  );
+
+  // Build a cerebro-chat:// URL for an arbitrary absolute path. The protocol
+  // handler re-validates the path against the same safe-root list, so even a
+  // forged URL can't escape the allowlist.
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_PREVIEW_URL_FOR_PATH,
+    async (_event, absolutePath: string) => {
+      if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
+        throw new Error('not-absolute');
+      }
+      const normalized = path.normalize(absolutePath);
+      if (!isInsideSafeRoot(normalized)) {
+        throw new Error('outside-safe-roots');
+      }
+      const encoded = Buffer.from(normalized, 'utf8').toString('base64url');
+      return `cerebro-chat://path/${encoded}`;
+    },
+  );
+
   // Copy a file emitted by an expert into the user's OS Downloads folder,
   // auto-deduping the destination name on collision. Returns the final path.
   ipcMain.handle(
@@ -1200,6 +1668,59 @@ function registerIpcHandlers(): void {
       });
 
       const destRelPath = path.posix.join(bucketId, baseName);
+      return {
+        destRelPath,
+        sha256: hash.digest('hex'),
+        sizeBytes: bytes,
+        mime: mimeFor(destAbs).split(';')[0] || null,
+      };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILES_IMPORT_TO_TASK,
+    async (_event, args: { sourcePath: string; taskId: string; fileId: string; destExt: string }) => {
+      const { sourcePath, taskId, fileId, destExt } = args;
+      if (!path.isAbsolute(sourcePath)) {
+        throw new Error('Source path must be absolute');
+      }
+      if (!/^[a-z0-9]{32}$/i.test(taskId)) {
+        throw new Error(`Invalid taskId: ${taskId}`);
+      }
+      if (!/^[a-z0-9]{32}$/i.test(fileId)) {
+        throw new Error(`Invalid fileId: ${fileId}`);
+      }
+
+      const srcStat = await fs.promises.stat(sourcePath);
+      if (srcStat.isDirectory()) throw new Error('Source is a directory');
+      const MAX_BYTES = 100 * 1024 * 1024;
+      if (srcStat.size > MAX_BYTES) {
+        throw new Error(`File too large (${Math.round(srcStat.size / 1024 / 1024)} MB > 100 MB)`);
+      }
+
+      const cleanExt = (destExt || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
+      const baseName = cleanExt ? `${fileId}.${cleanExt}` : fileId;
+      const destDir = path.join(getFilesRoot(), 'task-attachments', taskId);
+      const destAbs = path.join(destDir, baseName);
+      await fs.promises.mkdir(destDir, { recursive: true });
+
+      const hash = crypto.createHash('sha256');
+      let bytes = 0;
+      await new Promise<void>((resolve, reject) => {
+        const reader = fs.createReadStream(sourcePath);
+        const writer = fs.createWriteStream(destAbs);
+        reader.on('data', (chunk: Buffer | string) => {
+          const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+          hash.update(buf);
+          bytes += buf.length;
+        });
+        reader.on('error', reject);
+        writer.on('error', reject);
+        writer.on('finish', resolve);
+        reader.pipe(writer);
+      });
+
+      const destRelPath = path.posix.join('task-attachments', taskId, baseName);
       return {
         destRelPath,
         sha256: hash.digest('hex'),
@@ -1351,6 +1872,85 @@ function registerIpcHandlers(): void {
     return content;
   });
 
+  // --- Backup & restore ---
+
+  ipcMain.handle(
+    IPC_CHANNELS.BACKUP_PICK_EXPORT_PATH,
+    async (_event, defaultName: string) => {
+      const [parent] = BrowserWindow.getAllWindows();
+      const downloads = app.getPath('downloads');
+      const result = await dialog.showSaveDialog(parent, {
+        title: 'Save Cerebro backup',
+        defaultPath: path.join(downloads, defaultName || 'cerebro-backup.cerebro-backup'),
+        filters: [{ name: 'Cerebro backup', extensions: ['cerebro-backup'] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+      return result.filePath;
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_PICK_IMPORT_FILE, async () => {
+    const [parent] = BrowserWindow.getAllWindows();
+    const result = await dialog.showOpenDialog(parent, {
+      title: 'Restore from Cerebro backup',
+      properties: ['openFile'],
+      filters: [{ name: 'Cerebro backup', extensions: ['cerebro-backup'] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.BACKUP_APPLY_AND_RELAUNCH,
+    async (_event, backupPath: string) => {
+      if (typeof backupPath !== 'string' || !backupPath) {
+        throw new Error('Missing backup path');
+      }
+      // Ask the backend to snapshot + stage. It writes the pending marker;
+      // applyPendingRestore() picks it up on the next boot.
+      const res = await makeBackendRequest({
+        method: 'POST',
+        path: '/backup/apply',
+        body: { path: backupPath },
+        timeout: 120_000,
+      });
+      if (!res.ok) {
+        const detail = (res.data as { detail?: string } | null)?.detail ?? 'apply failed';
+        throw new Error(detail);
+      }
+      // Bow out cleanly so Python flushes its DB, then relaunch.
+      app.relaunch();
+      app.quit();
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_RELAUNCH, async () => {
+    app.relaunch();
+    app.quit();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_CONSUME_COMPLETION_FLAG, async () => {
+    return consumeCompletionFlag(app.getPath('userData'));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_REVEAL_PATH, async (_event, filePath: string) => {
+    if (typeof filePath !== 'string' || !filePath) return;
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (stat.isFile()) {
+        shell.showItemInFolder(filePath);
+      } else if (stat.isDirectory()) {
+        shell.openPath(filePath);
+      }
+    } catch {
+      /* file moved or deleted — no-op, the UI will refresh "last backup" */
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BACKUP_APP_VERSION, async () => {
+    return app.getVersion();
+  });
+
   // --- Telegram bridge ---
 
   ipcMain.handle(IPC_CHANNELS.TELEGRAM_VERIFY, async (_event, token: string) => {
@@ -1406,6 +2006,123 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.TELEGRAM_CLEAR_TOKEN, async () => {
     if (!telegramBridge) return { ok: false, error: 'Bridge not initialized' };
     return telegramBridge.setToken(null);
+  });
+
+  // --- Slack bridge (Bolt / Socket Mode) ---
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_VERIFY, async (_event, args: { botToken: string; appToken: string }) => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    const bot = (args?.botToken ?? '').trim();
+    const app = (args?.appToken ?? '').trim();
+    if (!bot || !app) return { ok: false, error: 'Both bot token and app token are required.' };
+    return slackBridge.verifyTokens(bot, app);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_ENABLE, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    try {
+      await slackBridge.stop(); // restart so it picks up fresh settings
+      await slackBridge.start();
+      const s = slackBridge.status();
+      return { ok: s.running, error: s.running ? undefined : (s.lastError ?? 'Failed to start') };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_DISABLE, async () => {
+    if (!slackBridge) return;
+    await slackBridge.stop();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_STATUS, async () => {
+    if (!slackBridge) {
+      return {
+        running: false,
+        lastEventAt: null,
+        lastError: 'Bridge not initialized',
+        teamName: null,
+        botUserId: null,
+        hasBotToken: false,
+        hasAppToken: false,
+        enabled: false,
+        allowlistChannels: [],
+        allowlistUsers: [],
+        tokenBackend: 'plaintext-fallback',
+      };
+    }
+    return slackBridge.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_RELOAD, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.reloadSettings();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_SET_TOKENS, async (_event, args: { botToken: string; appToken: string }) => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    const bot = (args?.botToken ?? '').trim();
+    const app = (args?.appToken ?? '').trim();
+    if (!bot || !app) return { ok: false, error: 'Both bot token and app token are required.' };
+    return slackBridge.setTokens({ botToken: bot, appToken: app });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_CLEAR_TOKENS, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.clearTokens();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_SET_ALLOWLIST, async (_event, args: { channels: string[]; users: string[] }) => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.setAllowlist({
+      channels: Array.isArray(args?.channels) ? args.channels : [],
+      users: Array.isArray(args?.users) ? args.users : [],
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_SET_OPERATOR_USER_ID, async (_event, userId: string | null) => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.setOperatorUserId(typeof userId === 'string' ? userId : null);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_GET_MANIFEST, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    try {
+      const yaml = await slackBridge.getManifestYaml();
+      return { ok: true, yaml };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_LIST_WORKSPACE_USERS, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.listWorkspaceUsers();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_GET_EXPERT_ACCESS, async () => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    try {
+      return { ok: true, config: slackBridge.getExpertAccessConfig() };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SLACK_SET_EXPERT_ACCESS, async (
+    _event,
+    args: {
+      defaultExpertAccess: string[] | null;
+      exceptions: Array<{ userId: string; expertIds: string[] }>;
+    },
+  ) => {
+    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+    return slackBridge.setExpertAccessConfig({
+      defaultExpertAccess: Array.isArray(args?.defaultExpertAccess) || args?.defaultExpertAccess === null
+        ? args.defaultExpertAccess
+        : null,
+      exceptions: Array.isArray(args?.exceptions) ? args.exceptions : [],
+    });
   });
 
   // --- WhatsApp bridge ---
@@ -1511,23 +2228,148 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // --- GoHighLevel ---
+
+  ipcMain.handle(IPC_CHANNELS.GHL_VERIFY, async (_event, apiKey: string, locationId: string) => {
+    if (!ghlHolder) return { ok: false, error: 'GHL holder not initialized' };
+    if (typeof apiKey !== 'string' || typeof locationId !== 'string') {
+      return { ok: false, error: 'Invalid arguments' };
+    }
+    return ghlHolder.verify(apiKey, locationId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GHL_STATUS, async () => {
+    if (!ghlHolder) {
+      return {
+        hasApiKey: false,
+        locationId: null,
+        tokenBackend: 'plaintext-fallback' as const,
+      };
+    }
+    return ghlHolder.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GHL_SET_CREDENTIALS, async (_event, apiKey: string, locationId: string) => {
+    if (!ghlHolder) return { ok: false, error: 'GHL holder not initialized' };
+    if (typeof apiKey !== 'string' || typeof locationId !== 'string') {
+      return { ok: false, error: 'Invalid arguments' };
+    }
+    return ghlHolder.setCredentials(apiKey, locationId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GHL_CLEAR_CREDENTIALS, async () => {
+    if (!ghlHolder) return { ok: false, error: 'GHL holder not initialized' };
+    await ghlHolder.clearCredentials();
+    return { ok: true };
+  });
+
+  // --- GitHub ---
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_VERIFY, async (_event, token: string) => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    if (typeof token !== 'string') return { ok: false, error: 'Invalid arguments' };
+    return gitHubBridge.verify(token);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_STATUS, async () => {
+    if (!gitHubBridge) {
+      return {
+        hasToken: false,
+        login: null,
+        watchedRepos: [],
+        lastPollAt: null,
+        lastError: null,
+        rateLimitRemaining: null,
+        tokenBackend: 'plaintext-fallback' as const,
+      };
+    }
+    return gitHubBridge.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_SET_TOKEN, async (_event, token: string) => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    if (typeof token !== 'string') return { ok: false, error: 'Invalid arguments' };
+    return gitHubBridge.setToken(token);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_CLEAR_TOKEN, async () => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    return gitHubBridge.clearToken();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_LIST_REPOS, async () => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    return gitHubBridge.listAccessibleRepos();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_LIST_WATCHED_REPOS, async () => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    return { ok: true, repos: gitHubBridge.getWatchedRepos() };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GITHUB_SET_WATCHED_REPOS, async (_event, repos: string[]) => {
+    if (!gitHubBridge) return { ok: false, error: 'GitHub bridge not initialized' };
+    if (!Array.isArray(repos)) return { ok: false, error: 'Invalid arguments' };
+    return gitHubBridge.setWatchedRepos(repos);
+  });
+
   // --- App auto-updater ---
+  // All writeful handlers return UpdateActionResult instead of throwing.
+  // Re-throwing from `ipcMain.handle` is the path that produced
+  // `Error invoking remote method 'X': reply was never sent` on Ubuntu in
+  // v0.1.1 — the rejection couldn't be delivered when `event.sender` was
+  // mid-teardown or when the thrown Error carried non-cloneable fields
+  // (Node stream errors with circular refs, `AggregateError` from
+  // `pipeline()`). The discriminated result shape is structured-clone-safe
+  // by construction: only a plain string crosses the IPC boundary.
   ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK_NOW, async () => {
+    if (autoUpdatesDisabled()) return null;
     return checkForUpdate();
   });
-  ipcMain.handle(IPC_CHANNELS.UPDATE_DOWNLOAD, async (event, asset: UpdateAsset) => {
-    // Renderer is showing the banner — suppress the native dialog fallback.
-    ackUpdateBanner();
-    try {
-      await downloadUpdate(asset);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      event.sender.send(IPC_CHANNELS.UPDATE_ERROR, message);
-      throw err;
-    }
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.UPDATE_DOWNLOAD,
+    async (event, asset: UpdateAsset): Promise<UpdateActionResult> => {
+      if (autoUpdatesDisabled()) {
+        const ev = { message: 'Auto-updates disabled by administrator', kind: 'disabled' as const };
+        event.sender.send(IPC_CHANNELS.UPDATE_ERROR, ev);
+        return { ok: false, error: ev.message, kind: ev.kind };
+      }
+      // Renderer is showing the banner — suppress the native dialog fallback.
+      ackUpdateBanner();
+      try {
+        await downloadUpdate(asset);
+        return { ok: true };
+      } catch (err) {
+        const ev = toErrorEvent(err);
+        event.sender.send(IPC_CHANNELS.UPDATE_ERROR, ev);
+        return { ok: false, error: ev.message, kind: ev.kind };
+      }
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.UPDATE_APPLY,
+    async (event, asset: UpdateAsset): Promise<UpdateActionResult> => {
+      if (autoUpdatesDisabled()) {
+        const ev = { message: 'Auto-updates disabled by administrator', kind: 'disabled' as const };
+        event.sender.send(IPC_CHANNELS.UPDATE_ERROR, ev);
+        return { ok: false, error: ev.message, kind: ev.kind };
+      }
+      // `applyUpdate` either succeeds (and schedules `app.quit()` ~300ms
+      // later, deliberately AFTER this reply is sent — see updater.ts) or
+      // throws. Either way we reply with a structured result, never raw.
+      try {
+        await applyUpdate(asset);
+        return { ok: true };
+      } catch (err) {
+        const ev = toErrorEvent(err);
+        event.sender.send(IPC_CHANNELS.UPDATE_ERROR, ev);
+        return { ok: false, error: ev.message, kind: ev.kind };
+      }
+    },
+  );
   ipcMain.handle(IPC_CHANNELS.UPDATE_DISMISS, async () => {
     ackUpdateBanner();
+    recordBannerDismissed();
   });
   ipcMain.handle(IPC_CHANNELS.UPDATE_NOTIFIED, async () => {
     ackUpdateBanner();
@@ -1592,15 +2434,19 @@ const createWindow = () => {
   if (telegramBridge) {
     telegramBridge.setWebContents(mainWindow.webContents);
   }
+  if (slackBridge) {
+    slackBridge.setWebContents(mainWindow.webContents);
+  }
   if (whatsAppBridge) {
     whatsAppBridge.setWebContents(mainWindow.webContents);
   }
 
-  // Open DevTools in dev mode — but never in E2E mode, where an extra
+  // Open DevTools only in local dev — never in packaged builds (end users
+  // shouldn't be greeted by it), and never in E2E mode, where an extra
   // DevTools WebContents exposes itself over CDP and Playwright can bind to
   // it instead of the actual renderer (the failing screenshots show only
   // DevTools with a blank left pane).
-  if (!process.env.CEREBRO_E2E_DEBUG_PORT) {
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL && !process.env.CEREBRO_E2E_DEBUG_PORT) {
     mainWindow.webContents.openDevTools();
   }
 
@@ -1626,11 +2472,11 @@ app.on('ready', async () => {
     let filePath = '<unresolved>';
     try {
       const url = new URL(request.url);
-      const taskId = url.hostname;
-      if (!taskId || !/^[a-z0-9]{32}$/i.test(taskId)) {
-        return new Response('Invalid task id', { status: 400 });
+      const workspaceDir = url.hostname;
+      if (!workspaceDir || !WORKSPACE_DIR_RE.test(workspaceDir)) {
+        return new Response('Invalid workspace dir', { status: 400 });
       }
-      const baseDir = getTaskWorkspaceDir(taskId);
+      const baseDir = getTaskWorkspaceDir(workspaceDir);
       let relPath = decodeURIComponent(url.pathname || '/');
       if (relPath === '/' || relPath === '') relPath = '/index.html';
       filePath = path.normalize(path.join(baseDir, relPath));
@@ -1716,7 +2562,75 @@ app.on('ready', async () => {
     }
   });
 
+  // Serve chat-attached files via cerebro-chat://path/<base64url-of-abs-path>.
+  // Re-validates against the SAFE-ROOTS list so a forged URL can't escape.
+  protocol.handle('cerebro-chat', async (request) => {
+    let filePath = '<unresolved>';
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== 'path') {
+        return new Response('Bad host', { status: 400 });
+      }
+      const segments = decodeURIComponent(url.pathname || '/').split('/').filter(Boolean);
+      if (segments.length !== 1) {
+        return new Response('Bad path', { status: 400 });
+      }
+      let decoded: string;
+      try {
+        decoded = Buffer.from(segments[0], 'base64url').toString('utf8');
+      } catch {
+        return new Response('Bad encoding', { status: 400 });
+      }
+      filePath = path.normalize(decoded);
+      if (!path.isAbsolute(filePath)) {
+        return new Response('Not absolute', { status: 400 });
+      }
+      if (!isInsideSafeRoot(filePath)) {
+        return new Response('Forbidden', { status: 403 });
+      }
+      let stat: fs.Stats;
+      try {
+        stat = await fs.promises.stat(filePath);
+      } catch {
+        return new Response(`Not found: ${path.basename(filePath)}`, {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
+      if (stat.isDirectory()) {
+        return new Response('Is a directory', { status: 400 });
+      }
+      const data = await fs.promises.readFile(filePath);
+      const body = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      return new Response(body, {
+        status: 200,
+        headers: { 'Content-Type': mimeFor(filePath) },
+      });
+    } catch (err) {
+      console.error(`[cerebro-chat] handler error for ${filePath}:`, err);
+      return new Response(`Error: ${(err as Error).message ?? err}`, {
+        status: 500,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
+  });
+
   registerIpcHandlers();
+
+  // If the user applied a backup last session we left a marker file behind.
+  // Swap the staged DB + dirs into place BEFORE Python opens its connection,
+  // otherwise the live SQLite handle will hold the old file hostage.
+  try {
+    const swap = applyPendingRestore(app.getPath('userData'));
+    if (swap.applied) {
+      console.log(`[Cerebro] Applied pending restore (rollback ${swap.rollback_id}, undo=${Boolean(swap.is_undo)})`);
+    } else if (swap.error) {
+      console.warn(`[Cerebro] Pending restore did not apply: ${swap.error}`);
+    }
+  } catch (err) {
+    console.error('[Cerebro] applyPendingRestore threw:', err);
+  }
+
   createWindow();
 
   // Detect Claude Code BEFORE starting the backend so the binary path is
@@ -1764,6 +2678,13 @@ app.on('before-quit', async () => {
   if (telegramBridge) {
     try { await telegramBridge.stop(); } catch { /* ignore */ }
     unregisterChannelSender('telegram');
+  }
+  if (slackBridge) {
+    try { await slackBridge.stop(); } catch { /* ignore */ }
+    unregisterChannelSender('slack');
+  }
+  if (chatActionServer) {
+    try { await chatActionServer.stop(); } catch { /* ignore */ }
   }
   await stopPythonBackend();
 });

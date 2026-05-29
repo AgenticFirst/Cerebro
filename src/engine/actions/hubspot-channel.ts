@@ -15,4 +15,7 @@ export interface HubSpotChannel {
   /** HubSpot portal id discovered on token verification; used to build
    *  deep-link URLs back to tickets. */
   getPortalId(): string | null;
+  /** True if HubSpot is fully configured (token + pipeline + stage). Used by
+   *  the chat-actions catalog to decide if HubSpot actions are runnable. */
+  isConnected(): boolean;
 }

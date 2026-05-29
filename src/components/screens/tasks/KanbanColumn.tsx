@@ -18,7 +18,7 @@ interface KanbanColumnProps {
 
 export default function KanbanColumn({ column, tasks, onCardClick, onMoveTask, onStartTask, onDeleteTask }: KanbanColumnProps) {
   const { t } = useTranslation();
-  const { createTask } = useTasks();
+  const { createTask, liveTaskIds } = useTasks();
   const [isAdding, setIsAdding] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -128,7 +128,15 @@ export default function KanbanColumn({ column, tasks, onCardClick, onMoveTask, o
       >
         <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
           {tasks.map((task) => (
-            <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} onMove={onMoveTask} onStart={onStartTask} onDelete={onDeleteTask} />
+            <TaskCard
+              key={task.id}
+              task={task}
+              onClick={() => onCardClick(task)}
+              onMove={onMoveTask}
+              onStart={onStartTask}
+              onDelete={onDeleteTask}
+              isLiveRun={liveTaskIds.has(task.id)}
+            />
           ))}
         </SortableContext>
 

@@ -13,7 +13,7 @@ import {
   Loader2,
   AlertCircle,
 } from 'lucide-react';
-import { TelegramIcon } from '../../icons/BrandIcons';
+import { TelegramIcon, GitHubIcon } from '../../icons/BrandIcons';
 import clsx from 'clsx';
 import type { Routine, TriggerType } from '../../../types/routines';
 import type { SaveStatus } from '../../../hooks/useRoutineCanvas';
@@ -33,6 +33,8 @@ const TRIGGER_OPTIONS: { value: TriggerType; labelKey: string; icon: typeof Hand
   { value: 'cron', labelKey: 'triggers.scheduled', icon: Clock },
   { value: 'webhook', labelKey: 'triggers.webhook', icon: Webhook },
   { value: 'telegram_message', labelKey: 'triggers.telegramMessage', icon: TelegramIcon as unknown as typeof Hand },
+  { value: 'github_issue_opened', labelKey: 'triggers.githubIssueOpened', icon: GitHubIcon as unknown as typeof Hand },
+  { value: 'github_pr_review_requested', labelKey: 'triggers.githubPrReviewRequested', icon: GitHubIcon as unknown as typeof Hand },
 ];
 
 // ── Component ──────────────────────────────────────────────────

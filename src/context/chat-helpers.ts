@@ -1,4 +1,12 @@
-import type { Conversation, Message, RoutineProposal, ExpertProposal, TeamProposal } from '../types/chat';
+import type {
+  Conversation,
+  Message,
+  RoutineProposal,
+  ExpertProposal,
+  TeamProposal,
+  TeamRun,
+  IntegrationSetupProposal,
+} from '../types/chat';
 
 // ── Pure helpers ─────────────────────────────────────────────────
 
@@ -148,6 +156,14 @@ function expertProposalFromApi(raw: Record<string, unknown>): ExpertProposal {
   };
 }
 
+function integrationProposalFromApi(raw: Record<string, unknown>): IntegrationSetupProposal {
+  return {
+    integrationId: raw.integration_id as string,
+    reason: raw.reason as string | undefined,
+    status: (raw.status as IntegrationSetupProposal['status']) ?? 'proposed',
+  };
+}
+
 function proposalFromApi(raw: Record<string, unknown>): RoutineProposal {
   return {
     name: raw.name as string,
@@ -204,6 +220,7 @@ export function fromApiMessage(m: ApiMessage): Message {
         status: (raw.status as 'running' | 'completed' | 'error') ?? 'completed',
         successCount: raw.success_count as number | undefined,
         totalCount: raw.total_count as number | undefined,
+        startedAt: typeof raw.started_at === 'number' ? (raw.started_at as number) : undefined,
         members: members.map((mem) => ({
           memberId: mem.member_id as string,
           memberName: mem.member_name as string,
@@ -215,6 +232,21 @@ export function fromApiMessage(m: ApiMessage): Message {
     }
     if (m.metadata.is_preview_run) {
       msg.isPreviewRun = true;
+    }
+    if (m.metadata.integration_proposal) {
+      msg.integrationProposal = integrationProposalFromApi(
+        m.metadata.integration_proposal as Record<string, unknown>,
+      );
+    }
+    if (Array.isArray(m.metadata.escalations)) {
+      msg.escalations = (m.metadata.escalations as Array<Record<string, unknown>>)
+        .map((e) => ({
+          attempt: Number(e.attempt ?? 0),
+          model: String(e.model ?? ''),
+          tier: (e.tier as 'fast' | 'medium' | 'slow') ?? 'medium',
+          reason: String(e.reason ?? ''),
+        }))
+        .filter((e) => e.model);
     }
   }
 
@@ -265,6 +297,35 @@ export function toApiProposal(p: RoutineProposal): Record<string, unknown> {
   };
 }
 
+export function toApiIntegrationProposal(
+  p: IntegrationSetupProposal,
+): Record<string, unknown> {
+  return {
+    integration_id: p.integrationId,
+    reason: p.reason,
+    status: p.status,
+  };
+}
+
+export function toApiTeamRun(r: TeamRun): Record<string, unknown> {
+  return {
+    team_id: r.teamId,
+    team_name: r.teamName,
+    strategy: r.strategy,
+    status: r.status,
+    success_count: r.successCount,
+    total_count: r.totalCount,
+    started_at: r.startedAt,
+    members: r.members.map((m) => ({
+      member_id: m.memberId,
+      member_name: m.memberName,
+      role: m.role,
+      status: m.status,
+      response: m.response,
+    })),
+  };
+}
+
 export function toApiTeamProposal(p: TeamProposal): Record<string, unknown> {
   return {
     name: p.name,
@@ -283,14 +344,37 @@ export function toApiTeamProposal(p: TeamProposal): Record<string, unknown> {
   };
 }
 
+export interface MessagePatch {
+  content?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export function apiPatchMessage(
+  convId: string,
+  msgId: string,
+  body: MessagePatch,
+): Promise<unknown> {
+  return window.cerebro.invoke({
+    method: 'PATCH',
+    path: `/conversations/${convId}/messages/${msgId}`,
+    body,
+  });
+}
+
 export function apiPatchMessageMetadata(
   convId: string,
   msgId: string,
   metadata: Record<string, unknown>,
 ): Promise<unknown> {
+  return apiPatchMessage(convId, msgId, { metadata });
+}
+
+export function apiDeleteMessagesAfter(
+  convId: string,
+  msgId: string,
+): Promise<unknown> {
   return window.cerebro.invoke({
-    method: 'PATCH',
-    path: `/conversations/${convId}/messages/${msgId}`,
-    body: { metadata },
+    method: 'DELETE',
+    path: `/conversations/${convId}/messages/after/${msgId}`,
   });
 }

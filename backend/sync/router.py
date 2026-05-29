@@ -20,11 +20,18 @@ import re
 import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Expert
+from models import Expert, ExpertContextFile, FileItem, ParsedFile
 
 router = APIRouter(tags=["sync"])
+
+
+# Must stay in lock-step with src/claude-code/installer.ts so both renderers
+# bake an identical "## Reference documents" section into the expert .md.
+_MAX_CONTEXT_FILE_CHARS_PER_FILE = 40_000
+_MAX_CONTEXT_FILE_TOTAL_CHARS = 120_000
 
 
 # ── Agent-name algorithm (matches src/claude-code/installer.ts) ───
@@ -116,7 +123,100 @@ At the start of every turn, read any markdown files in that directory. When you 
 """
 
 
-def _build_expert_body(expert: Expert, memory_dir: str) -> str:
+def _render_expert_context_section(
+    request: Request, db: Session, expert_id: str
+) -> str:
+    """Python mirror of renderExpertContextSection in installer.ts.
+
+    Loads ExpertContextFile rows for ``expert_id`` in display order, reads
+    each parsed-text sidecar (or falls back to a path hint when the parse
+    isn't ready), and emits the same "## Reference documents" block the TS
+    installer writes — so an expert's .md is identical whether it was last
+    baked by the TS installer at boot or by this endpoint after an
+    attach-expert-context call.
+    """
+    rows = (
+        db.query(ExpertContextFile)
+        .filter(ExpertContextFile.expert_id == expert_id)
+        .order_by(ExpertContextFile.sort_order, ExpertContextFile.created_at)
+        .all()
+    )
+    if not rows:
+        return ""
+
+    parsed_dir = getattr(request.app.state, "parsed_files_dir", None)
+    blocks: list[str] = []
+    total_chars = 0
+    for row in rows:
+        fi = db.get(FileItem, row.file_item_id)
+        if fi is None or fi.deleted_at is not None:
+            continue
+
+        body = ""
+        if fi.sha256 and parsed_dir:
+            parsed = (
+                db.query(ParsedFile)
+                .filter(ParsedFile.sha256 == fi.sha256)
+                .order_by(ParsedFile.created_at.desc())
+                .first()
+            )
+            if parsed is not None:
+                abs_path = os.path.join(parsed_dir, parsed.parsed_path)
+                if os.path.exists(abs_path):
+                    try:
+                        with open(abs_path, encoding="utf-8") as fh:
+                            body = fh.read()
+                    except OSError:
+                        body = ""
+
+        if not body:
+            # Image / text-passthrough / parse-not-ready: surface the file
+            # path so the expert can Read it on its own. Matches the TS
+            # fallback verbatim.
+            body = (
+                f"(File preserved at `{fi.storage_path}`. Use the Read tool only "
+                "for text/image formats — never on binary office docs.)"
+            )
+        else:
+            if len(body) > _MAX_CONTEXT_FILE_CHARS_PER_FILE:
+                original_len = len(body)
+                body = (
+                    body[:_MAX_CONTEXT_FILE_CHARS_PER_FILE]
+                    + f"\n\n[truncated — original was {original_len} chars; "
+                    "raise expert.token_budget or split the file]"
+                )
+            if total_chars + len(body) > _MAX_CONTEXT_FILE_TOTAL_CHARS:
+                blocks.append(
+                    "\n\n[remaining reference files omitted — aggregate context cap of "
+                    f"{_MAX_CONTEXT_FILE_TOTAL_CHARS} chars reached]"
+                )
+                break
+            total_chars += len(body)
+
+        kind_label = (
+            " (TEMPLATE — always follow this format)" if row.kind == "template" else ""
+        )
+        blocks.append(f"### {fi.name}{kind_label}\n\n{body.strip()}")
+
+    if not blocks:
+        return ""
+
+    return (
+        "\n## Reference documents\n\n"
+        "These files were attached by the user as permanent reference for every turn. "
+        "Use them as authoritative context. When a file is marked TEMPLATE, your output "
+        "MUST follow its structure (headings, sections, formatting) exactly.\n\n"
+        + "\n\n".join(blocks)
+        + "\n"
+    )
+
+
+def _build_expert_body(
+    expert: Expert,
+    memory_dir: str,
+    request: Request,
+    db: Session,
+) -> str:
     domain_line = f" Domain: {expert.domain}." if expert.domain else ""
     body = (
         f"You are **{expert.name}**, a Cerebro specialist expert.{domain_line}\n\n"
@@ -124,6 +224,7 @@ def _build_expert_body(expert: Expert, memory_dir: str) -> str:
     )
     if expert.system_prompt:
         body += f"\n## Role\n\n{expert.system_prompt.strip()}\n"
+    body += _render_expert_context_section(request, db, expert.id)
     return body
 
 
@@ -181,7 +282,7 @@ def sync_agent_files(request: Request, db=Depends(get_db)):
         memory_dir = os.path.join(memory_root, agent_name)
         os.makedirs(memory_dir, exist_ok=True)
 
-        body = _build_expert_body(expert, memory_dir)
+        body = _build_expert_body(expert, memory_dir, request, db)
         rendered = _render_agent_file(
             name=agent_name,
             description=expert.description or expert.name,

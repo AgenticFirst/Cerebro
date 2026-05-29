@@ -350,8 +350,22 @@ class Task(Base):
     # workspace. Stored as the realpath-resolved canonical form.
     project_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
+    # Human-readable folder name used under <userData>/task-workspaces/.
+    # Frozen at task creation as slugify(title) + "-" + id[:8]; never updated
+    # when the title changes, so on-disk paths stay stable.
+    workspace_dir: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+
     # Free-form tags for categorization. JSON-serialized list of strings.
     tags: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Final deliverable captured at run_completed. The expert's <deliverable>
+    # body is parsed in the Electron runtime and POSTed here so the task row
+    # carries the result independent of the PTY terminal buffer (which is
+    # ephemeral and ANSI-laden). Used by the Vista previa tab.
+    result_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    result_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # markdown | code_app | mixed
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -454,3 +468,73 @@ class TaskComment(Base):
         String(32), ForeignKey("experts.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+class ParsedFile(Base):
+    """Sidecar cache for binary files (.docx/.xlsx/.pptx/.pdf/audio) that have
+    been extracted to plain markdown/text. Keyed by sha256 + parser_version so
+    upgrades to a parser library invalidate stale parses automatically."""
+
+    __tablename__ = "parsed_files"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    parsed_path: Mapped[str] = mapped_column(String(1024))
+    # Relative path under <userData>/files/_parsed (just "<sha>.md" today).
+    char_count: Mapped[int] = mapped_column(Integer, default=0)
+    parser: Mapped[str] = mapped_column(String(32))
+    # 'python-docx' | 'openpyxl' | 'python-pptx' | 'pypdf' | 'stt'
+    parser_version: Mapped[str] = mapped_column(String(32), default="")
+    warning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class ExpertContextFile(Base):
+    """Permanent reference document attached to an expert. Pre-parsed via
+    ParsedFile and injected into the expert's system prompt every chat."""
+
+    __tablename__ = "expert_context_files"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    expert_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("experts.id", ondelete="CASCADE"), index=True
+    )
+    file_item_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("file_items.id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(String(20), default="reference")
+    # 'reference' | 'template'
+    sort_order: Mapped[float] = mapped_column(default=0.0)
+    char_count: Mapped[int] = mapped_column(Integer, default=0)
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class KnowledgePage(Base):
+    """A single page in the Knowledge Base (Notion-style notes app).
+
+    We use the Notion model: there is no separate "folder" entity — every node
+    is a page, and pages nest via ``parent_id``. A "folder" is simply a page
+    that happens to have children. The page body is stored as one BlockNote
+    document JSON blob (``content_json``, whole-document debounced autosave)
+    plus a lossy markdown mirror (``content_markdown``) that the chat agent
+    reads/writes without ever touching BlockNote's internal JSON.
+    """
+
+    __tablename__ = "knowledge_pages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    parent_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("knowledge_pages.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), default="Untitled")
+    icon: Mapped[str | None] = mapped_column(String(32), nullable=True)        # emoji
+    cover_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    content_json: Mapped[str | None] = mapped_column(Text, nullable=True)      # BlockNote doc JSON
+    content_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)  # mirror for the agent
+    sort_order: Mapped[float] = mapped_column(default=0.0)                     # cheap reordering
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)          # trash
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)

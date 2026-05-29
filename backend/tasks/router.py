@@ -1,14 +1,16 @@
 import asyncio
 import json
 import logging
+import os
+import shutil
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Expert, RunRecord, Setting, Task, TaskChecklistItem, TaskComment
+from models import Expert, FileItem, RunRecord, Setting, Task, TaskChecklistItem, TaskComment
 from sandbox.validation import cerebro_data_dir, validate_link_path
 
 logger = logging.getLogger(__name__)
@@ -20,6 +22,11 @@ from .schemas import (
     CommentCreate,
     CommentQueueUpdate,
     CommentRead,
+    TaskAttachmentCreate,
+    TaskAttachmentMaterializeError,
+    TaskAttachmentMaterializeRequest,
+    TaskAttachmentMaterializeResult,
+    TaskAttachmentRead,
     TaskCreate,
     TaskMove,
     TaskRead,
@@ -27,6 +34,7 @@ from .schemas import (
     TaskStats,
     TaskUpdate,
 )
+from .slug import build_workspace_dir
 
 router = APIRouter()
 
@@ -70,7 +78,19 @@ def _serialize_tags(tags: list[str] | None) -> str | None:
     return json.dumps(unique) if unique else None
 
 
+def _ensure_workspace_dir(task: Task, db: Session) -> str:
+    """Backfill workspace_dir for legacy rows on read so the renderer can
+    always rely on the field being populated."""
+    if task.workspace_dir:
+        return task.workspace_dir
+    task.workspace_dir = build_workspace_dir(task.title, task.id)
+    db.add(task)
+    db.commit()
+    return task.workspace_dir
+
+
 def _task_to_read(task: Task, db: Session) -> TaskRead:
+    workspace_dir = _ensure_workspace_dir(task, db)
     checklist_items = (
         db.query(TaskChecklistItem)
         .filter(TaskChecklistItem.task_id == task.id)
@@ -99,7 +119,11 @@ def _task_to_read(task: Task, db: Session) -> TaskRead:
         run_id=task.run_id,
         last_error=task.last_error,
         project_path=task.project_path,
+        workspace_dir=workspace_dir,
         tags=_parse_tags(task.tags),
+        result_md=task.result_md,
+        result_title=task.result_title,
+        result_kind=task.result_kind,
         created_at=task.created_at,
         updated_at=task.updated_at,
         started_at=task.started_at,
@@ -154,6 +178,7 @@ def create_task(body: TaskCreate, request: Request, db: Session = Depends(get_db
     )
     db.add(task)
     db.flush()
+    task.workspace_dir = build_workspace_dir(task.title, task.id)
     _add_system_comment(db, task.id, "Task created")
     db.commit()
     db.refresh(task)
@@ -368,6 +393,10 @@ async def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_
         task.column = "in_progress"
         task.run_id = run_id
         task.started_at = task.started_at or _utcnow()
+        # Clear any previous deliverable — the new run will write a fresh one.
+        task.result_md = None
+        task.result_title = None
+        task.result_kind = None
         _add_system_comment(db, task.id, "Expert started working")
     elif event_type in TERMINAL_EVENTS:
         # Ignore events from a stale run. After cancel/re-run the task's
@@ -384,6 +413,17 @@ async def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_
         if event_type == "run_completed":
             task.column = "to_review"
             task.completed_at = _utcnow()
+            # Persist the parsed <deliverable> block so Vista previa can render
+            # the result without re-reading the PTY buffer. The runtime sends
+            # these on every successful task run (parseDeliverableBlock); they
+            # may be absent for very old clients.
+            result_md = event.get("result_md")
+            result_title = event.get("result_title")
+            result_kind = event.get("result_kind")
+            if isinstance(result_md, str) and result_md.strip():
+                task.result_md = result_md
+                task.result_title = result_title if isinstance(result_title, str) else None
+                task.result_kind = result_kind if isinstance(result_kind, str) else None
             if run_id:
                 run = db.get(RunRecord, run_id)
                 if run:
@@ -661,3 +701,205 @@ def delete_checklist_item(
     db.delete(item)
     db.commit()
     return {"ok": True}
+
+
+# ── Attachments ──
+
+def _attachment_to_read(item: FileItem) -> TaskAttachmentRead:
+    return TaskAttachmentRead(
+        id=item.id,
+        task_id=item.source_task_id or "",
+        name=item.name,
+        ext=item.ext,
+        mime=item.mime,
+        size_bytes=item.size_bytes,
+        storage_kind=item.storage_kind,
+        storage_path=item.storage_path,
+        sha256=item.sha256,
+        created_at=item.created_at,
+    )
+
+
+@router.post("/{task_id}/attachments", response_model=TaskAttachmentRead, status_code=201)
+def create_attachment(
+    task_id: str,
+    body: TaskAttachmentCreate,
+    db: Session = Depends(get_db),
+):
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    # De-dup: same task + same bytes → return existing row.
+    existing = (
+        db.query(FileItem)
+        .filter(
+            FileItem.source == "task-attachment",
+            FileItem.source_task_id == task_id,
+            FileItem.sha256 == body.sha256,
+            FileItem.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if existing is not None:
+        return _attachment_to_read(existing)
+
+    item = FileItem(
+        bucket_id=None,
+        name=body.name,
+        ext=(body.ext or "").lower().lstrip("."),
+        mime=body.mime,
+        size_bytes=body.size_bytes,
+        sha256=body.sha256,
+        storage_kind="managed",
+        storage_path=body.storage_path,
+        source="task-attachment",
+        source_task_id=task_id,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _attachment_to_read(item)
+
+
+@router.get("/{task_id}/attachments", response_model=list[TaskAttachmentRead])
+def list_attachments(task_id: str, db: Session = Depends(get_db)):
+    if not db.get(Task, task_id):
+        raise HTTPException(404, "Task not found")
+    items = (
+        db.query(FileItem)
+        .filter(
+            FileItem.source == "task-attachment",
+            FileItem.source_task_id == task_id,
+            FileItem.deleted_at.is_(None),
+        )
+        .order_by(FileItem.created_at)
+        .all()
+    )
+    return [_attachment_to_read(i) for i in items]
+
+
+@router.delete("/{task_id}/attachments/{file_id}", status_code=204)
+def delete_attachment(
+    task_id: str,
+    file_id: str,
+    hard: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    item = db.get(FileItem, file_id)
+    if not item or item.source_task_id != task_id or item.source != "task-attachment":
+        raise HTTPException(404, "Attachment not found")
+    # Caller (Electron renderer) is responsible for unlinking the bytes
+    # via FILES_DELETE_MANAGED IPC once this returns.
+    if hard:
+        db.delete(item)
+    else:
+        item.deleted_at = _utcnow()
+    db.commit()
+    return Response(status_code=204)
+
+
+def _sha256_of(path: str) -> str | None:
+    import hashlib
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def _unique_dest(dest_dir: str, name: str) -> str:
+    """Return a path under dest_dir for `name` that doesn't already exist.
+    On collision, suffixes ' (1)', ' (2)', ... before the extension."""
+    candidate = os.path.join(dest_dir, name)
+    if not os.path.exists(candidate):
+        return candidate
+    stem, ext = os.path.splitext(name)
+    counter = 1
+    while True:
+        candidate = os.path.join(dest_dir, f"{stem} ({counter}){ext}")
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
+
+
+@router.post(
+    "/{task_id}/attachments/materialize",
+    response_model=TaskAttachmentMaterializeResult,
+)
+def materialize_attachments(
+    task_id: str,
+    body: TaskAttachmentMaterializeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Copy every live task-attachment for this task into <cwd>/attachments/.
+
+    Idempotent: if a destination file already exists with the matching sha256,
+    it's reported as ``skipped`` and not overwritten. Different bytes under
+    the same filename get a `` (1)``/`` (2)`` suffix.
+
+    Always materializes — the caller resolves the cwd (project_path or per-task
+    workspace fallback), so this endpoint never has to decide where files go.
+    """
+    if not db.get(Task, task_id):
+        raise HTTPException(404, "Task not found")
+    cwd = body.cwd
+    if not cwd or not os.path.isabs(cwd):
+        raise HTTPException(400, "cwd must be an absolute path")
+
+    files_root = getattr(request.app.state, "files_dir", None)
+    if not files_root:
+        raise HTTPException(500, "Files root not configured on backend")
+
+    items = (
+        db.query(FileItem)
+        .filter(
+            FileItem.source == "task-attachment",
+            FileItem.source_task_id == task_id,
+            FileItem.deleted_at.is_(None),
+        )
+        .order_by(FileItem.created_at)
+        .all()
+    )
+
+    dest_dir = os.path.join(cwd, "attachments")
+    result = TaskAttachmentMaterializeResult(destination_dir=dest_dir)
+    if not items:
+        return result
+
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(500, f"Could not create attachments dir: {e}") from e
+
+    for it in items:
+        src_abs = os.path.abspath(os.path.join(files_root, it.storage_path))
+        if not os.path.isfile(src_abs):
+            result.errors.append(
+                TaskAttachmentMaterializeError(name=it.name, error="source-missing")
+            )
+            continue
+
+        primary_dest = os.path.join(dest_dir, it.name)
+        if os.path.exists(primary_dest):
+            existing_sha = _sha256_of(primary_dest)
+            if existing_sha and existing_sha == it.sha256:
+                result.skipped.append(it.name)
+                continue
+            dest_abs = _unique_dest(dest_dir, it.name)
+        else:
+            dest_abs = primary_dest
+
+        try:
+            shutil.copy2(src_abs, dest_abs)
+            result.copied.append(os.path.basename(dest_abs))
+        except OSError as e:
+            result.errors.append(
+                TaskAttachmentMaterializeError(name=it.name, error=str(e))
+            )
+
+    return result

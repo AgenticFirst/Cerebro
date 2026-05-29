@@ -84,9 +84,6 @@ async function extractFacts(
     agent: 'cerebro',
     prompt,
     signal,
-    // Pure text transformation — tools are disabled, so 1 turn should suffice;
-    // keep a tiny cushion for retry on malformed response.
-    maxTurns: 2,
     model: model?.trim() || undefined,
     // `Task` isn't a Claude Code tool the subagent can invoke — passing it
     // effectively disables all tool use, forcing the model to answer directly

@@ -1,0 +1,288 @@
+/**
+ * Pure-helper tests for the Slack bridge. No network, no Bolt, no Electron —
+ * these are the bedrock the bridge depends on, so they must be airtight.
+ */
+import { describe, expect, it } from 'vitest';
+import {
+  threadKey,
+  parseAllowlistRaw,
+  parseSlashCommandText,
+  chunkSlackText,
+  EventDedupe,
+  SlidingWindowLimiter,
+  redactSlackPayload,
+  stripBotMention,
+  parseSlackTriggerRoutine,
+  matchSlackRoutineTriggers,
+  matchesSlackFilter,
+  type BackendRoutineRecord,
+} from '../helpers';
+
+describe('threadKey', () => {
+  it('uses thread_ts when present', () => {
+    expect(threadKey({ teamId: 'T1', channel: 'C1', ts: '2.000', threadTs: '1.000' })).toBe('T1:C1:1.000');
+  });
+  it('falls back to ts when no thread_ts', () => {
+    expect(threadKey({ teamId: 'T1', channel: 'C1', ts: '2.000' })).toBe('T1:C1:2.000');
+  });
+  it('treats null thread_ts as missing', () => {
+    expect(threadKey({ teamId: 'T1', channel: 'C1', ts: '2.000', threadTs: null })).toBe('T1:C1:2.000');
+  });
+  it('produces distinct keys for distinct threads in the same channel', () => {
+    const a = threadKey({ teamId: 'T1', channel: 'C1', ts: '2.000', threadTs: '1.000' });
+    const b = threadKey({ teamId: 'T1', channel: 'C1', ts: '3.000', threadTs: '2.500' });
+    expect(a).not.toBe(b);
+  });
+});
+
+describe('parseAllowlistRaw', () => {
+  it('parses Slack channel ids', () => {
+    expect(parseAllowlistRaw('C01ABCDEF, G01ABCDEF', 'channel')).toEqual(['C01ABCDEF', 'G01ABCDEF']);
+  });
+  it('parses Slack DM channel ids', () => {
+    expect(parseAllowlistRaw('D01ABCDEF', 'channel')).toEqual(['D01ABCDEF']);
+  });
+  it('parses Slack user ids (U and W prefixes)', () => {
+    expect(parseAllowlistRaw('U01ABCDEF W098XYZAB', 'user')).toEqual(['U01ABCDEF', 'W098XYZAB']);
+  });
+  it('strips <#C123|name> mention wrappers', () => {
+    expect(parseAllowlistRaw('<#C01ABCDEF|general>, <@U01ABCDEF>', 'channel'))
+      .toEqual(['C01ABCDEF']);
+    expect(parseAllowlistRaw('<#C01ABCDEF|general>, <@U01ABCDEF>', 'user'))
+      .toEqual(['U01ABCDEF']);
+  });
+  it('keeps the literal wildcard', () => {
+    expect(parseAllowlistRaw('*', 'channel')).toEqual(['*']);
+    expect(parseAllowlistRaw('*', 'user')).toEqual(['*']);
+  });
+  it('dedupes', () => {
+    expect(parseAllowlistRaw('U01ABCDEF, U01ABCDEF', 'user')).toEqual(['U01ABCDEF']);
+  });
+  it('rejects ids of the wrong kind', () => {
+    expect(parseAllowlistRaw('U01ABCDEF', 'channel')).toEqual([]);
+    expect(parseAllowlistRaw('C01ABCDEF', 'user')).toEqual([]);
+  });
+  it('rejects garbage', () => {
+    expect(parseAllowlistRaw('hello world', 'channel')).toEqual([]);
+    expect(parseAllowlistRaw('1234567890', 'user')).toEqual([]);
+    expect(parseAllowlistRaw('Cabc', 'channel')).toEqual([]); // too short
+  });
+});
+
+describe('parseSlashCommandText', () => {
+  it('treats empty input as empty', () => {
+    expect(parseSlashCommandText('')).toEqual({ verb: 'empty' });
+    expect(parseSlashCommandText('   ')).toEqual({ verb: 'empty' });
+  });
+  it('recognises help', () => {
+    expect(parseSlashCommandText('help')).toEqual({ verb: 'help' });
+    expect(parseSlashCommandText('?')).toEqual({ verb: 'help' });
+  });
+  it('recognises experts', () => {
+    expect(parseSlashCommandText('experts')).toEqual({ verb: 'experts' });
+  });
+  it('recognises status', () => {
+    expect(parseSlashCommandText('status')).toEqual({ verb: 'status' });
+  });
+  it('parses expert list / set / clear', () => {
+    expect(parseSlashCommandText('expert')).toEqual({ verb: 'expert', sub: 'list' });
+    expect(parseSlashCommandText('expert list')).toEqual({ verb: 'expert', sub: 'list' });
+    expect(parseSlashCommandText('expert clear')).toEqual({ verb: 'expert', sub: 'clear' });
+    expect(parseSlashCommandText('expert sales-coach')).toEqual({ verb: 'expert', sub: 'set', slug: 'sales-coach' });
+    expect(parseSlashCommandText('expert set sales-coach')).toEqual({ verb: 'expert', sub: 'set', slug: 'sales-coach' });
+  });
+  it('treats free text as an ask', () => {
+    expect(parseSlashCommandText('what is our refund policy')).toEqual({ verb: 'ask', text: 'what is our refund policy' });
+  });
+});
+
+describe('chunkSlackText', () => {
+  it('returns the text unchanged when short enough', () => {
+    expect(chunkSlackText('hello', 100)).toEqual(['hello']);
+  });
+  it('chunks long text on whitespace boundaries', () => {
+    const long = 'a'.repeat(3400) + ' ' + 'b'.repeat(3400);
+    const chunks = chunkSlackText(long, 3500);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(3500);
+    expect(chunks.join(' ').replace(/\s+/g, ' ').replace(/^ /, '')).toBe(long.replace(/\s+/g, ' ').replace(/^ /, ''));
+  });
+  it('handles text without any whitespace', () => {
+    const blob = 'x'.repeat(10000);
+    const chunks = chunkSlackText(blob, 3500);
+    expect(chunks.length).toBe(Math.ceil(10000 / 3500));
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(3500);
+    expect(chunks.join('').length).toBe(10000);
+  });
+});
+
+describe('EventDedupe', () => {
+  it('returns true on first sight, false on duplicate', () => {
+    const d = new EventDedupe();
+    expect(d.observe('evt-1')).toBe(true);
+    expect(d.observe('evt-1')).toBe(false);
+    expect(d.observe('evt-2')).toBe(true);
+  });
+  it('caps total size', () => {
+    const d = new EventDedupe(5);
+    for (let i = 0; i < 10; i++) d.observe(`evt-${i}`);
+    expect(d.size()).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('SlidingWindowLimiter', () => {
+  it('allows up to max calls in a window', () => {
+    const lim = new SlidingWindowLimiter(3, 1000);
+    expect(lim.allow('u1', 1000)).toBe(true);
+    expect(lim.allow('u1', 1100)).toBe(true);
+    expect(lim.allow('u1', 1200)).toBe(true);
+    expect(lim.allow('u1', 1300)).toBe(false);
+  });
+  it('lets calls through once the window slides', () => {
+    const lim = new SlidingWindowLimiter(2, 1000);
+    expect(lim.allow('u1', 1000)).toBe(true);
+    expect(lim.allow('u1', 1500)).toBe(true);
+    expect(lim.allow('u1', 1600)).toBe(false);
+    // After 1000ms passes for the first call, it should fall out of the window
+    expect(lim.allow('u1', 2100)).toBe(true);
+  });
+});
+
+describe('stripBotMention', () => {
+  it('strips a bare bot mention', () => {
+    expect(stripBotMention('<@U098ABC> hello', 'U098ABC')).toBe('hello');
+  });
+  it('strips a labelled bot mention', () => {
+    expect(stripBotMention('<@U098ABC|cerebro> tell me a joke', 'U098ABC')).toBe('tell me a joke');
+  });
+  it('returns text unchanged when no botUserId', () => {
+    expect(stripBotMention('<@U098ABC> hi', null)).toBe('<@U098ABC> hi');
+  });
+  it('leaves other mentions alone', () => {
+    expect(stripBotMention('<@U098ABC> say hi to <@U999XYZ>', 'U098ABC')).toBe('say hi to <@U999XYZ>');
+  });
+});
+
+describe('redactSlackPayload', () => {
+  it('redacts text and blocks fields', () => {
+    const out = redactSlackPayload({
+      channel: 'C123',
+      user: 'U456',
+      text: 'top secret message',
+      blocks: [{ type: 'section', text: 'sensitive' }],
+    }) as Record<string, unknown>;
+    expect(out.channel).toBe('C123');
+    expect(out.user).toBe('U456');
+    expect(out.text).toBe('<redacted>');
+    expect(out.blocks).toBe('<redacted>');
+  });
+  it('scrubs token-looking values in nested strings', () => {
+    const out = redactSlackPayload({
+      auth_header: 'Bearer xoxb-1234567890abcdef-ghijklmnop',
+      app: 'xapp-1-AAAAAAAAAA-1111111111111-bbbbbbbb',
+    }) as Record<string, unknown>;
+    expect(out.auth_header).not.toContain('xoxb-');
+    expect(out.app).not.toContain('xapp-');
+  });
+  it('passes through null / non-objects safely', () => {
+    expect(redactSlackPayload(null)).toBe(null);
+    expect(redactSlackPayload(42)).toBe(42);
+  });
+});
+
+describe('parseSlackTriggerRoutine', () => {
+  function rec(dag: unknown, opts: Partial<BackendRoutineRecord> = {}): BackendRoutineRecord {
+    return {
+      id: 'rt-1',
+      name: 'test routine',
+      is_enabled: true,
+      trigger_type: 'slack_message',
+      dag_json: JSON.stringify(dag),
+      ...opts,
+    };
+  }
+  it('returns null when dag_json missing', () => {
+    expect(parseSlackTriggerRoutine({ ...rec({}), dag_json: null })).toBe(null);
+  });
+  it('returns null when triggerType is not slack', () => {
+    expect(parseSlackTriggerRoutine(rec({ trigger: { triggerType: 'trigger_telegram_message', config: { channel: 'C1' } } }))).toBe(null);
+  });
+  it('parses a minimal slack trigger', () => {
+    const parsed = parseSlackTriggerRoutine(rec({
+      trigger: { triggerType: 'trigger_slack_message', config: { channel: 'C1' } },
+      steps: [],
+    }));
+    expect(parsed).not.toBe(null);
+    expect(parsed!.trigger.channel).toBe('C1');
+    expect(parsed!.trigger.surface).toBe('any');
+    expect(parsed!.trigger.filter_type).toBe('none');
+  });
+  it('respects optional surface and user_id', () => {
+    const parsed = parseSlackTriggerRoutine(rec({
+      trigger: {
+        triggerType: 'trigger_slack_message',
+        config: { channel: '*', user_id: 'U123', surface: 'app_mention', filter_type: 'keyword', filter_value: 'urgent' },
+      },
+      steps: [],
+    }));
+    expect(parsed!.trigger.user_id).toBe('U123');
+    expect(parsed!.trigger.surface).toBe('app_mention');
+    expect(parsed!.trigger.filter_type).toBe('keyword');
+    expect(parsed!.trigger.filter_value).toBe('urgent');
+  });
+});
+
+describe('matchesSlackFilter', () => {
+  it('matches everything when type is none', () => {
+    expect(matchesSlackFilter('hello world', 'none', '')).toBe(true);
+    expect(matchesSlackFilter('', 'none', '')).toBe(true);
+  });
+  it('keyword filter is word-boundary sensitive', () => {
+    expect(matchesSlackFilter('urgent: server down', 'keyword', 'urgent')).toBe(true);
+    expect(matchesSlackFilter('the urgentest fire', 'keyword', 'urgent')).toBe(false);
+  });
+  it('prefix filter is case-insensitive', () => {
+    expect(matchesSlackFilter('HELP me out', 'prefix', 'help')).toBe(true);
+    expect(matchesSlackFilter('please help', 'prefix', 'help')).toBe(false);
+  });
+  it('regex filter handles complex patterns', () => {
+    expect(matchesSlackFilter('order #12345 stuck', 'regex', 'order #\\d+')).toBe(true);
+  });
+  it('returns false for a bad regex (no crash)', () => {
+    expect(matchesSlackFilter('anything', 'regex', '[unterminated')).toBe(false);
+  });
+});
+
+describe('matchSlackRoutineTriggers', () => {
+  const baseRoutine = {
+    id: 'r1',
+    name: 'r1',
+    dag: { steps: [] },
+    trigger: { channel: 'C1', filter_type: 'none' as const, filter_value: '' },
+  };
+  it('matches a channel-specific routine', () => {
+    expect(matchSlackRoutineTriggers([baseRoutine], {
+      channel: 'C1', userId: 'U1', surface: 'app_mention', text: 'hi',
+    }).length).toBe(1);
+  });
+  it('rejects a routine for the wrong channel', () => {
+    expect(matchSlackRoutineTriggers([baseRoutine], {
+      channel: 'C2', userId: 'U1', surface: 'app_mention', text: 'hi',
+    }).length).toBe(0);
+  });
+  it('wildcard channel matches anything', () => {
+    expect(matchSlackRoutineTriggers([{ ...baseRoutine, trigger: { ...baseRoutine.trigger, channel: '*' } }], {
+      channel: 'C99', userId: 'U1', surface: 'message_im', text: 'hi',
+    }).length).toBe(1);
+  });
+  it('user_id constraint narrows the match', () => {
+    const r = { ...baseRoutine, trigger: { ...baseRoutine.trigger, user_id: 'U42' } };
+    expect(matchSlackRoutineTriggers([r], { channel: 'C1', userId: 'U42', surface: 'app_mention', text: 'hi' }).length).toBe(1);
+    expect(matchSlackRoutineTriggers([r], { channel: 'C1', userId: 'U99', surface: 'app_mention', text: 'hi' }).length).toBe(0);
+  });
+  it('surface constraint narrows the match', () => {
+    const r = { ...baseRoutine, trigger: { ...baseRoutine.trigger, surface: 'app_mention' as const } };
+    expect(matchSlackRoutineTriggers([r], { channel: 'C1', userId: 'U1', surface: 'app_mention', text: 'hi' }).length).toBe(1);
+    expect(matchSlackRoutineTriggers([r], { channel: 'C1', userId: 'U1', surface: 'message_im', text: 'hi' }).length).toBe(0);
+  });
+});
