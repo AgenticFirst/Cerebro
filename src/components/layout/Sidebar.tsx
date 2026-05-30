@@ -4,7 +4,6 @@ import {
   Target,
   Users,
   Zap,
-  Activity,
   ShieldCheck,
   Plug,
   Sparkles,
@@ -17,6 +16,8 @@ import {
   RotateCcw,
   FolderOpen,
   BookOpen,
+  LayoutGrid,
+  ChevronRight,
   type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -50,9 +51,9 @@ const NAV_PRIMARY: NavItemDef[] = [
   { id: 'files', icon: FolderOpen },
 ];
 
-// Oversight — monitoring & control (badge injected dynamically in Sidebar)
+// Oversight — monitoring & control (badge injected dynamically in Sidebar).
+// Activity moved into Settings → Activity.
 const NAV_OVERSIGHT_BASE: NavItemDef[] = [
-  { id: 'activity', icon: Activity },
   { id: 'approvals', icon: ShieldCheck },
 ];
 
@@ -236,6 +237,7 @@ export default function Sidebar() {
   const { spotlightedNavId } = useOnboarding();
 
   const [collapsed, setCollapsed] = useState(false);
+  const [appsExpanded, setAppsExpanded] = useState(true);
   const grouped = useMemo(() => groupByTime(generalConversations), [generalConversations]);
 
   /** Resolve a NavItemDef[] to NavItem[] with translated labels */
@@ -359,19 +361,51 @@ export default function Sidebar() {
 
         <GhostSeparator collapsed={collapsed} />
 
-        {/* Apps: Knowledge Base, … */}
-        {!collapsed && (
-          <div className="px-2 pb-1 text-[11px] font-semibold text-text-tertiary uppercase tracking-[0.08em] select-none">
-            {t('nav.apps')}
+        {/* Apps: an expandable group with its apps (Knowledge Base, …) nested
+            inside. Collapsed (icon rail) shows the apps directly. */}
+        {collapsed ? (
+          <NavGroup
+            items={navApps}
+            activeScreen={activeScreen}
+            collapsed={collapsed}
+            onNavClick={handleNavClick}
+            spotlightedNavId={spotlightedNavId}
+          />
+        ) : (
+          <div className="space-y-px">
+            <button
+              onClick={() => setAppsExpanded((v) => !v)}
+              className={clsx(
+                'group w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-md',
+                'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]',
+                'transition-all duration-150 cursor-pointer',
+              )}
+            >
+              <div className="flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0 text-text-tertiary group-hover:text-text-secondary">
+                <LayoutGrid size={14} strokeWidth={1.5} />
+              </div>
+              <span className="text-[13px] leading-none">{t('nav.apps')}</span>
+              <ChevronRight
+                size={13}
+                className={clsx(
+                  'ml-auto text-text-tertiary transition-transform duration-150',
+                  appsExpanded && 'rotate-90',
+                )}
+              />
+            </button>
+            {appsExpanded && (
+              <div className="ml-3 pl-2 border-l border-white/[0.06]">
+                <NavGroup
+                  items={navApps}
+                  activeScreen={activeScreen}
+                  collapsed={collapsed}
+                  onNavClick={handleNavClick}
+                  spotlightedNavId={spotlightedNavId}
+                />
+              </div>
+            )}
           </div>
         )}
-        <NavGroup
-          items={navApps}
-          activeScreen={activeScreen}
-          collapsed={collapsed}
-          onNavClick={handleNavClick}
-          spotlightedNavId={spotlightedNavId}
-        />
 
         <GhostSeparator collapsed={collapsed} />
 

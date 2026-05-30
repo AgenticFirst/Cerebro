@@ -39,6 +39,15 @@ export interface KbTrashItem {
   icon: string | null;
 }
 
+export interface KbSearchHit {
+  id: string;
+  parentId: string | null;
+  title: string;
+  icon: string | null;
+  /** Snippet with matched spans wrapped in \x01 (start) / \x02 (end) sentinels. */
+  snippet: string;
+}
+
 /* ── API (snake_case) → app (camelCase) mappers ───────────────────── */
 
 interface ApiTreeNode {
@@ -109,6 +118,7 @@ interface KnowledgeBaseContextValue {
   restorePage: (id: string) => Promise<void>;
   deletePage: (id: string) => Promise<void>;
   loadTrash: () => Promise<KbTrashItem[]>;
+  searchPages: (q: string) => Promise<KbSearchHit[]>;
 }
 
 const KnowledgeBaseContext = createContext<KnowledgeBaseContextValue | null>(null);
@@ -325,6 +335,31 @@ export function KnowledgeBaseProvider({ children }: { children: ReactNode }) {
     return [];
   }, []);
 
+  const searchPages = useCallback(async (q: string): Promise<KbSearchHit[]> => {
+    const query = q.trim();
+    if (!query) return [];
+    try {
+      const res: BackendResponse<{
+        results: Array<{ id: string; parent_id: string | null; title: string; icon: string | null; snippet: string }>;
+      }> = await window.cerebro.invoke({
+        method: 'GET',
+        path: `/knowledge/search?q=${encodeURIComponent(query)}`,
+      });
+      if (res.ok) {
+        return res.data.results.map((r) => ({
+          id: r.id,
+          parentId: r.parent_id,
+          title: r.title,
+          icon: r.icon,
+          snippet: r.snippet,
+        }));
+      }
+    } catch {
+      /* ignore */
+    }
+    return [];
+  }, []);
+
   const value = useMemo<KnowledgeBaseContextValue>(
     () => ({
       tree,
@@ -343,6 +378,7 @@ export function KnowledgeBaseProvider({ children }: { children: ReactNode }) {
       restorePage,
       deletePage,
       loadTrash,
+      searchPages,
     }),
     [
       tree,
@@ -361,6 +397,7 @@ export function KnowledgeBaseProvider({ children }: { children: ReactNode }) {
       restorePage,
       deletePage,
       loadTrash,
+      searchPages,
     ],
   );
 

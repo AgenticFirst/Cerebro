@@ -17,6 +17,9 @@ export const IPC_CHANNELS = {
   AGENT_CANCEL: 'agent:cancel',
   AGENT_ACTIVE_RUNS: 'agent:active-runs',
   agentEvent: (runId: string) => `agent:event:${runId}`,
+  // One-off "Ask AI" assistant runs (reuse agentEvent channel for streaming)
+  ASSISTANT_RUN: 'assistant:run',
+  ASSISTANT_CANCEL: 'assistant:cancel',
 
   // Execution engine
   ENGINE_RUN: 'engine:run',
@@ -393,11 +396,24 @@ export interface ActiveRunInfo {
   startedAt: number;
 }
 
+export interface AssistantRunRequest {
+  /** Caller-generated id; subscribe via `agent.onEvent(runId, …)` before calling. */
+  runId: string;
+  prompt: string;
+  /** App-wide default model ('haiku'|'sonnet'|'opus'); resolved by the runtime. */
+  model?: string;
+  qualityTier?: QualityTier;
+  language?: string;
+}
+
 export interface AgentAPI {
   run(request: AgentRunRequest): Promise<string>;
   cancel(runId: string): Promise<boolean>;
   activeRuns(): Promise<ActiveRunInfo[]>;
   onEvent(runId: string, callback: (event: RendererAgentEvent) => void): () => void;
+  /** One-off "Ask AI" run; streams on the same `onEvent(runId)` channel. */
+  runAssistant(request: AssistantRunRequest): Promise<string>;
+  cancelAssistant(runId: string): Promise<boolean>;
 }
 
 // --- Execution Engine ---

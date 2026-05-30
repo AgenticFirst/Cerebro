@@ -251,6 +251,7 @@ When the user references an existing expert, decide which of these three intents
 You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 
 - \`create-task\` — kick off a one-off, goal-oriented piece of work that produces a deliverable (markdown doc, runnable code app, or both). Tasks run autonomously: clarify → plan → execute. Confirm the title and goal with the user first, then invoke.
+- \`list-tasks\` — list the existing Kanban task cards (optionally filtered by column). Read-only — no confirmation needed. Use when the user asks to *see* their tasks ("what tasks do I have", "tareas de hoy", "qué tareas tengo hoy", "listar tareas en progreso"). The script returns every task; you filter "created/due today" yourself from each task's \`created_at\` / \`due_at\`.
 - \`create-expert\` — create a new expert (a persistent specialist persona the user will talk to repeatedly) when the user describes a recurring need that no current expert covers. First confirm the proposed name, description, and system prompt with the user, then invoke.
 - \`attach-expert-context\` — permanently attach a document to an existing expert as a \`template\` (output must follow this format) or \`reference\` (background knowledge). Use only when the user says it should *always* be used by the expert — not for one-off per-task context, which goes through the \`Agent\` tool.
 - \`update-expert\` — modify an existing expert's name, description, or system prompt. Use only when the user explicitly asks to change the expert itself (not when they ask the expert to do work). Always confirm the new wording with the user before invoking.
@@ -267,6 +268,10 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), post a Slack message or file in a channel, DM a Slack user, open a GitHub issue, comment on a PR, submit a PR review, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "publica en #general en Slack", "mándale un DM a Pablo por Slack", "mándale el manual en PDF", "avísame en 30 minutos", "abre un issue en GitHub", "revisa el PR #42", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
 
 When sending media, prefer \`file_item_id\` (referencing a file Cerebro already has — e.g., one a previous step generated and registered). Use \`file_path\` only as an escape hatch for an absolute path Cerebro just wrote to disk.
+
+### "Tickets" vs "tareas" — when in doubt, check both
+
+The word **"ticket"** (and Spanish *"ticket"*) is ambiguous: it can mean a **HubSpot ticket** *or* one of the user's own **Cerebro tasks** (the cards on the Tasks board, *"tareas"*). When the user asks to **list / show / see** "tickets" (e.g. *"lista los tickets creados hoy"*, *"list today's tickets"*) and it is **not** clear which they mean, **check both**: run \`hubspot_search_tickets\` via \`run-chat-action\` **and** the \`list-tasks\` skill, then report both result sets in your reply, clearly separated under headings (e.g. "HubSpot tickets" and "Cerebro tasks / Tareas"). Only narrow to one source when the user is explicit — *"HubSpot ticket"* → HubSpot only; *"tarea" / "task"* → \`list-tasks\` only. If HubSpot isn't connected, just return the Cerebro tasks (and mention HubSpot isn't connected if relevant).
 
 ## Connecting integrations
 
@@ -675,6 +680,29 @@ curl -s "http://127.0.0.1:$PORT/knowledge/pages" 2>/dev/null | \\
 `,
     },
     {
+      name: 'kb-search.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Full-text search the Knowledge Base, ranked by relevance.
+# Usage: bash kb-search.sh <query...>
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+[ -f "$RUNTIME_JSON" ] || { echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2; exit 1; }
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+[ -n "$PORT" ] && [ "$PORT" != "null" ] || { echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2; exit 1; }
+
+QUERY="$*"
+[ -n "$QUERY" ] || { echo "ERROR: Provide a search query. Usage: bash kb-search.sh <query>" >&2; exit 1; }
+
+# Strip the snippet highlight markers (control chars) for clean output; ranked.
+curl -s -G "http://127.0.0.1:$PORT/knowledge/search" --data-urlencode "q=$QUERY" 2>/dev/null | \\
+  jq '[.results[] | {id, title, snippet: (.snippet | gsub("[[:cntrl:]]"; ""))}]' || {
+  echo "ERROR: Cannot connect to backend at port $PORT (is the app running?)" >&2
+  exit 1
+}
+`,
+    },
+    {
       name: 'kb-read-page.sh',
       content: `#!/usr/bin/env bash
 set -euo pipefail
@@ -931,6 +959,51 @@ if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null;
   TASK_ID=$(echo "$BODY_RESPONSE" | jq -r '.id // "unknown"')
   echo "SUCCESS: Created task '$TASK_TITLE' (id: $TASK_ID) in Backlog"
   echo "$BODY_RESPONSE" | jq .
+else
+  echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2
+  echo "$BODY_RESPONSE" >&2
+  exit 1
+fi
+`,
+    },
+    {
+      name: 'list-tasks.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .backend_port "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
+  echo "ERROR: Cannot read backend_port from $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+# Optional first arg = column filter (backlog|in_progress|to_review|completed|error).
+COLUMN="\${1:-}"
+URL="http://127.0.0.1:$PORT/tasks"
+if [ -n "$COLUMN" ]; then
+  URL="$URL?column=$COLUMN"
+fi
+
+RESPONSE=$(curl -s -w "\\n%{http_code}" "$URL" 2>&1) || {
+  echo "ERROR: Cannot connect to backend at port $PORT (is the app running?)" >&2
+  exit 1
+}
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  COUNT=$(echo "$BODY_RESPONSE" | jq 'length')
+  echo "SUCCESS: Retrieved $COUNT task(s)."
+  # Compact projection — the fields the agent needs to filter by date and report.
+  echo "$BODY_RESPONSE" | jq '[.[] | {id, title, column, priority, expert_id, created_at, due_at, started_at, completed_at}]'
 else
   echo "ERROR: Backend returned HTTP $HTTP_CODE" >&2
   echo "$BODY_RESPONSE" >&2
@@ -1615,11 +1688,17 @@ If the output says **ERROR**, report the error to the user.
 
 The Knowledge Base is Cerebro's built-in Notion-style notes app: a tree of pages (a "folder" is just a page with children). You work in **markdown** — never touch the editor's internal block JSON. All commands run with the **Bash** tool.
 
+## Search pages (do this first when looking something up)
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/kb-search.sh" "your search terms"
+\`\`\`
+Returns relevance-ranked \`{id, title, snippet}\` matches across page titles **and** bodies. This is the right tool when the user asks "what does my knowledge base say about X" or "find the page about Y" — search by keyword rather than guessing from titles. Then \`kb-read-page.sh\` the most relevant id(s) for full content.
+
 ## List pages
 \`\`\`bash
 bash "$CLAUDE_PROJECT_DIR/.claude/scripts/kb-list-pages.sh"
 \`\`\`
-Returns a flat array of \`{id, title, parent_id}\`. Use it to find a page id or to understand the existing structure before creating something new.
+Returns a flat array of \`{id, title, parent_id}\`. Use it to browse the whole structure (e.g. before creating something new); prefer \`kb-search.sh\` when you're looking for specific content.
 
 ## Read a page
 \`\`\`bash
@@ -1890,6 +1969,52 @@ If the output says **ERROR**, report the error to the user.
 `,
     },
     {
+      name: 'list-tasks',
+      description: 'List existing Kanban task cards from the backend, with an optional column filter. Read-only.',
+      body: `# List tasks
+
+This skill reads the **tasks** on the Kanban board (the cards created via \`create-task\` and shown on the Tasks screen). Use it whenever the user wants to *see* their tasks rather than create one.
+
+This is **read-only** — no confirmation needed. Just run it and report.
+
+## When to use
+
+Match requests like (English **or** Spanish):
+
+- "what tasks do I have", "list my tasks", "show the tasks", "listar tareas", "qué tareas tengo"
+- "tasks created today", "tareas de hoy", "qué tareas se crearon hoy"
+- "tasks due today", "tareas que vencen hoy", "qué tareas vencen hoy"
+- "what's in progress", "tareas pendientes", "tareas en progreso", "qué hay en revisión"
+
+## How to invoke
+
+All tasks:
+
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/list-tasks.sh"
+\`\`\`
+
+Filter by column (one of \`backlog\`, \`in_progress\`, \`to_review\`, \`completed\`, \`error\`):
+
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/list-tasks.sh" in_progress
+\`\`\`
+
+The script prints \`SUCCESS: Retrieved N task(s).\` followed by a JSON array. Each task has \`id\`, \`title\`, \`column\`, \`priority\`, \`expert_id\`, \`created_at\`, \`due_at\`, \`started_at\`, \`completed_at\`.
+
+## Filtering by date — you do this yourself
+
+The script does **not** filter by date; it returns every task (or every task in a column). For "created today" / "due today" requests, fetch the list and filter in your head:
+
+- \`created_at\` and \`due_at\` are ISO-8601 timestamps in **UTC**.
+- Compare the **calendar date** portion against the user's current local day (today's date is given to you in context). "Created today" = \`created_at\` falls on today; "due today" = \`due_at\` falls on today.
+
+## Reporting
+
+Present a concise list — title, column, priority, and due date when present. If \`SUCCESS: Retrieved 0\` or nothing matches the date filter, say so plainly ("No tienes tareas creadas hoy." / "You have no tasks created today.") rather than inventing entries. Reply in the user's language. On \`ERROR\`, surface the message.
+`,
+    },
+    {
       name: 'run-chat-action',
       description: 'Invoke a connected integration action (HubSpot, Telegram, Slack, WhatsApp, …) directly from chat. Always pauses for human approval.',
       body: `# Run chat action
@@ -1904,6 +2029,8 @@ The user may speak in **English or Spanish** (or mix them). Recognize natural-la
 | "Create a HubSpot ticket about X and link it to juan@…" / "Crea un ticket de HubSpot sobre X y asócialo a juan@…" | \`hubspot_create_ticket\` (pass \`contact_email\`) |
 | "Add Maria to HubSpot" / "Agrega a María a HubSpot" | \`hubspot_upsert_contact\` |
 | "Is juan@… a contact in HubSpot?" / "¿Está juan@… como contacto en HubSpot?" | \`hubspot_search_contact\` |
+| "List the HubSpot tickets created today" / "Lista los tickets de HubSpot creados hoy" | \`hubspot_search_tickets\` |
+| "Show me the open HubSpot tickets" / "Muéstrame los tickets de HubSpot abiertos" | \`hubspot_search_tickets\` |
 | "Send Pablo a Telegram" / "Envíale un Telegram a Pablo" | \`send_telegram_message\` |
 | "Post in #general on Slack saying X" / "Publica en #general en Slack diciendo X" | \`send_slack_message\` |
 | "DM @Pablo on Slack about X" / "Mándale un DM a @Pablo por Slack sobre X" | \`send_slack_message\` (use the DM channel id, D…) |
@@ -1919,6 +2046,8 @@ The user may speak in **English or Spanish** (or mix them). Recognize natural-la
 | "GET https://… and tell me the status" | \`http_request\` |
 
 **HubSpot — attaching a contact to a ticket.** To link a ticket to someone, pass \`contact_email\` straight to \`hubspot_create_ticket\` — it looks the contact up by email and creates them if they don't exist, then associates the ticket, all in this one action. Do **not** call \`hubspot_upsert_contact\` first and try to thread the id across calls; \`run-chat-action\` runs one action at a time. Use \`hubspot_search_contact\` only when the user just wants to *check* whether a contact exists (it changes nothing). Already have the HubSpot contact id? Pass \`contact_id\` instead — it takes precedence.
+
+**HubSpot — listing tickets.** When the user asks to *see* or *list* tickets ("list the tickets created today", "lista los tickets de hoy", "show open tickets"), use \`hubspot_search_tickets\` — it's read-only. For "created today", pass \`created_after\` = the start of today and \`created_before\` = the start of tomorrow, as ISO dates in the user's local day (e.g. \`2026-05-28\` / \`2026-05-29\`). The result includes each ticket's \`stage_label\` and a \`ticket_url\` — use those in your reply rather than the raw ids. Note "ticket" is ambiguous in Spanish: see the \`list-tasks\` skill and the check-both rule in your main instructions before deciding whether the user means a HubSpot ticket or a Cerebro task.
 
 ## Workflow
 

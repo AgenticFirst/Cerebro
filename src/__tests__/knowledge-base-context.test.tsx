@@ -113,6 +113,38 @@ describe('KnowledgeBaseContext', () => {
     });
   });
 
+  it('searchPages GETs /knowledge/search and maps hits', async () => {
+    invoke.mockResolvedValueOnce(
+      ok({
+        results: [
+          { id: 'p1', parent_id: null, title: 'Onboarding', icon: '📘', snippet: 'a \x01match\x02 here' },
+        ],
+      }),
+    );
+    const { result } = renderHook(() => useKnowledgeBase(), { wrapper });
+    let hits: Awaited<ReturnType<typeof result.current.searchPages>> = [];
+    await act(async () => {
+      hits = await result.current.searchPages('onboard');
+    });
+    expect(invoke).toHaveBeenCalledWith({
+      method: 'GET',
+      path: '/knowledge/search?q=onboard',
+    });
+    expect(hits).toEqual([
+      { id: 'p1', parentId: null, title: 'Onboarding', icon: '📘', snippet: 'a \x01match\x02 here' },
+    ]);
+  });
+
+  it('searchPages returns [] for blank query without calling the backend', async () => {
+    const { result } = renderHook(() => useKnowledgeBase(), { wrapper });
+    let hits: unknown[] = [];
+    await act(async () => {
+      hits = await result.current.searchPages('   ');
+    });
+    expect(hits).toEqual([]);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it('archivePage clears the active page and reloads the tree', async () => {
     // open p1 first
     invoke.mockResolvedValueOnce(ok({ id: 'p1', parent_id: null, title: 'X', icon: null, cover_url: null, content_json: null, content_markdown: null, sort_order: 1, is_archived: false }));

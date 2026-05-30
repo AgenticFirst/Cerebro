@@ -5,6 +5,8 @@
  * the engine layer.
  */
 
+import type { HubSpotPipelineSummary } from '../../types/ipc';
+
 export interface HubSpotChannel {
   /** Returns the configured Private App access token, or null if not set. */
   getAccessToken(): string | null;
@@ -18,4 +20,7 @@ export interface HubSpotChannel {
   /** True if HubSpot is fully configured (token + pipeline + stage). Used by
    *  the chat-actions catalog to decide if HubSpot actions are runnable. */
   isConnected(): boolean;
+  /** Ticket pipelines + stages, with human labels. Cached by the holder.
+   *  Used by `hubspot_search_tickets` to map pipeline/stage ids to labels. */
+  listPipelines(): Promise<{ ok: boolean; pipelines?: HubSpotPipelineSummary[]; error?: string }>;
 }

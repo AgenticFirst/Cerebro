@@ -119,7 +119,14 @@ export default function PageEditor() {
       <CoverBanner page={activePage} />
       <div className={activePage.coverUrl ? 'kb-page-column pt-4' : 'kb-page-column pt-10'}>
         <PageHeader page={activePage} />
-        <BlockEditor key={activePage.id} page={activePage} />
+        {/* Key includes a content signature so an external reload (e.g. the AI
+            assistant edited this page) remounts the editor with fresh content.
+            Normal in-editor edits don't change activePage in context, so the
+            key stays stable and typing is never interrupted. */}
+        <BlockEditor
+          key={`${activePage.id}:${activePage.contentJson?.length ?? 0}`}
+          page={activePage}
+        />
       </div>
     </div>
   );

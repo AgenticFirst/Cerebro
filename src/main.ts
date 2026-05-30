@@ -21,6 +21,7 @@ import type {
   StreamRequest,
   StreamEvent,
   ClaudeCodeProbeResult,
+  AssistantRunRequest,
 } from './types/ipc';
 import { AgentRuntime } from './agents';
 import type { AgentRunRequest } from './agents';
@@ -876,6 +877,18 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.AGENT_CANCEL, async (_event, runId: string) => {
     if (!agentRuntime) return false;
     return agentRuntime.cancelRun(runId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ASSISTANT_RUN, async (event, request: AssistantRunRequest) => {
+    if (!agentRuntime) {
+      throw new Error('Agent runtime not initialized');
+    }
+    return agentRuntime.startAssistantRun(event.sender, request);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ASSISTANT_CANCEL, async (_event, runId: string) => {
+    if (!agentRuntime) return false;
+    return agentRuntime.cancelAssistantRun(runId);
   });
 
   ipcMain.handle(IPC_CHANNELS.CHAT_RESET_SESSION, async (_event, conversationId: string) => {

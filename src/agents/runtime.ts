@@ -312,6 +312,10 @@ interface ExpertNameLookup {
 
 export class AgentRuntime {
   private activeRuns = new Map<string, ActiveRun>();
+  /** Ephemeral one-off "Ask AI" runs (Knowledge Base assistant). Kept separate
+   *  from `activeRuns` — they have no conversation/session/RunRecord/task state,
+   *  just a streaming runner we can forward events from and abort. */
+  private assistantRuns = new Map<string, ClaudeCodeRunner>();
   /**
    * Single-flight registry keyed by conversationId. Chat runs map 1:1 to a
    * Claude Code session id (`toUuidFormat(conversationId)`), so a second
@@ -1337,6 +1341,69 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     run.runner?.abort();
     run.ptyRunner?.abort();
     this.finalizeRun(runId, 'cancelled', run.accumulatedText);
+    return true;
+  }
+
+  /**
+   * Run a focused one-off Claude Code turn for the Knowledge Base "Ask AI"
+   * assistant and stream it to the renderer on the standard `agent:event:<runId>`
+   * channel (so callers reuse `agent.onEvent`). Unlike `startRun` this has no
+   * conversation single-flight, session resumption, RunRecord, or message
+   * persistence — the panel owns its own thread storage. The `cerebro` agent's
+   * native WebSearch/WebFetch tools let it browse when the prompt warrants it.
+   * The caller pre-generates `runId` and subscribes before calling, avoiding a
+   * first-token race.
+   */
+  startAssistantRun(
+    webContents: AgentEventSink,
+    request: { runId: string; prompt: string; model?: string; qualityTier?: QualityTier; language?: string },
+  ): string {
+    const { runId, prompt } = request;
+    const runner = new ClaudeCodeRunner();
+    this.assistantRuns.set(runId, runner);
+
+    runner.on('event', (event: RendererAgentEvent) => {
+      // Drop the raw 'error' event copy; the 'error' handler delivers the
+      // friendly, classified one (mirrors the chat path).
+      if (event.type === 'error') return;
+      this.deliverEvent(runId, webContents, event);
+    });
+    runner.on('done', (messageContent: string) => {
+      this.deliverEvent(runId, webContents, { type: 'done', runId, messageContent } as RendererAgentEvent);
+      this.assistantRuns.delete(runId);
+    });
+    runner.on('error', (error: string) => {
+      const cls = runner.getLastErrorClass();
+      this.deliverEvent(runId, webContents, {
+        type: 'error',
+        runId,
+        error: friendlySurfaceError(cls, request.language, error),
+        errorClass: cls,
+      } as RendererAgentEvent);
+      this.assistantRuns.delete(runId);
+    });
+
+    this.deliverEvent(runId, webContents, { type: 'run_start', runId } as RendererAgentEvent);
+    runner.start({
+      runId,
+      prompt,
+      agentName: 'cerebro',
+      cwd: this.dataDir,
+      model: normalizeModel(request.model),
+      language: request.language,
+      qualityTier: request.qualityTier ?? 'medium',
+      // Fresh, throwaway session per one-off run — the runner requires a valid
+      // UUID for --session-id; runId is already a UUID. No --resume.
+      sessionId: runId,
+    });
+    return runId;
+  }
+
+  cancelAssistantRun(runId: string): boolean {
+    const runner = this.assistantRuns.get(runId);
+    if (!runner) return false;
+    runner.abort();
+    this.assistantRuns.delete(runId);
     return true;
   }
 

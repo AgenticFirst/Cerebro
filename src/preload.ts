@@ -8,6 +8,7 @@ import type {
   StreamEvent,
   CerebroAPI,
   AgentRunRequest,
+  AssistantRunRequest,
   RendererAgentEvent,
   ActiveRunInfo,
   EngineRunRequest,
@@ -112,6 +113,12 @@ const api: CerebroAPI = {
       return () => {
         ipcRenderer.removeListener(channel, listener);
       };
+    },
+    runAssistant(request: AssistantRunRequest): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.ASSISTANT_RUN, request);
+    },
+    cancelAssistant(runId: string): Promise<boolean> {
+      return ipcRenderer.invoke(IPC_CHANNELS.ASSISTANT_CANCEL, runId);
     },
   },
 

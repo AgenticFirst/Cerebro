@@ -64,6 +64,7 @@ function buildChannel(): HubSpotChannel {
     getDefaultPipeline: () => '0',
     getDefaultStage: () => '1',
     isConnected: () => true,
+    listPipelines: async () => ({ ok: true, pipelines: [] }),
   };
 }
 

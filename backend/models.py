@@ -498,3 +498,36 @@ class KnowledgePage(Base):
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)          # trash
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class KnowledgeAiThread(Base):
+    """A per-page 'Ask AI' conversation. Threads are scoped to a Knowledge Base
+    page; deleting the page cascades its threads (and their messages) away."""
+
+    __tablename__ = "knowledge_ai_threads"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    page_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("knowledge_pages.id", ondelete="CASCADE"),
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), default="New chat")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class KnowledgeAiMessage(Base):
+    """One message in a KnowledgeAiThread (role: 'user' | 'assistant')."""
+
+    __tablename__ = "knowledge_ai_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    thread_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("knowledge_ai_threads.id", ondelete="CASCADE"),
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(20))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

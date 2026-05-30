@@ -9,6 +9,12 @@ Base = declarative_base()
 engine = None
 SessionLocal: sessionmaker[Session] | None = None
 
+# Set by _setup_knowledge_fts(): True when the SQLite build has FTS5 and the
+# Knowledge Base full-text index is live. When False, /knowledge/search falls
+# back to an escaped ilike query. Read via `database.KNOWLEDGE_FTS_AVAILABLE`
+# (don't `from database import` it — that would bind a stale value).
+KNOWLEDGE_FTS_AVAILABLE = False
+
 log = logging.getLogger(__name__)
 
 
@@ -90,6 +96,56 @@ def _drop_legacy_task_tables(eng) -> None:
                 conn.rollback()
 
 
+def _setup_knowledge_fts(eng) -> None:
+    """Create + sync the FTS5 full-text index over knowledge_pages.
+
+    Standalone FTS5 table (the page PK is a string, so external-content rowid
+    mapping is awkward); kept in sync by AFTER INSERT/DELETE/UPDATE triggers and
+    backfilled once when first created. If the SQLite build lacks FTS5 the whole
+    thing is skipped and KNOWLEDGE_FTS_AVAILABLE stays False so search falls back
+    to ilike — search never breaks.
+    """
+    global KNOWLEDGE_FTS_AVAILABLE
+    with eng.connect() as conn:
+        try:
+            conn.execute(text(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_pages_fts "
+                "USING fts5(id UNINDEXED, title, content_markdown, tokenize='unicode61')"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS knowledge_pages_ai "
+                "AFTER INSERT ON knowledge_pages BEGIN "
+                "INSERT INTO knowledge_pages_fts(id, title, content_markdown) "
+                "VALUES (new.id, new.title, COALESCE(new.content_markdown, '')); END"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS knowledge_pages_ad "
+                "AFTER DELETE ON knowledge_pages BEGIN "
+                "DELETE FROM knowledge_pages_fts WHERE id = old.id; END"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS knowledge_pages_au "
+                "AFTER UPDATE ON knowledge_pages BEGIN "
+                "DELETE FROM knowledge_pages_fts WHERE id = old.id; "
+                "INSERT INTO knowledge_pages_fts(id, title, content_markdown) "
+                "VALUES (new.id, new.title, COALESCE(new.content_markdown, '')); END"
+            ))
+            # Backfill existing rows the first time the index is created (or if it
+            # was cleared). Triggers keep it in sync thereafter.
+            count = conn.execute(text("SELECT COUNT(*) FROM knowledge_pages_fts")).scalar() or 0
+            if count == 0:
+                conn.execute(text(
+                    "INSERT INTO knowledge_pages_fts(id, title, content_markdown) "
+                    "SELECT id, title, COALESCE(content_markdown, '') FROM knowledge_pages"
+                ))
+            conn.commit()
+            KNOWLEDGE_FTS_AVAILABLE = True
+        except Exception as e:  # noqa: BLE001 — FTS5 missing is non-fatal
+            conn.rollback()
+            KNOWLEDGE_FTS_AVAILABLE = False
+            log.warning("Knowledge Base FTS5 unavailable; search will use ilike fallback: %s", e)
+
+
 def _seed_default_bucket(eng) -> None:
     """Ensure exactly one row exists with is_default=True (the 'Default' bucket)."""
     from models import Bucket  # local import to avoid circular at module load
@@ -124,6 +180,7 @@ def init_db(db_path: str) -> None:
 
     Base.metadata.create_all(bind=engine)
     _migrate(engine)
+    _setup_knowledge_fts(engine)
     _seed_default_bucket(engine)
 
 
