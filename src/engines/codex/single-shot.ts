@@ -9,10 +9,28 @@
  */
 
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getCachedCodexInfo } from './detector';
 import { probeCodexAuth } from './auth-probe';
 import { getCodexCwd } from './config';
 import type { SingleShotEngineOptions } from '../types';
+
+let singleShotSeq = 0;
+
+/** Best-effort one-line run log under <dataDir>/logs/codex, mirroring the
+ *  streaming runner's per-run log. Gives routine/title inference a debuggable
+ *  artifact (and lets e2e attribute a routine step to the codex subprocess). */
+function writeSingleShotLog(cwd: string, line: string): void {
+  try {
+    const dir = path.join(cwd, 'logs', 'codex');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `singleshot-${Date.now()}-${singleShotSeq++}.log`);
+    fs.appendFileSync(file, `[${new Date().toISOString()}] ${line}\n`);
+  } catch {
+    // disk issue — never break inference over a log write
+  }
+}
 
 export class CodexUnavailableError extends Error {
   constructor() {
@@ -66,6 +84,7 @@ export async function singleShotCodex(options: SingleShotEngineOptions): Promise
       cwd,
       env,
     });
+    writeSingleShotLog(cwd, `[start] codex ${args.join(' ')}`);
 
     let stdout = '';
     let stderr = '';
