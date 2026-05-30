@@ -45,6 +45,7 @@ interface Streaming {
 
 interface KnowledgeAiContextValue {
   isOpen: boolean;
+  isCollapsed: boolean;
   anchor: AnchorPage | null;
   threads: KbAiThread[];
   threadId: string | null;
@@ -56,6 +57,8 @@ interface KnowledgeAiContextValue {
   setInput: (v: string) => void;
   openForPage: (page: KbPage) => void;
   close: () => void;
+  collapse: () => void;
+  expand: () => void;
   openThread: (id: string) => Promise<void>;
   startNewThread: () => void;
   removeThread: (id: string) => Promise<void>;
@@ -70,6 +73,7 @@ export function KnowledgeAiProvider({ children }: { children: ReactNode }) {
   const { loadTree, openPage, activePageId } = useKnowledgeBase();
 
   const [isOpen, setIsOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [anchor, setAnchor] = useState<AnchorPage | null>(null);
   const [threads, setThreads] = useState<KbAiThread[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -96,6 +100,7 @@ export function KnowledgeAiProvider({ children }: { children: ReactNode }) {
   const openForPage = useCallback(
     (page: KbPage) => {
       setIsOpen(true);
+      setIsCollapsed(false);
       const next: AnchorPage = { id: page.id, title: page.title, contentMarkdown: page.contentMarkdown ?? '' };
       // Don't disrupt an in-flight run; just reveal it. Re-anchor only when idle
       // and the user opened the panel on a different page than it's bound to.
@@ -111,6 +116,8 @@ export function KnowledgeAiProvider({ children }: { children: ReactNode }) {
   );
 
   const close = useCallback(() => setIsOpen(false), []);
+  const collapse = useCallback(() => setIsCollapsed(true), []);
+  const expand = useCallback(() => setIsCollapsed(false), []);
 
   const openThread = useCallback(async (id: string) => {
     setThreadId(id);
@@ -236,6 +243,7 @@ export function KnowledgeAiProvider({ children }: { children: ReactNode }) {
   const value = useMemo<KnowledgeAiContextValue>(
     () => ({
       isOpen,
+      isCollapsed,
       anchor,
       threads,
       threadId,
@@ -246,12 +254,14 @@ export function KnowledgeAiProvider({ children }: { children: ReactNode }) {
       setInput,
       openForPage,
       close,
+      collapse,
+      expand,
       openThread,
       startNewThread,
       removeThread,
       send,
     }),
-    [isOpen, anchor, threads, threadId, messages, input, streaming, isRunning, openForPage, close, openThread, startNewThread, removeThread, send],
+    [isOpen, isCollapsed, anchor, threads, threadId, messages, input, streaming, isRunning, openForPage, close, collapse, expand, openThread, startNewThread, removeThread, send],
   );
 
   return <KnowledgeAiContext.Provider value={value}>{children}</KnowledgeAiContext.Provider>;

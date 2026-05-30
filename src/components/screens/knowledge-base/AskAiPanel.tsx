@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Sparkles, X, Plus, Trash2, Send, Loader2, Globe, ChevronDown } from 'lucide-react';
+import { Sparkles, X, Plus, Trash2, Send, Loader2, Globe, ChevronDown, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useKnowledgeAi } from '../../../context/KnowledgeAiContext';
@@ -14,6 +14,7 @@ import MarkdownContent from '../../chat/MarkdownContent';
 export function AskAiPanel() {
   const { t } = useTranslation();
   const {
+    isCollapsed,
     threads,
     threadId,
     messages,
@@ -22,6 +23,8 @@ export function AskAiPanel() {
     isRunning,
     setInput,
     close,
+    collapse,
+    expand,
     openThread,
     startNewThread,
     removeThread,
@@ -39,6 +42,35 @@ export function AskAiPanel() {
 
   const currentTitle = threads.find((th) => th.id === threadId)?.title ?? t('knowledgeBase.askAiNewChat');
   const isEmpty = messages.length === 0 && !streaming;
+
+  // Collapsed: a slim rail docked on the right. The run keeps streaming behind
+  // it; clicking expands back to the full panel.
+  if (isCollapsed) {
+    return (
+      <div className="w-11 flex-shrink-0 h-full flex flex-col items-center border-l border-border-default bg-bg-surface">
+        <div className="app-drag-region h-11 w-full flex-shrink-0" />
+        <button
+          onClick={expand}
+          className="mt-1 flex items-center justify-center w-9 h-9 rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] cursor-pointer transition-colors"
+          title={t('knowledgeBase.askAiExpand')}
+          aria-label={t('knowledgeBase.askAiExpand')}
+        >
+          <PanelRightOpen size={16} />
+        </button>
+        <button
+          onClick={expand}
+          className="mt-1 relative flex items-center justify-center w-9 h-9 rounded-md text-accent hover:bg-white/[0.06] cursor-pointer transition-colors"
+          title={t('knowledgeBase.askAi')}
+          aria-label={t('knowledgeBase.askAi')}
+        >
+          <Sparkles size={16} />
+          {isRunning && (
+            <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          )}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="w-[400px] flex-shrink-0 h-full flex flex-col bg-bg-surface border-l border-border-default">
@@ -111,10 +143,18 @@ export function AskAiPanel() {
           <Plus size={15} />
         </button>
         <button
-          onClick={close}
+          onClick={collapse}
           className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] cursor-pointer"
           title={t('knowledgeBase.askAiCollapse')}
           aria-label={t('knowledgeBase.askAiCollapse')}
+        >
+          <PanelRightClose size={16} />
+        </button>
+        <button
+          onClick={close}
+          className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] cursor-pointer"
+          title={t('knowledgeBase.askAiClose')}
+          aria-label={t('knowledgeBase.askAiClose')}
         >
           <X size={16} />
         </button>

@@ -8,6 +8,8 @@ import {
   Trash2,
   Search,
   X,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -282,6 +284,7 @@ export default function PageTreeSidebar() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<KbSearchHit[]>([]);
   const [drag, setDrag] = useState<DragInfo>(NO_DRAG);
+  const [collapsed, setCollapsed] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -369,6 +372,33 @@ export default function PageTreeSidebar() {
     [drag.activeDragId, tree],
   );
 
+  // Collapsed: a slim rail with expand + new-page, reclaiming editor width.
+  if (collapsed) {
+    return (
+      <div className="w-11 flex-shrink-0 flex flex-col items-center border-r border-white/[0.06] bg-bg-surface h-full">
+        <div className="app-drag-region h-11 w-full flex-shrink-0" />
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className="mt-1 flex items-center justify-center w-9 h-9 rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] cursor-pointer transition-colors"
+          title={t('knowledgeBase.expandPages')}
+          aria-label={t('knowledgeBase.expandPages')}
+        >
+          <PanelLeftOpen size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={() => void createPage(null)}
+          className="mt-1 flex items-center justify-center w-9 h-9 rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] cursor-pointer transition-colors"
+          title={t('knowledgeBase.newPage')}
+          aria-label={t('knowledgeBase.newPage')}
+        >
+          <Plus size={15} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="w-64 flex-shrink-0 flex flex-col border-r border-white/[0.06] bg-bg-surface h-full">
       {/* Draggable window strip (aligns content with the main nav sidebar) */}
@@ -377,19 +407,34 @@ export default function PageTreeSidebar() {
         <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary select-none">
           {t('knowledgeBase.pagesHeading')}
         </span>
-        <button
-          type="button"
-          onClick={() => void createPage(null)}
-          className={clsx(
-            'flex items-center justify-center rounded-md p-1',
-            'text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]',
-            'transition-colors duration-150 cursor-pointer',
-          )}
-          title={t('knowledgeBase.newPage')}
-          aria-label={t('knowledgeBase.newPage')}
-        >
-          <Plus size={15} />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => void createPage(null)}
+            className={clsx(
+              'flex items-center justify-center rounded-md p-1',
+              'text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]',
+              'transition-colors duration-150 cursor-pointer',
+            )}
+            title={t('knowledgeBase.newPage')}
+            aria-label={t('knowledgeBase.newPage')}
+          >
+            <Plus size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            className={clsx(
+              'flex items-center justify-center rounded-md p-1',
+              'text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]',
+              'transition-colors duration-150 cursor-pointer',
+            )}
+            title={t('knowledgeBase.collapsePages')}
+            aria-label={t('knowledgeBase.collapsePages')}
+          >
+            <PanelLeftClose size={15} />
+          </button>
+        </div>
       </div>
 
       {/* Search box */}
