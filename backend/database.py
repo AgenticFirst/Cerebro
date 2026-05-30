@@ -162,25 +162,62 @@ def _seed_default_bucket(eng) -> None:
         session.close()
 
 
+def is_sqlite(eng) -> bool:
+    return eng.dialect.name == "sqlite"
+
+
+def build_engine(db_path_or_url: str):
+    """Create a SQLAlchemy engine for a SQLite path or a full database URL.
+
+    A bare filesystem path (or anything lacking a `scheme://`) is treated as a
+    local SQLite file — the app's working store on every device. A full URL
+    (e.g. `postgresql+psycopg://…`) is treated as a remote sync target and gets
+    network-friendly pooling (pre-ping survives Supabase idle-connection drops;
+    a small pool keeps us well under the pooler's connection cap). SQLite gets a
+    `foreign_keys=ON` pragma on every connection; Postgres enforces FKs natively.
+    """
+    is_url = "://" in db_path_or_url
+    if is_url:
+        eng = create_engine(
+            db_path_or_url,
+            pool_pre_ping=True,
+            pool_size=5,
+            max_overflow=5,
+            pool_recycle=1800,
+        )
+    else:
+        eng = create_engine(
+            f"sqlite:///{db_path_or_url}", connect_args={"check_same_thread": False}
+        )
+
+    if is_sqlite(eng):
+        @event.listens_for(eng, "connect")
+        def _set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+    return eng
+
+
 def init_db(db_path: str) -> None:
     global engine, SessionLocal
 
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-
-    @event.listens_for(engine, "connect")
-    def _set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
+    engine = build_engine(db_path)
     SessionLocal = sessionmaker(bind=engine)
 
-    # Drop legacy task tables before create_all so new schema can be created
-    _drop_legacy_task_tables(engine)
+    if is_sqlite(engine):
+        # Drop legacy task tables before create_all so new schema can be created
+        _drop_legacy_task_tables(engine)
 
     Base.metadata.create_all(bind=engine)
     _migrate(engine)
-    _setup_knowledge_fts(engine)
+
+    if is_sqlite(engine):
+        # FTS5 is SQLite-only; on other dialects KNOWLEDGE_FTS_AVAILABLE stays
+        # False and /knowledge/search uses its ilike fallback (search never breaks).
+        _setup_knowledge_fts(engine)
+
     _seed_default_bucket(engine)
 
 

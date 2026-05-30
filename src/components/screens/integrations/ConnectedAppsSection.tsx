@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   GHLIcon,
   GitHubIcon,
+  SupabaseIcon,
   GoogleCalendarIcon,
   GmailIcon,
   HubSpotIcon,
@@ -15,6 +16,7 @@ import HubSpotSection from './HubSpotSection';
 import HubSpotConnectModal from './HubSpotConnectModal';
 import GHLSection from './GHLSection';
 import GitHubSection from './GitHubSection';
+import SupabaseSyncSection from './SupabaseSyncSection';
 import type { HubSpotStatusResponse } from '../../../types/ipc';
 
 interface Service {
@@ -168,6 +170,17 @@ export default function ConnectedAppsSection() {
           defaultExpanded={false}
         >
           <GHLSection />
+        </IntegrationCard>
+
+        <IntegrationCard
+          icon={SupabaseIcon}
+          iconBg="bg-emerald-500/15"
+          iconColor="text-emerald-400"
+          name="Supabase"
+          description={t('connectedApps.supabaseDesc')}
+          defaultExpanded={false}
+        >
+          <SupabaseSyncSection />
         </IntegrationCard>
       </div>
 

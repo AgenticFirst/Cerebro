@@ -206,6 +206,13 @@ export const IPC_CHANNELS = {
   GITHUB_SET_WATCHED_REPOS: 'github:set-watched-repos',
   GITHUB_STATUS_CHANGED: 'github:status-changed',
 
+  // Supabase backend sync (multi-device)
+  SUPABASE_TEST: 'supabase:test',
+  SUPABASE_CONNECT: 'supabase:connect',
+  SUPABASE_DISCONNECT: 'supabase:disconnect',
+  SUPABASE_STATUS: 'supabase:status',
+  SUPABASE_TRIGGER: 'supabase:trigger',
+
   // App auto-updater (GitHub Releases)
   UPDATE_CHECK_NOW: 'update:check-now',
   /** Renderer → main: download the artifact to a persistent location.
@@ -902,10 +909,50 @@ export interface CerebroAPI {
   hubspot: HubSpotAPI;
   ghl: GHLAPI;
   github: GitHubAPI;
+  supabase: SupabaseAPI;
   chatActions: ChatActionsAPI;
   files: FilesAPI;
   updater: UpdaterAPI;
   backup: BackupAPI;
+}
+
+// --- Supabase backend sync (multi-device) ---
+
+export interface SupabaseSyncStatus {
+  status: 'disabled' | 'idle' | 'syncing' | 'offline' | 'error';
+  last_synced_at: string | null;
+  last_error: string | null;
+  pending: number;
+}
+
+export interface SupabaseStatus {
+  connected: boolean;
+  supabaseUrl: string | null;
+  storageBucket: string | null;
+  secretBackend: 'os-keychain' | 'plaintext-fallback';
+  sync: SupabaseSyncStatus | null;
+}
+
+export interface SupabaseConnectInput {
+  dbUrl: string;
+  supabaseUrl: string;
+  supabaseKey: string;
+  storageBucket?: string;
+  seed?: boolean;
+}
+
+export interface SupabaseConnectResult {
+  ok: boolean;
+  error?: string;
+  status?: SupabaseStatus;
+}
+
+export interface SupabaseAPI {
+  test(dbUrl: string): Promise<{ ok: boolean; error?: string }>;
+  connect(input: SupabaseConnectInput): Promise<SupabaseConnectResult>;
+  disconnect(): Promise<SupabaseStatus>;
+  status(): Promise<SupabaseStatus>;
+  trigger(): Promise<void>;
 }
 
 // --- Slack bridge (Bolt / Socket Mode) ---

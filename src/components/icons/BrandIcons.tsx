@@ -130,3 +130,11 @@ export function GitHubIcon({ size = 24, className }: IconProps) {
     </svg>
   );
 }
+
+export function SupabaseIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M13.976 22.45c-.62.78-1.876.353-1.893-.643l-.247-14.566h9.793c1.774 0 2.763 2.049 1.66 3.438zM10.024 1.55c.62-.78 1.876-.353 1.893.643l.108 14.566H2.336c-1.774 0-2.763-2.049-1.66-3.438z" />
+    </svg>
+  );
+}

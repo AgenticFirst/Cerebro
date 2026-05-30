@@ -11,6 +11,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import selectinload
 
 from database import get_db, init_db
+import cloud_sync.outbox  # noqa: F401 — registers the before_flush outbox capture listener
+from cloud_sync.router import router as cloud_sync_router
+from cloud_sync import runtime as cloud_sync_runtime
 
 # Import models so they register with Base.metadata before create_all()
 import models  # noqa: F401
@@ -78,7 +81,23 @@ async def lifespan(application: FastAPI):
             finally:
                 db.close()
 
+    # Auto-start Supabase sync if a connection was configured for this launch.
+    # The Electron main process passes the (decrypted) connection string via env
+    # so it never appears in the process argument list. Absent => local-only.
+    cloud_sync_runtime.configure(files_dir=getattr(application.state, "files_dir", None))
+    remote_db_url = os.environ.get("CEREBRO_SUPABASE_DB_URL")
+    if remote_db_url:
+        storage = cloud_sync_runtime.build_storage(
+            os.environ.get("CEREBRO_SUPABASE_URL"),
+            os.environ.get("CEREBRO_SUPABASE_KEY"),
+            os.environ.get("CEREBRO_SUPABASE_BUCKET"),
+        )
+        cloud_sync_runtime.start_sync(remote_db_url, storage=storage)
+        print("[Cerebro] Supabase sync worker started")
+
     yield
+
+    cloud_sync_runtime.stop_sync()
 
 
 app = FastAPI(title="Cerebro Backend", lifespan=lifespan)
@@ -102,6 +121,7 @@ app.include_router(files_parsing_router, prefix="/files")
 app.include_router(expert_context_router, prefix="/experts")
 app.include_router(backup_router, prefix="/backup")
 app.include_router(knowledge_router, prefix="/knowledge")
+app.include_router(cloud_sync_router)
 
 
 @app.get("/health")

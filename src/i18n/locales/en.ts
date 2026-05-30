@@ -1275,6 +1275,44 @@ const en = {
     ghlDesc: 'Sync contacts and push intel briefs to your GHL CRM.',
     github: 'GitHub',
     githubDesc: 'Manage issues, pull requests, and code reviews from chat and routines.',
+    supabase: 'Supabase',
+    supabaseDesc: 'Sync your chats, knowledge base, experts, and tasks across devices with your own Supabase project.',
+  },
+
+  // ── Supabase backend sync (multi-device) ────────────────────
+  supabaseSync: {
+    title: 'Supabase Sync',
+    description:
+      'Connect your own Supabase project to keep Cerebro in sync across every device. Your chats, knowledge base, experts, routines, and tasks stay mirrored to a database you own. Cerebro keeps working offline and catches up the moment you reconnect.',
+    storageEncrypted: 'Your connection string is encrypted at rest with your operating system keychain.',
+    storagePlaintextFallback:
+      'OS keychain unavailable — your connection string is stored with a fallback that is not OS-encrypted. Anyone with access to this device could read it.',
+    perDeviceNote:
+      'Connected apps (Telegram, HubSpot, GitHub, …) stay on this device for security and are reconnected per machine. Everything else syncs.',
+    dbUrlLabel: 'Postgres connection string',
+    dbUrlHelp: 'Supabase → Project Settings → Database → Connection string (URI). Use the postgresql+psycopg:// prefix.',
+    projectUrlLabel: 'Project URL',
+    projectUrlHelp: 'Supabase → Project Settings → API → Project URL. Used for syncing file attachments to Storage.',
+    keyLabel: 'Service role key',
+    keyHelp: 'Supabase → Project Settings → API → service_role key. Encrypted at rest; only used to upload file blobs to Storage.',
+    bucketLabel: 'Storage bucket',
+    bucketHelp: 'Name of the Storage bucket for synced file attachments. Created automatically if missing.',
+    seedExisting: 'Push my existing local data to this project now',
+    connect: 'Connect',
+    connecting: 'Connecting…',
+    connected: 'Connected',
+    connectFailed: 'Could not connect.',
+    disconnect: 'Disconnect',
+    syncNow: 'Sync now',
+    pending: 'Pending',
+    lastSynced: 'Last synced',
+    bucket: 'Bucket',
+    never: 'Never',
+    statusSyncing: 'Syncing',
+    statusSynced: 'Synced',
+    statusOffline: 'Offline',
+    statusError: 'Sync error',
+    statusDisabled: 'Off',
   },
 
   // ── GoHighLevel section ─────────────────────────────────────

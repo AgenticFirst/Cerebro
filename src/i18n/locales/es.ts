@@ -1270,6 +1270,44 @@ const es: TranslationKeys = {
     ghlDesc: 'Sincroniza contactos y envía informes de inteligencia a tu CRM de GHL.',
     github: 'GitHub',
     githubDesc: 'Gestiona issues, pull requests y revisiones de código desde el chat y las rutinas.',
+    supabase: 'Supabase',
+    supabaseDesc: 'Sincroniza tus chats, base de conocimiento, expertos y tareas entre dispositivos con tu propio proyecto de Supabase.',
+  },
+
+  // ── Sincronización con Supabase (multidispositivo) ──────────
+  supabaseSync: {
+    title: 'Sincronización con Supabase',
+    description:
+      'Conecta tu propio proyecto de Supabase para mantener Cerebro sincronizado en todos tus dispositivos. Tus chats, base de conocimiento, expertos, rutinas y tareas se reflejan en una base de datos que es tuya. Cerebro sigue funcionando sin conexión y se pone al día en cuanto vuelves a conectarte.',
+    storageEncrypted: 'Tu cadena de conexión se cifra en reposo con el llavero de tu sistema operativo.',
+    storagePlaintextFallback:
+      'Llavero del sistema no disponible: tu cadena de conexión se guarda con un método alternativo sin cifrado del sistema. Cualquiera con acceso a este dispositivo podría leerla.',
+    perDeviceNote:
+      'Las apps conectadas (Telegram, HubSpot, GitHub, …) permanecen en este dispositivo por seguridad y se reconectan en cada máquina. Todo lo demás se sincroniza.',
+    dbUrlLabel: 'Cadena de conexión de Postgres',
+    dbUrlHelp: 'Supabase → Project Settings → Database → Connection string (URI). Usa el prefijo postgresql+psycopg://.',
+    projectUrlLabel: 'URL del proyecto',
+    projectUrlHelp: 'Supabase → Project Settings → API → Project URL. Se usa para sincronizar archivos adjuntos con Storage.',
+    keyLabel: 'Clave service_role',
+    keyHelp: 'Supabase → Project Settings → API → clave service_role. Cifrada en reposo; solo se usa para subir archivos a Storage.',
+    bucketLabel: 'Bucket de Storage',
+    bucketHelp: 'Nombre del bucket de Storage para los archivos sincronizados. Se crea automáticamente si no existe.',
+    seedExisting: 'Subir ahora mis datos locales existentes a este proyecto',
+    connect: 'Conectar',
+    connecting: 'Conectando…',
+    connected: 'Conectado',
+    connectFailed: 'No se pudo conectar.',
+    disconnect: 'Desconectar',
+    syncNow: 'Sincronizar ahora',
+    pending: 'Pendientes',
+    lastSynced: 'Última sincronización',
+    bucket: 'Bucket',
+    never: 'Nunca',
+    statusSyncing: 'Sincronizando',
+    statusSynced: 'Sincronizado',
+    statusOffline: 'Sin conexión',
+    statusError: 'Error de sincronización',
+    statusDisabled: 'Desactivado',
   },
 
   // ── Sección de GoHighLevel ──────────────────────────────────

@@ -531,3 +531,26 @@ class KnowledgeAiMessage(Base):
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class SyncOutbox(Base):
+    """Local-only change log feeding the Supabase sync worker.
+
+    One row per local insert/update/delete on a synced table, written in the
+    same transaction as the change (see cloud_sync/outbox.py). The worker drains
+    pending rows to Supabase and marks them done; rows accumulate while offline
+    and flush on reconnect. Never itself synced.
+    """
+
+    __tablename__ = "sync_outbox"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    table_name: Mapped[str] = mapped_column(String(64), index=True)
+    row_pk: Mapped[str] = mapped_column(String(128))
+    op: Mapped[str] = mapped_column(String(10))  # "insert" | "update" | "delete"
+    payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(12), default="pending", index=True)  # pending | done
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    __table_args__ = (Index("ix_sync_outbox_status_created", "status", "created_at"),)
