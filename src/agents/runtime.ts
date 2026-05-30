@@ -28,6 +28,9 @@ export interface AgentEventSink {
 }
 import { ClaudeCodeRunner, type RunnerErrorClass } from '../claude-code/stream-adapter';
 import { toUuidFormat } from '../claude-code/session-id';
+import type { InferenceEngine, StreamingRunner } from '../engines/types';
+import { tryGetEngine, resolveActiveEngineId } from '../engines/registry';
+import { getStoredCodexSession, setStoredCodexSession } from '../engines/codex/session-store';
 import { clearProbeCache } from '../claude-code/auth-probe';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
@@ -208,8 +211,8 @@ interface ActiveRun {
   userContent: string;
   startedAt: number;
   accumulatedText: string;
-  /** Stream-json runner (used for chat runs and task clarify phase). */
-  runner: ClaudeCodeRunner | null;
+  /** Streaming runner (ClaudeCodeRunner or CodexRunner — both StreamingRunner). */
+  runner: StreamingRunner | null;
   /** PTY runner (used for task execute/follow_up — sole process, no stream runner). */
   ptyRunner: TaskPtyRunner | null;
   isTaskRun: boolean;
@@ -797,6 +800,11 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     // Emit run_start
     this.deliverEvent(runId, webContents, { type: 'run_start', runId } as RendererAgentEvent);
 
+    // Resolve the inference engine once for chat runs (task runs stay on Claude
+    // for now — see Phase 6). Never throws: any registry/settings issue yields
+    // null and the run falls through to the default Claude path.
+    const codexEngine = isTaskRun ? null : await this.resolveCodexEngine(request, conversationId);
+
     // Task runs use the PTY for authentic terminal output. ANSI-stripped text
     // is bridged as text_delta events so the stream parser can extract tags.
     if (isTaskRun) {
@@ -1092,6 +1100,22 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       // Start idle timer immediately for fresh runs (resume runs start it
       // after the settle period completes).
       if (resumeSettled) resetIdleTimer();
+    } else if (codexEngine) {
+      // Codex chat path. No haiku→sonnet→opus ladder and no Claude session
+      // recovery (Codex owns its thread id); a clean dedicated flow keeps the
+      // battle-tested Claude path below untouched.
+      await this.runCodexChat({
+        engine: codexEngine,
+        runId,
+        webContents,
+        request,
+        conversationId,
+        agentName,
+        cwd,
+        fullPrompt,
+        activeRun,
+        maxTurns,
+      });
     } else {
       // Chat runs use stream-json mode (no PTY). Wrapped in an escalation
       // loop: on structured "model fell short" failures (max-turns, context
@@ -1333,6 +1357,122 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     }
 
     return runId;
+  }
+
+  /**
+   * Decide whether a chat run should use Codex. Returns the Codex engine when
+   * the resolved engine id is 'codex' AND it's registered; otherwise null (run
+   * on Claude). Never throws — in tests / before registration this just yields
+   * null, leaving the Claude path unchanged.
+   */
+  private async resolveCodexEngine(
+    request: AgentRunRequest,
+    conversationId: string,
+  ): Promise<InferenceEngine | null> {
+    try {
+      const id = request.engine ?? (await resolveActiveEngineId(conversationId));
+      if (id !== 'codex') return null;
+      return tryGetEngine('codex');
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Codex chat run. Mirrors the Claude path's event→renderer wiring but with no
+   * escalation ladder and Codex's own session model: we resume when a stored
+   * thread id exists, inline the system prompt only on the first turn, and
+   * persist the thread id codex mints so the next turn can `codex exec resume`.
+   */
+  private async runCodexChat(params: {
+    engine: InferenceEngine;
+    runId: string;
+    webContents: AgentEventSink;
+    request: AgentRunRequest;
+    conversationId: string;
+    agentName: string;
+    cwd: string;
+    fullPrompt: string;
+    activeRun: ActiveRun;
+    maxTurns: number | undefined;
+  }): Promise<void> {
+    const { engine, runId, webContents, request, conversationId, agentName, cwd, fullPrompt, activeRun, maxTurns } =
+      params;
+
+    const resolved = engine.resolveModel(
+      request.qualityTier as QualityTier | undefined,
+      request.model,
+    );
+    const storedThread = await getStoredCodexSession(conversationId);
+    const resume = !!storedThread;
+    const prompt = engine.compilePrompt({
+      agentName,
+      userTurn: fullPrompt,
+      isFirstTurn: !resume,
+      accessibleExpertIds: request.accessibleExpertIds ?? null,
+    });
+
+    const runner = engine.createRunner();
+    activeRun.runner = runner;
+
+    const persistThreadId = (): void => {
+      const sid = runner.getSessionId?.();
+      if (sid) void setStoredCodexSession(conversationId, sid);
+    };
+
+    runner.on('event', (event: RendererAgentEvent) => {
+      if (event.type === 'text_delta') {
+        activeRun.accumulatedText += event.delta;
+      }
+      // The runner emits a paired ('event' → 'error'); the 'error' handler is
+      // the sole authority (mirrors the Claude path), so drop the raw 'event'
+      // copy that carries no errorClass.
+      if (event.type === 'error') return;
+      this.deliverEvent(runId, webContents, event);
+    });
+
+    runner.on('done', (messageContent: string) => {
+      persistThreadId();
+      activeRun.accumulatedText = messageContent;
+      this.deliverEvent(runId, webContents, {
+        type: 'done',
+        runId,
+        messageContent,
+      } as RendererAgentEvent);
+      this.finalizeRun(runId, 'completed', messageContent);
+      this.postRunSync(webContents);
+    });
+
+    runner.on('error', (error: string) => {
+      const cls = runner.getLastErrorClass();
+      // Capture the thread id even on error — codex may have created the
+      // session before failing, so the next turn can still resume.
+      persistThreadId();
+      const surfacedError = friendlySurfaceError(cls, request.language, error);
+      this.deliverEvent(runId, webContents, {
+        type: 'error',
+        runId,
+        error: surfacedError,
+        errorClass: cls === 'none' ? 'unknown' : cls,
+      } as RendererAgentEvent);
+      this.finalizeRun(runId, 'error', activeRun.accumulatedText, surfacedError);
+      this.postRunSync(webContents);
+    });
+
+    runner.start({
+      runId,
+      prompt,
+      agentName,
+      cwd,
+      maxTurns,
+      model: resolved.model,
+      reasoningEffort: resolved.reasoningEffort,
+      language: request.language,
+      qualityTier: request.qualityTier as QualityTier | undefined,
+      sessionId: storedThread ?? '',
+      resume,
+      extraEnv: buildExtraEnv(request),
+    });
   }
 
   cancelRun(runId: string): boolean {

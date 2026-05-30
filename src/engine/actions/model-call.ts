@@ -14,7 +14,7 @@
  */
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
-import { singleShotClaudeCode } from '../../claude-code/single-shot';
+import { singleShotActiveEngine } from '../../engines/single-shot';
 import { renderTemplate } from './utils/template';
 import { buildRoutineContext } from './routine-context';
 
@@ -95,7 +95,7 @@ export const askAiAction: ActionDefinition = {
       .filter((s) => s.length > 0)
       .join('\n\n---\n\n');
 
-    const response = await singleShotClaudeCode({
+    const response = await singleShotActiveEngine({
       agent: params.agent?.trim() || 'cerebro',
       prompt: fullPrompt,
       signal: context.signal,

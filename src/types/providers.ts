@@ -1,10 +1,8 @@
-// Claude Code is the only inference backend Cerebro uses now.
+// Cerebro runs inference through pluggable coding-agent CLIs (Claude Code,
+// Codex). The engine-neutral availability shape lives in src/engines/types.ts;
+// these aliases preserve the historical `ClaudeCode*` names used across the UI.
 
-export type ClaudeCodeStatus = 'unknown' | 'detecting' | 'available' | 'unavailable' | 'error';
+import type { EngineInfo, EngineStatus } from '../engines/types';
 
-export interface ClaudeCodeInfo {
-  status: ClaudeCodeStatus;
-  version?: string;
-  path?: string;
-  error?: string;
-}
+export type ClaudeCodeStatus = EngineStatus;
+export type ClaudeCodeInfo = EngineInfo;

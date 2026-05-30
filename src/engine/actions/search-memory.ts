@@ -8,7 +8,7 @@
  */
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
-import { singleShotClaudeCode } from '../../claude-code/single-shot';
+import { singleShotActiveEngine } from '../../engines/single-shot';
 
 interface SearchMemoryParams {
   query: string;
@@ -97,7 +97,7 @@ export const searchMemoryAction: ActionDefinition = {
       'If nothing relevant is found, return [].',
     ].join('\n');
 
-    const raw = await singleShotClaudeCode({
+    const raw = await singleShotActiveEngine({
       agent,
       prompt,
       signal: context.signal,

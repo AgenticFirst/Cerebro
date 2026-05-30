@@ -11,10 +11,12 @@ import type { ClaudeCodeInfo } from '../types/providers';
 
 interface ProviderState {
   claudeCodeInfo: ClaudeCodeInfo;
+  codexInfo: ClaudeCodeInfo;
 }
 
 interface ProviderActions {
   refreshClaudeCodeStatus: () => Promise<void>;
+  refreshCodexStatus: () => Promise<void>;
 }
 
 type ProviderContextValue = ProviderState & ProviderActions;
@@ -23,6 +25,7 @@ const ProviderContext = createContext<ProviderContextValue | null>(null);
 
 export function ProviderProvider({ children }: { children: ReactNode }) {
   const [claudeCodeInfo, setClaudeCodeInfo] = useState<ClaudeCodeInfo>({ status: 'unknown' });
+  const [codexInfo, setCodexInfo] = useState<ClaudeCodeInfo>({ status: 'unknown' });
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -35,17 +38,22 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
   const refreshClaudeCodeStatus = useCallback(async () => {
     try {
       const info = await window.cerebro.claudeCode.detect();
-      if (mountedRef.current) {
-        setClaudeCodeInfo(info);
-      }
+      if (mountedRef.current) setClaudeCodeInfo(info);
     } catch {
-      if (mountedRef.current) {
-        setClaudeCodeInfo({ status: 'error', error: 'Detection failed' });
-      }
+      if (mountedRef.current) setClaudeCodeInfo({ status: 'error', error: 'Detection failed' });
     }
   }, []);
 
-  // Detect Claude Code on startup (after backend is healthy so we don't race the spawn)
+  const refreshCodexStatus = useCallback(async () => {
+    try {
+      const info = await window.cerebro.codex.detect();
+      if (mountedRef.current) setCodexInfo(info);
+    } catch {
+      if (mountedRef.current) setCodexInfo({ status: 'error', error: 'Detection failed' });
+    }
+  }, []);
+
+  // Detect both engines on startup (after backend is healthy so we don't race the spawn)
   useEffect(() => {
     let cancelled = false;
 
@@ -70,6 +78,12 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
       } catch {
         if (!cancelled) setClaudeCodeInfo({ status: 'error', error: 'Detection failed' });
       }
+      try {
+        const info = await window.cerebro.codex.getStatus();
+        if (!cancelled) setCodexInfo(info);
+      } catch {
+        if (!cancelled) setCodexInfo({ status: 'error', error: 'Detection failed' });
+      }
     }
 
     init().catch(console.error);
@@ -82,7 +96,9 @@ export function ProviderProvider({ children }: { children: ReactNode }) {
     <ProviderContext.Provider
       value={{
         claudeCodeInfo,
+        codexInfo,
         refreshClaudeCodeStatus,
+        refreshCodexStatus,
       }}
     >
       {children}

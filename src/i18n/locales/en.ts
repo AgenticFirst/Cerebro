@@ -1240,9 +1240,15 @@ const en = {
   engineSection: {
     title: 'Engine',
     description:
-      'Cerebro uses the Claude Code CLI as its inference engine. All experts, routines, and conversations are powered by Claude Code subagents.',
+      'Cerebro can run inference through the Claude Code CLI or the OpenAI Codex CLI. Pick the active engine below; experts, routines, and conversations use it.',
     claudeCode: 'Claude Code',
     claudeCodeDesc: "Anthropic's official CLI for Claude",
+    codex: 'Codex',
+    codexDesc: "OpenAI's Codex CLI",
+    activeEngine: 'Active engine',
+    activeEngineDesc: 'Which engine powers chat, experts, and routines by default.',
+    signIn: 'Sign in',
+    openSignInLink: 'Open sign-in page',
     detected: 'Detected',
     detecting: 'Detecting\u2026',
     notFound: 'Not found',
@@ -1250,7 +1256,7 @@ const en = {
     version: 'Version',
     path: 'Path',
     notFoundMessage:
-      'Cerebro could not find the Claude Code CLI on your system.',
+      'Cerebro could not find this CLI on your system.',
     notFoundError: '({{error}})',
     installGuide: 'Install it from',
     installGuideLink: 'the official setup guide',

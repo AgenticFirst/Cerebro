@@ -90,6 +90,18 @@ export const IPC_CHANNELS = {
   /** Main → renderer: status transitions on the active login attempt. */
   CLAUDE_CODE_LOGIN_EVENT: 'claude-code:login-event',
 
+  // Codex (alternative inference engine)
+  CODEX_DETECT: 'codex:detect',
+  CODEX_STATUS: 'codex:status',
+  CODEX_PROBE_AUTH: 'codex:probe-auth',
+  CODEX_INSTALL: 'codex:install',
+  CODEX_INSTALL_LOG: 'codex:install-log',
+  CODEX_INSTALL_CANCEL: 'codex:install-cancel',
+  /** Spawn `codex login` via PTY, capture the ChatGPT OAuth URL, surface it. */
+  CODEX_LOGIN_START: 'codex:login-start',
+  CODEX_LOGIN_CANCEL: 'codex:login-cancel',
+  CODEX_LOGIN_EVENT: 'codex:login-event',
+
   // Voice
   VOICE_START: 'voice:start',
   VOICE_STOP: 'voice:stop',
@@ -554,6 +566,35 @@ export interface ClaudeCodeAPI {
   };
 }
 
+// --- Codex (alternative engine) ---
+
+export type CodexLoginStatus = 'starting' | 'awaiting-user' | 'success' | 'failure' | 'cancelled';
+
+export interface CodexLoginSnapshot {
+  loginId: string;
+  status: CodexLoginStatus;
+  /** ChatGPT OAuth URL once captured (the CLI usually also opens the browser). */
+  url: string | null;
+  reason?: string;
+  startedAt: number;
+}
+
+export interface CodexAPI {
+  detect(): Promise<ClaudeCodeInfo>;
+  getStatus(): Promise<ClaudeCodeInfo>;
+  /** Runtime auth probe via `codex login status`. Cached 60s. */
+  probeAuth(opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult>;
+  /** Install the Codex CLI (`npm install -g @openai/codex`), streaming log lines. */
+  install(onLog: (line: string) => void): Promise<ClaudeCodeInstallResult>;
+  cancelInstall(): Promise<void>;
+  /** In-app ChatGPT OAuth via PTY `codex login` — captures the sign-in URL. */
+  login: {
+    start(): Promise<CodexLoginSnapshot>;
+    cancel(loginId?: string): Promise<void>;
+    onEvent(callback: (snapshot: CodexLoginSnapshot) => void): () => void;
+  };
+}
+
 // --- Installer ---
 
 export interface InstallerAPI {
@@ -898,6 +939,7 @@ export interface CerebroAPI {
   engine: EngineAPI;
   scheduler: SchedulerAPI;
   claudeCode: ClaudeCodeAPI;
+  codex: CodexAPI;
   installer: InstallerAPI;
   voice: VoiceAPI;
   taskTerminal: TaskTerminalAPI;

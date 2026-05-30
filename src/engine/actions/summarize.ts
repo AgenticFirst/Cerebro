@@ -6,7 +6,7 @@
  */
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
-import { singleShotClaudeCode } from '../../claude-code/single-shot';
+import { singleShotActiveEngine } from '../../engines/single-shot';
 import { extractByPath } from '../utils';
 
 interface SummarizeParams {
@@ -70,7 +70,7 @@ Text:
 
 ${text}`;
 
-    const summary = await singleShotClaudeCode({
+    const summary = await singleShotActiveEngine({
       agent: params.agent ?? 'cerebro',
       prompt: fullPrompt,
       signal: context.signal,

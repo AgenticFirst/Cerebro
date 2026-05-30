@@ -5,7 +5,7 @@
  */
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
-import { singleShotClaudeCode } from '../../claude-code/single-shot';
+import { singleShotActiveEngine } from '../../engines/single-shot';
 
 interface SearchWebParams {
   query: string;
@@ -112,7 +112,7 @@ export const searchWebAction: ActionDefinition = {
         : '{"results": [{"title": "...", "url": "...", "snippet": "..."}]}',
     ];
 
-    const raw = await singleShotClaudeCode({
+    const raw = await singleShotActiveEngine({
       agent: 'cerebro',
       prompt: promptLines.join('\n'),
       signal: context.signal,

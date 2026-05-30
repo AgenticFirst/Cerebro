@@ -43,7 +43,15 @@ import {
 import { setClaudeCodeCwd } from './claude-code/single-shot';
 import { probeClaudeAuth } from './claude-code/auth-probe';
 import { getLoginOrchestrator } from './claude-code/login-orchestrator';
-import type { ClaudeCodeLoginMode, ClaudeCodeLoginSnapshot } from './types/ipc';
+import { registerEngine, setEngineSettingsReader } from './engines/registry';
+import { ClaudeCodeEngine } from './engines/claude-code';
+import { CodexEngine } from './engines/codex';
+import { setCodexCwd, setCodexBackendPort } from './engines/codex/config';
+import { detectCodex, getCachedCodexInfo } from './engines/codex/detector';
+import { probeCodexAuth } from './engines/codex/auth-probe';
+import { getCodexLoginOrchestrator } from './engines/codex/login-orchestrator';
+import { backendGetSetting } from './shared/backend-settings';
+import type { ClaudeCodeLoginMode, ClaudeCodeLoginSnapshot, CodexLoginSnapshot } from './types/ipc';
 import { generateConversationTitle } from './claude-code/generate-title';
 import { VoiceSessionManager } from './voice/session';
 import { TelegramBridge } from './telegram/bridge';
@@ -572,6 +580,15 @@ async function startPythonBackend(): Promise<void> {
   // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
   // Cerebro's project-scoped subagents and skills.
   setClaudeCodeCwd(dataDir);
+
+  // Register the pluggable inference engines and give the registry a settings
+  // reader (closure over the backend port) so it can resolve the active engine
+  // per run from `selected_engine` / `conversation_engine:<id>`.
+  registerEngine(new ClaudeCodeEngine());
+  registerEngine(new CodexEngine());
+  setCodexCwd(dataDir);
+  setCodexBackendPort(port);
+  setEngineSettingsReader((key) => backendGetSetting<string>(port, key));
 
   // Stand up the loopback chat-actions HTTP server before writing the
   // runtime info file so the port + token are recorded for the chat skill
@@ -1425,6 +1442,60 @@ function registerIpcHandlers(): void {
     } catch (err) {
       return { ok: false, reason: (err as Error).message };
     }
+  });
+
+  // --- Codex (alternative inference engine) ---
+
+  ipcMain.handle(IPC_CHANNELS.CODEX_DETECT, async () => detectCodex());
+  ipcMain.handle(IPC_CHANNELS.CODEX_STATUS, async () => getCachedCodexInfo());
+  ipcMain.handle(IPC_CHANNELS.CODEX_PROBE_AUTH, async (_event, opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult> => {
+    return probeCodexAuth(opts);
+  });
+
+  // Install the Codex CLI via npm in a login shell (picks up the user's PATH).
+  let activeCodexInstall: ChildProcess | null = null;
+  ipcMain.handle(IPC_CHANNELS.CODEX_INSTALL, async (event) => {
+    if (activeCodexInstall) {
+      return { ok: false, exitCode: -1, outputTail: 'Install already in progress.', info: getCachedCodexInfo() };
+    }
+    const sender = event.sender;
+    const child = spawn('bash', ['-lc', 'npm install -g @openai/codex'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    activeCodexInstall = child;
+    let outputTail = '';
+    const appendTail = (chunk: string) => { outputTail = (outputTail + chunk).slice(-2048); };
+    const sendLine = (line: string) => { if (!sender.isDestroyed()) sender.send(IPC_CHANNELS.CODEX_INSTALL_LOG, line); };
+    child.stdout?.setEncoding('utf8');
+    child.stderr?.setEncoding('utf8');
+    child.stdout?.on('data', (d: string) => { appendTail(d); for (const l of d.split('\n')) if (l) sendLine(l); });
+    child.stderr?.on('data', (d: string) => { appendTail(d); for (const l of d.split('\n')) if (l) sendLine(l); });
+    const exitCode: number = await new Promise((resolve) => {
+      child.on('close', (code, signal) => resolve(typeof code === 'number' ? code : signal ? -1 : 0));
+      child.on('error', (err) => { appendTail(`spawn error: ${err.message}`); resolve(-1); });
+    });
+    activeCodexInstall = null;
+    const info = await detectCodex();
+    return { ok: exitCode === 0 && info.status === 'available', exitCode, outputTail, info };
+  });
+  ipcMain.handle(IPC_CHANNELS.CODEX_INSTALL_CANCEL, async () => {
+    if (!activeCodexInstall) return;
+    const child = activeCodexInstall;
+    child.kill('SIGTERM');
+    setTimeout(() => { if (!child.killed) child.kill('SIGKILL'); }, 2000);
+  });
+
+  // In-app `codex login` (ChatGPT OAuth) — captures the sign-in URL via PTY.
+  const codexLoginOrchestrator = getCodexLoginOrchestrator();
+  codexLoginOrchestrator.on('update', (snap: CodexLoginSnapshot) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try { win.webContents.send(IPC_CHANNELS.CODEX_LOGIN_EVENT, snap); } catch { /* window closed */ }
+    }
+  });
+  ipcMain.handle(IPC_CHANNELS.CODEX_LOGIN_START, async (): Promise<CodexLoginSnapshot> => {
+    if (codexLoginOrchestrator.current()) codexLoginOrchestrator.cancel();
+    return codexLoginOrchestrator.start();
+  });
+  ipcMain.handle(IPC_CHANNELS.CODEX_LOGIN_CANCEL, async (_event, loginId?: string): Promise<void> => {
+    codexLoginOrchestrator.cancel(loginId);
   });
 
   // --- Installer sync (called by renderer after expert CRUD) ---
@@ -2714,6 +2785,14 @@ app.on('ready', async () => {
     console.log(`[Cerebro] Claude Code detection: ${info.status}${info.version ? ` v${info.version}` : ''}${info.path ? ` (${info.path})` : ''}`);
   } catch (err) {
     console.error('[Cerebro] Claude Code detection failed:', err);
+  }
+
+  // Detect Codex (the alternative engine) alongside Claude Code.
+  try {
+    const info = await detectCodex();
+    console.log(`[Cerebro] Codex detection: ${info.status}${info.version ? ` v${info.version}` : ''}${info.path ? ` (${info.path})` : ''}`);
+  } catch (err) {
+    console.error('[Cerebro] Codex detection failed:', err);
   }
 
   startPythonBackend().catch((err) => {

@@ -20,6 +20,7 @@ import type {
 import type { BackendResponse, RendererAgentEvent } from '../types/ipc';
 import { useProviders } from './ProviderContext';
 import { useQualityTier } from './QualityContext';
+import { useEngine } from './EngineContext';
 import { useRoutines } from './RoutineContext';
 import i18n from '../i18n';
 import type { DAGDefinition } from '../engine/dag/types';
@@ -160,6 +161,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   qualityTierRef.current = qualityTier;
   const responseModelRef = useRef(responseModel);
   responseModelRef.current = responseModel;
+  const { engineForConversation } = useEngine();
+  const engineForConversationRef = useRef(engineForConversation);
+  engineForConversationRef.current = engineForConversation;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationIdState] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -573,6 +577,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             language: i18n.language !== 'en' ? i18n.language : undefined,
             qualityTier: qualityTierRef.current,
             model: responseModelRef.current,
+            engine: engineForConversationRef.current(convId),
           });
 
           // Keep isThinking true and message.isThinking true until first content arrives

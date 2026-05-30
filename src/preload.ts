@@ -52,6 +52,7 @@ import type {
   ClaudeCodeProbeResult,
   ClaudeCodeLoginMode,
   ClaudeCodeLoginSnapshot,
+  CodexLoginSnapshot,
 } from './types/ipc';
 import type { VoiceSessionEvent } from './voice/types';
 
@@ -204,6 +205,41 @@ const api: CerebroAPI = {
         const listener = (_e: Electron.IpcRendererEvent, snap: ClaudeCodeLoginSnapshot) => callback(snap);
         ipcRenderer.on(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, listener);
         return () => { ipcRenderer.removeListener(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, listener); };
+      },
+    },
+  },
+
+  codex: {
+    detect(): Promise<ClaudeCodeInfo> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CODEX_DETECT);
+    },
+    getStatus(): Promise<ClaudeCodeInfo> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CODEX_STATUS);
+    },
+    probeAuth(opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CODEX_PROBE_AUTH, opts);
+    },
+    install(onLog: (line: string) => void): Promise<ClaudeCodeInstallResult> {
+      const listener = (_event: Electron.IpcRendererEvent, line: string) => onLog(line);
+      ipcRenderer.on(IPC_CHANNELS.CODEX_INSTALL_LOG, listener);
+      return ipcRenderer.invoke(IPC_CHANNELS.CODEX_INSTALL).finally(() => {
+        ipcRenderer.removeListener(IPC_CHANNELS.CODEX_INSTALL_LOG, listener);
+      });
+    },
+    cancelInstall(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CODEX_INSTALL_CANCEL);
+    },
+    login: {
+      start(): Promise<CodexLoginSnapshot> {
+        return ipcRenderer.invoke(IPC_CHANNELS.CODEX_LOGIN_START);
+      },
+      cancel(loginId?: string): Promise<void> {
+        return ipcRenderer.invoke(IPC_CHANNELS.CODEX_LOGIN_CANCEL, loginId);
+      },
+      onEvent(callback: (snapshot: CodexLoginSnapshot) => void): () => void {
+        const listener = (_e: Electron.IpcRendererEvent, snap: CodexLoginSnapshot) => callback(snap);
+        ipcRenderer.on(IPC_CHANNELS.CODEX_LOGIN_EVENT, listener);
+        return () => { ipcRenderer.removeListener(IPC_CHANNELS.CODEX_LOGIN_EVENT, listener); };
       },
     },
   },

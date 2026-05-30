@@ -13,6 +13,7 @@ import { SandboxProvider } from './context/SandboxContext';
 import { FeatureFlagsProvider } from './context/FeatureFlagsContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { QualityProvider } from './context/QualityContext';
+import { EngineProvider } from './context/EngineContext';
 import { UIPreferencesProvider } from './context/UIPreferencesContext';
 import { MarkdownDocumentProvider } from './context/MarkdownDocumentContext';
 import { ChatFilePreviewProvider } from './context/ChatFilePreviewContext';
@@ -32,6 +33,7 @@ function App() {
       <OnboardingProvider>
       <ThemeProvider>
       <QualityProvider>
+      <EngineProvider>
       <UIPreferencesProvider>
       <UpdateProvider>
       <ProviderProvider>
@@ -70,6 +72,7 @@ function App() {
       </ProviderProvider>
       </UpdateProvider>
       </UIPreferencesProvider>
+      </EngineProvider>
       </QualityProvider>
       </ThemeProvider>
       </OnboardingProvider>

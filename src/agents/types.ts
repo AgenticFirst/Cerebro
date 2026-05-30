@@ -46,6 +46,13 @@ export interface AgentRunRequest {
   conversationId: string;
   content: string;
   expertId?: string | null;
+  /**
+   * Which inference engine to run. When omitted, the runtime resolves it from
+   * the per-conversation override → global `selected_engine` → default. The
+   * renderer sets it from EngineContext; main-process callers usually leave it
+   * unset and let the runtime resolve the global default.
+   */
+  engine?: import('../engines/types').EngineId;
   /** Parent run ID when this is a sub-run (rare — Claude Code's Agent tool
    *  handles nested runs inside its own subprocess). */
   parentRunId?: string;

@@ -6,7 +6,7 @@
  */
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
-import { singleShotClaudeCode } from '../../claude-code/single-shot';
+import { singleShotActiveEngine } from '../../engines/single-shot';
 import { renderTemplate } from './utils/template';
 
 interface ExtractParams {
@@ -65,7 +65,7 @@ Input text:
 
 ${renderedPrompt}`;
 
-    const response = await singleShotClaudeCode({
+    const response = await singleShotActiveEngine({
       agent: params.agent ?? 'cerebro',
       prompt: fullPrompt,
       signal: context.signal,

@@ -28,12 +28,12 @@ export interface WrapInputs {
   claudeArgs: string[];
 }
 
-export function wrapClaudeSpawn(inputs: WrapInputs): WrappedCommand {
-  const passthrough: WrappedCommand = {
-    binary: inputs.claudeBinary,
-    args: inputs.claudeArgs,
-    sandboxed: false,
-  };
+/**
+ * Engine-neutral spawn wrapper. Used by both the Claude Code and Codex
+ * runners so a single macOS sandbox profile governs whichever CLI is active.
+ */
+export function wrapAgentSpawn(binary: string, args: string[]): WrappedCommand {
+  const passthrough: WrappedCommand = { binary, args, sandboxed: false };
 
   const config = getCachedSandboxConfig();
   if (!config || !config.enabled || !config.platform_supported) return passthrough;
@@ -47,9 +47,13 @@ export function wrapClaudeSpawn(inputs: WrapInputs): WrappedCommand {
 
   return {
     binary: 'sandbox-exec',
-    args: ['-f', profilePath, inputs.claudeBinary, ...inputs.claudeArgs],
+    args: ['-f', profilePath, binary, ...args],
     sandboxed: true,
   };
+}
+
+export function wrapClaudeSpawn(inputs: WrapInputs): WrappedCommand {
+  return wrapAgentSpawn(inputs.claudeBinary, inputs.claudeArgs);
 }
 
 function ensureProfileOnDisk(

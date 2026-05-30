@@ -120,18 +120,8 @@ const AUTH_STDERR_PATTERNS = [
  * after the `error` event fires to decide whether to retry on a stronger
  * model/tier rung.
  */
-export type RunnerErrorClass =
-  | 'none'             // run completed successfully
-  | 'max_turns'        // model hit max-turns without finishing — escalate
-  | 'context'          // context-window exhausted — escalate
-  | 'overload'         // transient API overload / rate limit — escalate
-  | 'auth'             // authentication failure — do NOT escalate
-  | 'cancelled'        // user aborted — do NOT escalate
-  | 'spawn'            // could not spawn subprocess — do NOT escalate
-  | 'session_missing'  // --resume target session not on disk — fall back to --session-id
-  | 'session_in_use'   // --session-id collided with an existing on-disk session — retry as --resume
-  | 'idle_hang'        // no-tool idle-watchdog kill after some output — retry once on a fresh session
-  | 'unknown';         // catch-all — do NOT escalate (safer default)
+export type { RunnerErrorClass } from '../engines/types';
+import type { RunnerErrorClass } from '../engines/types';
 
 export class ClaudeCodeRunner extends EventEmitter {
   private process: ChildProcess | null = null;

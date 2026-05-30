@@ -1234,9 +1234,15 @@ const es: TranslationKeys = {
   engineSection: {
     title: 'Motor',
     description:
-      'Cerebro usa el CLI de Claude Code como su motor de inferencia. Todos los expertos, rutinas y conversaciones funcionan con subagentes de Claude Code.',
+      'Cerebro puede ejecutar la inferencia con el CLI de Claude Code o el CLI de Codex de OpenAI. Elige el motor activo abajo; los expertos, rutinas y conversaciones lo usar\u00e1n.',
     claudeCode: 'Claude Code',
     claudeCodeDesc: 'El CLI oficial de Anthropic para Claude',
+    codex: 'Codex',
+    codexDesc: 'El CLI de Codex de OpenAI',
+    activeEngine: 'Motor activo',
+    activeEngineDesc: 'Qu\u00e9 motor impulsa el chat, los expertos y las rutinas por defecto.',
+    signIn: 'Iniciar sesi\u00f3n',
+    openSignInLink: 'Abrir p\u00e1gina de inicio de sesi\u00f3n',
     detected: 'Detectado',
     detecting: 'Detectando\u2026',
     notFound: 'No encontrado',
@@ -1244,7 +1250,7 @@ const es: TranslationKeys = {
     version: 'Versi\u00f3n',
     path: 'Ruta',
     notFoundMessage:
-      'Cerebro no pudo encontrar el CLI de Claude Code en tu sistema.',
+      'Cerebro no pudo encontrar este CLI en tu sistema.',
     notFoundError: '({{error}})',
     installGuide: 'Inst\u00e1lalo desde',
     installGuideLink: 'la gu\u00eda oficial de configuraci\u00f3n',

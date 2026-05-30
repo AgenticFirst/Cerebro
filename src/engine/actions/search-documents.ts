@@ -10,7 +10,7 @@
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { backendFetch } from './utils/backend-fetch';
-import { singleShotClaudeCode } from '../../claude-code/single-shot';
+import { singleShotActiveEngine } from '../../engines/single-shot';
 
 interface SearchDocumentsParams {
   query: string;
@@ -132,7 +132,7 @@ export const searchDocumentsAction: ActionDefinition = {
       'If nothing in these files answers the query, return [].',
     ].join('\n');
 
-    const raw = await singleShotClaudeCode({
+    const raw = await singleShotActiveEngine({
       agent: 'cerebro',
       prompt,
       signal: context.signal,
