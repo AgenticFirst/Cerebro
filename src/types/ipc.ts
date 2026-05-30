@@ -17,6 +17,9 @@ export const IPC_CHANNELS = {
   AGENT_CANCEL: 'agent:cancel',
   AGENT_ACTIVE_RUNS: 'agent:active-runs',
   agentEvent: (runId: string) => `agent:event:${runId}`,
+  // One-off "Ask AI" assistant runs (reuse agentEvent channel for streaming)
+  ASSISTANT_RUN: 'assistant:run',
+  ASSISTANT_CANCEL: 'assistant:cancel',
 
   // Execution engine
   ENGINE_RUN: 'engine:run',
@@ -202,6 +205,13 @@ export const IPC_CHANNELS = {
   GITHUB_LIST_WATCHED_REPOS: 'github:list-watched-repos',
   GITHUB_SET_WATCHED_REPOS: 'github:set-watched-repos',
   GITHUB_STATUS_CHANGED: 'github:status-changed',
+
+  // Supabase backend sync (multi-device)
+  SUPABASE_TEST: 'supabase:test',
+  SUPABASE_CONNECT: 'supabase:connect',
+  SUPABASE_DISCONNECT: 'supabase:disconnect',
+  SUPABASE_STATUS: 'supabase:status',
+  SUPABASE_TRIGGER: 'supabase:trigger',
 
   // App auto-updater (GitHub Releases)
   UPDATE_CHECK_NOW: 'update:check-now',
@@ -393,11 +403,24 @@ export interface ActiveRunInfo {
   startedAt: number;
 }
 
+export interface AssistantRunRequest {
+  /** Caller-generated id; subscribe via `agent.onEvent(runId, …)` before calling. */
+  runId: string;
+  prompt: string;
+  /** App-wide default model ('haiku'|'sonnet'|'opus'); resolved by the runtime. */
+  model?: string;
+  qualityTier?: QualityTier;
+  language?: string;
+}
+
 export interface AgentAPI {
   run(request: AgentRunRequest): Promise<string>;
   cancel(runId: string): Promise<boolean>;
   activeRuns(): Promise<ActiveRunInfo[]>;
   onEvent(runId: string, callback: (event: RendererAgentEvent) => void): () => void;
+  /** One-off "Ask AI" run; streams on the same `onEvent(runId)` channel. */
+  runAssistant(request: AssistantRunRequest): Promise<string>;
+  cancelAssistant(runId: string): Promise<boolean>;
 }
 
 // --- Execution Engine ---
@@ -886,10 +909,50 @@ export interface CerebroAPI {
   hubspot: HubSpotAPI;
   ghl: GHLAPI;
   github: GitHubAPI;
+  supabase: SupabaseAPI;
   chatActions: ChatActionsAPI;
   files: FilesAPI;
   updater: UpdaterAPI;
   backup: BackupAPI;
+}
+
+// --- Supabase backend sync (multi-device) ---
+
+export interface SupabaseSyncStatus {
+  status: 'disabled' | 'idle' | 'syncing' | 'offline' | 'error';
+  last_synced_at: string | null;
+  last_error: string | null;
+  pending: number;
+}
+
+export interface SupabaseStatus {
+  connected: boolean;
+  supabaseUrl: string | null;
+  storageBucket: string | null;
+  secretBackend: 'os-keychain' | 'plaintext-fallback';
+  sync: SupabaseSyncStatus | null;
+}
+
+export interface SupabaseConnectInput {
+  dbUrl: string;
+  supabaseUrl: string;
+  supabaseKey: string;
+  storageBucket?: string;
+  seed?: boolean;
+}
+
+export interface SupabaseConnectResult {
+  ok: boolean;
+  error?: string;
+  status?: SupabaseStatus;
+}
+
+export interface SupabaseAPI {
+  test(dbUrl: string): Promise<{ ok: boolean; error?: string }>;
+  connect(input: SupabaseConnectInput): Promise<SupabaseConnectResult>;
+  disconnect(): Promise<SupabaseStatus>;
+  status(): Promise<SupabaseStatus>;
+  trigger(): Promise<void>;
 }
 
 // --- Slack bridge (Bolt / Socket Mode) ---

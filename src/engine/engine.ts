@@ -55,6 +55,7 @@ import type { WhatsAppChannel } from './actions/whatsapp-channel';
 import { createHubSpotCreateTicketAction } from './actions/hubspot-create-ticket';
 import { createHubSpotUpsertContactAction } from './actions/hubspot-upsert-contact';
 import { createHubSpotSearchContactAction } from './actions/hubspot-search-contact';
+import { createHubSpotSearchTicketsAction } from './actions/hubspot-search-tickets';
 import type { HubSpotChannel } from './actions/hubspot-channel';
 import { createGitHubCreateIssueAction } from './actions/github-create-issue';
 import { createGitHubCommentIssueAction } from './actions/github-comment-issue';
@@ -560,6 +561,7 @@ export class ExecutionEngine {
       createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }),
       createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }),
       createHubSpotSearchContactAction({ getChannel: () => this.hubSpotChannel }),
+      createHubSpotSearchTicketsAction({ getChannel: () => this.hubSpotChannel }),
       createGitHubCreateIssueAction({ getChannel: () => this.gitHubChannel }),
       createGitHubCommentIssueAction({ getChannel: () => this.gitHubChannel }),
       createGitHubCommentPrAction({ getChannel: () => this.gitHubChannel }),
@@ -952,6 +954,7 @@ export class ExecutionEngine {
     registry.register(createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }));
     registry.register(createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }));
     registry.register(createHubSpotSearchContactAction({ getChannel: () => this.hubSpotChannel }));
+    registry.register(createHubSpotSearchTicketsAction({ getChannel: () => this.hubSpotChannel }));
 
     // GitHub
     registry.register(createGitHubCreateIssueAction({ getChannel: () => this.gitHubChannel }));

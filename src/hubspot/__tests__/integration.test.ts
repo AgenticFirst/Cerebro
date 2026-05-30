@@ -51,6 +51,18 @@ function buildChannel(token: string, opts: Partial<{ pipeline: string; stage: st
     getDefaultPipeline: () => opts.pipeline ?? null,
     getDefaultStage: () => opts.stage ?? null,
     isConnected: () => Boolean(token && opts.pipeline && opts.stage),
+    listPipelines: async () => callHubSpotApi<{
+      results?: Array<{ id: string; label: string; stages?: Array<{ id: string; label: string; displayOrder?: number }> }>;
+    }>(token, '/crm/v3/pipelines/tickets').then((res) => res.ok
+      ? {
+          ok: true,
+          pipelines: (res.data?.results ?? []).map((p) => ({
+            id: p.id,
+            label: p.label,
+            stages: (p.stages ?? []).map((s) => ({ id: s.id, label: s.label, displayOrder: s.displayOrder ?? 0 })),
+          })),
+        }
+      : { ok: false, error: res.error ?? 'Failed' }),
   };
 }
 

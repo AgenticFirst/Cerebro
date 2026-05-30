@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Trash2, RotateCcw, X, FileText } from 'lucide-react';
+import { Trash2, RotateCcw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useKnowledgeBase, type KbTrashItem } from '../../../context/KnowledgeBaseContext';
-import { EmojiGlyph } from './EmojiGlyph';
+import { PageIcon } from './PageIcon';
 
 /**
  * Trash view for archived Knowledge Base pages. Restore puts a page (and its
@@ -64,9 +64,7 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
                 key={item.id}
                 className="group/trash flex items-center gap-2 px-2 py-2 rounded-md hover:bg-white/[0.03]"
               >
-                <span className="flex items-center justify-center w-4 h-4 flex-shrink-0 text-text-tertiary">
-                  {item.icon ? <EmojiGlyph emoji={item.icon} size={14} /> : <FileText size={13} strokeWidth={1.5} />}
-                </span>
+                <PageIcon icon={item.icon} />
                 <span className="flex-1 truncate text-[13px] text-text-secondary">
                   {item.title.trim() || t('knowledgeBase.untitled')}
                 </span>

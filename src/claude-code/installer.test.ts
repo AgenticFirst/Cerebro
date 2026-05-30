@@ -167,11 +167,20 @@ describe('installer materialization', () => {
     expect(skill).toContain('name: knowledge-base');
     // Bilingual triggers must be present so the agent fires on Spanish too.
     expect(skill).toContain('base de conocimiento');
+    // The skill should teach search-first.
+    expect(skill).toContain('kb-search.sh');
 
-    for (const script of ['kb-list-pages.sh', 'kb-read-page.sh', 'kb-create-page.sh', 'kb-update-page.sh']) {
+    const scripts: Record<string, string> = {
+      'kb-list-pages.sh': '/knowledge/pages',
+      'kb-search.sh': '/knowledge/search',
+      'kb-read-page.sh': '/knowledge/pages',
+      'kb-create-page.sh': '/knowledge/pages',
+      'kb-update-page.sh': '/knowledge/pages',
+    };
+    for (const [script, endpoint] of Object.entries(scripts)) {
       const p = path.join(paths.scriptsDir, script);
       expect(fs.existsSync(p), `expected script at ${p}`).toBe(true);
-      expect(fs.readFileSync(p, 'utf-8')).toContain('/knowledge/pages');
+      expect(fs.readFileSync(p, 'utf-8')).toContain(endpoint);
     }
 
     // The main Cerebro agent should advertise the skill.

@@ -9,6 +9,12 @@ Base = declarative_base()
 engine = None
 SessionLocal: sessionmaker[Session] | None = None
 
+# Set by _setup_knowledge_fts(): True when the SQLite build has FTS5 and the
+# Knowledge Base full-text index is live. When False, /knowledge/search falls
+# back to an escaped ilike query. Read via `database.KNOWLEDGE_FTS_AVAILABLE`
+# (don't `from database import` it — that would bind a stale value).
+KNOWLEDGE_FTS_AVAILABLE = False
+
 log = logging.getLogger(__name__)
 
 
@@ -90,6 +96,56 @@ def _drop_legacy_task_tables(eng) -> None:
                 conn.rollback()
 
 
+def _setup_knowledge_fts(eng) -> None:
+    """Create + sync the FTS5 full-text index over knowledge_pages.
+
+    Standalone FTS5 table (the page PK is a string, so external-content rowid
+    mapping is awkward); kept in sync by AFTER INSERT/DELETE/UPDATE triggers and
+    backfilled once when first created. If the SQLite build lacks FTS5 the whole
+    thing is skipped and KNOWLEDGE_FTS_AVAILABLE stays False so search falls back
+    to ilike — search never breaks.
+    """
+    global KNOWLEDGE_FTS_AVAILABLE
+    with eng.connect() as conn:
+        try:
+            conn.execute(text(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_pages_fts "
+                "USING fts5(id UNINDEXED, title, content_markdown, tokenize='unicode61')"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS knowledge_pages_ai "
+                "AFTER INSERT ON knowledge_pages BEGIN "
+                "INSERT INTO knowledge_pages_fts(id, title, content_markdown) "
+                "VALUES (new.id, new.title, COALESCE(new.content_markdown, '')); END"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS knowledge_pages_ad "
+                "AFTER DELETE ON knowledge_pages BEGIN "
+                "DELETE FROM knowledge_pages_fts WHERE id = old.id; END"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS knowledge_pages_au "
+                "AFTER UPDATE ON knowledge_pages BEGIN "
+                "DELETE FROM knowledge_pages_fts WHERE id = old.id; "
+                "INSERT INTO knowledge_pages_fts(id, title, content_markdown) "
+                "VALUES (new.id, new.title, COALESCE(new.content_markdown, '')); END"
+            ))
+            # Backfill existing rows the first time the index is created (or if it
+            # was cleared). Triggers keep it in sync thereafter.
+            count = conn.execute(text("SELECT COUNT(*) FROM knowledge_pages_fts")).scalar() or 0
+            if count == 0:
+                conn.execute(text(
+                    "INSERT INTO knowledge_pages_fts(id, title, content_markdown) "
+                    "SELECT id, title, COALESCE(content_markdown, '') FROM knowledge_pages"
+                ))
+            conn.commit()
+            KNOWLEDGE_FTS_AVAILABLE = True
+        except Exception as e:  # noqa: BLE001 — FTS5 missing is non-fatal
+            conn.rollback()
+            KNOWLEDGE_FTS_AVAILABLE = False
+            log.warning("Knowledge Base FTS5 unavailable; search will use ilike fallback: %s", e)
+
+
 def _seed_default_bucket(eng) -> None:
     """Ensure exactly one row exists with is_default=True (the 'Default' bucket)."""
     from models import Bucket  # local import to avoid circular at module load
@@ -106,24 +162,62 @@ def _seed_default_bucket(eng) -> None:
         session.close()
 
 
+def is_sqlite(eng) -> bool:
+    return eng.dialect.name == "sqlite"
+
+
+def build_engine(db_path_or_url: str):
+    """Create a SQLAlchemy engine for a SQLite path or a full database URL.
+
+    A bare filesystem path (or anything lacking a `scheme://`) is treated as a
+    local SQLite file — the app's working store on every device. A full URL
+    (e.g. `postgresql+psycopg://…`) is treated as a remote sync target and gets
+    network-friendly pooling (pre-ping survives Supabase idle-connection drops;
+    a small pool keeps us well under the pooler's connection cap). SQLite gets a
+    `foreign_keys=ON` pragma on every connection; Postgres enforces FKs natively.
+    """
+    is_url = "://" in db_path_or_url
+    if is_url:
+        eng = create_engine(
+            db_path_or_url,
+            pool_pre_ping=True,
+            pool_size=5,
+            max_overflow=5,
+            pool_recycle=1800,
+        )
+    else:
+        eng = create_engine(
+            f"sqlite:///{db_path_or_url}", connect_args={"check_same_thread": False}
+        )
+
+    if is_sqlite(eng):
+        @event.listens_for(eng, "connect")
+        def _set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+    return eng
+
+
 def init_db(db_path: str) -> None:
     global engine, SessionLocal
 
-    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-
-    @event.listens_for(engine, "connect")
-    def _set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
+    engine = build_engine(db_path)
     SessionLocal = sessionmaker(bind=engine)
 
-    # Drop legacy task tables before create_all so new schema can be created
-    _drop_legacy_task_tables(engine)
+    if is_sqlite(engine):
+        # Drop legacy task tables before create_all so new schema can be created
+        _drop_legacy_task_tables(engine)
 
     Base.metadata.create_all(bind=engine)
     _migrate(engine)
+
+    if is_sqlite(engine):
+        # FTS5 is SQLite-only; on other dialects KNOWLEDGE_FTS_AVAILABLE stays
+        # False and /knowledge/search uses its ilike fallback (search never breaks).
+        _setup_knowledge_fts(engine)
+
     _seed_default_bucket(engine)
 
 

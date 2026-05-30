@@ -89,3 +89,65 @@ class KnowledgePageListItem(BaseModel):
 
 class KnowledgePageListResponse(BaseModel):
     pages: list[KnowledgePageListItem]
+
+
+class KnowledgePageSearchHit(BaseModel):
+    """One search result: page metadata + a snippet of the match. The snippet
+    wraps matched spans in the sentinel chars \\x01 (start) / \\x02 (end) so the
+    UI can bold them without parsing HTML."""
+
+    id: str
+    parent_id: str | None
+    title: str
+    icon: str | None
+    snippet: str
+    updated_at: datetime
+
+
+class KnowledgePageSearchResponse(BaseModel):
+    results: list[KnowledgePageSearchHit]
+
+
+# ── Ask AI: threads + messages ────────────────────────────────────
+
+
+class KnowledgeAiThreadCreate(BaseModel):
+    page_id: str
+    title: str = "New chat"
+
+
+class KnowledgeAiThreadUpdate(BaseModel):
+    title: str | None = None
+
+
+class KnowledgeAiThreadResponse(BaseModel):
+    id: str
+    page_id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeAiThreadListResponse(BaseModel):
+    threads: list[KnowledgeAiThreadResponse]
+
+
+class KnowledgeAiMessageCreate(BaseModel):
+    role: str  # 'user' | 'assistant'
+    content: str
+
+
+class KnowledgeAiMessageResponse(BaseModel):
+    id: str
+    thread_id: str
+    role: str
+    content: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class KnowledgeAiMessageListResponse(BaseModel):
+    messages: list[KnowledgeAiMessageResponse]

@@ -8,6 +8,7 @@ import type {
   StreamEvent,
   CerebroAPI,
   AgentRunRequest,
+  AssistantRunRequest,
   RendererAgentEvent,
   ActiveRunInfo,
   EngineRunRequest,
@@ -29,6 +30,9 @@ import type {
   GHLVerifyResult,
   GitHubStatusResponse,
   GitHubVerifyResult,
+  SupabaseConnectInput,
+  SupabaseConnectResult,
+  SupabaseStatus,
   GitHubRepoSummary,
   IntegrationProposalEventPayload,
   TeamRunAnnouncedEventPayload,
@@ -112,6 +116,12 @@ const api: CerebroAPI = {
       return () => {
         ipcRenderer.removeListener(channel, listener);
       };
+    },
+    runAssistant(request: AssistantRunRequest): Promise<string> {
+      return ipcRenderer.invoke(IPC_CHANNELS.ASSISTANT_RUN, request);
+    },
+    cancelAssistant(runId: string): Promise<boolean> {
+      return ipcRenderer.invoke(IPC_CHANNELS.ASSISTANT_CANCEL, runId);
     },
   },
 
@@ -528,6 +538,24 @@ const api: CerebroAPI = {
         callback(data);
       ipcRenderer.on(IPC_CHANNELS.GITHUB_STATUS_CHANGED, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.GITHUB_STATUS_CHANGED, listener);
+    },
+  },
+
+  supabase: {
+    test(dbUrl: string): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SUPABASE_TEST, dbUrl);
+    },
+    connect(input: SupabaseConnectInput): Promise<SupabaseConnectResult> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SUPABASE_CONNECT, input);
+    },
+    disconnect(): Promise<SupabaseStatus> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SUPABASE_DISCONNECT);
+    },
+    status(): Promise<SupabaseStatus> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SUPABASE_STATUS);
+    },
+    trigger(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.SUPABASE_TRIGGER);
     },
   },
 

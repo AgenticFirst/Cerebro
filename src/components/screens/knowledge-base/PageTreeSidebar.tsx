@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   FileText,
@@ -6,12 +6,43 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
+  Search,
+  X,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { useKnowledgeBase, type KbTreeNode } from '../../../context/KnowledgeBaseContext';
-import { EmojiGlyph } from './EmojiGlyph';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragOverEvent,
+  type DragStartEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import { useKnowledgeBase, type KbTreeNode, type KbSearchHit } from '../../../context/KnowledgeBaseContext';
+import { PageIcon } from './PageIcon';
 import { TrashModal } from './TrashModal';
+import { SearchResults } from './SearchResults';
+import { computeDropTarget, findNode, positionAtPointer, type DropPosition } from './tree-dnd';
+
+/** Live pointer Y from a dnd-kit event: activator pointer + accumulated delta. */
+function pointerY(e: { activatorEvent: Event; delta: { y: number } }): number {
+  const a = e.activatorEvent as PointerEvent | MouseEvent;
+  return (typeof a?.clientY === 'number' ? a.clientY : 0) + e.delta.y;
+}
+
+interface DragInfo {
+  activeDragId: string | null;
+  overId: string | null;
+  position: DropPosition | null;
+}
 
 /* ── Tree row ──────────────────────────────────────────────────── */
 
@@ -20,6 +51,7 @@ interface TreeRowProps {
   depth: number;
   activeId: string | null;
   expanded: Set<string>;
+  drag: DragInfo;
   onToggle: (id: string) => void;
   onSelect: (id: string) => void;
   onCreateChild: (parentId: string) => void;
@@ -32,6 +64,7 @@ function TreeRow({
   depth,
   activeId,
   expanded,
+  drag,
   onToggle,
   onSelect,
   onCreateChild,
@@ -45,9 +78,15 @@ function TreeRow({
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const { setNodeRef: setDropRef } = useDroppable({ id: node.id });
+  const { setNodeRef: setDragRef, attributes, listeners, isDragging } = useDraggable({ id: node.id });
+
   const isActive = activeId === node.id;
   const isOpen = expanded.has(node.id);
   const displayTitle = node.title.trim() || t('knowledgeBase.untitled');
+
+  // Drop indicator for this row (only when it's the valid drop target).
+  const indicator = drag.overId === node.id ? drag.position : null;
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -70,11 +109,23 @@ function TreeRow({
   return (
     <div>
       <div
-        className="relative group/row"
+        ref={setDropRef}
+        className={clsx('relative group/row', isDragging && 'opacity-40')}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{ paddingLeft: `${depth * 12}px` }}
       >
+        {/* Drop indicators */}
+        {indicator === 'before' && (
+          <div className="absolute left-1 right-1 -top-px h-0.5 rounded-full bg-accent z-10 pointer-events-none" />
+        )}
+        {indicator === 'after' && (
+          <div className="absolute left-1 right-1 -bottom-px h-0.5 rounded-full bg-accent z-10 pointer-events-none" />
+        )}
+        {indicator === 'inside' && (
+          <div className="absolute inset-x-0.5 inset-y-0 rounded-md ring-1 ring-accent/70 bg-accent/10 z-10 pointer-events-none" />
+        )}
+
         {editing ? (
           <input
             ref={inputRef}
@@ -99,6 +150,9 @@ function TreeRow({
           />
         ) : (
           <button
+            ref={setDragRef}
+            {...attributes}
+            {...listeners}
             onClick={() => onSelect(node.id)}
             onDoubleClick={(e) => {
               e.stopPropagation();
@@ -134,21 +188,14 @@ function TreeRow({
               />
             </span>
 
-            {/* Icon */}
-            <span className="flex items-center justify-center w-4 h-4 flex-shrink-0 text-text-tertiary">
-              {node.icon ? (
-                <EmojiGlyph emoji={node.icon} size={14} />
-              ) : (
-                <FileText size={13} strokeWidth={1.5} />
-              )}
-            </span>
+            <PageIcon icon={node.icon} />
 
             <span className="truncate">{displayTitle}</span>
           </button>
         )}
 
         {/* Hover actions */}
-        {hovered && !editing && (
+        {hovered && !editing && !drag.activeDragId && (
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
             <button
               onClick={(e) => {
@@ -167,7 +214,7 @@ function TreeRow({
                 setMenuOpen((v) => !v);
               }}
               className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] transition-colors cursor-pointer"
-              title={t('common.more') ?? 'More'}
+              title={t('common.more')}
               aria-label="More actions"
             >
               <MoreHorizontal size={13} />
@@ -210,6 +257,7 @@ function TreeRow({
               depth={depth + 1}
               activeId={activeId}
               expanded={expanded}
+              drag={drag}
               onToggle={onToggle}
               onSelect={onSelect}
               onCreateChild={onCreateChild}
@@ -225,16 +273,39 @@ function TreeRow({
 
 /* ── Sidebar ───────────────────────────────────────────────────── */
 
+const NO_DRAG: DragInfo = { activeDragId: null, overId: null, position: null };
+
 export default function PageTreeSidebar() {
   const { t } = useTranslation();
-  const { tree, activePageId, loadTree, openPage, createPage, renamePage, archivePage } =
+  const { tree, activePageId, loadTree, openPage, createPage, renamePage, archivePage, movePage, searchPages } =
     useKnowledgeBase();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [trashOpen, setTrashOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<KbSearchHit[]>([]);
+  const [drag, setDrag] = useState<DragInfo>(NO_DRAG);
+  const [collapsed, setCollapsed] = useState(false);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   useEffect(() => {
     void loadTree();
   }, [loadTree]);
+
+  const trimmedQuery = query.trim();
+  const isSearching = trimmedQuery.length > 0;
+
+  // Debounced search: when the box is non-empty, fetch ranked hits.
+  useEffect(() => {
+    if (!trimmedQuery) {
+      setResults([]);
+      return;
+    }
+    const handle = setTimeout(() => {
+      void searchPages(trimmedQuery).then(setResults);
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [trimmedQuery, searchPages]);
 
   const toggle = (id: string) => {
     setExpanded((prev) => {
@@ -250,29 +321,165 @@ export default function PageTreeSidebar() {
     await createPage(parentId);
   };
 
-  return (
-    <div className="w-64 flex-shrink-0 flex flex-col border-r border-white/[0.06] bg-bg-surface h-full">
-      <div className="flex items-center justify-between px-3 pt-4 pb-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary select-none">
-          {t('knowledgeBase.pagesHeading')}
-        </span>
+  /* ── Drag-and-drop ── */
+  const handleDragStart = (e: DragStartEvent) => {
+    setDrag({ activeDragId: String(e.active.id), overId: null, position: null });
+  };
+
+  const handleDragOver = (e: DragOverEvent) => {
+    const activeDragId = String(e.active.id);
+    const over = e.over;
+    const overId = over ? String(over.id) : null;
+    const rawPosition =
+      over && over.rect ? positionAtPointer(pointerY(e), over.rect.top, over.rect.height) : 'inside';
+    // Only surface an indicator when the move is actually valid.
+    const valid = overId !== null && computeDropTarget(tree, activeDragId, overId, rawPosition) !== null;
+    const nextOverId = valid ? overId : null;
+    const nextPosition = valid ? rawPosition : null;
+    // Fires every pointer-move; skip the state update (and re-render) when the
+    // resolved drop target hasn't changed.
+    setDrag((d) =>
+      d.activeDragId === activeDragId && d.overId === nextOverId && d.position === nextPosition
+        ? d
+        : { activeDragId, overId: nextOverId, position: nextPosition },
+    );
+  };
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    setDrag(NO_DRAG);
+    const over = e.over;
+    if (!over) return;
+    // Recompute the position from the drop event itself rather than reading
+    // `drag.position` state (which can be one render stale at drop time).
+    const activeDragId = String(e.active.id);
+    const overId = String(over.id);
+    const position: DropPosition = over.rect
+      ? positionAtPointer(pointerY(e), over.rect.top, over.rect.height)
+      : 'inside';
+    const target = computeDropTarget(tree, activeDragId, overId, position);
+    if (target) {
+      if (position === 'inside') {
+        setExpanded((prev) => new Set(prev).add(overId));
+      }
+      void movePage(activeDragId, target.parentId, target.sortOrder);
+    }
+  };
+
+  // The dragged node, for the overlay label. Memoized so the tree walk runs
+  // only when the drag target or tree changes — not on every pointer-move render.
+  const draggedNode = useMemo(
+    () => (drag.activeDragId ? findNode(tree, drag.activeDragId) : null),
+    [drag.activeDragId, tree],
+  );
+
+  // Collapsed: a slim rail with expand + new-page, reclaiming editor width.
+  if (collapsed) {
+    return (
+      <div className="w-11 flex-shrink-0 flex flex-col items-center border-r border-white/[0.06] bg-bg-surface h-full">
+        <div className="app-drag-region h-11 w-full flex-shrink-0" />
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          className="mt-1 flex items-center justify-center w-9 h-9 rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] cursor-pointer transition-colors"
+          title={t('knowledgeBase.expandPages')}
+          aria-label={t('knowledgeBase.expandPages')}
+        >
+          <PanelLeftOpen size={16} />
+        </button>
         <button
           type="button"
           onClick={() => void createPage(null)}
-          className={clsx(
-            'flex items-center justify-center rounded-md p-1',
-            'text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]',
-            'transition-colors duration-150 cursor-pointer',
-          )}
+          className="mt-1 flex items-center justify-center w-9 h-9 rounded-md text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] cursor-pointer transition-colors"
           title={t('knowledgeBase.newPage')}
           aria-label={t('knowledgeBase.newPage')}
         >
           <Plus size={15} />
         </button>
       </div>
+    );
+  }
+
+  return (
+    <div className="w-64 flex-shrink-0 flex flex-col border-r border-white/[0.06] bg-bg-surface h-full">
+      {/* Draggable window strip (aligns content with the main nav sidebar) */}
+      <div className="app-drag-region h-11 flex-shrink-0" />
+      <div className="flex items-center justify-between px-3 pb-2">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary select-none">
+          {t('knowledgeBase.pagesHeading')}
+        </span>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => void createPage(null)}
+            className={clsx(
+              'flex items-center justify-center rounded-md p-1',
+              'text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]',
+              'transition-colors duration-150 cursor-pointer',
+            )}
+            title={t('knowledgeBase.newPage')}
+            aria-label={t('knowledgeBase.newPage')}
+          >
+            <Plus size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            className={clsx(
+              'flex items-center justify-center rounded-md p-1',
+              'text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]',
+              'transition-colors duration-150 cursor-pointer',
+            )}
+            title={t('knowledgeBase.collapsePages')}
+            aria-label={t('knowledgeBase.collapsePages')}
+          >
+            <PanelLeftClose size={15} />
+          </button>
+        </div>
+      </div>
+
+      {/* Search box */}
+      <div className="px-2.5 pb-2">
+        <div className="relative">
+          <Search
+            size={13}
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none"
+          />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setQuery('');
+            }}
+            placeholder={t('knowledgeBase.searchPlaceholder')}
+            className={clsx(
+              'w-full rounded-md bg-bg-base/60 border border-border-subtle',
+              'pl-7 pr-7 py-1.5 text-[12px] text-text-primary placeholder:text-text-tertiary',
+              'outline-none focus:border-border-accent transition-colors',
+            )}
+          />
+          {isSearching && (
+            <button
+              onClick={() => setQuery('')}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-tertiary hover:text-text-primary hover:bg-white/[0.06] cursor-pointer"
+              aria-label={t('common.dismiss')}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-2">
-        {tree.length === 0 ? (
+        {isSearching ? (
+          <SearchResults
+            hits={results}
+            query={query.trim()}
+            onOpen={(id) => {
+              void openPage(id);
+              setQuery('');
+            }}
+          />
+        ) : tree.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-center gap-2 px-4 py-10">
             <FileText size={20} className="text-text-tertiary" strokeWidth={1.5} />
             <p className="text-[12px] font-medium text-text-secondary">
@@ -290,20 +497,40 @@ export default function PageTreeSidebar() {
             </button>
           </div>
         ) : (
-          tree.map((node) => (
-            <TreeRow
-              key={node.id}
-              node={node}
-              depth={0}
-              activeId={activePageId}
-              expanded={expanded}
-              onToggle={toggle}
-              onSelect={(id) => void openPage(id)}
-              onCreateChild={(id) => void handleCreateChild(id)}
-              onRename={(id, title) => void renamePage(id, title)}
-              onArchive={(id) => void archivePage(id)}
-            />
-          ))
+          <DndContext
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setDrag(NO_DRAG)}
+          >
+            {tree.map((node) => (
+              <TreeRow
+                key={node.id}
+                node={node}
+                depth={0}
+                activeId={activePageId}
+                expanded={expanded}
+                drag={drag}
+                onToggle={toggle}
+                onSelect={(id) => void openPage(id)}
+                onCreateChild={(id) => void handleCreateChild(id)}
+                onRename={(id, title) => void renamePage(id, title)}
+                onArchive={(id) => void archivePage(id)}
+              />
+            ))}
+            <DragOverlay dropAnimation={null}>
+              {draggedNode ? (
+                <div className="flex items-center gap-1.5 px-2 py-[5px] rounded-md text-[13px] bg-bg-elevated border border-border-default shadow-xl text-text-primary">
+                  <PageIcon icon={draggedNode.icon} />
+                  <span className="truncate max-w-[180px]">
+                    {draggedNode.title.trim() || t('knowledgeBase.untitled')}
+                  </span>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </div>
 

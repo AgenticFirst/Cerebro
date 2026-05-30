@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Brain, Palette, Info, Shield, FlaskConical, Mic, Archive, type LucideIcon } from 'lucide-react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { Brain, Palette, Info, Shield, FlaskConical, Mic, Archive, Activity, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import MemorySection from './settings/MemorySection';
@@ -9,10 +9,14 @@ import BetaFeaturesSection from './settings/BetaFeaturesSection';
 import VoiceSection from './settings/VoiceSection';
 import BackupSection from './settings/BackupSection';
 import { consumePendingSettingsSection } from './settings/pending-section';
+
+// Lazy so Activity's heavy deps (incl. ChatContext) stay out of the Settings
+// static import graph — only loaded when the Activity section is opened.
+const ActivityScreen = lazy(() => import('./ActivityScreen'));
 import { useFeatureFlags } from '../../context/FeatureFlagsContext';
 import { useOnboarding } from '../../context/OnboardingContext';
 
-type Section = 'memory' | 'sandbox' | 'voice' | 'backup' | 'appearance' | 'beta' | 'about';
+type Section = 'memory' | 'activity' | 'sandbox' | 'voice' | 'backup' | 'appearance' | 'beta' | 'about';
 
 interface SectionNavItem {
   id: Section;
@@ -21,6 +25,7 @@ interface SectionNavItem {
 
 const SECTIONS: SectionNavItem[] = [
   { id: 'memory', icon: Brain },
+  { id: 'activity', icon: Activity },
   { id: 'sandbox', icon: Shield },
   { id: 'voice', icon: Mic },
   { id: 'backup', icon: Archive },
@@ -110,7 +115,15 @@ export default function SettingsScreen() {
         </div>
       </div>
 
-      {/* Content pane */}
+      {/* Content pane. Activity renders full-bleed (it owns its own header,
+          filters, and scroll); other sections use the padded column. */}
+      {activeSection === 'activity' ? (
+        <div className="flex-1 min-h-0 flex">
+          <Suspense fallback={null}>
+            <ActivityScreen />
+          </Suspense>
+        </div>
+      ) : (
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <div
           data-tour-id={activeSection === 'memory' ? 'settings-memory' : undefined}
@@ -137,6 +150,7 @@ export default function SettingsScreen() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

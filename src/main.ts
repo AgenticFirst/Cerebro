@@ -21,6 +21,9 @@ import type {
   StreamRequest,
   StreamEvent,
   ClaudeCodeProbeResult,
+  AssistantRunRequest,
+  SupabaseStatus,
+  SupabaseConnectInput,
 } from './types/ipc';
 import { AgentRuntime } from './agents';
 import type { AgentRunRequest } from './agents';
@@ -49,6 +52,8 @@ import { WhatsAppBridge } from './whatsapp/bridge';
 import { HubSpotHolder } from './hubspot/holder';
 import { GHLHolder } from './ghl/holder';
 import { GitHubBridge } from './github/bridge';
+import { getConnection as getSupabaseConnection } from './supabase/backend-mode';
+import { SupabaseHolder } from './supabase/holder';
 import { registerChannelSender, unregisterChannelSender } from './engine/actions/channel';
 import { initializeSandbox } from './sandbox/initialize';
 import { getCachedSandboxConfig, setCachedSandboxConfig } from './sandbox/config-cache';
@@ -289,6 +294,8 @@ let slackBridge: SlackBridge | null = null;
 let whatsAppBridge: WhatsAppBridge | null = null;
 // HubSpot credential holder
 let hubSpotHolder: HubSpotHolder | null = null;
+// Supabase backend-sync holder (multi-device)
+let supabaseHolder: SupabaseHolder | null = null;
 // GoHighLevel credential holder
 let ghlHolder: GHLHolder | null = null;
 // GitHub bridge (credentials + per-repo poller)
@@ -426,6 +433,19 @@ async function startPythonBackend(): Promise<void> {
   console.log(`[Cerebro] Python path: ${pythonPath}`);
   console.log(`[Cerebro] Database path: ${dbPath}`);
 
+  // If a Supabase project is connected on this device, hand the backend its
+  // (decrypted) connection via env vars — never CLI args, so secrets stay out
+  // of the process listing. Absent => the backend runs local-only.
+  const backendEnv: NodeJS.ProcessEnv = { ...process.env };
+  const supabaseConn = getSupabaseConnection();
+  if (supabaseConn) {
+    backendEnv.CEREBRO_SUPABASE_DB_URL = supabaseConn.dbUrl;
+    backendEnv.CEREBRO_SUPABASE_URL = supabaseConn.supabaseUrl;
+    backendEnv.CEREBRO_SUPABASE_KEY = supabaseConn.supabaseKey;
+    backendEnv.CEREBRO_SUPABASE_BUCKET = supabaseConn.storageBucket;
+    console.log('[Cerebro] Supabase sync configured — backend will sync on start');
+  }
+
   const proc = spawn(
     pythonPath,
     [
@@ -439,7 +459,7 @@ async function startPythonBackend(): Promise<void> {
     {
       stdio: ['ignore', 'pipe', 'pipe'],
       cwd: backendDir,
-      env: process.env,
+      env: backendEnv,
     },
   );
 
@@ -523,6 +543,14 @@ async function startPythonBackend(): Promise<void> {
   executionEngine.setHubSpotChannel(hubSpotHolder);
   hubSpotHolder.init().catch((err) => {
     console.error('[Cerebro] HubSpot holder init failed:', err);
+  });
+
+  // Supabase backend-sync holder. The backend auto-starts sync from env vars
+  // (see top of startPythonBackend); the holder drives connect/disconnect/status
+  // from the Settings UI against the live backend port.
+  supabaseHolder = new SupabaseHolder(() => backendPort);
+  supabaseHolder.init().catch((err) => {
+    console.error('[Cerebro] Supabase holder init failed:', err);
   });
 
   // GoHighLevel holder — pulls credentials from the backend integrations
@@ -876,6 +904,18 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.AGENT_CANCEL, async (_event, runId: string) => {
     if (!agentRuntime) return false;
     return agentRuntime.cancelRun(runId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ASSISTANT_RUN, async (event, request: AssistantRunRequest) => {
+    if (!agentRuntime) {
+      throw new Error('Agent runtime not initialized');
+    }
+    return agentRuntime.startAssistantRun(event.sender, request);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ASSISTANT_CANCEL, async (_event, runId: string) => {
+    if (!agentRuntime) return false;
+    return agentRuntime.cancelAssistantRun(runId);
   });
 
   ipcMain.handle(IPC_CHANNELS.CHAT_RESET_SESSION, async (_event, conversationId: string) => {
@@ -2176,6 +2216,40 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.WHATSAPP_DISABLE, async () => {
     if (!whatsAppBridge) return;
     await whatsAppBridge.disable();
+  });
+
+  // --- Supabase backend sync ---
+
+  const supabaseDisconnectedStatus = (): SupabaseStatus => ({
+    connected: false,
+    supabaseUrl: null,
+    storageBucket: null,
+    secretBackend: 'plaintext-fallback',
+    sync: null,
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SUPABASE_TEST, async (_event, dbUrl: string) => {
+    if (!supabaseHolder) return { ok: false, error: 'Supabase holder not initialized' };
+    return supabaseHolder.testConnection(dbUrl);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SUPABASE_CONNECT, async (_event, input: SupabaseConnectInput) => {
+    if (!supabaseHolder) return { ok: false, error: 'Supabase holder not initialized' };
+    return supabaseHolder.connect(input);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SUPABASE_DISCONNECT, async () => {
+    if (!supabaseHolder) return supabaseDisconnectedStatus();
+    return supabaseHolder.disconnect();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SUPABASE_STATUS, async () => {
+    if (!supabaseHolder) return supabaseDisconnectedStatus();
+    return supabaseHolder.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SUPABASE_TRIGGER, async () => {
+    if (supabaseHolder) await supabaseHolder.trigger();
   });
 
   // --- HubSpot ---
