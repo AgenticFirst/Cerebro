@@ -21,6 +21,9 @@ export const WHATSAPP_SETTING_KEYS = {
   phoneUsernames: 'whatsapp_phone_usernames',
   /** phone_number → Cerebro conversation id. */
   phoneConversations: 'whatsapp_phone_conversations',
+  /** The bot's own LID JID (e.g. "212785631903780@lid"). Persisted so fresh
+   *  sessions can detect self-chat immediately before contacts sync completes. */
+  selfLid: 'whatsapp_self_lid',
 } as const;
 
 export interface WhatsAppSettings {
