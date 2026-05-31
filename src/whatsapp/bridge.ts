@@ -23,6 +23,8 @@ import type { WebContents } from 'electron';
 import QRCode from 'qrcode';
 import type { ExecutionEngine } from '../engine/engine';
 import type { WhatsAppChannel } from '../engine/actions/whatsapp-channel';
+import type { AgentRuntime, AgentEventSink } from '../agents/runtime';
+import type { RendererAgentEvent } from '../agents/types';
 import { IPC_CHANNELS } from '../types/ipc';
 import {
   backendGetSetting,
@@ -79,6 +81,7 @@ interface BridgeDeps {
   backendPort: number;
   dataDir: string;
   executionEngine: ExecutionEngine;
+  agentRuntime: AgentRuntime | null;
 }
 
 interface ConversationInfo {
@@ -124,6 +127,12 @@ export class WhatsAppBridge implements WhatsAppChannel {
   private outboundLimiter = new SlidingWindowLimiter(OUTBOUND_RATE_PER_HOUR, 60 * 60 * 1_000);
   private routineCache: { routines: WhatsAppTriggerRoutine[]; at: number } = { routines: [], at: 0 };
   private conversationCache = new Map<string, ConversationCacheEntry>();
+  private activeRuns = new Map<string, { runId: string; conversationId: string; startedAt: number }>();
+  /** Maps @lid JIDs → @s.whatsapp.net JIDs. Newer WA clients use LIDs instead of phone-based JIDs. */
+  private lidToPhone = new Map<string, string>();
+  /** The bot's own LID JID (e.g. "212785631903780@lid"), populated at connect time.
+   *  Needed to recognise self-chat messages where remoteJid is our own LID. */
+  private selfLid: string | null = null;
 
   /** True when start()/stop() is in flight — guards against reentrancy. */
   private transitioning = false;
@@ -265,16 +274,22 @@ export class WhatsAppBridge implements WhatsAppChannel {
 
   /** Force a re-read of settings (used by the UI after a save). */
   async reloadSettings(): Promise<void> {
-    const [allowlist, enabled, usernames, conversations] = await Promise.all([
+    const [allowlist, enabled, usernames, conversations, selfLid] = await Promise.all([
       backendGetSetting<string[]>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.allowlist),
       backendGetSetting<boolean>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.enabled),
       backendGetSetting<Record<string, string>>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.phoneUsernames),
       backendGetSetting<Record<string, string>>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.phoneConversations),
+      backendGetSetting<string>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.selfLid),
     ]);
     this.settings.allowlist = Array.isArray(allowlist) ? allowlist : [];
     this.settings.enabled = typeof enabled === 'boolean' ? enabled : false;
     this.settings.phoneUsernames = usernames && typeof usernames === 'object' ? usernames : {};
     this.settings.phoneConversations = conversations && typeof conversations === 'object' ? conversations : {};
+    // Restore selfLid from previous session so self-chat works immediately on reconnect.
+    if (typeof selfLid === 'string' && selfLid.endsWith('@lid') && !this.selfLid) {
+      this.selfLid = selfLid;
+      log(`selfLid restored from settings: ${this.selfLid}`);
+    }
     this.setState({ hasCreds: this.hasSessionOnDisk() });
   }
 
@@ -479,6 +494,18 @@ export class WhatsAppBridge implements WhatsAppChannel {
     const { state: authState, saveCreds } = await useMultiFileAuthState(this.sessionDir);
     this.saveCreds = saveCreds;
 
+    // Seed selfLid from creds before the socket opens — creds.me.lid is often
+    // populated even when sock.user.lid is null at connection time.
+    if (!this.selfLid && authState.creds?.me?.lid && authState.creds?.me?.id) {
+      const lidDigits = normalizePhone(authState.creds.me.lid);
+      this.selfLid = `${lidDigits}@lid`;
+      const phoneJid = `${normalizePhone(authState.creds.me.id)}@s.whatsapp.net`;
+      this.lidToPhone.set(this.selfLid, phoneJid);
+      log(`selfLid from creds: ${this.selfLid} → ${phoneJid}`);
+      backendPutSetting(this.deps.backendPort, WHATSAPP_SETTING_KEYS.selfLid, this.selfLid)
+        .catch(() => {});
+    }
+
     let version: number[] | undefined;
     try {
       const fetched = await fetchLatestBaileysVersion();
@@ -504,17 +531,41 @@ export class WhatsAppBridge implements WhatsAppChannel {
       // can hang on a 60s query timeout and strand the buffer so messages.upsert
       // never fires again (the "connected but silent" zombie socket).
       shouldSyncHistoryMessage: () => false,
-      // Fail any internal query fast (default is 60s). shouldSyncHistoryMessage
-      // suppresses history sync but not the app-state resyncAppState() queries
-      // that produce the ~60s connect-time stall; a shorter timeout makes those
-      // surface an error into the `connection: 'close'` reconnect path instead
-      // of hanging.
-      defaultQueryTimeoutMs: 30_000,
+      // Use the Baileys default timeout (undefined = 60s) instead of 30s.
+      // The 30s timeout was causing fetchProps to fail on slower connections,
+      // triggering constant reconnects that corrupt the Signal encryption session
+      // and cause Bad MAC errors (15-second decrypt retries) on every message.
     });
     this.sock = sock;
 
     sock.ev.on('creds.update', async () => {
       try { await saveCreds(); } catch (err) { logError('saveCreds failed:', err); }
+    });
+
+    // Build a LID → phone JID map so messages from newer WA clients (which use
+    // @lid instead of @s.whatsapp.net) can be matched against the allowlist.
+    // Also used to learn selfLid when me.lid is not available at connection time.
+    sock.ev.on('contacts.upsert', (contacts: any[]) => {
+      const selfPhone = this.sock?.user?.id ? normalizePhone(this.sock.user.id) : null;
+      for (const c of contacts) {
+        const phoneJid = [c.id, c.lid].find((j: string | undefined) => j?.endsWith('@s.whatsapp.net'));
+        const lidJid = [c.id, c.lid].find((j: string | undefined) => j?.endsWith('@lid'));
+        if (phoneJid && lidJid) {
+          const digits = normalizePhone(lidJid);
+          const canonical = `${digits}@lid`;
+          // Seed both canonical and raw forms so lookups work regardless of device suffix.
+          this.lidToPhone.set(canonical, phoneJid);
+          if (lidJid !== canonical) this.lidToPhone.set(lidJid, phoneJid);
+          // If this contact is our own account, ensure selfLid is set.
+          if (!this.selfLid && selfPhone && normalizePhone(phoneJid) === selfPhone) {
+            this.selfLid = canonical;
+            log(`selfLid learned from contacts: ${this.selfLid}`);
+            // Persist for future sessions.
+            backendPutSetting(this.deps.backendPort, WHATSAPP_SETTING_KEYS.selfLid, this.selfLid)
+              .catch((err) => logError('selfLid persist failed:', err));
+          }
+        }
+      }
     });
 
     sock.ev.on('connection.update', async (update: any) => {
@@ -530,6 +581,30 @@ export class WhatsAppBridge implements WhatsAppChannel {
       if (connection === 'open') {
         const me = sock.user;
         const phone = me?.id ? normalizePhone(me.id) : null;
+        // Capture the bot's own LID so self-chat can be detected immediately,
+        // before contacts.upsert has populated the lidToPhone map.
+        // Seed both the raw form AND the device-suffix-stripped form into lidToPhone
+        // because WhatsApp delivers self-chat remoteJids without the device suffix
+        // (e.g. "212785631903780@lid") while sock.user.lid includes it ("212785631903780:2@lid").
+        // Capture selfLid from connection (me.lid) and seed lidToPhone immediately.
+        // If me.lid is null (common on fresh sessions), fall back to the persisted value.
+        if (me?.id) {
+          const phoneJid = `${normalizePhone(me.id)}@s.whatsapp.net`;
+          if (me?.lid) {
+            const lidDigits = normalizePhone(me.lid);
+            this.selfLid = `${lidDigits}@lid`;
+            const rawLid = me.lid.endsWith('@lid') ? me.lid : `${me.lid}@lid`;
+            this.lidToPhone.set(this.selfLid, phoneJid);
+            if (rawLid !== this.selfLid) this.lidToPhone.set(rawLid, phoneJid);
+            log(`own LID: ${this.selfLid} → ${phoneJid}`);
+            backendPutSetting(this.deps.backendPort, WHATSAPP_SETTING_KEYS.selfLid, this.selfLid)
+              .catch((err) => logError('selfLid persist failed:', err));
+          } else if (this.selfLid) {
+            // me.lid not available yet — seed lidToPhone from persisted selfLid.
+            this.lidToPhone.set(this.selfLid, phoneJid);
+            log(`own LID (from settings): ${this.selfLid} → ${phoneJid}`);
+          }
+        }
         this.pairingRequested = false;
         this.setState({
           state: 'connected',
@@ -547,10 +622,40 @@ export class WhatsAppBridge implements WhatsAppChannel {
         this.stopWatchdog();
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
         const loggedOut = statusCode === DisconnectReason?.loggedOut;
+        // Baileys connectionReplaced = 440: another WhatsApp Web session took over.
+        // Don't loop — tell the user to close the other session and re-scan.
+        const replaced = statusCode === 440;
         log('connection closed, statusCode=', statusCode, 'loggedOut=', loggedOut);
         if (loggedOut) {
           // Phone unlinked the device. Wipe creds so the next pairing starts fresh.
           await this.clearSession();
+          return;
+        }
+        if (replaced) {
+          if (this.pairingRequested) {
+            // Conflict during the setup wizard: the saved creds belong to
+            // another active WA Web session. Wipe them and show a fresh QR
+            // so the user can complete pairing without needing to manually
+            // clear the session first.
+            log('conflict/replaced during pairing — wiping stale creds and retrying with fresh QR');
+            try {
+              await fs.promises.rm(this.sessionDir, { recursive: true, force: true });
+            } catch { /* ignore */ }
+            this.conversationCache.clear();
+            this.setState({ state: 'pairing', hasCreds: false, qr: null, lastError: null });
+            // Small delay so the Baileys socket teardown completes before we open a new one.
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => {
+              this.connect({ pairing: true }).catch((err) => logError('fresh pairing failed:', err));
+            }, 1_500);
+          } else {
+            // Not in the pairing wizard: just stop and prompt the user.
+            this.setState({
+              state: 'error',
+              lastError: 'Session replaced — another WhatsApp Web session is active. Close it, then disconnect + re-pair here.',
+              qr: null,
+            });
+          }
           return;
         }
         // Any other disconnect: attempt reconnect with backoff if we were
@@ -559,9 +664,14 @@ export class WhatsAppBridge implements WhatsAppChannel {
         this.setState({ state: 'connecting', qr: null });
         if (this.settings.enabled && !this.pairingRequested) {
           if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+          // 408 = fetchProps timeout. Reconnecting in 5s resets the Signal
+          // encryption session every minute, causing Bad MAC on every new
+          // self-chat message. Wait much longer so the session is stable.
+          const delayMs = statusCode === 408 ? 90_000 : 5_000;
+          if (statusCode === 408) log('fetchProps timeout — delaying reconnect 90s to preserve Signal session');
           this.reconnectTimer = setTimeout(() => {
             this.connect({ pairing: false }).catch((err) => logError('reconnect failed:', err));
-          }, 5_000);
+          }, delayMs);
         } else {
           this.setState({ state: 'off' });
         }
@@ -645,12 +755,61 @@ export class WhatsAppBridge implements WhatsAppChannel {
   // ── Inbound dispatch ─────────────────────────────────────────
 
   private async handleIncomingMessage(msg: any): Promise<void> {
-    // Ignore messages we sent ourselves; ignore group / broadcast messages
-    // for the MVP (customer-support flow is 1:1).
     if (!msg?.message) return;
-    if (msg.key?.fromMe) return;
+    if (msg.key?.fromMe) {
+      const rawRemoteJid: string | undefined = msg.key?.remoteJid;
+      if (!rawRemoteJid) return;
+
+      let resolvedForSelfCheck = rawRemoteJid;
+      if (rawRemoteJid.endsWith('@lid')) {
+        // Digit-normalised comparison is suffix-agnostic ("212785631903780:2@lid"
+        // and "212785631903780@lid" both normalise to "212785631903780").
+        const ownDigits = normalizePhone(rawRemoteJid);
+        const selfDigits = this.selfLid ? normalizePhone(this.selfLid) : null;
+        if (selfDigits && ownDigits === selfDigits) {
+          resolvedForSelfCheck = `${this.sock?.user?.id ? normalizePhone(this.sock.user.id) : ownDigits}@s.whatsapp.net`;
+        } else {
+          const exact = this.lidToPhone.get(rawRemoteJid);
+          if (exact) {
+            resolvedForSelfCheck = exact;
+          } else {
+            let found: string | undefined;
+            for (const [k, v] of this.lidToPhone) {
+              if (normalizePhone(k) === ownDigits) { found = v; break; }
+            }
+            if (found) {
+              this.lidToPhone.set(rawRemoteJid, found);
+              resolvedForSelfCheck = found;
+            } else {
+              log(`dropped: fromMe LID ${rawRemoteJid} not in contacts map`);
+              return;
+            }
+          }
+        }
+      }
+
+      const selfPhone = this.sock?.user?.id ? normalizePhone(this.sock.user.id) : null;
+      const remotePhone = normalizePhone(resolvedForSelfCheck);
+      if (!selfPhone || !remotePhone || selfPhone !== remotePhone) return;
+      // Self-chat: fall through.
+    }
     const remoteJid: string | undefined = msg.key?.remoteJid;
-    if (!remoteJid || !remoteJid.endsWith('@s.whatsapp.net')) return;
+    if (!remoteJid) return;
+
+    // Newer WhatsApp clients identify contacts by @lid (Linked Identity Device)
+    // rather than @s.whatsapp.net. Resolve to the phone-based JID via the
+    // contacts map populated from contacts.upsert, then fall through normally.
+    let resolvedJid = remoteJid;
+    if (remoteJid.endsWith('@lid')) {
+      const phoneJid = this.lidToPhone.get(remoteJid);
+      if (!phoneJid) {
+        log(`LID ${remoteJid} not yet in contacts map — dropping (re-send to retry)`);
+        return;
+      }
+      resolvedJid = phoneJid;
+    } else if (!remoteJid.endsWith('@s.whatsapp.net')) {
+      return; // group, broadcast, etc.
+    }
 
     const inbound = extractInbound(msg);
     let text = inbound.text;
@@ -658,10 +817,14 @@ export class WhatsAppBridge implements WhatsAppChannel {
     // If there's no text AND no media, nothing for us to do.
     if (!text && !inbound.media) return;
 
-    const phone = normalizePhone(remoteJid);
+    const phone = normalizePhone(resolvedJid);
     if (!phone) return;
 
-    if (!this.isAllowlisted(phone)) {
+    // Self-chat always bypasses the allowlist — the operator testing their own
+    // number should never be blocked by allowlist configuration.
+    const selfPhone = this.sock?.user?.id ? normalizePhone(this.sock.user.id) : null;
+    const isSelfChat = !!selfPhone && phone === selfPhone;
+    if (!isSelfChat && !this.isAllowlisted(phone)) {
       log(`ignoring message from non-allowlisted ${phone}`);
       return;
     }
@@ -714,40 +877,104 @@ export class WhatsAppBridge implements WhatsAppChannel {
     this.persistMessage(convo.conversationId, 'user', text, phone);
 
     const matched = matchWhatsAppRoutineTriggers(routines, phone, text);
-    if (matched.length === 0) {
-      log(`no routine matched ${phone}: "${text.slice(0, 40)}"`);
+    if (matched.length > 0) {
+      // Dispatch each matched routine with the trigger payload.
+      const payload: WhatsAppTriggerPayload = {
+        phone_number: toDisplayPhone(phone),
+        wa_jid: remoteJid,
+        customer_display_name: pushName ?? this.settings.phoneUsernames[phone] ?? '',
+        message_text: text,
+        message_id: msg.key?.id ?? '',
+        received_at: new Date().toISOString(),
+        conversation_id: convo.conversationId,
+        conversation_history: convo.history,
+      };
+      for (const routine of matched) {
+        try {
+          if (!this.webContents) {
+            logError('no webContents attached — cannot start routine run');
+            continue;
+          }
+          await this.deps.executionEngine.startRun(this.webContents, {
+            dag: routine.dag,
+            routineId: routine.id,
+            triggerSource: 'whatsapp_message',
+            triggerPayload: payload as unknown as Record<string, unknown>,
+          });
+          log(`started routine ${routine.name} for ${phone}`);
+        } catch (err) {
+          logError(`routine ${routine.name} failed to start:`, err);
+        }
+      }
       return;
     }
 
-    // Dispatch each matched routine with the trigger payload. We intentionally
-    // fire in parallel so slow routines don't block faster ones.
-    const payload: WhatsAppTriggerPayload = {
-      phone_number: toDisplayPhone(phone),
-      wa_jid: remoteJid,
-      customer_display_name: pushName ?? this.settings.phoneUsernames[phone] ?? '',
-      message_text: text,
-      message_id: msg.key?.id ?? '',
-      received_at: new Date().toISOString(),
-      conversation_id: convo.conversationId,
-      conversation_history: convo.history,
-    };
+    // No routine matched — fall back to the AI agent (conversational mode).
+    const runtime = this.deps.agentRuntime;
+    if (!runtime) {
+      log(`no routine matched ${phone} and no agentRuntime — dropping`);
+      return;
+    }
 
-    for (const routine of matched) {
+    const existing = this.activeRuns.get(phone);
+    if (existing) {
+      const elapsedSec = Math.round((Date.now() - existing.startedAt) / 1000);
       try {
-        if (!this.webContents) {
-          logError('no webContents attached — cannot start routine run');
-          continue;
-        }
-        await this.deps.executionEngine.startRun(this.webContents, {
-          dag: routine.dag,
-          routineId: routine.id,
-          triggerSource: 'whatsapp_message',
-          triggerPayload: payload as unknown as Record<string, unknown>,
+        await this.sock.sendMessage(toUserJid(phone), {
+          text: `Still working on the previous message (${elapsedSec}s). Please wait.`,
         });
-        log(`started routine ${routine.name} for ${phone}`);
-      } catch (err) {
-        logError(`routine ${routine.name} failed to start:`, err);
-      }
+      } catch { /* ignore */ }
+      return;
+    }
+
+    // Show typing indicator immediately so the contact knows the message was received.
+    try { await this.sock.sendPresenceUpdate('composing', toUserJid(phone)); } catch { /* ignore */ }
+
+    const isFirstContact = !this.settings.phoneConversations[phone];
+    const sink = new WhatsAppStreamSink(
+      () => this.sock,  // always returns the current live socket
+      phone,
+      async (finalText, err) => {
+        try {
+          // Clear the typing indicator once done.
+          await this.sock?.sendPresenceUpdate('paused', toUserJid(phone)).catch(() => {});
+          if (!err && finalText) {
+            this.appendToHistory(phone, 'assistant', finalText);
+            this.persistMessage(convo.conversationId, 'assistant', finalText, phone);
+          }
+        } finally {
+          this.activeRuns.delete(phone);
+        }
+      },
+    );
+
+    try {
+      const runId = await runtime.startRun(sink, {
+        conversationId: convo.conversationId,
+        content: text,
+        resume: !isFirstContact,
+        recentMessages: convo.history,
+        source: { kind: 'whatsapp', phone },
+        // WhatsApp replies — fast tier with haiku for speed.
+        qualityTier: 'fast',
+        model: 'haiku',
+        maxTurns: 10,
+      });
+      sink.runId = runId;
+      this.activeRuns.set(phone, {
+        runId,
+        conversationId: convo.conversationId,
+        startedAt: Date.now(),
+      });
+      log(`started AI run ${runId} for ${phone}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError('agentRuntime.startRun failed:', msg);
+      try {
+        await this.sock.sendMessage(toUserJid(phone), {
+          text: 'Sorry, I could not process your message right now. Please try again.',
+        });
+      } catch { /* ignore */ }
     }
   }
 
@@ -824,9 +1051,10 @@ export class WhatsAppBridge implements WhatsAppChannel {
     }
 
     const createRes = await backendJsonRequest<{ id: string }>(this.deps.backendPort, 'POST', '/conversations', {
+      id: crypto.randomUUID().replace(/-/g, ''),
       title: `WhatsApp ${toDisplayPhone(phone)}`,
-      source: 'whatsapp',
-      external_chat_id: phone,
+      source: 'cerebro',
+      external_chat_id: `whatsapp:${phone}`,
     });
     if (!createRes.ok || !createRes.data?.id) {
       logError('create conversation failed:', createRes.status);
@@ -878,6 +1106,7 @@ export class WhatsAppBridge implements WhatsAppChannel {
     phone: string,
   ): void {
     backendJsonRequest(this.deps.backendPort, 'POST', `/conversations/${conversationId}/messages`, {
+      id: crypto.randomUUID().replace(/-/g, ''),
       role,
       content,
       metadata: { source: 'whatsapp', whatsapp_phone: phone },
@@ -930,6 +1159,88 @@ export class WhatsAppBridge implements WhatsAppChannel {
     try {
       this.webContents.send(IPC_CHANNELS.WHATSAPP_CONVERSATION_UPDATED, { conversationId, kind });
     } catch { /* ignore */ }
+  }
+}
+
+// ── WhatsApp AI stream sink ──────────────────────────────────────
+
+/**
+ * Buffers streamed agent output and sends one WhatsApp message when the run
+ * completes. WhatsApp has no "edit message" API (unlike Telegram), so we
+ * accumulate all text_delta events and fire a single sendMessage on `done`.
+ */
+class WhatsAppStreamSink implements AgentEventSink {
+  public runId: string | null = null;
+  private accumulated = '';
+  private destroyed = false;
+  /** Returns the CURRENT live socket — evaluated at send time, not at construction. */
+  private getSock: () => any;
+  private phone: string;
+  private onDoneCb: (finalText: string, err?: string) => Promise<void>;
+
+  constructor(
+    getSock: () => any,
+    phone: string,
+    onDone: (finalText: string, err?: string) => Promise<void>,
+  ) {
+    this.getSock = getSock;
+    this.phone = phone;
+    this.onDoneCb = onDone;
+  }
+
+  send(_channel: string, ...args: unknown[]): void {
+    const event = args[0] as RendererAgentEvent;
+    if (!event || typeof event !== 'object') return;
+
+    if (event.type === 'run_start' && 'runId' in event) {
+      this.runId = event.runId;
+      return;
+    }
+    if (event.type === 'text_delta' && 'delta' in event) {
+      this.accumulated += event.delta;
+      return;
+    }
+    if (event.type === 'done' && 'messageContent' in event) {
+      const final = event.messageContent || this.accumulated;
+      void this.finish(final);
+      return;
+    }
+    if (event.type === 'error' && 'error' in event) {
+      void this.finish(null, event.error);
+      return;
+    }
+  }
+
+  isDestroyed(): boolean {
+    return this.destroyed;
+  }
+
+  private async finish(text: string | null, err?: string): Promise<void> {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    const reply = text?.trim() || (err ? 'Sorry, something went wrong. Please try again.' : null);
+    console.log(`[WhatsApp] finish() phone=${this.phone} reply="${reply?.substring(0, 100)}" err=${err ?? 'none'}`);
+    if (reply) {
+      try {
+        const sock = this.getSock();
+        if (!sock) throw new Error('socket unavailable');
+        const jid = toUserJid(this.phone);
+        const MAX = 3800;
+        if (reply.length <= MAX) {
+          await sock.sendMessage(jid, { text: reply });
+          console.log(`[WhatsApp] reply sent OK to ${jid}`);
+        } else {
+          const parts = splitMessage(reply, MAX);
+          for (const part of parts) {
+            await sock.sendMessage(jid, { text: part });
+          }
+          console.log(`[WhatsApp] reply sent OK (${parts.length} parts) to ${jid}`);
+        }
+      } catch (sendErr) {
+        console.error('[WhatsApp] sendMessage FAILED:', sendErr instanceof Error ? sendErr.message : String(sendErr));
+      }
+    }
+    await this.onDoneCb(reply ?? '', err).catch(() => { /* ignore */ });
   }
 }
 
@@ -986,6 +1297,38 @@ function extForMime(mime: string, fallbackKind: string): string {
     sticker: 'webp',
   };
   return kindFallback[fallbackKind] || 'bin';
+}
+
+/** Split a long string into chunks ≤ maxLen, preferring paragraph/sentence breaks. */
+function splitMessage(text: string, maxLen: number): string[] {
+  if (text.length <= maxLen) return [text];
+  const parts: string[] = [];
+  let remaining = text;
+  while (remaining.length > maxLen) {
+    let cut = maxLen;
+    // Prefer splitting at a double-newline (paragraph break).
+    const para = remaining.lastIndexOf('\n\n', maxLen);
+    if (para > maxLen / 2) { cut = para + 2; }
+    else {
+      // Fall back to sentence end.
+      const sent = Math.max(
+        remaining.lastIndexOf('. ', maxLen),
+        remaining.lastIndexOf('! ', maxLen),
+        remaining.lastIndexOf('? ', maxLen),
+      );
+      if (sent > maxLen / 2) cut = sent + 2;
+      else {
+        // Last resort: newline or space.
+        const nl = remaining.lastIndexOf('\n', maxLen);
+        const sp = remaining.lastIndexOf(' ', maxLen);
+        cut = nl > maxLen / 2 ? nl + 1 : sp > maxLen / 2 ? sp + 1 : maxLen;
+      }
+    }
+    parts.push(remaining.slice(0, cut).trimEnd());
+    remaining = remaining.slice(cut).trimStart();
+  }
+  if (remaining) parts.push(remaining);
+  return parts;
 }
 
 export function extractInbound(msg: any): InboundMessage {
