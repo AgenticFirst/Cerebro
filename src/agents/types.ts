@@ -127,7 +127,8 @@ export interface AgentRunRequest {
 export type AgentRunSource =
   | { kind: 'ui' }
   | { kind: 'telegram'; chatId: number }
-  | { kind: 'slack'; channel: string; threadTs: string | undefined; teamId: string };
+  | { kind: 'slack'; channel: string; threadTs: string | undefined; teamId: string }
+  | { kind: 'whatsapp'; phone: string };
 
 // ── Events sent to renderer ─────────────────────────────────────
 
