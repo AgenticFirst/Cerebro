@@ -7,12 +7,14 @@ import type { WhatsAppStatusResponse } from '../../../types/ipc';
 import { parseAllowlistRaw } from '../../../whatsapp/helpers';
 import { loadSetting, saveSetting } from '../../../lib/settings';
 import { WHATSAPP_SETTING_KEYS } from '../../../whatsapp/types';
+import WhatsAppOperatorClients from './WhatsAppOperatorClients';
 
 interface WhatsAppSectionProps {
   showHeader?: boolean;
+  backendPort?: number;
 }
 
-export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionProps = {}) {
+export default function WhatsAppSection({ showHeader = false, backendPort = 8000 }: WhatsAppSectionProps = {}) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<WhatsAppStatusResponse | null>(null);
   const [allowlistRaw, setAllowlistRaw] = useState('');
@@ -74,6 +76,25 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     flashTimerRef.current = setTimeout(() => setSavedFlash(false), 1_500);
   }, [allowlistRaw, allowAny]);
+
+  const applyClientProfile = useCallback(async (client: {
+    business_name: string; business_description: string;
+    business_hours: string; powered_by_footer: boolean;
+  }) => {
+    setBusinessName(client.business_name);
+    setBusinessDescription(client.business_description);
+    setBusinessHours(client.business_hours);
+    setPoweredByFooter(client.powered_by_footer);
+    await Promise.all([
+      saveSetting(WHATSAPP_SETTING_KEYS.businessName, client.business_name),
+      saveSetting(WHATSAPP_SETTING_KEYS.businessDescription, client.business_description),
+      saveSetting(WHATSAPP_SETTING_KEYS.businessHours, client.business_hours),
+      saveSetting(WHATSAPP_SETTING_KEYS.poweredByFooter, client.powered_by_footer),
+    ]);
+    setBizSavedFlash(true);
+    if (bizFlashRef.current) clearTimeout(bizFlashRef.current);
+    bizFlashRef.current = setTimeout(() => setBizSavedFlash(false), 1_500);
+  }, []);
 
   const saveBusinessProfile = useCallback(async () => {
     await Promise.all([
@@ -311,6 +332,11 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
           </button>
         </div>
       </div>
+      {/* Operator: multi-client management */}
+      <WhatsAppOperatorClients
+        backendPort={backendPort}
+        onApplyProfile={applyClientProfile}
+      />
     </div>
   );
 }
