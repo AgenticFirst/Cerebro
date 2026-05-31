@@ -111,6 +111,10 @@ export class WhatsAppBridge implements WhatsAppChannel {
     enabled: false,
     phoneUsernames: {},
     phoneConversations: {},
+    businessName: '',
+    businessDescription: '',
+    businessHours: '',
+    poweredByFooter: true,
   };
 
   private state: WhatsAppStatusResponse = {
@@ -274,17 +278,25 @@ export class WhatsAppBridge implements WhatsAppChannel {
 
   /** Force a re-read of settings (used by the UI after a save). */
   async reloadSettings(): Promise<void> {
-    const [allowlist, enabled, usernames, conversations, selfLid] = await Promise.all([
+    const [allowlist, enabled, usernames, conversations, selfLid, bizName, bizDesc, bizHours, footer] = await Promise.all([
       backendGetSetting<string[]>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.allowlist),
       backendGetSetting<boolean>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.enabled),
       backendGetSetting<Record<string, string>>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.phoneUsernames),
       backendGetSetting<Record<string, string>>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.phoneConversations),
       backendGetSetting<string>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.selfLid),
+      backendGetSetting<string>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.businessName),
+      backendGetSetting<string>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.businessDescription),
+      backendGetSetting<string>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.businessHours),
+      backendGetSetting<boolean>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.poweredByFooter),
     ]);
     this.settings.allowlist = Array.isArray(allowlist) ? allowlist : [];
     this.settings.enabled = typeof enabled === 'boolean' ? enabled : false;
     this.settings.phoneUsernames = usernames && typeof usernames === 'object' ? usernames : {};
     this.settings.phoneConversations = conversations && typeof conversations === 'object' ? conversations : {};
+    this.settings.businessName = typeof bizName === 'string' ? bizName : '';
+    this.settings.businessDescription = typeof bizDesc === 'string' ? bizDesc : '';
+    this.settings.businessHours = typeof bizHours === 'string' ? bizHours : '';
+    this.settings.poweredByFooter = typeof footer === 'boolean' ? footer : true;
     // Restore selfLid from previous session so self-chat works immediately on reconnect.
     if (typeof selfLid === 'string' && selfLid.endsWith('@lid') && !this.selfLid) {
       this.selfLid = selfLid;
@@ -931,12 +943,17 @@ export class WhatsAppBridge implements WhatsAppChannel {
     try { await this.sock.sendPresenceUpdate('composing', toUserJid(phone)); } catch { /* ignore */ }
 
     const isFirstContact = !this.settings.phoneConversations[phone];
+    // Build business context prefix so the AI knows who it's representing.
+    const { businessName, businessDescription, businessHours, poweredByFooter } = this.settings;
+    const bizContext = businessName
+      ? `You are the AI assistant for "${businessName}".${businessDescription ? ` ${businessDescription}` : ''}${businessHours ? ` Business hours: ${businessHours}.` : ''} Reply in the same language the customer uses. Keep replies concise and helpful.`
+      : undefined;
+
     const sink = new WhatsAppStreamSink(
-      () => this.sock,  // always returns the current live socket
+      () => this.sock,
       phone,
       async (finalText, err) => {
         try {
-          // Clear the typing indicator once done.
           await this.sock?.sendPresenceUpdate('paused', toUserJid(phone)).catch(() => {});
           if (!err && finalText) {
             this.appendToHistory(phone, 'assistant', finalText);
@@ -946,16 +963,16 @@ export class WhatsAppBridge implements WhatsAppChannel {
           this.activeRuns.delete(phone);
         }
       },
+      poweredByFooter,
     );
 
     try {
       const runId = await runtime.startRun(sink, {
         conversationId: convo.conversationId,
-        content: text,
+        content: bizContext ? `${bizContext}\n\n---\nCustomer message: ${text}` : text,
         resume: !isFirstContact,
         recentMessages: convo.history,
         source: { kind: 'whatsapp', phone },
-        // WhatsApp replies — fast tier with haiku for speed.
         qualityTier: 'fast',
         model: 'haiku',
         maxTurns: 10,
@@ -1173,19 +1190,21 @@ class WhatsAppStreamSink implements AgentEventSink {
   public runId: string | null = null;
   private accumulated = '';
   private destroyed = false;
-  /** Returns the CURRENT live socket — evaluated at send time, not at construction. */
   private getSock: () => any;
   private phone: string;
   private onDoneCb: (finalText: string, err?: string) => Promise<void>;
+  private poweredByFooter: boolean;
 
   constructor(
     getSock: () => any,
     phone: string,
     onDone: (finalText: string, err?: string) => Promise<void>,
+    poweredByFooter = true,
   ) {
     this.getSock = getSock;
     this.phone = phone;
     this.onDoneCb = onDone;
+    this.poweredByFooter = poweredByFooter;
   }
 
   send(_channel: string, ...args: unknown[]): void {
@@ -1219,18 +1238,22 @@ class WhatsAppStreamSink implements AgentEventSink {
     if (this.destroyed) return;
     this.destroyed = true;
     const reply = text?.trim() || (err ? 'Sorry, something went wrong. Please try again.' : null);
-    console.log(`[WhatsApp] finish() phone=${this.phone} reply="${reply?.substring(0, 100)}" err=${err ?? 'none'}`);
-    if (reply) {
+    // Append viral footer if enabled — every reply markets Cerebro.
+    const finalReply = reply && this.poweredByFooter
+      ? `${reply}\n\n_✨ Powered by Cerebro AI_`
+      : reply;
+    console.log(`[WhatsApp] finish() phone=${this.phone} reply="${finalReply?.substring(0, 100)}" err=${err ?? 'none'}`);
+    if (finalReply) {
       try {
         const sock = this.getSock();
         if (!sock) throw new Error('socket unavailable');
         const jid = toUserJid(this.phone);
         const MAX = 3800;
-        if (reply.length <= MAX) {
-          await sock.sendMessage(jid, { text: reply });
+        if (finalReply.length <= MAX) {
+          await sock.sendMessage(jid, { text: finalReply });
           console.log(`[WhatsApp] reply sent OK to ${jid}`);
         } else {
-          const parts = splitMessage(reply, MAX);
+          const parts = splitMessage(finalReply, MAX);
           for (const part of parts) {
             await sock.sendMessage(jid, { text: part });
           }

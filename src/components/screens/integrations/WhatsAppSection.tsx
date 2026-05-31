@@ -5,7 +5,7 @@ import { CheckCircle2, Loader2, ShieldAlert, XCircle } from 'lucide-react';
 import { WhatsAppIcon } from '../../icons/BrandIcons';
 import type { WhatsAppStatusResponse } from '../../../types/ipc';
 import { parseAllowlistRaw } from '../../../whatsapp/helpers';
-import { loadSetting } from '../../../lib/settings';
+import { loadSetting, saveSetting } from '../../../lib/settings';
 import { WHATSAPP_SETTING_KEYS } from '../../../whatsapp/types';
 
 interface WhatsAppSectionProps {
@@ -21,6 +21,14 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
   const [pairingBusy, setPairingBusy] = useState(false);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Business profile
+  const [businessName, setBusinessName] = useState('');
+  const [businessDescription, setBusinessDescription] = useState('');
+  const [businessHours, setBusinessHours] = useState('');
+  const [poweredByFooter, setPoweredByFooter] = useState(true);
+  const [bizSavedFlash, setBizSavedFlash] = useState(false);
+  const bizFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const refreshStatus = useCallback(async () => {
     const s = await window.cerebro.whatsapp.status();
     setStatus(s);
@@ -29,15 +37,14 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
   useEffect(() => {
     void refreshStatus();
     const off = window.cerebro.whatsapp.onStatusChanged((s) => setStatus(s));
-    // Load saved allowlist so the field reflects what's currently active.
     void loadSetting<string[]>(WHATSAPP_SETTING_KEYS.allowlist).then((saved) => {
       if (!saved || saved.length === 0) return;
-      if (saved.includes('*')) {
-        setAllowAny(true);
-      } else {
-        setAllowlistRaw(saved.join(', '));
-      }
+      if (saved.includes('*')) { setAllowAny(true); } else { setAllowlistRaw(saved.join(', ')); }
     });
+    void loadSetting<string>(WHATSAPP_SETTING_KEYS.businessName).then((v) => v && setBusinessName(v));
+    void loadSetting<string>(WHATSAPP_SETTING_KEYS.businessDescription).then((v) => v && setBusinessDescription(v));
+    void loadSetting<string>(WHATSAPP_SETTING_KEYS.businessHours).then((v) => v && setBusinessHours(v));
+    void loadSetting<boolean>(WHATSAPP_SETTING_KEYS.poweredByFooter).then((v) => { if (typeof v === 'boolean') setPoweredByFooter(v); });
     return off;
   }, [refreshStatus]);
 
@@ -67,6 +74,18 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     flashTimerRef.current = setTimeout(() => setSavedFlash(false), 1_500);
   }, [allowlistRaw, allowAny]);
+
+  const saveBusinessProfile = useCallback(async () => {
+    await Promise.all([
+      saveSetting(WHATSAPP_SETTING_KEYS.businessName, businessName),
+      saveSetting(WHATSAPP_SETTING_KEYS.businessDescription, businessDescription),
+      saveSetting(WHATSAPP_SETTING_KEYS.businessHours, businessHours),
+      saveSetting(WHATSAPP_SETTING_KEYS.poweredByFooter, poweredByFooter),
+    ]);
+    setBizSavedFlash(true);
+    if (bizFlashRef.current) clearTimeout(bizFlashRef.current);
+    bizFlashRef.current = setTimeout(() => setBizSavedFlash(false), 1_500);
+  }, [businessName, businessDescription, businessHours, poweredByFooter]);
 
   useEffect(() => () => {
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
@@ -182,6 +201,73 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
           </button>
         </div>
       )}
+
+      {/* ── Business Profile ─────────────────────────────────────── */}
+      <div className="mt-6 rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-text-primary">🏢 Business Profile</h3>
+          <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">AI persona</span>
+        </div>
+        <p className="text-[11px] text-text-tertiary">Tell Cerebro about your business so the AI replies as your brand.</p>
+
+        <div>
+          <label className="text-xs text-text-secondary">Business name</label>
+          <input
+            type="text"
+            value={businessName}
+            onChange={(e) => setBusinessName(e.target.value)}
+            placeholder="e.g. Miami Beauty Clinic"
+            className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-text-secondary">What you offer (1-2 sentences)</label>
+          <textarea
+            value={businessDescription}
+            onChange={(e) => setBusinessDescription(e.target.value)}
+            placeholder="e.g. We offer botox, fillers, and laser treatments. We serve clients in Miami and Broward County."
+            rows={2}
+            className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 resize-none"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-text-secondary">Business hours</label>
+          <input
+            type="text"
+            value={businessHours}
+            onChange={(e) => setBusinessHours(e.target.value)}
+            placeholder="e.g. Mon–Fri 9am–6pm, Sat 10am–3pm"
+            className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          />
+        </div>
+
+        <label className="flex items-center gap-2 cursor-pointer select-none pt-1">
+          <input
+            type="checkbox"
+            checked={poweredByFooter}
+            onChange={(e) => setPoweredByFooter(e.target.checked)}
+            className="rounded border-border-subtle accent-accent"
+          />
+          <span className="text-xs text-text-secondary">Add <em>"✨ Powered by Cerebro AI"</em> footer to replies</span>
+        </label>
+
+        <div className="flex items-center justify-end gap-3">
+          {bizSavedFlash && (
+            <span className="text-xs text-emerald-400 flex items-center gap-1.5">
+              <CheckCircle2 size={12} /> Saved
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={saveBusinessProfile}
+            className="px-3 py-1.5 text-xs rounded-md font-medium bg-accent/15 text-accent hover:bg-accent/25"
+          >
+            Save profile
+          </button>
+        </div>
+      </div>
 
       {/* Allowlist */}
       <div className="mt-6">
