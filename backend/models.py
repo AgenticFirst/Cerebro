@@ -573,6 +573,27 @@ class KnowledgeAiMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
+class WhatsAppClient(Base):
+    """An operator-managed WhatsApp client (business).
+
+    Each client has its own WhatsApp session directory, business profile, and
+    conversation history. Operators can manage multiple clients from one
+    Cerebro install — each client maps to a separate WhatsApp number.
+    """
+
+    __tablename__ = "whatsapp_clients"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    name: Mapped[str] = mapped_column(String(255))
+    business_name: Mapped[str] = mapped_column(String(255), default="")
+    business_description: Mapped[str] = mapped_column(Text, default="")
+    business_hours: Mapped[str] = mapped_column(String(255), default="")
+    powered_by_footer: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class SyncOutbox(Base):
     """Local-only change log feeding the Supabase sync worker.
 

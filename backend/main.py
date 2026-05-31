@@ -394,6 +394,80 @@ def delete_conversation(conv_id: str, db=Depends(get_db)):
     return Response(status_code=204)
 
 
+# ── WhatsApp Operator Clients ─────────────────────────────────────────────
+
+
+class WhatsAppClientCreate(BaseModel):
+    name: str
+    business_name: str = ""
+    business_description: str = ""
+    business_hours: str = ""
+    powered_by_footer: bool = True
+
+
+class WhatsAppClientUpdate(BaseModel):
+    name: str | None = None
+    business_name: str | None = None
+    business_description: str | None = None
+    business_hours: str | None = None
+    powered_by_footer: bool | None = None
+    is_active: bool | None = None
+
+
+class WhatsAppClientResponse(BaseModel):
+    id: str
+    name: str
+    business_name: str
+    business_description: str
+    business_hours: str
+    powered_by_footer: bool
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+@app.get("/whatsapp-clients", response_model=list[WhatsAppClientResponse])
+def list_whatsapp_clients(db=Depends(get_db)):
+    from models import WhatsAppClient
+    return db.query(WhatsAppClient).order_by(WhatsAppClient.created_at.asc()).all()
+
+
+@app.post("/whatsapp-clients", response_model=WhatsAppClientResponse, status_code=201)
+def create_whatsapp_client(body: WhatsAppClientCreate, db=Depends(get_db)):
+    from models import WhatsAppClient
+    client = WhatsAppClient(**body.model_dump())
+    db.add(client)
+    db.commit()
+    db.refresh(client)
+    return client
+
+
+@app.patch("/whatsapp-clients/{client_id}", response_model=WhatsAppClientResponse)
+def update_whatsapp_client(client_id: str, body: WhatsAppClientUpdate, db=Depends(get_db)):
+    from models import WhatsAppClient
+    client = db.get(WhatsAppClient, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    for k, v in body.model_dump(exclude_none=True).items():
+        setattr(client, k, v)
+    db.commit()
+    db.refresh(client)
+    return client
+
+
+@app.delete("/whatsapp-clients/{client_id}", status_code=204)
+def delete_whatsapp_client(client_id: str, db=Depends(get_db)):
+    from models import WhatsAppClient
+    client = db.get(WhatsAppClient, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    db.delete(client)
+    db.commit()
+    return Response(status_code=204)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8000)
