@@ -5,6 +5,8 @@ import { CheckCircle2, Loader2, ShieldAlert, XCircle } from 'lucide-react';
 import { WhatsAppIcon } from '../../icons/BrandIcons';
 import type { WhatsAppStatusResponse } from '../../../types/ipc';
 import { parseAllowlistRaw } from '../../../whatsapp/helpers';
+import { loadSetting } from '../../../lib/settings';
+import { WHATSAPP_SETTING_KEYS } from '../../../whatsapp/types';
 
 interface WhatsAppSectionProps {
   showHeader?: boolean;
@@ -14,6 +16,7 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
   const { t } = useTranslation();
   const [status, setStatus] = useState<WhatsAppStatusResponse | null>(null);
   const [allowlistRaw, setAllowlistRaw] = useState('');
+  const [allowAny, setAllowAny] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pairingBusy, setPairingBusy] = useState(false);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -26,6 +29,15 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
   useEffect(() => {
     void refreshStatus();
     const off = window.cerebro.whatsapp.onStatusChanged((s) => setStatus(s));
+    // Load saved allowlist so the field reflects what's currently active.
+    void loadSetting<string[]>(WHATSAPP_SETTING_KEYS.allowlist).then((saved) => {
+      if (!saved || saved.length === 0) return;
+      if (saved.includes('*')) {
+        setAllowAny(true);
+      } else {
+        setAllowlistRaw(saved.join(', '));
+      }
+    });
     return off;
   }, [refreshStatus]);
 
@@ -49,12 +61,12 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
   }, [refreshStatus]);
 
   const saveAllowlist = useCallback(async () => {
-    const list = parseAllowlistRaw(allowlistRaw);
+    const list = allowAny ? ['*'] : parseAllowlistRaw(allowlistRaw);
     await window.cerebro.whatsapp.setAllowlist(list);
     setSavedFlash(true);
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     flashTimerRef.current = setTimeout(() => setSavedFlash(false), 1_500);
-  }, [allowlistRaw]);
+  }, [allowlistRaw, allowAny]);
 
   useEffect(() => () => {
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
@@ -174,12 +186,22 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
       {/* Allowlist */}
       <div className="mt-6">
         <label className="text-xs font-medium text-text-secondary">{t('whatsappSection.allowlistLabel')}</label>
+        <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={allowAny}
+            onChange={(e) => setAllowAny(e.target.checked)}
+            className="rounded border-border-subtle accent-accent"
+          />
+          <span className="text-xs text-text-secondary">{t('whatsappSection.allowAny', 'Allow messages from any contact')}</span>
+        </label>
         <input
           type="text"
           value={allowlistRaw}
-          onChange={(e) => setAllowlistRaw(e.target.value)}
+          onChange={(e) => { setAllowlistRaw(e.target.value); setAllowAny(false); }}
           placeholder={t('whatsappSection.allowlistPlaceholder')}
-          className="mt-1.5 w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          disabled={allowAny}
+          className="mt-2 w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 disabled:opacity-40"
           spellCheck={false}
         />
         <p className="mt-1.5 text-[11px] text-text-tertiary leading-relaxed">
