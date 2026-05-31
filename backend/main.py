@@ -344,6 +344,19 @@ def delete_messages_after(conv_id: str, msg_id: str, db=Depends(get_db)):
     return Response(status_code=204)
 
 
+@app.get("/conversations/{conv_id}/messages")
+def list_conversation_messages(
+    conv_id: str,
+    limit: int = Query(20, ge=1, le=200),
+    db=Depends(get_db),
+):
+    conv = db.get(Conversation, conv_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    msgs = sorted(conv.messages, key=lambda m: m.created_at)[-limit:]
+    return {"messages": [MessageResponse.model_validate(m) for m in msgs]}
+
+
 @app.patch("/conversations/{conv_id}", response_model=ConversationResponse)
 def patch_conversation(conv_id: str, body: ConversationUpdate, db=Depends(get_db)):
     conv = db.get(Conversation, conv_id)
