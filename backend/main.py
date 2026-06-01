@@ -402,6 +402,9 @@ class WhatsAppClientCreate(BaseModel):
     business_name: str = ""
     business_description: str = ""
     business_hours: str = ""
+    knowledge_base: str = ""
+    booking_url: str = ""
+    expert_id: str | None = None
     powered_by_footer: bool = True
 
 
@@ -410,6 +413,9 @@ class WhatsAppClientUpdate(BaseModel):
     business_name: str | None = None
     business_description: str | None = None
     business_hours: str | None = None
+    knowledge_base: str | None = None
+    booking_url: str | None = None
+    expert_id: str | None = None
     powered_by_footer: bool | None = None
     is_active: bool | None = None
 
@@ -420,6 +426,9 @@ class WhatsAppClientResponse(BaseModel):
     business_name: str
     business_description: str
     business_hours: str
+    knowledge_base: str
+    booking_url: str
+    expert_id: str | None
     powered_by_footer: bool
     is_active: bool
     created_at: datetime

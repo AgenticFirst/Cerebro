@@ -24,6 +24,8 @@ interface ClientFormData {
   business_name: string;
   business_description: string;
   business_hours: string;
+  knowledge_base: string;
+  booking_url: string;
   powered_by_footer: boolean;
 }
 
@@ -32,6 +34,8 @@ const emptyForm = (): ClientFormData => ({
   business_name: '',
   business_description: '',
   business_hours: '',
+  knowledge_base: '',
+  booking_url: '',
   powered_by_footer: true,
 });
 
@@ -162,6 +166,20 @@ export default function WhatsAppOperatorClients({ backendPort, onApplyProfile }:
             onChange={(e) => setForm({ ...form, business_hours: e.target.value })}
             placeholder="Business hours (e.g. Mon–Fri 9am–6pm)"
             className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          />
+          <input
+            type="url"
+            value={form.booking_url}
+            onChange={(e) => setForm({ ...form, booking_url: e.target.value })}
+            placeholder="Booking URL (Calendly, Google Calendar, etc.)"
+            className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          />
+          <textarea
+            value={form.knowledge_base}
+            onChange={(e) => setForm({ ...form, knowledge_base: e.target.value })}
+            placeholder="Knowledge base: paste FAQs, pricing, services, policies..."
+            rows={4}
+            className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 resize-y font-mono text-xs"
           />
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input

@@ -115,6 +115,8 @@ export class WhatsAppBridge implements WhatsAppChannel {
     businessDescription: '',
     businessHours: '',
     poweredByFooter: true,
+    knowledgeBase: '',
+    bookingUrl: '',
   };
 
   private state: WhatsAppStatusResponse = {
@@ -278,7 +280,7 @@ export class WhatsAppBridge implements WhatsAppChannel {
 
   /** Force a re-read of settings (used by the UI after a save). */
   async reloadSettings(): Promise<void> {
-    const [allowlist, enabled, usernames, conversations, selfLid, bizName, bizDesc, bizHours, footer] = await Promise.all([
+    const [allowlist, enabled, usernames, conversations, selfLid, bizName, bizDesc, bizHours, footer, kb, bookingUrl] = await Promise.all([
       backendGetSetting<string[]>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.allowlist),
       backendGetSetting<boolean>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.enabled),
       backendGetSetting<Record<string, string>>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.phoneUsernames),
@@ -288,6 +290,8 @@ export class WhatsAppBridge implements WhatsAppChannel {
       backendGetSetting<string>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.businessDescription),
       backendGetSetting<string>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.businessHours),
       backendGetSetting<boolean>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.poweredByFooter),
+      backendGetSetting<string>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.knowledgeBase),
+      backendGetSetting<string>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.bookingUrl),
     ]);
     this.settings.allowlist = Array.isArray(allowlist) ? allowlist : [];
     this.settings.enabled = typeof enabled === 'boolean' ? enabled : false;
@@ -297,6 +301,8 @@ export class WhatsAppBridge implements WhatsAppChannel {
     this.settings.businessDescription = typeof bizDesc === 'string' ? bizDesc : '';
     this.settings.businessHours = typeof bizHours === 'string' ? bizHours : '';
     this.settings.poweredByFooter = typeof footer === 'boolean' ? footer : true;
+    this.settings.knowledgeBase = typeof kb === 'string' ? kb : '';
+    this.settings.bookingUrl = typeof bookingUrl === 'string' ? bookingUrl : '';
     // Restore selfLid from previous session so self-chat works immediately on reconnect.
     if (typeof selfLid === 'string' && selfLid.endsWith('@lid') && !this.selfLid) {
       this.selfLid = selfLid;
@@ -943,11 +949,23 @@ export class WhatsAppBridge implements WhatsAppChannel {
     try { await this.sock.sendPresenceUpdate('composing', toUserJid(phone)); } catch { /* ignore */ }
 
     const isFirstContact = !this.settings.phoneConversations[phone];
-    // Build business context prefix so the AI knows who it's representing.
-    const { businessName, businessDescription, businessHours, poweredByFooter } = this.settings;
-    const bizContext = businessName
-      ? `You are the AI assistant for "${businessName}".${businessDescription ? ` ${businessDescription}` : ''}${businessHours ? ` Business hours: ${businessHours}.` : ''} Reply in the same language the customer uses. Keep replies concise and helpful.`
-      : undefined;
+    // Build business context so the AI knows who it's representing and has
+    // all the knowledge it needs to answer customer questions accurately.
+    const { businessName, businessDescription, businessHours, poweredByFooter, knowledgeBase, bookingUrl } = this.settings;
+    let bizContext: string | undefined;
+    if (businessName) {
+      const parts: string[] = [
+        `You are the AI assistant for "${businessName}".`,
+        businessDescription ? businessDescription : '',
+        businessHours ? `Business hours: ${businessHours}.` : '',
+        'Reply in the same language the customer uses. Be concise, friendly, and helpful.',
+        bookingUrl ? `When a customer asks to book, schedule, or make an appointment, ALWAYS share this booking link: ${bookingUrl}` : '',
+      ].filter(Boolean);
+      if (knowledgeBase) {
+        parts.push(`\n\n## Business Knowledge Base\nUse the following information to answer customer questions accurately:\n\n${knowledgeBase}`);
+      }
+      bizContext = parts.join(' ');
+    }
 
     const sink = new WhatsAppStreamSink(
       () => this.sock,

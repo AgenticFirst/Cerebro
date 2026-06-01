@@ -588,6 +588,17 @@ class WhatsAppClient(Base):
     business_name: Mapped[str] = mapped_column(String(255), default="")
     business_description: Mapped[str] = mapped_column(Text, default="")
     business_hours: Mapped[str] = mapped_column(String(255), default="")
+    # Free-text knowledge base: FAQs, pricing, services, policies, etc.
+    # Injected directly into the AI context on every customer message.
+    knowledge_base: Mapped[str] = mapped_column(Text, default="")
+    # Calendly / booking URL — bot sends this when customer asks to schedule.
+    booking_url: Mapped[str] = mapped_column(String(512), default="")
+    # Optional: link to a specific Cerebro Expert for this business.
+    expert_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("experts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     powered_by_footer: Mapped[bool] = mapped_column(Boolean, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

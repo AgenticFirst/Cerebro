@@ -32,6 +32,10 @@ export const WHATSAPP_SETTING_KEYS = {
   businessHours: 'whatsapp_business_hours',
   /** Whether to append "Powered by Cerebro" to every reply. */
   poweredByFooter: 'whatsapp_powered_by_footer',
+  /** Knowledge base text: FAQs, pricing, services, policies. */
+  knowledgeBase: 'whatsapp_knowledge_base',
+  /** Calendly or booking URL — sent when customer asks to schedule. */
+  bookingUrl: 'whatsapp_booking_url',
 } as const;
 
 export interface WhatsAppSettings {
@@ -43,6 +47,8 @@ export interface WhatsAppSettings {
   businessDescription: string;
   businessHours: string;
   poweredByFooter: boolean;
+  knowledgeBase: string;
+  bookingUrl: string;
 }
 
 // Canonical IPC surface types live in src/types/ipc.ts (consistent with how

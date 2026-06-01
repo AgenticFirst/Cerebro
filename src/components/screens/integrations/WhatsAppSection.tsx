@@ -27,6 +27,8 @@ export default function WhatsAppSection({ showHeader = false, backendPort = 8000
   const [businessName, setBusinessName] = useState('');
   const [businessDescription, setBusinessDescription] = useState('');
   const [businessHours, setBusinessHours] = useState('');
+  const [knowledgeBase, setKnowledgeBase] = useState('');
+  const [bookingUrl, setBookingUrl] = useState('');
   const [poweredByFooter, setPoweredByFooter] = useState(true);
   const [bizSavedFlash, setBizSavedFlash] = useState(false);
   const bizFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -46,6 +48,8 @@ export default function WhatsAppSection({ showHeader = false, backendPort = 8000
     void loadSetting<string>(WHATSAPP_SETTING_KEYS.businessName).then((v) => v && setBusinessName(v));
     void loadSetting<string>(WHATSAPP_SETTING_KEYS.businessDescription).then((v) => v && setBusinessDescription(v));
     void loadSetting<string>(WHATSAPP_SETTING_KEYS.businessHours).then((v) => v && setBusinessHours(v));
+    void loadSetting<string>(WHATSAPP_SETTING_KEYS.knowledgeBase).then((v) => v && setKnowledgeBase(v));
+    void loadSetting<string>(WHATSAPP_SETTING_KEYS.bookingUrl).then((v) => v && setBookingUrl(v));
     void loadSetting<boolean>(WHATSAPP_SETTING_KEYS.poweredByFooter).then((v) => { if (typeof v === 'boolean') setPoweredByFooter(v); });
     return off;
   }, [refreshStatus]);
@@ -80,15 +84,20 @@ export default function WhatsAppSection({ showHeader = false, backendPort = 8000
   const applyClientProfile = useCallback(async (client: {
     business_name: string; business_description: string;
     business_hours: string; powered_by_footer: boolean;
+    knowledge_base?: string; booking_url?: string;
   }) => {
     setBusinessName(client.business_name);
     setBusinessDescription(client.business_description);
     setBusinessHours(client.business_hours);
+    setKnowledgeBase(client.knowledge_base ?? '');
+    setBookingUrl(client.booking_url ?? '');
     setPoweredByFooter(client.powered_by_footer);
     await Promise.all([
       saveSetting(WHATSAPP_SETTING_KEYS.businessName, client.business_name),
       saveSetting(WHATSAPP_SETTING_KEYS.businessDescription, client.business_description),
       saveSetting(WHATSAPP_SETTING_KEYS.businessHours, client.business_hours),
+      saveSetting(WHATSAPP_SETTING_KEYS.knowledgeBase, client.knowledge_base ?? ''),
+      saveSetting(WHATSAPP_SETTING_KEYS.bookingUrl, client.booking_url ?? ''),
       saveSetting(WHATSAPP_SETTING_KEYS.poweredByFooter, client.powered_by_footer),
     ]);
     setBizSavedFlash(true);
@@ -101,6 +110,8 @@ export default function WhatsAppSection({ showHeader = false, backendPort = 8000
       saveSetting(WHATSAPP_SETTING_KEYS.businessName, businessName),
       saveSetting(WHATSAPP_SETTING_KEYS.businessDescription, businessDescription),
       saveSetting(WHATSAPP_SETTING_KEYS.businessHours, businessHours),
+      saveSetting(WHATSAPP_SETTING_KEYS.knowledgeBase, knowledgeBase),
+      saveSetting(WHATSAPP_SETTING_KEYS.bookingUrl, bookingUrl),
       saveSetting(WHATSAPP_SETTING_KEYS.poweredByFooter, poweredByFooter),
     ]);
     setBizSavedFlash(true);
@@ -262,6 +273,34 @@ export default function WhatsAppSection({ showHeader = false, backendPort = 8000
             placeholder="e.g. Mon–Fri 9am–6pm, Sat 10am–3pm"
             className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
           />
+        </div>
+
+        <div>
+          <label className="text-xs text-text-secondary flex items-center gap-1.5">
+            📅 Booking / Calendar URL
+          </label>
+          <input
+            type="url"
+            value={bookingUrl}
+            onChange={(e) => setBookingUrl(e.target.value)}
+            placeholder="https://calendly.com/yourbusiness or Google Calendar link"
+            className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          />
+          <p className="mt-1 text-[10px] text-text-tertiary">When a customer asks to book, the bot sends this link automatically.</p>
+        </div>
+
+        <div>
+          <label className="text-xs text-text-secondary flex items-center gap-1.5">
+            📚 Knowledge Base
+          </label>
+          <textarea
+            value={knowledgeBase}
+            onChange={(e) => setKnowledgeBase(e.target.value)}
+            placeholder={`Paste your FAQ, pricing, services, policies here.\n\nExample:\nServices: Botox $250, Fillers $400, Laser $300\nPayment: Cash, card, Venmo accepted\nLocation: 123 Main St, Miami FL\nFAQ: Do you accept walk-ins? Yes, Mon-Fri only.`}
+            rows={8}
+            className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 resize-y font-mono text-xs"
+          />
+          <p className="mt-1 text-[10px] text-text-tertiary">The AI reads this to answer customer questions accurately. Add prices, FAQs, locations, policies — anything customers ask about.</p>
         </div>
 
         <label className="flex items-center gap-2 cursor-pointer select-none pt-1">
