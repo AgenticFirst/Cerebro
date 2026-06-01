@@ -18,8 +18,9 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, func, inspect as sa_inspect, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+import database
 import models as _models
-from database import Base, SessionLocal, build_engine
+from database import Base, build_engine
 
 from .config import MTIME_COLUMN, PK_COLUMN, SYNCED_TABLES, blob_path_from_payload
 from .outbox import set_sync_enabled
@@ -30,6 +31,18 @@ _build_remote_metadata()  # populate the mirror table objects at import
 log = logging.getLogger(__name__)
 
 CURSOR_SETTING_KEY = "sync:cursor"  # local-only (sync: prefix) — never leaves device
+
+
+def _session_local():
+    """Resolve the live ``SessionLocal`` from the database module.
+
+    The worker is imported (and this module's globals are bound) *before*
+    ``database.init_db()`` runs, when ``database.SessionLocal`` is still
+    ``None``. Reading it through the module at call time — rather than via a
+    ``from database import SessionLocal`` that captures the stale ``None`` —
+    guarantees we get the real sessionmaker once init has happened.
+    """
+    return database.SessionLocal
 
 # table name -> ORM model class (for applying pulled rows locally)
 MODEL_BY_TABLE: dict[str, type] = {
@@ -167,9 +180,10 @@ class SyncWorker:
 
     # ----- push -----
     def _pending_count(self) -> int:
-        if SessionLocal is None:
+        session_local = _session_local()
+        if session_local is None:
             return 0
-        s = SessionLocal()
+        s = session_local()
         try:
             return (
                 s.query(_models.SyncOutbox)
@@ -180,8 +194,9 @@ class SyncWorker:
             s.close()
 
     def _push(self) -> None:
-        assert SessionLocal is not None
-        s = SessionLocal()
+        session_local = _session_local()
+        assert session_local is not None
+        s = session_local()
         try:
             rows = (
                 s.query(_models.SyncOutbox)
@@ -240,7 +255,7 @@ class SyncWorker:
 
     # ----- pull -----
     def _get_cursor(self) -> datetime | None:
-        s = SessionLocal()
+        s = _session_local()()
         try:
             row = s.get(_models.Setting, CURSOR_SETTING_KEY)
             return _parse_dt(row.value) if row else None
@@ -248,7 +263,7 @@ class SyncWorker:
             s.close()
 
     def _set_cursor(self, value: datetime) -> None:
-        s = SessionLocal()
+        s = _session_local()()
         s.info["cloud_sync_apply"] = True  # bookkeeping, never sync the cursor
         try:
             row = s.get(_models.Setting, CURSOR_SETTING_KEY)
@@ -283,7 +298,7 @@ class SyncWorker:
         model = MODEL_BY_TABLE[table]
         pk = PK_COLUMN[table]
         mtime = MTIME_COLUMN[table]
-        s = SessionLocal()
+        s = _session_local()()
         s.info["cloud_sync_apply"] = True
         blob_paths: list[str] = []
         try:
@@ -338,7 +353,7 @@ class SyncWorker:
         result = conn.execute(stmt).mappings().all()
         if not result:
             return high
-        s = SessionLocal()
+        s = _session_local()()
         s.info["cloud_sync_apply"] = True
         try:
             for rrow in result:
