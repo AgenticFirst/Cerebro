@@ -18,8 +18,14 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, func, inspect as sa_inspect, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+import database
 import models as _models
-from database import Base, SessionLocal, build_engine
+from database import Base, build_engine
+
+# NOTE: do NOT `from database import SessionLocal` — that binds this module's
+# name to whatever the value is at import time (None, since the worker is
+# imported via main.py before init_db() runs). init_db() only rebinds
+# database.SessionLocal, so we must read it through the module each call.
 
 from .config import MTIME_COLUMN, PK_COLUMN, SYNCED_TABLES, blob_path_from_payload
 from .outbox import set_sync_enabled
@@ -167,9 +173,9 @@ class SyncWorker:
 
     # ----- push -----
     def _pending_count(self) -> int:
-        if SessionLocal is None:
+        if database.SessionLocal is None:
             return 0
-        s = SessionLocal()
+        s = database.SessionLocal()
         try:
             return (
                 s.query(_models.SyncOutbox)
@@ -180,8 +186,8 @@ class SyncWorker:
             s.close()
 
     def _push(self) -> None:
-        assert SessionLocal is not None
-        s = SessionLocal()
+        assert database.SessionLocal is not None
+        s = database.SessionLocal()
         try:
             rows = (
                 s.query(_models.SyncOutbox)
@@ -240,7 +246,7 @@ class SyncWorker:
 
     # ----- pull -----
     def _get_cursor(self) -> datetime | None:
-        s = SessionLocal()
+        s = database.SessionLocal()
         try:
             row = s.get(_models.Setting, CURSOR_SETTING_KEY)
             return _parse_dt(row.value) if row else None
@@ -248,7 +254,7 @@ class SyncWorker:
             s.close()
 
     def _set_cursor(self, value: datetime) -> None:
-        s = SessionLocal()
+        s = database.SessionLocal()
         s.info["cloud_sync_apply"] = True  # bookkeeping, never sync the cursor
         try:
             row = s.get(_models.Setting, CURSOR_SETTING_KEY)
@@ -283,7 +289,7 @@ class SyncWorker:
         model = MODEL_BY_TABLE[table]
         pk = PK_COLUMN[table]
         mtime = MTIME_COLUMN[table]
-        s = SessionLocal()
+        s = database.SessionLocal()
         s.info["cloud_sync_apply"] = True
         blob_paths: list[str] = []
         try:
@@ -338,7 +344,7 @@ class SyncWorker:
         result = conn.execute(stmt).mappings().all()
         if not result:
             return high
-        s = SessionLocal()
+        s = database.SessionLocal()
         s.info["cloud_sync_apply"] = True
         try:
             for rrow in result:
