@@ -207,11 +207,10 @@ See the full [roadmap](docs/roadmap.md) for details.
 - [x] Core intelligence + team orchestration
 - [x] Activity + approvals
 - [x] Sandbox environment
-- [ ] Connectors (Google Calendar, Gmail, Notion)
-- [ ] Channels (Telegram, WhatsApp, Email)
+- [x] Connectors (Google Calendar, Gmail, Notion)
+- [x] Channels (Telegram, WhatsApp, Email)
 - [ ] Remote access
 - [ ] Marketplace
-- [ ] Onboarding tour
 
 ## Contributing
 
