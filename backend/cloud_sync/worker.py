@@ -22,11 +22,6 @@ import database
 import models as _models
 from database import Base, build_engine
 
-# NOTE: do NOT `from database import SessionLocal` — that binds this module's
-# name to whatever the value is at import time (None, since the worker is
-# imported via main.py before init_db() runs). init_db() only rebinds
-# database.SessionLocal, so we must read it through the module each call.
-
 from .config import MTIME_COLUMN, PK_COLUMN, SYNCED_TABLES, blob_path_from_payload
 from .outbox import set_sync_enabled
 from .schema import _build_remote_metadata, ensure_remote_schema, remote_metadata
@@ -36,6 +31,18 @@ _build_remote_metadata()  # populate the mirror table objects at import
 log = logging.getLogger(__name__)
 
 CURSOR_SETTING_KEY = "sync:cursor"  # local-only (sync: prefix) — never leaves device
+
+
+def _session_local():
+    """Resolve the live ``SessionLocal`` from the database module.
+
+    The worker is imported (and this module's globals are bound) *before*
+    ``database.init_db()`` runs, when ``database.SessionLocal`` is still
+    ``None``. Reading it through the module at call time — rather than via a
+    ``from database import SessionLocal`` that captures the stale ``None`` —
+    guarantees we get the real sessionmaker once init has happened.
+    """
+    return database.SessionLocal
 
 # table name -> ORM model class (for applying pulled rows locally)
 MODEL_BY_TABLE: dict[str, type] = {
@@ -173,9 +180,10 @@ class SyncWorker:
 
     # ----- push -----
     def _pending_count(self) -> int:
-        if database.SessionLocal is None:
+        session_local = _session_local()
+        if session_local is None:
             return 0
-        s = database.SessionLocal()
+        s = session_local()
         try:
             return (
                 s.query(_models.SyncOutbox)
@@ -186,8 +194,9 @@ class SyncWorker:
             s.close()
 
     def _push(self) -> None:
-        assert database.SessionLocal is not None
-        s = database.SessionLocal()
+        session_local = _session_local()
+        assert session_local is not None
+        s = session_local()
         try:
             rows = (
                 s.query(_models.SyncOutbox)
@@ -246,7 +255,7 @@ class SyncWorker:
 
     # ----- pull -----
     def _get_cursor(self) -> datetime | None:
-        s = database.SessionLocal()
+        s = _session_local()()
         try:
             row = s.get(_models.Setting, CURSOR_SETTING_KEY)
             return _parse_dt(row.value) if row else None
@@ -254,7 +263,7 @@ class SyncWorker:
             s.close()
 
     def _set_cursor(self, value: datetime) -> None:
-        s = database.SessionLocal()
+        s = _session_local()()
         s.info["cloud_sync_apply"] = True  # bookkeeping, never sync the cursor
         try:
             row = s.get(_models.Setting, CURSOR_SETTING_KEY)
@@ -289,7 +298,7 @@ class SyncWorker:
         model = MODEL_BY_TABLE[table]
         pk = PK_COLUMN[table]
         mtime = MTIME_COLUMN[table]
-        s = database.SessionLocal()
+        s = _session_local()()
         s.info["cloud_sync_apply"] = True
         blob_paths: list[str] = []
         try:
@@ -344,7 +353,7 @@ class SyncWorker:
         result = conn.execute(stmt).mappings().all()
         if not result:
             return high
-        s = database.SessionLocal()
+        s = _session_local()()
         s.info["cloud_sync_apply"] = True
         try:
             for rrow in result:

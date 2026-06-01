@@ -125,3 +125,6 @@ e2e/screenshots/
 
 # Bundled Python runtime + staged backend (built by scripts/bundle-python.sh)
 build-resources/
+
+# Local Claude Code / Obelisk agent runtime (never commit)
+.claude/
