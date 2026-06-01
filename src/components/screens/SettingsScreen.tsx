@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Brain, Palette, Info, Shield, FlaskConical, Mic, Archive, Activity, type LucideIcon } from 'lucide-react';
+import { Brain, Palette, Info, Shield, FlaskConical, Mic, Archive, Activity, Plug, Sparkles, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import MemorySection from './settings/MemorySection';
@@ -13,10 +13,14 @@ import { consumePendingSettingsSection } from './settings/pending-section';
 // Lazy so Activity's heavy deps (incl. ChatContext) stay out of the Settings
 // static import graph — only loaded when the Activity section is opened.
 const ActivityScreen = lazy(() => import('./ActivityScreen'));
+// Integrations and Skills render their own full-screen surfaces inside Settings
+// as sub-sections; lazy-load to keep them out of the static graph.
+const IntegrationsScreen = lazy(() => import('./IntegrationsScreen'));
+const SkillsLibraryScreen = lazy(() => import('./SkillsLibraryScreen'));
 import { useFeatureFlags } from '../../context/FeatureFlagsContext';
 import { useOnboarding } from '../../context/OnboardingContext';
 
-type Section = 'memory' | 'activity' | 'sandbox' | 'voice' | 'backup' | 'appearance' | 'beta' | 'about';
+type Section = 'memory' | 'integrations' | 'skills' | 'activity' | 'sandbox' | 'voice' | 'backup' | 'appearance' | 'beta' | 'about';
 
 interface SectionNavItem {
   id: Section;
@@ -25,6 +29,8 @@ interface SectionNavItem {
 
 const SECTIONS: SectionNavItem[] = [
   { id: 'memory', icon: Brain },
+  { id: 'integrations', icon: Plug },
+  { id: 'skills', icon: Sparkles },
   { id: 'activity', icon: Activity },
   { id: 'sandbox', icon: Shield },
   { id: 'voice', icon: Mic },
@@ -34,7 +40,7 @@ const SECTIONS: SectionNavItem[] = [
   { id: 'about', icon: Info },
 ];
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ initialSection }: { initialSection?: Section } = {}) {
   const { t } = useTranslation();
   const { flags } = useFeatureFlags();
   const { forcedSettingsSection } = useOnboarding();
@@ -47,6 +53,9 @@ export default function SettingsScreen() {
   );
 
   const [activeSection, setActiveSection] = useState<Section>(() => {
+    // An explicit prop (e.g. a deep-link routed to Settings → Integrations)
+    // wins over the one-shot pending section.
+    if (initialSection) return initialSection;
     const pending = consumePendingSettingsSection();
     if (pending === 'voice' && !flags['voice-calls']) {
       // A caller (e.g. Phone-button click) asked us to land on Voice but
@@ -57,6 +66,12 @@ export default function SettingsScreen() {
     }
     return pending ?? 'memory';
   });
+
+  // Follow the prop when a caller re-routes to a different section while the
+  // Settings screen is already mounted.
+  useEffect(() => {
+    if (initialSection) setActiveSection(initialSection);
+  }, [initialSection]);
 
   // If the user disables the flag while Voice is the active section,
   // bounce them back to Memory so they don't see a dangling pane.
@@ -115,12 +130,25 @@ export default function SettingsScreen() {
         </div>
       </div>
 
-      {/* Content pane. Activity renders full-bleed (it owns its own header,
-          filters, and scroll); other sections use the padded column. */}
+      {/* Content pane. Activity / Integrations / Skills render full-bleed (they
+          own their own header, filters, and scroll); other sections use the
+          padded column. */}
       {activeSection === 'activity' ? (
         <div className="flex-1 min-h-0 flex">
           <Suspense fallback={null}>
             <ActivityScreen />
+          </Suspense>
+        </div>
+      ) : activeSection === 'integrations' ? (
+        <div className="flex-1 min-h-0 flex">
+          <Suspense fallback={null}>
+            <IntegrationsScreen />
+          </Suspense>
+        </div>
+      ) : activeSection === 'skills' ? (
+        <div className="flex-1 min-h-0 flex">
+          <Suspense fallback={null}>
+            <SkillsLibraryScreen />
           </Suspense>
         </div>
       ) : (

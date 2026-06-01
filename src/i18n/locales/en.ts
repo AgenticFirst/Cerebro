@@ -1704,6 +1704,8 @@ const en = {
   settings: {
     title: 'Settings',
     memory: 'Memory',
+    integrations: 'Integrations',
+    skills: 'Skills',
     activity: 'Activity',
     sandbox: 'Sandbox',
     voice: 'Voice',

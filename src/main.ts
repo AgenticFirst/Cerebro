@@ -2536,6 +2536,9 @@ const createWindow = () => {
     minHeight: 600,
     title: 'Cerebro',
     icon: path.join(app.getAppPath(), 'assets', 'icon.png'),
+    // Hide the native menu bar on Linux/Windows (Alt still reveals it). macOS
+    // has no in-window menu, so this is a no-op there.
+    autoHideMenuBar: process.platform !== 'darwin',
     ...(process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset' as const,
       trafficLightPosition: { x: 16, y: 12 },

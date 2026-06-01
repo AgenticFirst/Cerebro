@@ -57,6 +57,7 @@ import type {
 import type { VoiceSessionEvent } from './voice/types';
 
 const api: CerebroAPI = {
+  platform: process.platform,
   invoke<T = unknown>(request: BackendRequest): Promise<BackendResponse<T>> {
     return ipcRenderer.invoke(IPC_CHANNELS.BACKEND_REQUEST, request);
   },

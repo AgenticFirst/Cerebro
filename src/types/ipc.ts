@@ -923,6 +923,8 @@ export interface BackupAPI {
 }
 
 export interface CerebroAPI {
+  /** Host platform, exposed synchronously from the main process (process.platform). */
+  platform: NodeJS.Platform;
   invoke<T = unknown>(request: BackendRequest): Promise<BackendResponse<T>>;
   getStatus(): Promise<BackendStatus>;
   startStream(request: StreamRequest): Promise<string>;

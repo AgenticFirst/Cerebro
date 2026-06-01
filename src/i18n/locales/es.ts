@@ -1686,6 +1686,8 @@ const es: TranslationKeys = {
   settings: {
     title: 'Ajustes',
     memory: 'Memoria',
+    integrations: 'Integraciones',
+    skills: 'Habilidades',
     activity: 'Actividad',
     sandbox: 'Sandbox',
     voice: 'Voz',

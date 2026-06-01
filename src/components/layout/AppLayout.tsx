@@ -6,17 +6,16 @@ import { useTasks } from '../../context/TaskContext';
 import { useExperts } from '../../context/ExpertContext';
 import { useFeatureFlags } from '../../context/FeatureFlagsContext';
 import { useToast } from '../../context/ToastContext';
+import { IS_MAC } from '../../lib/platform';
 import Sidebar from './Sidebar';
 import UpdateBanner from '../update/UpdateBanner';
 import ChatView from '../chat/ChatView';
 import WelcomeView from '../chat/WelcomeView';
 import ExpertsScreen from '../screens/ExpertsScreen';
 import RoutinesScreen from '../screens/RoutinesScreen';
-import IntegrationsScreen from '../screens/IntegrationsScreen';
 import ActivityScreen from '../screens/ActivityScreen';
 import ApprovalsScreen from '../screens/ApprovalsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
-import SkillsLibraryScreen from '../screens/SkillsLibraryScreen';
 import CallScreen from '../screens/CallScreen';
 import TasksScreen from '../screens/TasksScreen';
 import FilesScreen from '../screens/FilesScreen';
@@ -130,8 +129,11 @@ export default function AppLayout() {
     if (activeScreen === 'routines') {
       return <RoutinesScreen />;
     }
+    // Integrations and Skills (marketplace) now live inside Settings as
+    // sub-sections. Existing deep-links to these screens land on the matching
+    // Settings pane.
     if (activeScreen === 'integrations') {
-      return <IntegrationsScreen />;
+      return <SettingsScreen initialSection="integrations" />;
     }
     if (activeScreen === 'activity') {
       return <ActivityScreen />;
@@ -143,7 +145,7 @@ export default function AppLayout() {
       return <SettingsScreen />;
     }
     if (activeScreen === 'marketplace') {
-      return <SkillsLibraryScreen />;
+      return <SettingsScreen initialSection="skills" />;
     }
     if (activeScreen === 'knowledge-base') {
       return <KnowledgeBaseScreen />;
@@ -158,7 +160,7 @@ export default function AppLayout() {
     <div className="flex h-full">
       <Sidebar />
       <main className="flex-1 flex flex-col min-h-0">
-        {activeScreen !== 'files' && activeScreen !== 'knowledge-base' && (
+        {IS_MAC && activeScreen !== 'files' && activeScreen !== 'knowledge-base' && (
           <div className="app-drag-region h-11 flex-shrink-0" />
         )}
         <UpdateBanner />

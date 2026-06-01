@@ -5,8 +5,6 @@ import {
   Users,
   Zap,
   ShieldCheck,
-  Plug,
-  Sparkles,
   Settings,
   Plus,
   PanelLeftClose,
@@ -27,6 +25,7 @@ import { useApprovals } from '../../context/ApprovalContext';
 import { useTasks } from '../../context/TaskContext';
 import { useOnboarding } from '../../context/OnboardingContext';
 import { isUntitledConversationTitle } from '../../context/chat-helpers';
+import { IS_MAC } from '../../lib/platform';
 import type { Conversation, Screen } from '../../types/chat';
 import { TelegramIcon } from '../icons/BrandIcons';
 
@@ -62,11 +61,7 @@ const NAV_APPS: NavItemDef[] = [
   { id: 'knowledge-base', icon: BookOpen },
 ];
 
-// Extensions — setup & expand
-const NAV_EXTENSIONS: NavItemDef[] = [
-  { id: 'integrations', icon: Plug },
-  { id: 'marketplace', icon: Sparkles },
-];
+// Integrations and Skills (marketplace) moved into Settings → Integrations / Skills.
 
 /* ── NavButton ────────────────────────────────────────────────── */
 
@@ -92,7 +87,7 @@ function NavButton({
       className={clsx(
         'group relative w-full flex items-center rounded-md',
         'transition-all duration-150 ease-[cubic-bezier(0.4,0,0.2,1)] cursor-pointer',
-        collapsed ? 'justify-center p-2' : 'gap-2.5 px-2.5 py-[7px]',
+        collapsed ? 'justify-center p-2' : 'gap-2.5 px-2.5 py-[5px]',
         isActive
           ? 'nav-item-active text-text-primary font-medium'
           : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]',
@@ -163,7 +158,7 @@ function NavGroup({
 
 function GhostSeparator({ collapsed }: { collapsed: boolean }) {
   return (
-    <div className={clsx('my-2', collapsed ? 'mx-2' : 'mx-3')}>
+    <div className={clsx('my-1', collapsed ? 'mx-2' : 'mx-3')}>
       <div className="border-t border-white/[0.04]" />
     </div>
   );
@@ -213,8 +208,6 @@ const NAV_LABEL_KEYS: Record<string, string> = {
   routines: 'nav.routines',
   activity: 'nav.activity',
   approvals: 'nav.approvals',
-  integrations: 'nav.integrations',
-  marketplace: 'nav.skills',
   'knowledge-base': 'nav.knowledgeBase',
   settings: 'nav.settings',
 };
@@ -237,7 +230,7 @@ export default function Sidebar() {
   const { spotlightedNavId } = useOnboarding();
 
   const [collapsed, setCollapsed] = useState(false);
-  const [appsExpanded, setAppsExpanded] = useState(true);
+  const [appsExpanded, setAppsExpanded] = useState(false);
   const grouped = useMemo(() => groupByTime(generalConversations), [generalConversations]);
 
   /** Resolve a NavItemDef[] to NavItem[] with translated labels */
@@ -261,11 +254,6 @@ export default function Sidebar() {
         : item,
     ),
     [pendingCount, t],
-  );
-
-  const navExtensions = useMemo<NavItem[]>(() =>
-    resolveLabels(NAV_EXTENSIONS),
-    [t],
   );
 
   const navApps = useMemo<NavItem[]>(() =>
@@ -299,8 +287,8 @@ export default function Sidebar() {
         collapsed ? 'w-[56px]' : 'w-[260px]',
       )}
     >
-      {/* ── Traffic light spacer (draggable) ─────────────────── */}
-      <div className="app-drag-region h-11 flex-shrink-0" />
+      {/* ── Traffic light spacer (draggable, macOS only) ────── */}
+      {IS_MAC && <div className="app-drag-region h-11 flex-shrink-0" />}
 
       {/* ── Header: logo + collapse toggle ─────────────────────── */}
       <div
@@ -376,7 +364,7 @@ export default function Sidebar() {
             <button
               onClick={() => setAppsExpanded((v) => !v)}
               className={clsx(
-                'group w-full flex items-center gap-2.5 px-2.5 py-[7px] rounded-md',
+                'group w-full flex items-center gap-2.5 px-2.5 py-[5px] rounded-md',
                 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]',
                 'transition-all duration-150 cursor-pointer',
               )}
@@ -417,24 +405,13 @@ export default function Sidebar() {
           onNavClick={handleNavClick}
           spotlightedNavId={spotlightedNavId}
         />
-
-        <GhostSeparator collapsed={collapsed} />
-
-        {/* Extensions: Integrations, Marketplace */}
-        <NavGroup
-          items={navExtensions}
-          activeScreen={activeScreen}
-          collapsed={collapsed}
-          onNavClick={handleNavClick}
-          spotlightedNavId={spotlightedNavId}
-        />
       </nav>
 
       {/* ── Conversation history (Chat screen, expanded only) ── */}
       {activeScreen === 'chat' && !collapsed ? (
         <>
           <div className="mx-3 my-2 border-t border-border-subtle" />
-          <div className="flex-1 overflow-y-auto scrollbar-thin px-2.5 pb-2">
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-2.5 pb-2">
             {grouped.length === 0 && (
               <div className="px-3 py-6 text-[11px] text-text-tertiary text-center">
                 {isLoading ? t('common.loading') : t('nav.noConversationsYet')}
@@ -470,7 +447,9 @@ export default function Sidebar() {
       <div className="px-2.5 py-2 border-t border-white/[0.04]">
         <NavButton
           item={{ id: 'settings', label: t('nav.settings'), icon: Settings }}
-          isActive={activeScreen === 'settings'}
+          // Integrations + Skills now live inside Settings, so keep the footer
+          // highlighted when a deep-link routes to those sub-sections.
+          isActive={activeScreen === 'settings' || activeScreen === 'integrations' || activeScreen === 'marketplace'}
           collapsed={collapsed}
           onClick={() => handleNavClick('settings')}
           isTourSpotlit={spotlightedNavId === 'settings'}
