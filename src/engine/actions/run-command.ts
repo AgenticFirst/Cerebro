@@ -21,6 +21,12 @@ interface RunCommandParams {
   env?: Record<string, string>;
 }
 
+interface ExecFileFailure extends Error {
+  code?: number | string | null;
+  killed?: boolean;
+  signal?: NodeJS.Signals | null;
+}
+
 const ALLOWED_COMMANDS_SET = new Set(ALLOWED_COMMANDS);
 
 const BLOCKED_ENV_KEYS = new Set([
@@ -154,9 +160,6 @@ export const runCommandAction: ActionDefinition = {
         (error, stdout, stderr) => {
           removeAbortListener();
           const durationMs = Date.now() - startTime;
-          const exitCode = error?.code
-            ? (typeof error.code === 'number' ? error.code : 1)
-            : 0;
 
           // Log stdout lines
           if (stdout) {
@@ -169,8 +172,19 @@ export const runCommandAction: ActionDefinition = {
             }
           }
 
-          if (exitCode !== 0) {
-            const errMsg = stderr || error?.message || `Exit code ${exitCode}`;
+          if (error) {
+            const execError = error as ExecFileFailure;
+            const exitCode = typeof execError.code === 'number' ? execError.code : 1;
+
+            if (execError.signal) {
+              const message = execError.killed
+                ? `Command timed out after ${timeoutMs}ms`
+                : `Command terminated by signal ${execError.signal}`;
+              reject(new Error(message));
+              return;
+            }
+
+            const errMsg = stderr || error.message || `Exit code ${exitCode}`;
             reject(new Error(`Command failed (exit ${exitCode}): ${errMsg.slice(0, 200)}`));
             return;
           }
@@ -179,7 +193,7 @@ export const runCommandAction: ActionDefinition = {
             data: {
               stdout: stdout || '',
               stderr: stderr || '',
-              exit_code: exitCode,
+              exit_code: 0,
               duration_ms: durationMs,
             },
             summary: `${command} completed (${durationMs}ms)`,

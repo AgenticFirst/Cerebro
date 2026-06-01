@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runCommandAction } from '../actions/run-command';
 import { RunScratchpad } from '../scratchpad';
 import type { ActionContext } from '../actions/types';
@@ -61,6 +64,24 @@ describe('runCommandAction', () => {
         context: makeContext(),
       }),
     ).rejects.toThrow('Command failed');
+  });
+
+  it('rejects when the command exceeds its timeout', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cerebro-run-command-timeout-'));
+    writeFileSync(join(dir, 'Makefile'), 'slow:\n\t@sleep 2\n');
+
+    try {
+      await expect(
+        runCommandAction.execute({
+          params: { command: 'make', args: 'slow', working_directory: dir, timeout: 0.1 },
+          wiredInputs: {},
+          scratchpad: new RunScratchpad(),
+          context: makeContext(),
+        }),
+      ).rejects.toThrow(/timed out|timeout/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('rejects non-existent working directory', async () => {
