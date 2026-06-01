@@ -19,19 +19,22 @@ Issues are the best way to start. Before writing any code, please [open an issue
 git clone https://github.com/<your-username>/Cerebro.git
 cd Cerebro
 
-# Set up the Python backend
-cd backend
-python3 -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cd ..
-
 # Install frontend dependencies
 npm install
 
-# Start the app
+# Set up the Python backend (creates backend/venv + installs requirements)
+npm run setup
+
+# Start the app (also auto-creates the backend venv if it's missing)
 npm start
 ```
+
+> The Python backend runs from `backend/venv`. `npm run setup` creates it for you; `npm start`
+> re-checks it via a `prestart` guard and bootstraps it if missing. To set it up by hand instead:
+>
+> ```bash
+> cd backend && python3 -m venv venv && venv/bin/pip install -r requirements.txt
+> ```
 
 > **Requirements:** Node.js >= 20, Python >= 3.11. On macOS you'll also need Xcode Command Line Tools for native modules.
 

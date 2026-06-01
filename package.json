@@ -10,6 +10,8 @@
     "url": "git+https://github.com/AgenticFirst/Cerebro.git"
   },
   "scripts": {
+    "setup": "bash scripts/setup-backend.sh",
+    "prestart": "bash scripts/setup-backend.sh --if-missing",
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",

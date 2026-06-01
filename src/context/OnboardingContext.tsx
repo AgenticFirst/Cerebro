@@ -29,6 +29,31 @@ import { TOUR_STEPS, type TourStep } from '../components/onboarding/tour-steps';
 const TOUR_VERSION = 1;
 const AUTO_OPEN_DELAY_MS = 800;
 
+/**
+ * localStorage mirror of `tour_completed`, holding the completed TOUR_VERSION.
+ * The backend `/settings` table stays the source of truth, but this lets the
+ * tour stay dismissed across launches even when the backend is briefly down
+ * (boot race, dependency failure) — otherwise the backend read returns null
+ * and the full tour re-opens every time. Mirrors EngineContext's pattern.
+ */
+const TOUR_STORAGE_KEY = 'cerebro_tour_completed';
+
+function readLocalTourDone(): boolean {
+  try {
+    return Number(localStorage.getItem(TOUR_STORAGE_KEY)) === TOUR_VERSION;
+  } catch {
+    return false; // private mode
+  }
+}
+
+function writeLocalTourDone(): void {
+  try {
+    localStorage.setItem(TOUR_STORAGE_KEY, String(TOUR_VERSION));
+  } catch {
+    /* private mode — ok */
+  }
+}
+
 export type TourLanguage = 'en' | 'es';
 
 interface PersistedTourState {
@@ -101,12 +126,21 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // localStorage mirror first: if it says the current version is done, the
+      // tour stays dismissed regardless of backend health. Backend is still
+      // consulted below as the source of truth for the install-check flow.
+      const localDone = readLocalTourDone();
+
       const [persisted, installSeen] = await Promise.all([
         loadSetting<PersistedTourState>('tour_completed'),
         loadSetting<boolean>('claude_code_install_seen'),
       ]);
       if (cancelled) return;
-      const tourDone = !!persisted && persisted.version === TOUR_VERSION;
+      const backendDone = !!persisted && persisted.version === TOUR_VERSION;
+      // Reconcile: if the backend records completion but localStorage doesn't
+      // (e.g. completed on an older build), backfill the local mirror.
+      if (backendDone && !localDone) writeLocalTourDone();
+      const tourDone = localDone || backendDone;
       if (tourDone) {
         setHasCompletedBefore(true);
 
@@ -201,6 +235,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
           skipped: opts?.skipped ?? false,
         };
         saveSetting('tour_completed', payload);
+        writeLocalTourDone();
       }
       saveSetting('claude_code_install_seen', true);
       setHasCompletedBefore(true);
