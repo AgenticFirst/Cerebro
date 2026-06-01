@@ -328,13 +328,24 @@ def delete_messages_after(conv_id: str, msg_id: str, db=Depends(get_db)):
     pivot = db.query(Message).filter(Message.id == msg_id, Message.conversation_id == conv_id).first()
     if not pivot:
         raise HTTPException(status_code=404, detail="Message not found")
-    # Strictly-after by created_at; tie-break by id so the pivot itself is never
-    # deleted when sub-second timestamps collide on fast reruns.
-    db.query(Message).filter(
-        Message.conversation_id == conv_id,
-        Message.created_at >= pivot.created_at,
-        Message.id != pivot.id,
-    ).delete(synchronize_session=False)
+    # Delete every message that comes after the pivot in the same canonical order
+    # the transcript is read back in (created_at, then insertion order). A pure
+    # `created_at >= pivot.created_at` filter can't tell rows before the pivot
+    # apart from rows after it when timestamps collide on fast regenerate reruns,
+    # so it would wrongly delete earlier messages. Resolving the pivot's position
+    # in the ordered list and dropping only the tail keeps the pivot and every
+    # earlier message regardless of timestamp ties.
+    ordered = (
+        db.query(Message.id)
+        .filter(Message.conversation_id == conv_id)
+        .order_by(Message.created_at)
+        .all()
+    )
+    ids = [row[0] for row in ordered]
+    pivot_index = ids.index(pivot.id)
+    ids_after = ids[pivot_index + 1:]
+    if ids_after:
+        db.query(Message).filter(Message.id.in_(ids_after)).delete(synchronize_session=False)
     conv = db.get(Conversation, conv_id)
     if conv:
         conv.updated_at = models._utcnow()
