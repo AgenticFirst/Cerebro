@@ -9,7 +9,6 @@ import {
   GmailIcon,
   HubSpotIcon,
   NotionIcon,
-  SlackIcon,
 } from '../../icons/BrandIcons';
 import IntegrationCard from './IntegrationCard';
 import HubSpotSection from './HubSpotSection';
@@ -52,14 +51,6 @@ const COMING_SOON_SERVICES: Service[] = [
     icon: NotionIcon,
     color: 'bg-white/10',
     textColor: 'text-white/80',
-  },
-  {
-    id: 'slack',
-    nameKey: 'connectedApps.slack',
-    descKey: 'connectedApps.slackDesc',
-    icon: SlackIcon,
-    color: 'bg-purple-500/15',
-    textColor: 'text-purple-400',
   },
 ];
 

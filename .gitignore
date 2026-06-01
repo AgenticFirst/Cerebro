@@ -107,6 +107,7 @@ vite.config.ts.timestamp-*
 __pycache__/
 *.py[cod]
 backend/venv/
+backend/venv
 .mypy_cache/
 .pytest_cache/
 
