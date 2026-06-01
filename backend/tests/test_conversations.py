@@ -325,6 +325,41 @@ def test_delete_messages_after_drops_subsequent_messages(client):
     assert remaining_ids == [pivot_id]
 
 
+def test_delete_messages_after_keeps_same_timestamp_rows_before_pivot(client):
+    """Regenerate truncation must keep the pivot and every earlier message even
+    when multiple rows share an identical created_at timestamp."""
+    import database
+    from datetime import datetime, timezone
+
+    from models import Message
+
+    conv_id = _hex_id()
+    m1, pivot, m3 = _hex_id(), _hex_id(), _hex_id()
+    client.post("/conversations", json={"id": conv_id, "title": "Tie"})
+    for msg_id, content in [(m1, "before"), (pivot, "pivot"), (m3, "after")]:
+        client.post(
+            f"/conversations/{conv_id}/messages",
+            json={"id": msg_id, "role": "user", "content": content},
+        )
+
+    # Collapse all three timestamps onto the same instant so the only thing
+    # distinguishing "before" from "after" the pivot is insertion order.
+    same = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    db = database.SessionLocal()
+    try:
+        for msg_id in [m1, pivot, m3]:
+            db.get(Message, msg_id).created_at = same
+        db.commit()
+    finally:
+        db.close()
+
+    assert client.delete(f"/conversations/{conv_id}/messages/after/{pivot}").status_code == 204
+    target = next(
+        c for c in client.get("/conversations").json()["conversations"] if c["id"] == conv_id
+    )
+    assert [m["id"] for m in target["messages"]] == [m1, pivot]
+
+
 def test_delete_messages_after_unknown_pivot_returns_404(client):
     conv_id = _hex_id()
     client.post("/conversations", json={"id": conv_id, "title": "GhostPivot"})
