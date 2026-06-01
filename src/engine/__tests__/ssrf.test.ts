@@ -62,3 +62,37 @@ describe('isBlockedHost', () => {
     expect(isBlockedHost('1.1.1.1')).toBe(false);
   });
 });
+
+// Regression coverage for issue #19. Node's URL parser wraps IPv6 hosts in
+// brackets ("[::1]") and normalises IPv4-mapped forms to hex
+// ("[::ffff:7f00:1]"), so the old `hostname === '::1'` check never fired and
+// mapped / unspecified IPv6 slipped straight through the guard.
+describe('isBlockedHost — IPv6 and bracketed-host bypasses (issue #19)', () => {
+  const host = (u: string) => new URL(u).hostname;
+
+  it('blocks bracketed IPv6 loopback and the unspecified address', () => {
+    expect(isBlockedHost(host('http://[::1]/'))).toBe(true); // "[::1]"
+    expect(isBlockedHost(host('http://[::]/'))).toBe(true); // "[::]"
+  });
+
+  it('blocks IPv4-mapped IPv6 loopback and cloud-metadata', () => {
+    // url.hostname is "[::ffff:7f00:1]" / "[::ffff:a9fe:a9fe]" after Node normalises.
+    expect(isBlockedHost(host('http://[::ffff:127.0.0.1]/'))).toBe(true);
+    expect(isBlockedHost(host('http://[::ffff:169.254.169.254]/'))).toBe(true);
+  });
+
+  it('blocks IPv6 link-local (fe80::/10), bare and bracketed', () => {
+    expect(isBlockedHost('fe80::1')).toBe(true);
+    expect(isBlockedHost(host('http://[fe80::1]/'))).toBe(true);
+  });
+
+  it('still blocks bracketed ULA (fc00::/7)', () => {
+    expect(isBlockedHost(host('http://[fc00::1]/'))).toBe(true);
+  });
+
+  it('allows public hosts and public IPv6', () => {
+    expect(isBlockedHost(host('http://example.com/'))).toBe(false);
+    expect(isBlockedHost('2606:4700:4700::1111')).toBe(false); // public resolver
+    expect(isBlockedHost(host('http://[2606:4700:4700::1111]/'))).toBe(false);
+  });
+});

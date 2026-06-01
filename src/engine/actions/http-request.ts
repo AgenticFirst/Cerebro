@@ -11,7 +11,7 @@ import https from 'node:https';
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { onAbort } from './utils/abort-helpers';
 import { renderTemplate } from './utils/template';
-import { isBlockedHost } from './utils/ssrf';
+import { isBlockedHost, isIpLiteral, assertHostAllowed } from './utils/ssrf';
 
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10MB
 
@@ -84,6 +84,12 @@ export const httpRequestAction: ActionDefinition = {
 
     if (isBlockedHost(url.hostname)) {
       throw new Error(`Requests to private/internal addresses are not allowed: ${url.hostname}`);
+    }
+
+    // For DNS names, resolve and block anything pointing at private/internal
+    // space (e.g. 127.0.0.1.nip.io). IP literals are already fully covered above.
+    if (!isIpLiteral(url.hostname)) {
+      await assertHostAllowed(url.hostname);
     }
 
     const renderedBody = params.body ? renderTemplate(params.body, vars) : '';
