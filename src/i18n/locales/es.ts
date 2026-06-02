@@ -78,6 +78,12 @@ const es: TranslationKeys = {
     stoppedMarker: '_(detenido)_',
     busyRetry: 'Todavía estoy terminando tu mensaje anterior. Dale un momento e inténtalo de nuevo.',
     startFailed: 'Algo salió mal de mi lado. Por favor, inténtalo de nuevo en un momento.',
+    claudeNotDetectedTitle: 'Claude Code no detectado',
+    claudeNotDetectedMessage:
+      'Cerebro usa la CLI de Claude Code como su motor. Instálala y vuelve a detectarla desde Integraciones.',
+    codexNotDetectedTitle: 'Codex no detectado',
+    codexNotDetectedMessage:
+      'Cerebro está configurado para usar la CLI de Codex como su motor. Instálala y vuelve a detectarla desde Integraciones.',
     edit: 'Editar mensaje',
     save: 'Guardar',
     cancel: 'Cancelar',

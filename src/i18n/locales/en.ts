@@ -77,6 +77,12 @@ const en = {
     stoppedMarker: '_(stopped)_',
     busyRetry: 'I’m still finishing your previous message — give it a moment and try again.',
     startFailed: 'Something went wrong on my end. Please try again in a moment.',
+    claudeNotDetectedTitle: 'Claude Code not detected',
+    claudeNotDetectedMessage:
+      'Cerebro uses the Claude Code CLI as its engine. Install it and re-detect from Integrations.',
+    codexNotDetectedTitle: 'Codex not detected',
+    codexNotDetectedMessage:
+      'Cerebro is set to use the Codex CLI as its engine. Install it and re-detect from Integrations.',
     edit: 'Edit message',
     save: 'Save',
     cancel: 'Cancel',
