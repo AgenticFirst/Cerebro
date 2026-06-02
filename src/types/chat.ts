@@ -13,6 +13,7 @@ export type Screen =
   | 'integrations'
   | 'marketplace'
   | 'knowledge-base'
+  | 'news'
   | 'settings'
   | 'call';
 

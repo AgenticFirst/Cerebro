@@ -14,6 +14,7 @@ import {
   RotateCcw,
   FolderOpen,
   BookOpen,
+  Newspaper,
   LayoutGrid,
   ChevronRight,
   type LucideIcon,
@@ -59,6 +60,7 @@ const NAV_OVERSIGHT_BASE: NavItemDef[] = [
 // Apps — embedded mini-apps (Knowledge Base, …)
 const NAV_APPS: NavItemDef[] = [
   { id: 'knowledge-base', icon: BookOpen },
+  { id: 'news', icon: Newspaper },
 ];
 
 // Integrations and Skills (marketplace) moved into Settings → Integrations / Skills.
@@ -209,6 +211,7 @@ const NAV_LABEL_KEYS: Record<string, string> = {
   activity: 'nav.activity',
   approvals: 'nav.approvals',
   'knowledge-base': 'nav.knowledgeBase',
+  news: 'nav.news',
   settings: 'nav.settings',
 };
 

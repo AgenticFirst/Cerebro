@@ -20,6 +20,7 @@ import { ChatFilePreviewProvider } from './context/ChatFilePreviewContext';
 import { FilesProvider } from './context/FilesContext';
 import { KnowledgeBaseProvider } from './context/KnowledgeBaseContext';
 import { KnowledgeAiProvider } from './context/KnowledgeAiContext';
+import { NewsProvider } from './context/NewsContext';
 import { UpdateProvider } from './context/UpdateContext';
 import { OnboardingProvider } from './context/OnboardingContext';
 import AppLayout from './components/layout/AppLayout';
@@ -49,6 +50,7 @@ function App() {
                         <FilesProvider>
                           <KnowledgeBaseProvider>
                           <KnowledgeAiProvider>
+                          <NewsProvider>
                           <VoiceProvider>
                             <MarkdownDocumentProvider>
                               <ChatFilePreviewProvider>
@@ -57,6 +59,7 @@ function App() {
                               </ChatFilePreviewProvider>
                             </MarkdownDocumentProvider>
                           </VoiceProvider>
+                          </NewsProvider>
                           </KnowledgeAiProvider>
                           </KnowledgeBaseProvider>
                         </FilesProvider>

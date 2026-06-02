@@ -554,3 +554,38 @@ class SyncOutbox(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     __table_args__ = (Index("ix_sync_outbox_status_created", "status", "created_at"),)
+
+
+class NewsArticle(Base):
+    """A cached news story parsed from a public RSS/Atom feed.
+
+    The primary key is sha1(url) so re-fetching the same story (across feeds or
+    refreshes) is idempotent via ``db.merge`` rather than producing duplicates.
+    Rows are time-sensitive cache entries — the News router replaces a category's
+    rows wholesale on each successful refresh.
+    """
+
+    __tablename__ = "news_articles"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)  # sha1(url) hex
+    feed_id: Mapped[str] = mapped_column(String(50), index=True)
+    source_name: Mapped[str] = mapped_column(String(120))
+    title: Mapped[str] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+class NewsFetchMeta(Base):
+    """One row per category tracking when its feed cache was last refreshed.
+
+    Drives the stale-while-revalidate TTL in the News router so each tab has its
+    own freshness clock (id = the category, e.g. 'top', 'world', 'tech')."""
+
+    __tablename__ = "news_fetch_meta"
+
+    id: Mapped[str] = mapped_column(String(20), primary_key=True)  # category
+    last_fetched_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

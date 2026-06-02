@@ -20,6 +20,7 @@ import CallScreen from '../screens/CallScreen';
 import TasksScreen from '../screens/TasksScreen';
 import FilesScreen from '../screens/FilesScreen';
 import KnowledgeBaseScreen from '../screens/knowledge-base/KnowledgeBaseScreen';
+import NewsScreen from '../screens/news/NewsScreen';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
 
@@ -149,6 +150,9 @@ export default function AppLayout() {
     }
     if (activeScreen === 'knowledge-base') {
       return <KnowledgeBaseScreen />;
+    }
+    if (activeScreen === 'news') {
+      return <NewsScreen />;
     }
     if (activeScreen === 'call' && flags['voice-calls']) {
       return <CallScreen />;
