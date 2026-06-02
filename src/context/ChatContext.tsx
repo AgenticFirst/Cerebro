@@ -155,7 +155,7 @@ function sweepOpenMembers(
 }
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const { claudeCodeInfo } = useProviders();
+  const { claudeCodeInfo, codexInfo } = useProviders();
   const { registerRunCallback } = useRoutines();
   const { tier: qualityTier, model: responseModel } = useQualityTier();
   const qualityTierRef = useRef(qualityTier);
@@ -196,6 +196,39 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const claudeCodeInfoRef = useRef(claudeCodeInfo);
   claudeCodeInfoRef.current = claudeCodeInfo;
+  const codexInfoRef = useRef(codexInfo);
+  codexInfoRef.current = codexInfo;
+
+  // Gate sending on the *selected* engine's availability — not always Claude
+  // Code. When Codex is the active engine, a missing Claude Code install must
+  // not block the run. Returns a ChatError to surface, or null when the engine
+  // for `conversationId` is available.
+  const engineUnavailableError = useCallback(
+    (conversationId: string | null | undefined): ChatError | null => {
+      const engine = engineForConversationRef.current(conversationId);
+      if (engine === 'codex') {
+        if (codexInfoRef.current.status !== 'available') {
+          return {
+            title: 'Codex not detected',
+            message:
+              'Cerebro is set to use the Codex CLI as its engine. Install it and re-detect from Integrations.',
+            navigateTo: 'integrations',
+          };
+        }
+        return null;
+      }
+      if (claudeCodeInfoRef.current.status !== 'available') {
+        return {
+          title: 'Claude Code not detected',
+          message:
+            'Cerebro uses the Claude Code CLI as its engine. Install it and re-detect from Integrations.',
+          navigateTo: 'integrations',
+        };
+      }
+      return null;
+    },
+    [],
+  );
 
   // Tracks conversations whose title is still owned by the auto-titler.
   // Inserted when a new conversation is created from sendMessage(); removed
@@ -916,14 +949,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const sendMessage = useCallback(
     (content: string) => {
-      // ── Guard: require Claude Code to be detected ──
-      if (claudeCodeInfoRef.current.status !== 'available') {
-        setChatError({
-          title: 'Claude Code not detected',
-          message:
-            'Cerebro uses the Claude Code CLI as its engine. Install it and re-detect from Integrations.',
-          navigateTo: 'integrations',
-        });
+      // ── Guard: require the *selected* engine to be detected ──
+      // A new conversation inherits the app-wide default engine, so resolve
+      // against the active conversation (null → default) before any run.
+      const engineError = engineUnavailableError(activeConversationId);
+      if (engineError) {
+        setChatError(engineError);
         return;
       }
 
@@ -984,6 +1015,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       addMessage,
       runAgentForMessage,
       runAutoTitle,
+      engineUnavailableError,
     ],
   );
 
@@ -1039,13 +1071,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const regenerateFromUserMessage = useCallback(
     async (messageId: string, newContent?: string) => {
-      if (claudeCodeInfoRef.current.status !== 'available') {
-        setChatError({
-          title: 'Claude Code not detected',
-          message:
-            'Cerebro uses the Claude Code CLI as its engine. Install it and re-detect from Integrations.',
-          navigateTo: 'integrations',
-        });
+      const engineError = engineUnavailableError(activeConversationIdRef.current);
+      if (engineError) {
+        setChatError(engineError);
         return;
       }
       if (isStreamingRef.current) return;
@@ -1113,7 +1141,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       runAgentForMessage(convId, assistantId, trimmed, expertId);
     },
-    [chainWrite, runAgentForMessage],
+    [chainWrite, runAgentForMessage, engineUnavailableError],
   );
 
   // ── Run routine from UI (triggered via "Run Now" button) ────────
