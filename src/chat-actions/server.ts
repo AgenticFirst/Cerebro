@@ -30,6 +30,18 @@ import type { DAGDefinition } from '../engine/dag/types';
 import { isKnownIntegrationId } from '../integrations/ids';
 import { IPC_CHANNELS, TEAM_MEMBER_STATUSES, type TeamMemberStatus } from '../types/ipc';
 
+/**
+ * A client-attributable failure (bad input) that should map to a 4xx status
+ * rather than a generic 500. Thrown from body parsing so the router can render
+ * the right code instead of treating malformed input as a server fault.
+ */
+class HttpError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = 'HttpError';
+  }
+}
+
 /** Read a non-empty string field from a JSON body. Returns the value or null. */
 function readStringField(body: unknown, key: string): string | null {
   const raw = (body as Record<string, unknown> | null)?.[key];
@@ -107,27 +119,30 @@ export class ChatActionServer {
       }
 
       if (req.method === 'POST' && url.pathname === '/chat-actions/run') {
-        return this.handleRun(req, res);
+        return await this.handleRun(req, res);
       }
 
       if (req.method === 'POST' && url.pathname === '/chat-actions/dry-run-routine') {
-        return this.handleDryRunRoutine(req, res);
+        return await this.handleDryRunRoutine(req, res);
       }
 
       if (req.method === 'POST' && url.pathname === '/chat-actions/propose-integration') {
-        return this.handleProposeIntegration(req, res);
+        return await this.handleProposeIntegration(req, res);
       }
 
       if (req.method === 'POST' && url.pathname === '/chat-actions/announce-team-run') {
-        return this.handleAnnounceTeamRun(req, res);
+        return await this.handleAnnounceTeamRun(req, res);
       }
 
       if (req.method === 'POST' && url.pathname === '/chat-actions/team-member-update') {
-        return this.handleTeamMemberUpdate(req, res);
+        return await this.handleTeamMemberUpdate(req, res);
       }
 
       this.respondJson(res, 404, { error: 'not_found' });
     } catch (err) {
+      if (err instanceof HttpError) {
+        return this.respondJson(res, err.status, { error: err.message });
+      }
       const message = err instanceof Error ? err.message : 'internal_error';
       this.respondJson(res, 500, { error: message });
     }
@@ -363,7 +378,7 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
     chunks.push(Buffer.from(chunk));
     // Hard cap to avoid runaway POSTs from a misbehaving client.
     if (chunks.reduce((n, c) => n + c.length, 0) > 1024 * 1024) {
-      throw new Error('payload_too_large');
+      throw new HttpError(413, 'payload_too_large');
     }
   }
   if (chunks.length === 0) return null;
@@ -372,6 +387,6 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   try {
     return JSON.parse(raw);
   } catch {
-    throw new Error('invalid_json');
+    throw new HttpError(400, 'invalid_json');
   }
 }
