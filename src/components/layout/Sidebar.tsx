@@ -271,9 +271,11 @@ export default function Sidebar() {
 
   const handleNavClick = (screen: Screen) => {
     setActiveScreen(screen);
-    if (screen !== 'chat') {
-      setActiveConversation(null);
-    }
+    // Always clear the active conversation on nav — including when returning to
+    // Chat — so the sidebar lands on the welcome/input state instead of
+    // reopening the previously selected thread. Selecting a conversation from
+    // the history list re-sets it explicitly.
+    setActiveConversation(null);
   };
 
   const handleDelete = (e: React.MouseEvent, id: string) => {
