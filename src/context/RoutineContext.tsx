@@ -14,7 +14,7 @@ import { toRoutine, toApiBody } from '../types/routines';
 import { validateDagParams, type ValidationContext } from '../utils/step-validation';
 import { resolveActionType } from '../utils/step-defaults';
 import { CLAUDE_MODELS } from '../utils/claude-models';
-import { fetchConnectionStatus, type ConnectionId } from '../lib/connection-status';
+import { fetchConnectionStatus, connectionsNeededForDag } from '../lib/connection-status';
 import { useToast } from './ToastContext';
 import { useExperts } from './ExpertContext';
 
@@ -181,31 +181,10 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
 
     // Build live-resource context. We only spend on async checks (IPC
     // round-trips, subprocess probe) when the DAG actually has a step
-    // that benefits from them.
-    const usesHubspot = dag.steps.some((s) => {
-      const r = resolveActionType(s.actionType);
-      return r === 'hubspot_create_ticket' || r === 'hubspot_upsert_contact';
-    });
-
-    // Experts an the DAG references via run_expert. Decide which
-    // connections need live status checks based on the union of those
-    // experts' requiredConnections plus action-type-implied connections.
-    const referencedExperts = dag.steps
-      .filter((s) => resolveActionType(s.actionType) === 'run_expert')
-      .map((s) => expertsRef.current.find((e) => e.id === String(s.params?.expertId ?? '')))
-      .filter((e): e is NonNullable<typeof e> => Boolean(e));
-    const expertConnectionNeeds = new Set<ConnectionId>();
-    for (const expert of referencedExperts) {
-      for (const conn of expert.requiredConnections ?? []) {
-        if (conn === 'hubspot' || conn === 'whatsapp' || conn === 'telegram') {
-          expertConnectionNeeds.add(conn);
-        }
-      }
-    }
-    const connectionsToCheck: ConnectionId[] = [];
-    if (usesHubspot || expertConnectionNeeds.has('hubspot')) connectionsToCheck.push('hubspot');
-    if (expertConnectionNeeds.has('whatsapp')) connectionsToCheck.push('whatsapp');
-    if (expertConnectionNeeds.has('telegram')) connectionsToCheck.push('telegram');
+    // that benefits from them. Decide which connections need live status
+    // checks based on the union of action-type-implied connections plus
+    // every referenced expert's requiredConnections.
+    const connectionsToCheck = connectionsNeededForDag(dag, expertsRef.current);
 
     const usesClaudeCode = dag.steps.some((s) => {
       const r = resolveActionType(s.actionType);
@@ -226,6 +205,7 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
       validationCtx.hubspotConnected = conns.hubspot;
       validationCtx.whatsappConnected = conns.whatsapp;
       validationCtx.telegramConnected = conns.telegram;
+      validationCtx.githubConnected = conns.github;
     }
 
     if (usesClaudeCode) {
