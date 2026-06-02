@@ -17,11 +17,13 @@ interface FetchOptions {
   path: string;
   token?: string;
   body?: unknown;
+  /** Raw request body sent verbatim (bypasses JSON.stringify). Use to exercise malformed payloads. */
+  rawBody?: string;
 }
 
 async function request(port: number, opts: FetchOptions): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
-    const data = opts.body ? JSON.stringify(opts.body) : '';
+    const data = opts.rawBody !== undefined ? opts.rawBody : opts.body ? JSON.stringify(opts.body) : '';
     const req = http.request(
       {
         hostname: '127.0.0.1',
@@ -145,6 +147,18 @@ describe('ChatActionServer', () => {
     const body = res.body as { status: string; data?: Record<string, unknown> };
     expect(body.status).toBe('succeeded');
     expect(body.data?.sent).toBe(true);
+  });
+
+  it('rejects /run with a malformed JSON body with 400, not 500', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/run',
+      token,
+      rawBody: '{ "type": "send_telegram_message", ', // truncated → invalid JSON
+    });
+    expect(res.status).toBe(400);
+    expect((res.body as { error: string }).error).toBe('invalid_json');
+    expect(mockEngine.runChatAction).not.toHaveBeenCalled();
   });
 
   it('rejects /run with no type', async () => {
