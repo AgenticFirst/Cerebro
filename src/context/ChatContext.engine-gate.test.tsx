@@ -2,6 +2,7 @@ import { render, screen, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { ChatProvider, useChat } from './ChatContext';
+import i18n from '../i18n';
 import type { ClaudeCodeInfo } from '../types/providers';
 import type { EngineId } from '../engines/types';
 
@@ -68,11 +69,13 @@ function installCerebroMock() {
 // Test harness: renders the provider and exposes sendMessage + chatError.
 let sendRef: (content: string) => void;
 let errorTitle: string | null;
+let errorMessage: string | null;
 
 function Harness() {
   const { sendMessage, chatError } = useChat();
   sendRef = sendMessage;
   errorTitle = chatError?.title ?? null;
+  errorMessage = chatError?.message ?? null;
   return <div data-testid="error">{chatError?.title ?? 'no-error'}</div>;
 }
 
@@ -97,6 +100,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  i18n.changeLanguage('en');
 });
 
 describe('ChatContext engine availability gate', () => {
@@ -146,6 +150,43 @@ describe('ChatContext engine availability gate', () => {
     });
 
     expect(errorTitle).toBe('Codex not detected');
+    expect(agentRun).not.toHaveBeenCalled();
+  });
+
+  it('localizes the Claude-Code-unavailable modal to Spanish', async () => {
+    i18n.changeLanguage('es');
+    mockClaudeCodeInfo = { status: 'unavailable' };
+    mockCodexInfo = { status: 'available' };
+    mockDefaultEngine = 'claude-code';
+
+    renderChat();
+
+    await act(async () => {
+      sendRef('hola');
+    });
+
+    // Bug: the modal title/message were hardcoded English regardless of locale.
+    expect(errorTitle).toBe('Claude Code no detectado');
+    expect(errorTitle).not.toBe('Claude Code not detected');
+    expect(errorMessage).toContain('Integraciones');
+    expect(agentRun).not.toHaveBeenCalled();
+  });
+
+  it('localizes the Codex-unavailable modal to Spanish', async () => {
+    i18n.changeLanguage('es');
+    mockClaudeCodeInfo = { status: 'available' };
+    mockCodexInfo = { status: 'unavailable' };
+    mockDefaultEngine = 'codex';
+
+    renderChat();
+
+    await act(async () => {
+      sendRef('hola');
+    });
+
+    expect(errorTitle).toBe('Codex no detectado');
+    expect(errorTitle).not.toBe('Codex not detected');
+    expect(errorMessage).toContain('Integraciones');
     expect(agentRun).not.toHaveBeenCalled();
   });
 });
