@@ -9,6 +9,22 @@
 import EventEmitter from 'node:events';
 import http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// SlackBridge → secure-token.ts does `import { safeStorage } from 'electron'`, a
+// runtime value import. CI installs deps with `npm ci --ignore-scripts`, so the
+// electron binary is absent and a real require throws "Electron failed to
+// install correctly". Mock it (encryption-unavailable, the headless fallback
+// the code already handles) so the import resolves without the native binary.
+vi.mock('electron', () => ({
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: (s: string) => Buffer.from(s),
+    decryptString: (b: Buffer) => b.toString(),
+  },
+  app: { getPath: () => '/tmp', getName: () => 'cerebro' },
+  ipcMain: { handle: () => undefined, on: () => undefined },
+}));
+
 import { SlackBridge } from '../bridge';
 
 // Absorb the backend /settings/{key} PUTs setTokens issues so the bridge can
