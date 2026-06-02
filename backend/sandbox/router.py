@@ -106,7 +106,15 @@ def _is_fresh_install(db) -> bool:
 def _build_config(request: Request, db) -> SandboxConfig:
     enabled_row = db.get(Setting, KEY_ENABLED)
     if enabled_row is None:
+        # No explicit setting yet: compute the install-time default and persist
+        # it immediately. The default depends on whether the user has used the
+        # app before (a conversation row implies prior use), and that signal
+        # changes once the first chat is created. Writing the row here locks the
+        # effective value in so later reads stay stable until the user changes
+        # it via PATCH.
         enabled = _is_fresh_install(db)
+        _set_bool(db, KEY_ENABLED, enabled)
+        db.commit()
     else:
         enabled = enabled_row.value == "true"
 
