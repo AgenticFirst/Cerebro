@@ -80,14 +80,17 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
   }, [isUser, message.content]);
 
   // The auth-recovery card replaces the "Error: ..." prose entirely —
-  // showing both would duplicate the message and look broken.
+  // showing both would duplicate the message and look broken. Suppressing
+  // also covers the copy action below: the raw CLI auth string (e.g.
+  // "run claude in a terminal to sign in") must never reach the clipboard,
+  // the recovery card is the whole message now.
   const suppressContent = !isUser && message.errorClass === 'auth';
   const hasContent = !suppressContent && displayContent.length > 0;
   const assistantBusy =
     !isUser && (message.isThinking || message.isStreaming === true) && !hasContent;
 
   const { copied, copy } = useCopyMessage();
-  const canCopy = copyableMarkdown.length > 0 && !message.isStreaming;
+  const canCopy = !suppressContent && copyableMarkdown.length > 0 && !message.isStreaming;
 
   // Long assistant messages (generated documents, lengthy prose) get a
   // top-of-bubble toolbar + collapse toggle. Pure-text length is a coarse

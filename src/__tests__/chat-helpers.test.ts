@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   generateId,
   titleFromContent,
+  buildAgentErrorContent,
   fromApiConversation,
   fromApiMessage,
   toApiProposal,
@@ -52,6 +53,33 @@ describe('titleFromContent', () => {
     const result = titleFromContent(long);
     expect(result).toBe('A'.repeat(40) + '...');
     expect(result.length).toBe(43);
+  });
+});
+
+describe('buildAgentErrorContent', () => {
+  const AUTH_ERROR = 'run claude in a terminal to sign in';
+
+  it('embeds the raw error for ordinary failures (no partial text)', () => {
+    expect(buildAgentErrorContent('', 'boom', 'unknown')).toBe('Error: boom');
+  });
+
+  it('keeps partial text above the error for ordinary failures', () => {
+    expect(buildAgentErrorContent('hello', 'boom', 'unknown')).toBe(
+      'hello\n\n---\n_Error: boom_',
+    );
+  });
+
+  it('never writes the raw auth error into the body (the recovery card replaces it)', () => {
+    const content = buildAgentErrorContent('', AUTH_ERROR, 'auth');
+    expect(content).toBe('');
+    expect(content).not.toContain(AUTH_ERROR);
+    expect(content).not.toContain('Error:');
+  });
+
+  it('preserves only the partial prose for auth failures, dropping the raw error', () => {
+    const content = buildAgentErrorContent('Here is what I found', AUTH_ERROR, 'auth');
+    expect(content).toBe('Here is what I found');
+    expect(content).not.toContain(AUTH_ERROR);
   });
 });
 
