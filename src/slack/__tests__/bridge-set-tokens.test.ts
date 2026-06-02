@@ -25,6 +25,13 @@ vi.mock('electron', () => ({
   ipcMain: { handle: () => undefined, on: () => undefined },
 }));
 
+// SlackBridge → claude-code/login-orchestrator does `import * as pty from
+// 'node-pty'`, a runtime value import that loads the native `pty.node` binary.
+// Under `npm ci --ignore-scripts` that binary is never built, so the real
+// require throws "Cannot find module .../pty.node". Mock it — this test never
+// spawns a pty — so the import chain resolves without the native module.
+vi.mock('node-pty', () => ({ spawn: () => undefined }));
+
 import { SlackBridge } from '../bridge';
 
 // Absorb the backend /settings/{key} PUTs setTokens issues so the bridge can
