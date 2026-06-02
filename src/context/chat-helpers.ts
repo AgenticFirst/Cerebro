@@ -1,6 +1,7 @@
 import type {
   Conversation,
   Message,
+  MessageErrorClass,
   RoutineProposal,
   ExpertProposal,
   TeamProposal,
@@ -12,6 +13,29 @@ import type {
 
 export function generateId(): string {
   return crypto.randomUUID().replace(/-/g, '');
+}
+
+/**
+ * Build the assistant message body for a run that ended in error.
+ *
+ * Normally we surface the raw CLI error so the user sees what went wrong,
+ * preserving any partial streamed text above a separator. Auth failures are
+ * the exception: they're fully handled by the in-app Claude Code login
+ * recovery card, which replaces the message body. The raw auth string (e.g.
+ * "run claude in a terminal to sign in") must never be written into the
+ * content — it's the very text the recovery UI exists to hide, and storing it
+ * lets it leak through the copy action or any render path that loses
+ * `errorClass`. For auth we keep only the partial prose (usually empty).
+ */
+export function buildAgentErrorContent(
+  partial: string,
+  error: string,
+  errorClass?: MessageErrorClass,
+): string {
+  if (errorClass === 'auth') {
+    return partial;
+  }
+  return partial ? `${partial}\n\n---\n_Error: ${error}_` : `Error: ${error}`;
 }
 
 export function titleFromContent(content: string): string {

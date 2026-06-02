@@ -27,6 +27,7 @@ import type { DAGDefinition } from '../engine/dag/types';
 import {
   generateId,
   titleFromContent,
+  buildAgentErrorContent,
   isUntitledConversationTitle,
   fromApiConversation,
   toApiProposal,
@@ -858,9 +859,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 // lose what the agent already produced — append the error
                 // below a separator instead of overwriting the body.
                 const partial = state.accumulated.trim();
-                const content = partial
-                  ? `${partial}\n\n---\n_Error: ${event.error}_`
-                  : `Error: ${event.error}`;
+                const content = buildAgentErrorContent(
+                  partial,
+                  event.error,
+                  event.errorClass,
+                );
                 updateMessage(convId, assistantId, {
                   content,
                   isThinking: false,
