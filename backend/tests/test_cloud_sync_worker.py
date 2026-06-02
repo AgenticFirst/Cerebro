@@ -6,9 +6,12 @@ therefore resolve ``SessionLocal`` at call time, not capture the (still-None)
 value that exists at import. See issue #13.
 """
 
+import pytest
+
 import database
 import cloud_sync.worker as worker_mod
 from cloud_sync.worker import SyncWorker
+from models import SyncOutbox
 
 # A URL that points nowhere — the pull path under test never opens a remote
 # connection before it first touches the *local* session, so an unreachable
@@ -36,3 +39,37 @@ def test_worker_pull_can_acquire_session(client):
     """
     worker = SyncWorker(DEAD_REMOTE_URL)
     assert worker._get_cursor() is None
+
+
+def test_pending_count_reflects_outbox(client):
+    """snapshot()/_pending_count() must count real pending outbox rows.
+
+    Regression for issue #16: ``_pending_count`` previously read a stale
+    module-level ``SessionLocal`` and returned 0 unconditionally, so the UI
+    showed pending=0 even with unsynced rows sitting in the outbox.
+    """
+    s = database.SessionLocal()
+    s.add(SyncOutbox(table_name="experts", row_pk="z", op="insert", payload_json="{}"))
+    s.commit()
+    s.close()
+
+    worker = SyncWorker(DEAD_REMOTE_URL)
+    assert worker._pending_count() == 1
+
+
+def test_push_surfaces_descriptive_error_when_session_uninitialized(client, monkeypatch):
+    """A failed push must report *why* it failed, not an empty message.
+
+    Regression for issue #16: ``_push`` guarded its session with a bare
+    ``assert SessionLocal is not None``. When the session was unavailable that
+    raised ``AssertionError('')`` — an empty-message error that the run loop
+    stored verbatim as ``last_error``, leaving the UI showing 'offline' with no
+    reason. The worker must instead raise an error whose message is non-empty.
+    """
+    monkeypatch.setattr(database, "SessionLocal", None)
+    worker = SyncWorker(DEAD_REMOTE_URL)
+
+    with pytest.raises(Exception) as excinfo:
+        worker._push()
+
+    assert str(excinfo.value).strip(), "push failure must carry a descriptive message"
