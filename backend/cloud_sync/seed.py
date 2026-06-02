@@ -9,7 +9,7 @@ them to Supabase. Idempotent-ish: safe to re-run (it appends; the push upserts).
 import json
 import logging
 
-from database import SessionLocal
+import database
 from models import SyncOutbox
 
 from .config import PK_COLUMN, SYNCED_TABLES, is_local_only_setting
@@ -19,7 +19,22 @@ from .worker import MODEL_BY_TABLE
 log = logging.getLogger(__name__)
 
 
+def _session_local():
+    """Resolve the live ``SessionLocal`` from the database module.
+
+    This module is imported (and its globals bound) *before*
+    ``database.init_db()`` runs, when ``database.SessionLocal`` is still
+    ``None``. Reading it through the module at call time — rather than via a
+    ``from database import SessionLocal`` that captures the stale ``None`` —
+    guarantees we get the real sessionmaker once init has happened. Without
+    this, ``seed_outbox`` saw ``None`` and returned 0, seeding nothing on a
+    first connect. See issue #14.
+    """
+    return database.SessionLocal
+
+
 def seed_outbox() -> int:
+    SessionLocal = _session_local()
     if SessionLocal is None:
         return 0
     s = SessionLocal()
