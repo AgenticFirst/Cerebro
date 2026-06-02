@@ -1,6 +1,15 @@
 import type { ExecutionEvent } from '../engine/events/types';
 import type { ClaudeCodeInfo } from './providers';
 import type { VoiceSessionEvent } from '../voice/types';
+import type {
+  CalendarProviderId,
+  CalendarAccountInfo,
+  CalendarStatus,
+  CalendarEventDTO,
+  CalendarEventInput,
+  CalendarParsedCommand,
+  RsvpResponse,
+} from './calendar';
 
 // --- IPC Channel Constants ---
 
@@ -217,6 +226,22 @@ export const IPC_CHANNELS = {
   GITHUB_LIST_WATCHED_REPOS: 'github:list-watched-repos',
   GITHUB_SET_WATCHED_REPOS: 'github:set-watched-repos',
   GITHUB_STATUS_CHANGED: 'github:status-changed',
+
+  // Calendar sync (Google + Outlook, OAuth bring-your-own client creds)
+  CALENDAR_START_OAUTH: 'calendar:start-oauth',
+  CALENDAR_STATUS: 'calendar:status',
+  CALENDAR_LIST_ACCOUNTS: 'calendar:list-accounts',
+  CALENDAR_DISCONNECT: 'calendar:disconnect',
+  CALENDAR_RECONNECT: 'calendar:reconnect',
+  CALENDAR_SET_CALENDARS: 'calendar:set-calendars',
+  CALENDAR_SYNC_NOW: 'calendar:sync-now',
+  CALENDAR_CREATE_EVENT: 'calendar:create-event',
+  CALENDAR_UPDATE_EVENT: 'calendar:update-event',
+  CALENDAR_DELETE_EVENT: 'calendar:delete-event',
+  CALENDAR_RSVP: 'calendar:rsvp',
+  CALENDAR_PARSE_COMMAND: 'calendar:parse-command',
+  CALENDAR_AI_SUMMARY: 'calendar:ai-summary',
+  CALENDAR_EVENTS_CHANGED: 'calendar:events-changed',
 
   // Supabase backend sync (multi-device)
   SUPABASE_TEST: 'supabase:test',
@@ -953,6 +978,7 @@ export interface CerebroAPI {
   hubspot: HubSpotAPI;
   ghl: GHLAPI;
   github: GitHubAPI;
+  calendar: CalendarAPI;
   supabase: SupabaseAPI;
   chatActions: ChatActionsAPI;
   files: FilesAPI;
@@ -1147,6 +1173,43 @@ export interface HubSpotAPI {
   setToken(token: string): Promise<{ ok: boolean; error?: string }>;
   clearToken(): Promise<{ ok: boolean; error?: string }>;
   setDefaults(defaults: { pipeline: string | null; stage: string | null }): Promise<{ ok: boolean; error?: string }>;
+}
+
+// --- Calendar sync (Google + Outlook) ---
+
+export interface CalendarOAuthInput {
+  provider: CalendarProviderId;
+  clientId: string;
+  clientSecret: string;
+}
+
+export interface CalendarMutationResult {
+  ok: boolean;
+  event?: CalendarEventDTO;
+  error?: string;
+}
+
+export interface CalendarAPI {
+  /** Run the bring-your-own OAuth flow (PKCE + loopback) for a new account. */
+  startOAuth(input: CalendarOAuthInput): Promise<{ ok: boolean; account?: CalendarAccountInfo; error?: string }>;
+  /** Re-authorize an existing account using its stored client id/secret. */
+  reconnect(accountId: string): Promise<{ ok: boolean; account?: CalendarAccountInfo; error?: string }>;
+  status(): Promise<CalendarStatus>;
+  listAccounts(): Promise<CalendarAccountInfo[]>;
+  disconnect(accountId: string): Promise<{ ok: boolean; error?: string }>;
+  /** Toggle which calendars within an account appear in the unified view. */
+  setCalendars(accountId: string, selectedCalendarIds: string[]): Promise<{ ok: boolean; error?: string }>;
+  /** Force an immediate reconcile across all accounts (manual Refresh button). */
+  syncNow(): Promise<{ ok: boolean; error?: string }>;
+  createEvent(input: CalendarEventInput): Promise<CalendarMutationResult>;
+  updateEvent(eventId: string, patch: Partial<CalendarEventInput>): Promise<CalendarMutationResult>;
+  deleteEvent(eventId: string): Promise<{ ok: boolean; error?: string }>;
+  rsvp(eventId: string, response: RsvpResponse): Promise<{ ok: boolean; error?: string }>;
+  /** Parse a natural-language command bar query into a calendar action (Claude Code). */
+  parseCommand(text: string): Promise<{ ok: boolean; command?: CalendarParsedCommand; error?: string }>;
+  aiSummary(input: { range: 'day' | 'week' | 'month'; startISO: string }): Promise<{ ok: boolean; text?: string; error?: string }>;
+  /** Fires whenever a sync tick or mutation changes stored events. */
+  onEventsChanged(callback: () => void): () => void;
 }
 
 // --- GoHighLevel CRM ---

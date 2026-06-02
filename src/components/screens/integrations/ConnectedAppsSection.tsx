@@ -13,6 +13,7 @@ import {
 import IntegrationCard from './IntegrationCard';
 import HubSpotSection from './HubSpotSection';
 import HubSpotConnectModal from './HubSpotConnectModal';
+import CalendarSection from './CalendarSection';
 import GHLSection from './GHLSection';
 import GitHubSection from './GitHubSection';
 import SupabaseSyncSection from './SupabaseSyncSection';
@@ -28,14 +29,6 @@ interface Service {
 }
 
 const COMING_SOON_SERVICES: Service[] = [
-  {
-    id: 'google-calendar',
-    nameKey: 'connectedApps.googleCalendar',
-    descKey: 'connectedApps.googleCalendarDesc',
-    icon: GoogleCalendarIcon,
-    color: 'bg-blue-500/15',
-    textColor: 'text-blue-400',
-  },
   {
     id: 'gmail',
     nameKey: 'connectedApps.gmail',
@@ -150,6 +143,17 @@ export default function ConnectedAppsSection() {
           }}
         >
           <HubSpotSection key={reloadKey} />
+        </IntegrationCard>
+
+        <IntegrationCard
+          icon={GoogleCalendarIcon}
+          iconBg="bg-blue-500/15"
+          iconColor="text-blue-400"
+          name={t('calendar.title')}
+          description={t('calendar.section.description')}
+          defaultExpanded={false}
+        >
+          <CalendarSection />
         </IntegrationCard>
 
         <IntegrationCard

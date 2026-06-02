@@ -57,7 +57,14 @@ describe('ConnectedAppsSection — Slack classification (issue #30)', () => {
 
     // Sanity check: the coming-soon section itself still renders.
     expect(screen.getByText('Notion')).toBeInTheDocument();
-    expect(screen.getByText('Google Calendar')).toBeInTheDocument();
     expect(screen.getByText('Gmail')).toBeInTheDocument();
+  });
+
+  it('lists Calendar as an implemented connected app (no longer coming soon)', () => {
+    stubBridge();
+    render(<ConnectedAppsSection />);
+
+    // Calendar is now a real integration with its own card, not a dead row.
+    expect(screen.getByText('Calendar')).toBeInTheDocument();
   });
 });

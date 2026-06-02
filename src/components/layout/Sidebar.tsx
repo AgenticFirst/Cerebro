@@ -15,6 +15,7 @@ import {
   FolderOpen,
   BookOpen,
   Newspaper,
+  CalendarDays,
   LayoutGrid,
   ChevronRight,
   type LucideIcon,
@@ -59,6 +60,7 @@ const NAV_OVERSIGHT_BASE: NavItemDef[] = [
 
 // Apps — embedded mini-apps (Knowledge Base, …)
 const NAV_APPS: NavItemDef[] = [
+  { id: 'calendar', icon: CalendarDays },
   { id: 'knowledge-base', icon: BookOpen },
   { id: 'news', icon: Newspaper },
 ];
@@ -212,6 +214,7 @@ const NAV_LABEL_KEYS: Record<string, string> = {
   approvals: 'nav.approvals',
   'knowledge-base': 'nav.knowledgeBase',
   news: 'nav.news',
+  calendar: 'nav.calendar',
   settings: 'nav.settings',
 };
 

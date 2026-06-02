@@ -257,15 +257,15 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`update-expert\` — modify an existing expert's name, description, or system prompt. Use only when the user explicitly asks to change the expert itself (not when they ask the expert to do work). Always confirm the new wording with the user before invoking.
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
-- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram/WhatsApp/Slack **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — GitHub issue/PR/comment/review, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
-- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, Slack, HubSpot, WhatsApp, GoHighLevel, GitHub, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
+- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram/WhatsApp/Slack **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — GitHub issue/PR/comment/review, **calendar event create/move/delete/RSVP and free-time lookup**, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
+- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, Slack, HubSpot, WhatsApp, GoHighLevel, GitHub, Calendar/Google/Outlook, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
 - \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "when a Slack DM arrives…", "when a new GitHub issue opens…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
 - \`knowledge-base\` — read from and write to the Knowledge Base (the built-in Notion-style pages app under Apps → Knowledge Base). Use when the user wants to look something up in, find, create, add to, or update a Knowledge Base / wiki / docs page, or save notes as a page ("save this as a page", "add a doc about X to my knowledge base", "what does my KB say about Y", "guarda esto como una página", "busca en la base de conocimiento", "crea una nota sobre…"). You work in markdown; the editor renders it as rich blocks.
 - \`summarize-conversation\` — used by routines.
 
 ## Integration actions
 
-When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), post a Slack message or file in a channel, DM a Slack user, open a GitHub issue, comment on a PR, submit a PR review, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "publica en #general en Slack", "mándale un DM a Pablo por Slack", "mándale el manual en PDF", "avísame en 30 minutos", "abre un issue en GitHub", "revisa el PR #42", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
+When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), post a Slack message or file in a channel, DM a Slack user, open a GitHub issue, comment on a PR, submit a PR review, create/move/delete a calendar event, RSVP to an invite, find free time, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "publica en #general en Slack", "mándale un DM a Pablo por Slack", "mándale el manual en PDF", "crea una reunión con Pablo mañana a las 2", "mueve mi reunión de las 3 al viernes", "avísame en 30 minutos", "abre un issue en GitHub", "revisa el PR #42", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
 
 When sending media, prefer \`file_item_id\` (referencing a file Cerebro already has — e.g., one a previous step generated and registered). Use \`file_path\` only as an escape hatch for an absolute path Cerebro just wrote to disk.
 
@@ -275,7 +275,7 @@ The word **"ticket"** (and Spanish *"ticket"*) is ambiguous: it can mean a **Hub
 
 ## Connecting integrations
 
-When the user asks to **set up, connect, or link** an integration ("set up Telegram", "set up Slack", "connect HubSpot", "configura WhatsApp", "conecta Slack", "conecta GoHighLevel", "connect GitHub", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, app-manifest paste for Slack, Private App for HubSpot, QR pairing for WhatsApp, Private Integration API key for GoHighLevel, Personal Access Token for GitHub). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`. Anything else — Gmail, Notion, Calendar, etc. — is on the roadmap; tell the user and stop.
+When the user asks to **set up, connect, or link** an integration ("set up Telegram", "set up Slack", "connect HubSpot", "configura WhatsApp", "conecta Slack", "conecta GoHighLevel", "connect GitHub", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, app-manifest paste for Slack, Private App for HubSpot, QR pairing for WhatsApp, Private Integration API key for GoHighLevel, Personal Access Token for GitHub, bring-your-own OAuth Client ID/Secret for Calendar — Google or Outlook). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`, \`calendar\`. Anything else — Gmail, Notion, etc. — is on the roadmap; tell the user and stop.
 
 ### Task vs Routine vs Expert — choose the right one
 
@@ -1248,7 +1248,7 @@ set -euo pipefail
 # Usage: bash propose-integration.sh <integration_id> [reason]
 #
 # integration_id must match a manifest in src/integrations/registry.ts.
-# Currently: telegram | slack | hubspot | whatsapp | ghl | github.
+# Currently: telegram | slack | hubspot | whatsapp | ghl | github | calendar.
 
 RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
 
@@ -1266,7 +1266,7 @@ fi
 
 INTEGRATION_ID="\${1:-}"
 if [ -z "$INTEGRATION_ID" ]; then
-  echo "ERROR: integration_id is required (e.g. telegram, slack, hubspot, whatsapp, ghl, github)" >&2
+  echo "ERROR: integration_id is required (e.g. telegram, slack, hubspot, whatsapp, ghl, github, calendar)" >&2
   exit 1
 fi
 REASON="\${2:-}"
@@ -2042,8 +2042,16 @@ The user may speak in **English or Spanish** (or mix them). Recognize natural-la
 | "Comment on PR #N in owner/repo: …" / "Comenta en el PR #N de owner/repo: …" | \`github_comment_pr\` |
 | "Review PR #N in owner/repo and approve/request changes saying X" / "Revisa el PR #N en owner/repo y aprueba/pide cambios diciendo X" | \`github_review_pr\` |
 | "Open a PR on owner/repo from feat/X to main titled Y" / "Abre un PR en owner/repo desde feat/X hacia main titulado Y" | \`github_open_pr\` |
+| "Create a meeting with John tomorrow at 2 for 30 min" / "Crea una reunión con John mañana a las 2 por 30 min" | \`calendar_create_event\` |
+| "Move my 3pm to Friday" / "Mueve mi reunión de las 3pm al viernes" | \`calendar_query_events\` to find the id, then \`calendar_update_event\` |
+| "Cancel my 4pm today" / "Cancela mi reunión de las 4pm de hoy" | \`calendar_query_events\` then \`calendar_delete_event\` |
+| "Decline the budget review invite" / "Rechaza la invitación de revisión de presupuesto" | \`calendar_query_events\` then \`calendar_rsvp\` |
+| "What does my week look like?" / "¿Cómo se ve mi semana?" | \`calendar_query_events\` |
+| "Find 30 minutes next week for Sarah" / "Encuentra 30 minutos la próxima semana para Sarah" | \`calendar_find_free_time\` |
 | "Notify me in 30 minutes" / "Avísame en 30 minutos" | \`send_notification\` |
 | "GET https://… and tell me the status" | \`http_request\` |
+
+**Calendar — resolving "my 3pm".** Reschedule/cancel/RSVP actions need an \`event_id\`. First call \`calendar_query_events\` with a window around the referenced time, pick the matching event's \`id\`, then call the mutation with that \`event_id\`. Datetimes are ISO 8601 in the user's local zone; resolve relative dates ("tomorrow", "Friday") against today's date.
 
 **HubSpot — attaching a contact to a ticket.** To link a ticket to someone, pass \`contact_email\` straight to \`hubspot_create_ticket\` — it looks the contact up by email and creates them if they don't exist, then associates the ticket, all in this one action. Do **not** call \`hubspot_upsert_contact\` first and try to thread the id across calls; \`run-chat-action\` runs one action at a time. Use \`hubspot_search_contact\` only when the user just wants to *check* whether a contact exists (it changes nothing). Already have the HubSpot contact id? Pass \`contact_id\` instead — it takes precedence.
 
@@ -2120,7 +2128,7 @@ Find these in the conversation. If anything is missing, **ask one short clarifyi
   }
   \`\`\`
 
-To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`hubspot_search_contact\`, \`send_telegram_message\`, \`send_slack_message\`, \`send_slack_file\`, \`list_slack_channels\`, \`send_whatsapp_message\`, \`send_notification\`, \`github_create_issue\`, \`github_comment_issue\`, \`github_comment_pr\`, \`github_review_pr\`, \`github_open_pr\`, \`github_fetch_issue\`, \`github_fetch_pr\`, \`github_clone_worktree\`, \`github_commit_and_push\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, Slack, HubSpot, WhatsApp, email) and for any GitHub mutation (\`github_create_issue\`, \`github_comment_*\`, \`github_review_pr\`, \`github_open_pr\`, \`github_commit_and_push\`).
+To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`hubspot_search_contact\`, \`send_telegram_message\`, \`send_slack_message\`, \`send_slack_file\`, \`list_slack_channels\`, \`send_whatsapp_message\`, \`send_notification\`, \`github_create_issue\`, \`github_comment_issue\`, \`github_comment_pr\`, \`github_review_pr\`, \`github_open_pr\`, \`github_fetch_issue\`, \`github_fetch_pr\`, \`github_clone_worktree\`, \`github_commit_and_push\`, \`calendar_create_event\`, \`calendar_update_event\`, \`calendar_delete_event\`, \`calendar_rsvp\`, \`calendar_query_events\`, \`calendar_find_free_time\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, Slack, HubSpot, WhatsApp, email), any calendar mutation (\`calendar_create_event\`, \`calendar_update_event\`, \`calendar_delete_event\`, \`calendar_rsvp\`), and for any GitHub mutation (\`github_create_issue\`, \`github_comment_*\`, \`github_review_pr\`, \`github_open_pr\`, \`github_commit_and_push\`).
 
 For the auto-fix-issue → PR pattern, the canonical DAG is: trigger \`github_issue_opened\` → \`github_fetch_issue\` (\`include_comments: true\`) → \`run_expert\` (analyze + plan) → \`github_clone_worktree\` → \`run_expert\` (write code in the worktree path) → \`github_commit_and_push\` (approval-gated) → \`github_open_pr\` (approval-gated). The expert step that writes code should pass \`workspacePath\` set to the worktree path so the file edits land in the cloned repo.
 

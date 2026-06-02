@@ -21,6 +21,8 @@ import TasksScreen from '../screens/TasksScreen';
 import FilesScreen from '../screens/FilesScreen';
 import KnowledgeBaseScreen from '../screens/knowledge-base/KnowledgeBaseScreen';
 import NewsScreen from '../screens/news/NewsScreen';
+import CalendarScreen from '../screens/calendar/CalendarScreen';
+import CommandPalette from '../command-palette/CommandPalette';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
 
@@ -154,6 +156,9 @@ export default function AppLayout() {
     if (activeScreen === 'news') {
       return <NewsScreen />;
     }
+    if (activeScreen === 'calendar') {
+      return <CalendarScreen />;
+    }
     if (activeScreen === 'call' && flags['voice-calls']) {
       return <CallScreen />;
     }
@@ -170,6 +175,9 @@ export default function AppLayout() {
         <UpdateBanner />
         {renderContent()}
       </main>
+
+      <CommandPalette />
+
 
       {chatError && (
         <AlertModal

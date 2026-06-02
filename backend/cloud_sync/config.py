@@ -29,6 +29,8 @@ SYNCED_TABLES: list[str] = [
     "knowledge_ai_threads",
     "knowledge_ai_messages",
     "settings",
+    "calendar_accounts",
+    "calendar_events",
 ]
 
 # Fast membership test.
@@ -39,7 +41,7 @@ SYNCED_TABLE_SET: frozenset[str] = frozenset(SYNCED_TABLES)
 #   execution_events — high-volume per-run event log, tied to where it ran
 #   sync_outbox      — the outbox itself
 LOCAL_ONLY_TABLES: frozenset[str] = frozenset(
-    {"parsed_files", "execution_events", "sync_outbox"}
+    {"parsed_files", "execution_events", "sync_outbox", "calendar_sync_state"}
 )
 
 # Per-table "modified at" column used for last-write-wins comparison on pull.
@@ -66,6 +68,8 @@ MTIME_COLUMN: dict[str, str] = {
     "knowledge_ai_threads": "updated_at",
     "knowledge_ai_messages": "created_at",
     "settings": "updated_at",
+    "calendar_accounts": "updated_at",
+    "calendar_events": "updated_at",
 }
 
 # Primary-key column per synced table (all use "id" except the key-value store).
@@ -97,6 +101,7 @@ LOCAL_ONLY_SETTING_PREFIXES: tuple[str, ...] = (
     "hubspot_",
     "ghl_",
     "github_",
+    "calendar_",  # OAuth client id/secret + access/refresh tokens — never leave device
     "sandbox:",
     "sync:",  # sync bookkeeping (cursors, etc.) is per-device
 )

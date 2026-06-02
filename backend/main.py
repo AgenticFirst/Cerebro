@@ -39,6 +39,7 @@ from expert_context.router import router as expert_context_router
 from backup.router import router as backup_router
 from knowledge.router import router as knowledge_router
 from news.router import router as news_router
+from calendar_sync.router import router as calendar_router
 
 
 @asynccontextmanager
@@ -123,6 +124,7 @@ app.include_router(expert_context_router, prefix="/experts")
 app.include_router(backup_router, prefix="/backup")
 app.include_router(knowledge_router, prefix="/knowledge")
 app.include_router(news_router, prefix="/news")
+app.include_router(calendar_router, prefix="/calendar")
 app.include_router(cloud_sync_router)
 
 

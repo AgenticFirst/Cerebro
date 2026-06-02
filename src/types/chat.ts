@@ -14,6 +14,7 @@ export type Screen =
   | 'marketplace'
   | 'knowledge-base'
   | 'news'
+  | 'calendar'
   | 'settings'
   | 'call';
 

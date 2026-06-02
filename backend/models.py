@@ -589,3 +589,110 @@ class NewsFetchMeta(Base):
 
     id: Mapped[str] = mapped_column(String(20), primary_key=True)  # category
     last_fetched_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class CalendarAccount(Base):
+    """A connected calendar account (Google or Outlook).
+
+    Holds only non-secret identity + status metadata so it can replicate to
+    Supabase. The OAuth client id/secret and access/refresh tokens live ONLY in
+    device-local ``calendar_*`` settings (encrypted via Electron safeStorage) and
+    never reach this table or the cloud — see cloud_sync/config.py.
+    """
+
+    __tablename__ = "calendar_accounts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    provider: Mapped[str] = mapped_column(String(20))  # 'google' | 'outlook'
+    email: Mapped[str] = mapped_column(String(320))
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    primary_calendar_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # JSON: [{id, name, color, selected}] — the calendars within this account.
+    calendars_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # connected | token_expired | error | disconnected
+    status: Mapped[str] = mapped_column(String(20), default="connected")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class CalendarEvent(Base):
+    """A normalized calendar event from any provider.
+
+    Provider-agnostic: the Electron-side provider adapters map Google
+    ``events.list`` and Microsoft Graph ``/events/delta`` payloads into this one
+    shape. Times are stored as UTC plus the original IANA zone so DST math and
+    round-tripping on edit stay correct. Deletes are soft (status='cancelled') so
+    the tombstone replicates to other devices.
+    """
+
+    __tablename__ = "calendar_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    account_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("calendar_accounts.id", ondelete="CASCADE"), index=True
+    )
+    calendar_id: Mapped[str] = mapped_column(String(255))
+    # Provider's id for the event — null until a Cerebro-origin event is first pushed.
+    provider_event_id: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
+    etag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Cross-provider identity for the same meeting (phase-2 dedup / booking links).
+    ical_uid: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    location: Mapped[str | None] = mapped_column(Text, nullable=True)
+    start_utc: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    end_utc: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    start_tz: Mapped[str | None] = mapped_column(String(64), nullable=True)  # IANA
+    end_tz: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    all_day: Mapped[bool] = mapped_column(Boolean, default=False)
+    recurrence_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # RRULE[] for master
+    recurring_master_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    attendees_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # [{email,name,response}]
+    organizer_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    # accepted | declined | tentative | needsAction
+    rsvp_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    visibility: Mapped[str] = mapped_column(String(16), default="default")  # default|public|private
+    transparency: Mapped[str] = mapped_column(String(16), default="opaque")  # opaque(busy)|transparent(free)
+    status: Mapped[str] = mapped_column(String(16), default="confirmed")  # confirmed|cancelled (soft-delete)
+    conference_url: Mapped[str | None] = mapped_column(Text, nullable=True)  # Meet/Teams link
+    color: Mapped[str | None] = mapped_column(String(16), nullable=True)  # user-chosen hex (local events)
+    origin: Mapped[str] = mapped_column(String(12), default="provider")  # provider|cerebro
+    # synced | pending_push | pending_delete | error
+    sync_status: Mapped[str] = mapped_column(String(16), default="synced")
+    provider_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    conflict_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # losing side of a surfaced conflict
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id", "calendar_id", "provider_event_id", name="uq_calendar_event_provider_id"
+        ),
+        Index("ix_calendar_events_window", "account_id", "start_utc"),
+    )
+
+
+class CalendarSyncState(Base):
+    """Per-(account, calendar) incremental sync bookkeeping.
+
+    LOCAL-ONLY — must never replicate (each device syncs independently, holding
+    its own provider sync cursor). Registered in cloud_sync LOCAL_ONLY_TABLES.
+    """
+
+    __tablename__ = "calendar_sync_state"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    account_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("calendar_accounts.id", ondelete="CASCADE"), index=True
+    )
+    calendar_id: Mapped[str] = mapped_column(String(255))
+    # Google syncToken / Outlook @odata.deltaLink.
+    sync_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cursor_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    full_sync_window_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("account_id", "calendar_id", name="uq_calendar_sync_state"),
+    )

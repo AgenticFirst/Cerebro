@@ -21,6 +21,7 @@ import { FilesProvider } from './context/FilesContext';
 import { KnowledgeBaseProvider } from './context/KnowledgeBaseContext';
 import { KnowledgeAiProvider } from './context/KnowledgeAiContext';
 import { NewsProvider } from './context/NewsContext';
+import { CalendarProvider } from './context/CalendarContext';
 import { UpdateProvider } from './context/UpdateContext';
 import { OnboardingProvider } from './context/OnboardingContext';
 import AppLayout from './components/layout/AppLayout';
@@ -51,6 +52,7 @@ function App() {
                           <KnowledgeBaseProvider>
                           <KnowledgeAiProvider>
                           <NewsProvider>
+                          <CalendarProvider>
                           <VoiceProvider>
                             <MarkdownDocumentProvider>
                               <ChatFilePreviewProvider>
@@ -59,6 +61,7 @@ function App() {
                               </ChatFilePreviewProvider>
                             </MarkdownDocumentProvider>
                           </VoiceProvider>
+                          </CalendarProvider>
                           </NewsProvider>
                           </KnowledgeAiProvider>
                           </KnowledgeBaseProvider>

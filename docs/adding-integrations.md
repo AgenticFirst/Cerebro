@@ -8,7 +8,7 @@ The document is organized so a contributor (human or AI) can follow it linearly 
 |---|---|---|
 | Bot token / API key | `src/telegram/`, `src/hubspot/` | Simple: paste, verify, encrypt at rest. |
 | QR pairing / device link | `src/whatsapp/` | No token field; modal owns the live handshake. |
-| OAuth | _none yet_ | When the first OAuth integration lands, add a section here. |
+| OAuth (Auth Code + PKCE) | `src/calendar/` | Bring-your-own client id/secret; loopback redirect in main. See "OAuth integrations" below. |
 
 ---
 
@@ -267,6 +267,40 @@ If your integration carries anything beyond text — voice notes, photos, docume
 - Live location streaming, polls, contact cards, reactions: out of scope for the foundation. Extend the per-bridge `extractInbound` if you wire one up.
 
 ---
+
+## 12b · OAuth integrations (Auth Code + PKCE)
+
+Reference: **`src/calendar/`** (Google Calendar + Outlook). The first OAuth
+integration. Pattern for the next one:
+
+- **Bring-your-own credentials.** The user registers their own OAuth app and
+  pastes Client ID + Secret in the connect modal. No shared secret ships in the
+  repo. The manifest uses `authMode: 'oauth'` with `clientId` / `clientSecret`
+  fields and a `customModalId` (the generic modal can't run the browser dance).
+- **The flow lives entirely in main.** `src/calendar/oauth.ts` generates a PKCE
+  verifier/challenge + state, starts a one-shot loopback `http.Server` on
+  `127.0.0.1:0` (the redirect URI is `http://127.0.0.1:<port>/callback`), opens
+  the system browser with `shell.openExternal`, captures `?code=&state=`,
+  validates state, and exchanges the code for tokens via the provider adapter.
+  The user adds `http://127.0.0.1` to their app's allowed redirect URIs.
+- **Token storage.** Access/refresh tokens + the client secret are encrypted via
+  `secure-token.ts` and stored under a device-local settings prefix
+  (`calendar_<accountId>_*`). Add the prefix to `LOCAL_ONLY_SETTING_PREFIXES` in
+  `backend/cloud_sync/config.py` so it never replicates. Refresh on expiry in the
+  bridge; **Microsoft rotates the refresh token on each refresh — persist the new
+  one** (Google keeps it stable).
+- **Provider adapter seam.** `src/calendar/providers/types.ts` defines a
+  `CalendarProvider` interface (buildAuthUrl / exchangeCode / refresh / pull /
+  write); each provider normalizes its native payloads into one shape. A third
+  provider is one new file implementing the interface + one `registerProvider`
+  call — the sync engine, store, and UI don't change.
+- **Expired-grant UX.** Surface refresh failure as an account `status:
+  'token_expired'` the UI reads, with a one-click Reconnect that re-runs the flow
+  using the stored client id/secret.
+- **Multi-account.** Unlike token integrations, OAuth integrations are usually
+  multi-account. Keep a per-account id (own it from the backend account row) and
+  key settings + sync state by it; the manifest-level status just reports whether
+  any account is connected.
 
 ## 13 · Update this document
 

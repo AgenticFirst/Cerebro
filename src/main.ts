@@ -58,6 +58,7 @@ import { TelegramBridge } from './telegram/bridge';
 import { SlackBridge } from './slack/bridge';
 import { WhatsAppBridge } from './whatsapp/bridge';
 import { HubSpotHolder } from './hubspot/holder';
+import { CalendarBridge } from './calendar/bridge';
 import { GHLHolder } from './ghl/holder';
 import { GitHubBridge } from './github/bridge';
 import { getConnection as getSupabaseConnection } from './supabase/backend-mode';
@@ -302,6 +303,7 @@ let slackBridge: SlackBridge | null = null;
 let whatsAppBridge: WhatsAppBridge | null = null;
 // HubSpot credential holder
 let hubSpotHolder: HubSpotHolder | null = null;
+let calendarBridge: CalendarBridge | null = null;
 // Supabase backend-sync holder (multi-device)
 let supabaseHolder: SupabaseHolder | null = null;
 // GoHighLevel credential holder
@@ -575,6 +577,17 @@ async function startPythonBackend(): Promise<void> {
     .then(() => { gitHubBridge?.start(); })
     .catch((err) => {
       console.error('[Cerebro] GitHub bridge init failed:', err);
+    });
+
+  // Calendar bridge — owns OAuth + tokens + the two-way sync engine for Google
+  // and Outlook. Pulls on a 60s foreground interval (+ manual Refresh) so a
+  // meeting accepted elsewhere shows up quickly.
+  calendarBridge = new CalendarBridge({ backendPort: port });
+  executionEngine.setCalendarChannel(calendarBridge);
+  calendarBridge.init()
+    .then(() => { calendarBridge?.start(); })
+    .catch((err) => {
+      console.error('[Cerebro] Calendar bridge init failed:', err);
     });
 
   // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
@@ -2373,6 +2386,73 @@ function registerIpcHandlers(): void {
     }
   });
 
+  // --- Calendar (Google + Outlook) ---
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_START_OAUTH, async (_event, input) => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.startOAuth(input);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_RECONNECT, async (_event, accountId: string) => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.reconnect(accountId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_STATUS, async () => {
+    if (!calendarBridge) return { connected: false, accounts: [] };
+    return calendarBridge.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_LIST_ACCOUNTS, async () => {
+    if (!calendarBridge) return [];
+    return calendarBridge.listAccounts();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_DISCONNECT, async (_event, accountId: string) => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.disconnect(accountId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_SET_CALENDARS, async (_event, accountId: string, ids: string[]) => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.setCalendars(accountId, ids);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_SYNC_NOW, async () => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.syncAll();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_CREATE_EVENT, async (_event, input) => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.createEvent(input);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_UPDATE_EVENT, async (_event, eventId: string, patch) => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.updateEvent(eventId, patch);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_DELETE_EVENT, async (_event, eventId: string) => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.deleteEvent(eventId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_RSVP, async (_event, eventId: string, response) => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.rsvp(eventId, response);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_PARSE_COMMAND, async (_event, text: string) => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.parseCommand(text);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CALENDAR_AI_SUMMARY, async (_event, input) => {
+    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+    return calendarBridge.aiSummary(input);
+  });
+
   // --- GoHighLevel ---
 
   ipcMain.handle(IPC_CHANNELS.GHL_VERIFY, async (_event, apiKey: string, locationId: string) => {
@@ -2587,6 +2667,12 @@ const createWindow = () => {
   }
   if (whatsAppBridge) {
     whatsAppBridge.setWebContents(mainWindow.webContents);
+  }
+  if (calendarBridge) {
+    calendarBridge.setWebContents(mainWindow.webContents);
+    // Faster sync cadence while the app is focused; back off when it isn't.
+    mainWindow.on('focus', () => calendarBridge?.setForeground(true));
+    mainWindow.on('blur', () => calendarBridge?.setForeground(false));
   }
 
   // Open DevTools only in local dev — never in packaged builds (end users
@@ -2838,6 +2924,9 @@ app.on('before-quit', async () => {
   if (slackBridge) {
     try { await slackBridge.stop(); } catch { /* ignore */ }
     unregisterChannelSender('slack');
+  }
+  if (calendarBridge) {
+    try { calendarBridge.stop(); } catch { /* ignore */ }
   }
   if (chatActionServer) {
     try { await chatActionServer.stop(); } catch { /* ignore */ }

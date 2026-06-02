@@ -320,6 +320,32 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
     summary: '[dry-run] Would commit and push branch',
   }),
 
+  // Calendar — never touch the real provider in a dry run.
+  calendar_create_event: () => ({
+    data: { created: true, error: null },
+    summary: '[dry-run] Would create calendar event',
+  }),
+  calendar_update_event: () => ({
+    data: { updated: true, error: null },
+    summary: '[dry-run] Would update calendar event',
+  }),
+  calendar_delete_event: () => ({
+    data: { deleted: true, error: null },
+    summary: '[dry-run] Would delete calendar event',
+  }),
+  calendar_rsvp: () => ({
+    data: { ok: true, error: null },
+    summary: '[dry-run] Would RSVP to calendar event',
+  }),
+  calendar_query_events: () => ({
+    data: { count: 0, events: [] },
+    summary: '[dry-run] Would read calendar events',
+  }),
+  calendar_find_free_time: () => ({
+    data: { slots: [], count: 0 },
+    summary: '[dry-run] Would find free time',
+  }),
+
   // Delay — short-circuit so a routine with a 1-hour wait doesn't make the
   // dry-run sit for an hour. The real delay action would also reject
   // duration <= 0, so we accept any duration here.

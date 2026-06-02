@@ -47,6 +47,7 @@ def _migrate(eng) -> None:
         ("conversations", "expert_id", "VARCHAR(32) REFERENCES experts(id) ON DELETE SET NULL"),
         ("conversations", "source", "VARCHAR(20) DEFAULT 'cerebro'"),
         ("conversations", "external_chat_id", "VARCHAR(64)"),
+        ("calendar_events", "color", "VARCHAR(16)"),
     ]
     with eng.connect() as conn:
         for table, column, col_def in migrations:

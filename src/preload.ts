@@ -44,7 +44,14 @@ import type {
   UpdateActionResult,
   UpdateErrorEvent,
   BackupCompletionFlag,
+  CalendarOAuthInput,
 } from './types/ipc';
+import type {
+  CalendarStatus,
+  CalendarAccountInfo,
+  CalendarEventInput,
+  RsvpResponse,
+} from './types/calendar';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
 import type {
@@ -575,6 +582,53 @@ const api: CerebroAPI = {
         callback(data);
       ipcRenderer.on(IPC_CHANNELS.GITHUB_STATUS_CHANGED, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.GITHUB_STATUS_CHANGED, listener);
+    },
+  },
+
+  calendar: {
+    startOAuth(input: CalendarOAuthInput) {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_START_OAUTH, input);
+    },
+    reconnect(accountId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_RECONNECT, accountId);
+    },
+    status(): Promise<CalendarStatus> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_STATUS);
+    },
+    listAccounts(): Promise<CalendarAccountInfo[]> {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_LIST_ACCOUNTS);
+    },
+    disconnect(accountId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_DISCONNECT, accountId);
+    },
+    setCalendars(accountId: string, selectedCalendarIds: string[]) {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_SET_CALENDARS, accountId, selectedCalendarIds);
+    },
+    syncNow() {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_SYNC_NOW);
+    },
+    createEvent(input: CalendarEventInput) {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_CREATE_EVENT, input);
+    },
+    updateEvent(eventId: string, patch: Partial<CalendarEventInput>) {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_UPDATE_EVENT, eventId, patch);
+    },
+    deleteEvent(eventId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_DELETE_EVENT, eventId);
+    },
+    rsvp(eventId: string, response: RsvpResponse) {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_RSVP, eventId, response);
+    },
+    parseCommand(text: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_PARSE_COMMAND, text);
+    },
+    aiSummary(input: { range: 'day' | 'week'; startISO: string }) {
+      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_AI_SUMMARY, input);
+    },
+    onEventsChanged(callback: () => void): () => void {
+      const listener = () => callback();
+      ipcRenderer.on(IPC_CHANNELS.CALENDAR_EVENTS_CHANGED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.CALENDAR_EVENTS_CHANGED, listener);
     },
   },
 

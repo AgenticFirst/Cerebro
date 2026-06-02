@@ -57,6 +57,13 @@ import { createHubSpotUpsertContactAction } from './actions/hubspot-upsert-conta
 import { createHubSpotSearchContactAction } from './actions/hubspot-search-contact';
 import { createHubSpotSearchTicketsAction } from './actions/hubspot-search-tickets';
 import type { HubSpotChannel } from './actions/hubspot-channel';
+import type { CalendarChannel } from './actions/calendar-channel';
+import { createCalendarCreateEventAction } from './actions/calendar-create-event';
+import { createCalendarUpdateEventAction } from './actions/calendar-update-event';
+import { createCalendarDeleteEventAction } from './actions/calendar-delete-event';
+import { createCalendarRsvpAction } from './actions/calendar-rsvp';
+import { createCalendarQueryEventsAction } from './actions/calendar-query-events';
+import { createCalendarFindFreeTimeAction } from './actions/calendar-find-free-time';
 import { createGitHubCreateIssueAction } from './actions/github-create-issue';
 import { createGitHubCommentIssueAction } from './actions/github-comment-issue';
 import { createGitHubCommentPrAction } from './actions/github-comment-pr';
@@ -103,6 +110,7 @@ export class ExecutionEngine {
   private whatsAppChannel: WhatsAppChannel | null = null;
   private hubSpotChannel: HubSpotChannel | null = null;
   private gitHubChannel: GitHubChannel | null = null;
+  private calendarChannel: CalendarChannel | null = null;
   private activeRuns = new Map<string, ActiveEngineRun>();
   /** Pending approval promises keyed by approvalId. */
   private pendingApprovals = new Map<string, PendingApproval>();
@@ -139,6 +147,11 @@ export class ExecutionEngine {
   /** Late-bind the GitHub bridge so github_* actions can use it. */
   setGitHubChannel(channel: GitHubChannel): void {
     this.gitHubChannel = channel;
+  }
+
+  /** Late-bind the Calendar bridge so calendar_* actions can use it. */
+  setCalendarChannel(channel: CalendarChannel): void {
+    this.calendarChannel = channel;
   }
 
   /**
@@ -567,6 +580,12 @@ export class ExecutionEngine {
       createGitHubCommentPrAction({ getChannel: () => this.gitHubChannel }),
       createGitHubReviewPrAction({ getChannel: () => this.gitHubChannel }),
       createGitHubOpenPrAction({ getChannel: () => this.gitHubChannel }),
+      createCalendarCreateEventAction({ getChannel: () => this.calendarChannel }),
+      createCalendarUpdateEventAction({ getChannel: () => this.calendarChannel }),
+      createCalendarDeleteEventAction({ getChannel: () => this.calendarChannel }),
+      createCalendarRsvpAction({ getChannel: () => this.calendarChannel }),
+      createCalendarQueryEventsAction({ getChannel: () => this.calendarChannel }),
+      createCalendarFindFreeTimeAction({ getChannel: () => this.calendarChannel }),
     ];
     return defs.filter((d) => d.chatExposable === true);
   }
@@ -966,6 +985,14 @@ export class ExecutionEngine {
     registry.register(createGitHubFetchPrAction({ getChannel: () => this.gitHubChannel }));
     registry.register(createGitHubCloneWorktreeAction({ getChannel: () => this.gitHubChannel }));
     registry.register(createGitHubCommitAndPushAction({ getChannel: () => this.gitHubChannel }));
+
+    // Calendar (Google + Outlook)
+    registry.register(createCalendarCreateEventAction({ getChannel: () => this.calendarChannel }));
+    registry.register(createCalendarUpdateEventAction({ getChannel: () => this.calendarChannel }));
+    registry.register(createCalendarDeleteEventAction({ getChannel: () => this.calendarChannel }));
+    registry.register(createCalendarRsvpAction({ getChannel: () => this.calendarChannel }));
+    registry.register(createCalendarQueryEventsAction({ getChannel: () => this.calendarChannel }));
+    registry.register(createCalendarFindFreeTimeAction({ getChannel: () => this.calendarChannel }));
 
     // Complex (depend on backend infrastructure)
     registry.register(waitForWebhookAction);

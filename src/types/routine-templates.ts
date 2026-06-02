@@ -27,6 +27,7 @@ export type RequiredConnection =
   | 'openai'
   | 'google'
   | 'github'
+  | 'calendar'
   | string;
 
 export type TemplateVariableType =

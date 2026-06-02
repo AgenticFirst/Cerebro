@@ -72,7 +72,7 @@ export interface IntegrationIPC {
  * which renders fields directly from the manifest. New integrations get
  * the generic modal for free.
  */
-export type CustomModalId = 'telegram' | 'slack' | 'hubspot' | 'whatsapp';
+export type CustomModalId = 'telegram' | 'slack' | 'hubspot' | 'whatsapp' | 'calendar';
 
 export interface IntegrationManifest {
   /** Stable identifier used in chat-action params and message metadata. */

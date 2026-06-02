@@ -11,6 +11,7 @@ const TelegramConnectModal = lazy(() => import('../screens/integrations/Telegram
 const SlackConnectModal = lazy(() => import('../screens/integrations/SlackConnectModal'));
 const HubSpotConnectModal = lazy(() => import('../screens/integrations/HubSpotConnectModal'));
 const WhatsAppConnectModal = lazy(() => import('../screens/integrations/WhatsAppConnectModal'));
+const CalendarConnectModal = lazy(() => import('../screens/integrations/CalendarConnectModal'));
 const GenericConnectModal = lazy(() => import('../screens/integrations/GenericConnectModal'));
 
 interface IntegrationSetupCardProps {
@@ -218,6 +219,9 @@ export default function IntegrationSetupCard({
           )}
           {manifest.customModalId === 'whatsapp' && (
             <WhatsAppConnectModal onClose={closeModal} onPersisted={() => { /* status poll handles it */ }} />
+          )}
+          {manifest.customModalId === 'calendar' && (
+            <CalendarConnectModal onClose={closeModal} onPersisted={() => { /* status poll handles it */ }} />
           )}
           {!manifest.customModalId && (
             <GenericConnectModal manifest={manifest} onClose={closeModal} />
