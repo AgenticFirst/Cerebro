@@ -209,9 +209,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (engine === 'codex') {
         if (codexInfoRef.current.status !== 'available') {
           return {
-            title: 'Codex not detected',
-            message:
-              'Cerebro is set to use the Codex CLI as its engine. Install it and re-detect from Integrations.',
+            title: i18n.t('chat.codexNotDetectedTitle'),
+            message: i18n.t('chat.codexNotDetectedMessage'),
             navigateTo: 'integrations',
           };
         }
@@ -219,9 +218,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
       if (claudeCodeInfoRef.current.status !== 'available') {
         return {
-          title: 'Claude Code not detected',
-          message:
-            'Cerebro uses the Claude Code CLI as its engine. Install it and re-detect from Integrations.',
+          title: i18n.t('chat.claudeNotDetectedTitle'),
+          message: i18n.t('chat.claudeNotDetectedMessage'),
           navigateTo: 'integrations',
         };
       }
