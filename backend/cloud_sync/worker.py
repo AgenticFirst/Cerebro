@@ -195,7 +195,13 @@ class SyncWorker:
 
     def _push(self) -> None:
         session_local = _session_local()
-        assert session_local is not None
+        if session_local is None:
+            # Surface a real, non-empty reason. A bare ``assert`` would raise
+            # ``AssertionError('')`` whose empty message the run loop stores as
+            # ``last_error``, leaving the UI showing 'offline' with no reason.
+            raise RuntimeError(
+                "cloud sync: local database not initialized (SessionLocal is None)"
+            )
         s = session_local()
         try:
             rows = (
