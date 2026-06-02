@@ -35,6 +35,7 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
   const [verify, setVerify] = useState<VerifyState>({ kind: 'idle' });
   const [status, setStatus] = useState<SlackStatusResponse | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [saveWarn, setSaveWarn] = useState<string | null>(null);
   const [enabling, setEnabling] = useState(false);
 
   useEffect(() => {
@@ -115,8 +116,15 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
   const handleSave = useCallback(async () => {
     const channels = parseList(allowChans, ['C', 'G', 'D']);
     const users = parseList(allowUsers, ['U', 'W']);
+    setSaveWarn(null);
     const tokenRes = await persistTokensIfDraft();
-    if (!tokenRes.ok) return;
+    if (!tokenRes.ok) {
+      // Replacing tokens on a live bridge is persisted but not hot-applied;
+      // surface the re-enable warning instead of silently doing nothing.
+      setSaveWarn(tokenRes.error ?? 'Could not save tokens.');
+      await refreshStatus();
+      return;
+    }
     await Promise.all([
       saveSetting(SLACK_SETTING_KEYS.allowlistChannels, channels),
       saveSetting(SLACK_SETTING_KEYS.allowlistUsers, users),
@@ -372,6 +380,13 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
       <UserExpertAccessEditor status={status} />
 
       {/* Save */}
+      {saveWarn && (
+        <div className="mt-4 flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-warning/30 bg-warning/10 text-xs text-warning-text">
+          <ShieldAlert size={14} className="shrink-0 mt-px" />
+          <span>{saveWarn}</span>
+        </div>
+      )}
+
       <div className="mt-5 flex items-center justify-end gap-3">
         {savedFlash && (
           <span className="text-sm text-emerald-400 flex items-center gap-1.5">

@@ -463,20 +463,34 @@ export class SlackBridge implements SlackChannel {
 
       const botVal = args.botToken ? encryptForStorage(args.botToken) : '';
       const appVal = args.appToken ? encryptForStorage(args.appToken) : '';
+
+      // Replacing tokens (both present) on a live bridge must NOT hot-restart.
+      // We persist the new pair so a later disable→enable picks it up, but we
+      // leave the running bridge — and its in-memory tokens — untouched and ask
+      // the operator to re-enable. Otherwise the bridge would silently bounce,
+      // dropping in-flight Socket Mode runs.
+      const isReplacement = Boolean(args.botToken && args.appToken);
+      if (wasRunning && isReplacement) {
+        const changed = args.botToken !== this.settings.botToken
+          || args.appToken !== this.settings.appToken;
+        if (changed) {
+          await backendPutSetting(port, SLACK_SETTING_KEYS.botToken, botVal);
+          await backendPutSetting(port, SLACK_SETTING_KEYS.appToken, appVal);
+          return { ok: false, error: 'Tokens changed — disable and re-enable Slack to apply.' };
+        }
+        return { ok: true };
+      }
+
       await backendPutSetting(port, SLACK_SETTING_KEYS.botToken, botVal);
       await backendPutSetting(port, SLACK_SETTING_KEYS.appToken, appVal);
 
       this.settings.botToken = args.botToken;
       this.settings.appToken = args.appToken;
 
+      // Remaining live cases (clearing tokens, or a partial pair) stop the
+      // bridge and stay off — the bridge can't run without a full token pair.
       if (wasRunning) {
         await this.stop();
-        if (args.botToken && args.appToken) {
-          await this.start();
-          if (!this.running) {
-            return { ok: false, error: this.lastError ?? 'Failed to restart with new tokens' };
-          }
-        }
       }
       return { ok: true };
     } catch (err) {
