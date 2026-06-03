@@ -5,18 +5,33 @@ import { CheckCircle2, Loader2, ShieldAlert, XCircle } from 'lucide-react';
 import { WhatsAppIcon } from '../../icons/BrandIcons';
 import type { WhatsAppStatusResponse } from '../../../types/ipc';
 import { parseAllowlistRaw } from '../../../whatsapp/helpers';
+import { loadSetting, saveSetting } from '../../../lib/settings';
+import { WHATSAPP_SETTING_KEYS } from '../../../whatsapp/types';
+import WhatsAppOperatorClients from './WhatsAppOperatorClients';
 
 interface WhatsAppSectionProps {
   showHeader?: boolean;
+  backendPort?: number;
 }
 
-export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionProps = {}) {
+export default function WhatsAppSection({ showHeader = false, backendPort = 8000 }: WhatsAppSectionProps = {}) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<WhatsAppStatusResponse | null>(null);
   const [allowlistRaw, setAllowlistRaw] = useState('');
+  const [allowAny, setAllowAny] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pairingBusy, setPairingBusy] = useState(false);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Business profile
+  const [businessName, setBusinessName] = useState('');
+  const [businessDescription, setBusinessDescription] = useState('');
+  const [businessHours, setBusinessHours] = useState('');
+  const [knowledgeBase, setKnowledgeBase] = useState('');
+  const [bookingUrl, setBookingUrl] = useState('');
+  const [poweredByFooter, setPoweredByFooter] = useState(true);
+  const [bizSavedFlash, setBizSavedFlash] = useState(false);
+  const bizFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshStatus = useCallback(async () => {
     const s = await window.cerebro.whatsapp.status();
@@ -26,6 +41,16 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
   useEffect(() => {
     void refreshStatus();
     const off = window.cerebro.whatsapp.onStatusChanged((s) => setStatus(s));
+    void loadSetting<string[]>(WHATSAPP_SETTING_KEYS.allowlist).then((saved) => {
+      if (!saved || saved.length === 0) return;
+      if (saved.includes('*')) { setAllowAny(true); } else { setAllowlistRaw(saved.join(', ')); }
+    });
+    void loadSetting<string>(WHATSAPP_SETTING_KEYS.businessName).then((v) => v && setBusinessName(v));
+    void loadSetting<string>(WHATSAPP_SETTING_KEYS.businessDescription).then((v) => v && setBusinessDescription(v));
+    void loadSetting<string>(WHATSAPP_SETTING_KEYS.businessHours).then((v) => v && setBusinessHours(v));
+    void loadSetting<string>(WHATSAPP_SETTING_KEYS.knowledgeBase).then((v) => v && setKnowledgeBase(v));
+    void loadSetting<string>(WHATSAPP_SETTING_KEYS.bookingUrl).then((v) => v && setBookingUrl(v));
+    void loadSetting<boolean>(WHATSAPP_SETTING_KEYS.poweredByFooter).then((v) => { if (typeof v === 'boolean') setPoweredByFooter(v); });
     return off;
   }, [refreshStatus]);
 
@@ -49,12 +74,50 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
   }, [refreshStatus]);
 
   const saveAllowlist = useCallback(async () => {
-    const list = parseAllowlistRaw(allowlistRaw);
+    const list = allowAny ? ['*'] : parseAllowlistRaw(allowlistRaw);
     await window.cerebro.whatsapp.setAllowlist(list);
     setSavedFlash(true);
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     flashTimerRef.current = setTimeout(() => setSavedFlash(false), 1_500);
-  }, [allowlistRaw]);
+  }, [allowlistRaw, allowAny]);
+
+  const applyClientProfile = useCallback(async (client: {
+    business_name: string; business_description: string;
+    business_hours: string; powered_by_footer: boolean;
+    knowledge_base?: string; booking_url?: string;
+  }) => {
+    setBusinessName(client.business_name);
+    setBusinessDescription(client.business_description);
+    setBusinessHours(client.business_hours);
+    setKnowledgeBase(client.knowledge_base ?? '');
+    setBookingUrl(client.booking_url ?? '');
+    setPoweredByFooter(client.powered_by_footer);
+    await Promise.all([
+      saveSetting(WHATSAPP_SETTING_KEYS.businessName, client.business_name),
+      saveSetting(WHATSAPP_SETTING_KEYS.businessDescription, client.business_description),
+      saveSetting(WHATSAPP_SETTING_KEYS.businessHours, client.business_hours),
+      saveSetting(WHATSAPP_SETTING_KEYS.knowledgeBase, client.knowledge_base ?? ''),
+      saveSetting(WHATSAPP_SETTING_KEYS.bookingUrl, client.booking_url ?? ''),
+      saveSetting(WHATSAPP_SETTING_KEYS.poweredByFooter, client.powered_by_footer),
+    ]);
+    setBizSavedFlash(true);
+    if (bizFlashRef.current) clearTimeout(bizFlashRef.current);
+    bizFlashRef.current = setTimeout(() => setBizSavedFlash(false), 1_500);
+  }, []);
+
+  const saveBusinessProfile = useCallback(async () => {
+    await Promise.all([
+      saveSetting(WHATSAPP_SETTING_KEYS.businessName, businessName),
+      saveSetting(WHATSAPP_SETTING_KEYS.businessDescription, businessDescription),
+      saveSetting(WHATSAPP_SETTING_KEYS.businessHours, businessHours),
+      saveSetting(WHATSAPP_SETTING_KEYS.knowledgeBase, knowledgeBase),
+      saveSetting(WHATSAPP_SETTING_KEYS.bookingUrl, bookingUrl),
+      saveSetting(WHATSAPP_SETTING_KEYS.poweredByFooter, poweredByFooter),
+    ]);
+    setBizSavedFlash(true);
+    if (bizFlashRef.current) clearTimeout(bizFlashRef.current);
+    bizFlashRef.current = setTimeout(() => setBizSavedFlash(false), 1_500);
+  }, [businessName, businessDescription, businessHours, poweredByFooter]);
 
   useEffect(() => () => {
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
@@ -171,15 +234,120 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
         </div>
       )}
 
+      {/* ── Business Profile ─────────────────────────────────────── */}
+      <div className="mt-6 rounded-lg border border-border-subtle bg-bg-surface p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium text-text-primary">🏢 Business Profile</h3>
+          <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">AI persona</span>
+        </div>
+        <p className="text-[11px] text-text-tertiary">Tell Cerebro about your business so the AI replies as your brand.</p>
+
+        <div>
+          <label className="text-xs text-text-secondary">Business name</label>
+          <input
+            type="text"
+            value={businessName}
+            onChange={(e) => setBusinessName(e.target.value)}
+            placeholder="e.g. Miami Beauty Clinic"
+            className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-text-secondary">What you offer (1-2 sentences)</label>
+          <textarea
+            value={businessDescription}
+            onChange={(e) => setBusinessDescription(e.target.value)}
+            placeholder="e.g. We offer botox, fillers, and laser treatments. We serve clients in Miami and Broward County."
+            rows={2}
+            className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 resize-none"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-text-secondary">Business hours</label>
+          <input
+            type="text"
+            value={businessHours}
+            onChange={(e) => setBusinessHours(e.target.value)}
+            placeholder="e.g. Mon–Fri 9am–6pm, Sat 10am–3pm"
+            className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-text-secondary flex items-center gap-1.5">
+            📅 Booking / Calendar URL
+          </label>
+          <input
+            type="url"
+            value={bookingUrl}
+            onChange={(e) => setBookingUrl(e.target.value)}
+            placeholder="https://calendly.com/yourbusiness or Google Calendar link"
+            className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          />
+          <p className="mt-1 text-[10px] text-text-tertiary">When a customer asks to book, the bot sends this link automatically.</p>
+        </div>
+
+        <div>
+          <label className="text-xs text-text-secondary flex items-center gap-1.5">
+            📚 Knowledge Base
+          </label>
+          <textarea
+            value={knowledgeBase}
+            onChange={(e) => setKnowledgeBase(e.target.value)}
+            placeholder={`Paste your FAQ, pricing, services, policies here.\n\nExample:\nServices: Botox $250, Fillers $400, Laser $300\nPayment: Cash, card, Venmo accepted\nLocation: 123 Main St, Miami FL\nFAQ: Do you accept walk-ins? Yes, Mon-Fri only.`}
+            rows={8}
+            className="mt-1 w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 resize-y font-mono text-xs"
+          />
+          <p className="mt-1 text-[10px] text-text-tertiary">The AI reads this to answer customer questions accurately. Add prices, FAQs, locations, policies — anything customers ask about.</p>
+        </div>
+
+        <label className="flex items-center gap-2 cursor-pointer select-none pt-1">
+          <input
+            type="checkbox"
+            checked={poweredByFooter}
+            onChange={(e) => setPoweredByFooter(e.target.checked)}
+            className="rounded border-border-subtle accent-accent"
+          />
+          <span className="text-xs text-text-secondary">Add <em>"✨ Powered by Cerebro AI"</em> footer to replies</span>
+        </label>
+
+        <div className="flex items-center justify-end gap-3">
+          {bizSavedFlash && (
+            <span className="text-xs text-emerald-400 flex items-center gap-1.5">
+              <CheckCircle2 size={12} /> Saved
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={saveBusinessProfile}
+            className="px-3 py-1.5 text-xs rounded-md font-medium bg-accent/15 text-accent hover:bg-accent/25"
+          >
+            Save profile
+          </button>
+        </div>
+      </div>
+
       {/* Allowlist */}
       <div className="mt-6">
         <label className="text-xs font-medium text-text-secondary">{t('whatsappSection.allowlistLabel')}</label>
+        <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={allowAny}
+            onChange={(e) => setAllowAny(e.target.checked)}
+            className="rounded border-border-subtle accent-accent"
+          />
+          <span className="text-xs text-text-secondary">{t('whatsappSection.allowAny', 'Allow messages from any contact')}</span>
+        </label>
         <input
           type="text"
           value={allowlistRaw}
-          onChange={(e) => setAllowlistRaw(e.target.value)}
+          onChange={(e) => { setAllowlistRaw(e.target.value); setAllowAny(false); }}
           placeholder={t('whatsappSection.allowlistPlaceholder')}
-          className="mt-1.5 w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
+          disabled={allowAny}
+          className="mt-2 w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 disabled:opacity-40"
           spellCheck={false}
         />
         <p className="mt-1.5 text-[11px] text-text-tertiary leading-relaxed">
@@ -203,6 +371,11 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
           </button>
         </div>
       </div>
+      {/* Operator: multi-client management */}
+      <WhatsAppOperatorClients
+        backendPort={backendPort}
+        onApplyProfile={applyClientProfile}
+      />
     </div>
   );
 }

@@ -35,6 +35,7 @@ const es: TranslationKeys = {
     activity: 'Actividad',
     approvals: 'Aprobaciones',
     integrations: 'Integraciones',
+    pipeline: 'Pipeline',
     skills: 'Habilidades',
     apps: 'Apps',
     knowledgeBase: 'Base de Conocimiento',

@@ -734,12 +734,17 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
 
     const channel = `agent:event:${runId}`;
 
-    // We do NOT pass --max-turns by default — mirroring the interactive
-    // `claude` CLI. Auto-compaction (on by default in Claude Code) handles
-    // long conversations without surfacing error_max_turns. Explicit caller
-    // overrides (routine step config, expert maxTurns) still apply.
-    const maxTurns: number | undefined =
-      typeof request.maxTurns === 'number' ? request.maxTurns : undefined;
+    // Resolve maxTurns: plan=15, execute/follow_up=request.maxTurns or 30, chat=50
+    let maxTurns = 50;
+    if (isTaskRun) {
+      if (request.taskPhase === 'plan') {
+        maxTurns = 15;
+      } else {
+        maxTurns = request.maxTurns ?? 30;
+      }
+    } else if (request.maxTurns) {
+      maxTurns = request.maxTurns;
+    }
 
     // All task phases run inside the task workspace: plan writes PLAN.md
     // there, execute reads PLAN.md and produces deliverables, follow_up
@@ -1569,6 +1574,10 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
 
   /** Re-sync installer after every run so skill-created experts get materialized. */
   private postRunSync(webContents: AgentEventSink): void {
+    // Background sinks (WhatsApp, Telegram) mark themselves destroyed on completion.
+    // installAll makes ~40 HTTP requests and is only needed when the UI renderer is
+    // alive to pick up newly-created experts. Skip it for background runs.
+    if (webContents.isDestroyed()) return;
     // Serialize to prevent concurrent installAll calls racing on the index file
     this.syncChain = this.syncChain
       .then(() => installAll({ dataDir: this.dataDir, backendPort: this.backendPort }))

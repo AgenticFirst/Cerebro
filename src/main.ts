@@ -542,6 +542,7 @@ async function startPythonBackend(): Promise<void> {
     backendPort: port,
     dataDir,
     executionEngine,
+    agentRuntime,
   });
   executionEngine.setWhatsAppChannel(whatsAppBridge);
   whatsAppBridge.start().catch((err) => {

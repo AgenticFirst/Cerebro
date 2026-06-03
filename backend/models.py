@@ -76,6 +76,46 @@ class Setting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class IMDAudit(Base):
+    __tablename__ = "imd_audits"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    business_name: Mapped[str] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    website: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    instagram: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    industry: Mapped[str] = mapped_column(String(50), default="aesthetic-medicine")
+    language: Mapped[str] = mapped_column(String(5), default="en")
+    ghl_contact_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ghl_opportunity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # IMD scores /20 each
+    d1: Mapped[float | None] = mapped_column(nullable=True)
+    d2: Mapped[float | None] = mapped_column(nullable=True)
+    d3: Mapped[float | None] = mapped_column(nullable=True)
+    d4: Mapped[float | None] = mapped_column(nullable=True)
+    d5: Mapped[float | None] = mapped_column(nullable=True)
+    d6: Mapped[float | None] = mapped_column(nullable=True)
+    total: Mapped[float | None] = mapped_column(nullable=True)
+    classification: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Básico | Intermedio | Avanzado | Líder
+    d1_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    d2_breakdown: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    pain_points: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    # D5 tracking
+    d5_dm_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    d5_responded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    d5_hours_to_respond: Mapped[float | None] = mapped_column(nullable=True)
+    # D6 tracking
+    d6_called_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    d6_call_outcome: Mapped[str | None] = mapped_column(String(20), nullable=True)  # voicemail | answered | booked | no_answer
+    # Pipeline
+    pipeline_stage: Mapped[str] = mapped_column(String(30), default="raw")  # raw | validated | scored | ig_dm_sent | called | responded | visit_scheduled | proposal | won | lost
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 class Expert(Base):
     __tablename__ = "experts"
 
@@ -531,6 +571,38 @@ class KnowledgeAiMessage(Base):
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class WhatsAppClient(Base):
+    """An operator-managed WhatsApp client (business).
+
+    Each client has its own WhatsApp session directory, business profile, and
+    conversation history. Operators can manage multiple clients from one
+    Cerebro install — each client maps to a separate WhatsApp number.
+    """
+
+    __tablename__ = "whatsapp_clients"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    name: Mapped[str] = mapped_column(String(255))
+    business_name: Mapped[str] = mapped_column(String(255), default="")
+    business_description: Mapped[str] = mapped_column(Text, default="")
+    business_hours: Mapped[str] = mapped_column(String(255), default="")
+    # Free-text knowledge base: FAQs, pricing, services, policies, etc.
+    # Injected directly into the AI context on every customer message.
+    knowledge_base: Mapped[str] = mapped_column(Text, default="")
+    # Calendly / booking URL — bot sends this when customer asks to schedule.
+    booking_url: Mapped[str] = mapped_column(String(512), default="")
+    # Optional: link to a specific Cerebro Expert for this business.
+    expert_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("experts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    powered_by_footer: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 class SyncOutbox(Base):

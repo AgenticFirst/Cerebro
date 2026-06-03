@@ -1,0 +1,38 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # allow manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            echo "=== Pulling latest code ==="
+            cd ~/Cerebro
+            git pull origin main
+
+            echo "=== Installing new dependencies (if any) ==="
+            npm install --silent
+
+            echo "=== Rebuilding Python dependencies ==="
+            cd backend
+            venv/bin/pip install -r requirements.txt -q
+            cd ..
+
+            echo "=== Restarting Cerebro ==="
+            pm2 restart cerebro
+            pm2 save
+
+            echo "=== Status ==="
+            pm2 status
+            echo "✅ Deploy complete"

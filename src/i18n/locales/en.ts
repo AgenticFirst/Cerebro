@@ -34,6 +34,7 @@ const en = {
     activity: 'Activity',
     approvals: 'Approvals',
     integrations: 'Integrations',
+    pipeline: 'Pipeline',
     skills: 'Skills',
     apps: 'Apps',
     knowledgeBase: 'Knowledge Base',

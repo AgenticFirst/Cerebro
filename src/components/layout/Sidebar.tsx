@@ -13,6 +13,7 @@ import {
   Trash2,
   RotateCcw,
   FolderOpen,
+  BarChart3,
   BookOpen,
   Newspaper,
   CalendarDays,
@@ -48,6 +49,7 @@ const NAV_PRIMARY: NavItemDef[] = [
   { id: 'chat', icon: MessageSquare },
   { id: 'experts', icon: Users },
   { id: 'tasks', icon: Target },
+  { id: 'pipeline', icon: BarChart3 },
   { id: 'routines', icon: Zap },
   { id: 'files', icon: FolderOpen },
 ];
@@ -210,6 +212,7 @@ const NAV_LABEL_KEYS: Record<string, string> = {
   files: 'nav.files',
   experts: 'nav.experts',
   routines: 'nav.routines',
+  pipeline: 'nav.pipeline',
   activity: 'nav.activity',
   approvals: 'nav.approvals',
   'knowledge-base': 'nav.knowledgeBase',

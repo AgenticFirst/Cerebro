@@ -19,6 +19,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import CallScreen from '../screens/CallScreen';
 import TasksScreen from '../screens/TasksScreen';
 import FilesScreen from '../screens/FilesScreen';
+import IMDPipelineScreen from '../screens/IMDPipelineScreen';
 import KnowledgeBaseScreen from '../screens/knowledge-base/KnowledgeBaseScreen';
 import NewsScreen from '../screens/news/NewsScreen';
 import CalendarScreen from '../screens/calendar/CalendarScreen';
@@ -122,6 +123,9 @@ export default function AppLayout() {
     }
     if (activeScreen === 'tasks') {
       return <TasksScreen />;
+    }
+    if (activeScreen === 'pipeline') {
+      return <IMDPipelineScreen />;
     }
     if (activeScreen === 'files') {
       return <FilesScreen />;

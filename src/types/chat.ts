@@ -8,6 +8,7 @@ export type Screen =
   | 'files'
   | 'experts'
   | 'routines'
+  | 'pipeline'
   | 'activity'
   | 'approvals'
   | 'integrations'

@@ -21,6 +21,21 @@ export const WHATSAPP_SETTING_KEYS = {
   phoneUsernames: 'whatsapp_phone_usernames',
   /** phone_number → Cerebro conversation id. */
   phoneConversations: 'whatsapp_phone_conversations',
+  /** The bot's own LID JID (e.g. "212785631903780@lid"). Persisted so fresh
+   *  sessions can detect self-chat immediately before contacts sync completes. */
+  selfLid: 'whatsapp_self_lid',
+  /** Business name shown in the bot's WhatsApp persona. */
+  businessName: 'whatsapp_business_name',
+  /** Business description / what it sells. Used to build the AI system prompt. */
+  businessDescription: 'whatsapp_business_description',
+  /** Business hours (free text, e.g. "Mon-Fri 9am-6pm EST"). */
+  businessHours: 'whatsapp_business_hours',
+  /** Whether to append "Powered by Cerebro" to every reply. */
+  poweredByFooter: 'whatsapp_powered_by_footer',
+  /** Knowledge base text: FAQs, pricing, services, policies. */
+  knowledgeBase: 'whatsapp_knowledge_base',
+  /** Calendly or booking URL — sent when customer asks to schedule. */
+  bookingUrl: 'whatsapp_booking_url',
 } as const;
 
 export interface WhatsAppSettings {
@@ -28,6 +43,12 @@ export interface WhatsAppSettings {
   enabled: boolean;
   phoneUsernames: Record<string, string>;
   phoneConversations: Record<string, string>;
+  businessName: string;
+  businessDescription: string;
+  businessHours: string;
+  poweredByFooter: boolean;
+  knowledgeBase: string;
+  bookingUrl: string;
 }
 
 // Canonical IPC surface types live in src/types/ipc.ts (consistent with how
