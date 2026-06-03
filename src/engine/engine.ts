@@ -12,6 +12,7 @@ import type { WebContents } from 'electron';
 import type { AgentRuntime } from '../agents/runtime';
 import type { EngineRunRequest } from './dag/types';
 import type { EngineActiveRunInfo } from '../types/ipc';
+import type { AutoApprovalRule } from '../types/approvals';
 import type { StepPersistenceUpdate } from './dag/executor';
 import { ActionRegistry } from './actions/registry';
 import { askAiAction, modelCallAction } from './actions/model-call';
@@ -56,6 +57,21 @@ import { createHubSpotCreateTicketAction } from './actions/hubspot-create-ticket
 import { createHubSpotUpsertContactAction } from './actions/hubspot-upsert-contact';
 import { createHubSpotSearchContactAction } from './actions/hubspot-search-contact';
 import { createHubSpotSearchTicketsAction } from './actions/hubspot-search-tickets';
+import { createHubSpotGetTicketAction } from './actions/hubspot-get-ticket';
+import { createHubSpotUpdateTicketAction } from './actions/hubspot-update-ticket';
+import {
+  createHubSpotListObjectsAction,
+  createHubSpotCreateObjectAction,
+  createHubSpotUpdateObjectAction,
+  createHubSpotDeleteObjectAction,
+} from './actions/hubspot-crm-objects';
+import {
+  createHubSpotListListsAction,
+  createHubSpotCreateListAction,
+  createHubSpotUpdateListAction,
+  createHubSpotDeleteListAction,
+  createHubSpotListMembershipAction,
+} from './actions/hubspot-lists';
 import type { HubSpotChannel } from './actions/hubspot-channel';
 import type { CalendarChannel } from './actions/calendar-channel';
 import { createCalendarCreateEventAction } from './actions/calendar-create-event';
@@ -100,6 +116,17 @@ interface PendingApproval {
 
 /** How long to keep event buffers after a run finishes (ms). */
 const EVENT_BUFFER_TTL_MS = 60_000;
+
+/**
+ * Chat actions a user can mark "don't ask again" for, mapped to the param that
+ * identifies the destination (the `target_key` of an auto-approval rule). An
+ * action absent from this map can NEVER skip the approval gate — this map is the
+ * entire bypass surface. Slack message + file both key off `channel`.
+ */
+const AUTO_APPROVAL_TARGET_PARAM: Record<string, string> = {
+  send_slack_message: 'channel',
+  send_slack_file: 'channel',
+};
 
 export class ExecutionEngine {
   private backendPort: number;
@@ -544,6 +571,32 @@ export class ExecutionEngine {
   // ── Chat action helpers ──────────────────────────────────────────
 
   /**
+   * The HubSpot (outbound) action definitions, bound to the live channel
+   * singleton. Single source of truth so the chat-exposable list and the
+   * dry-run registry can't silently drift apart.
+   */
+  private hubSpotActionDefs(): ActionDefinition[] {
+    const getChannel = () => this.hubSpotChannel;
+    return [
+      createHubSpotCreateTicketAction({ getChannel }),
+      createHubSpotUpsertContactAction({ getChannel }),
+      createHubSpotSearchContactAction({ getChannel }),
+      createHubSpotSearchTicketsAction({ getChannel }),
+      createHubSpotGetTicketAction({ getChannel }),
+      createHubSpotUpdateTicketAction({ getChannel }),
+      createHubSpotListObjectsAction({ getChannel }),
+      createHubSpotCreateObjectAction({ getChannel }),
+      createHubSpotUpdateObjectAction({ getChannel }),
+      createHubSpotDeleteObjectAction({ getChannel }),
+      createHubSpotListListsAction({ getChannel }),
+      createHubSpotCreateListAction({ getChannel }),
+      createHubSpotUpdateListAction({ getChannel }),
+      createHubSpotDeleteListAction({ getChannel }),
+      createHubSpotListMembershipAction({ getChannel }),
+    ];
+  }
+
+  /**
    * Build the list of chat-exposable action definitions. Reuses the same
    * factories as `createRegistry`, so channel-bound actions (HubSpot,
    * Telegram, WhatsApp) read from the live channel singletons. Built on
@@ -571,10 +624,7 @@ export class ExecutionEngine {
         backendPort: () => this.backendPort,
       }),
       createSendWhatsAppLocationAction({ getChannel: () => this.whatsAppChannel }),
-      createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }),
-      createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }),
-      createHubSpotSearchContactAction({ getChannel: () => this.hubSpotChannel }),
-      createHubSpotSearchTicketsAction({ getChannel: () => this.hubSpotChannel }),
+      ...this.hubSpotActionDefs(),
       createGitHubCreateIssueAction({ getChannel: () => this.gitHubChannel }),
       createGitHubCommentIssueAction({ getChannel: () => this.gitHubChannel }),
       createGitHubCommentPrAction({ getChannel: () => this.gitHubChannel }),
@@ -646,6 +696,15 @@ export class ExecutionEngine {
       return { status: 'unavailable', error: `Action "${def.name}" is not connected.` };
     }
 
+    // Honor a persistent "don't ask again" rule for this exact destination
+    // (e.g. Slack messages to one channel). Only action types in
+    // AUTO_APPROVAL_TARGET_PARAM can ever skip the gate; everything else — and
+    // any target without a matching rule — still pauses for approval.
+    const autoTarget = this.resolveAutoApprovalTarget(def.type, options.params);
+    const requiresApproval = autoTarget
+      ? !(await this.hasAutoApprovalRule(def.type, autoTarget))
+      : true;
+
     const stepId = 'step_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
     const dag = {
       steps: [
@@ -656,7 +715,7 @@ export class ExecutionEngine {
           params: options.params,
           dependsOn: [],
           inputMappings: [],
-          requiresApproval: true,
+          requiresApproval,
           onError: 'fail' as const,
         },
       ],
@@ -970,10 +1029,7 @@ export class ExecutionEngine {
     registry.register(createSendWhatsAppLocationAction({ getChannel: () => this.whatsAppChannel }));
 
     // HubSpot (outbound only)
-    registry.register(createHubSpotCreateTicketAction({ getChannel: () => this.hubSpotChannel }));
-    registry.register(createHubSpotUpsertContactAction({ getChannel: () => this.hubSpotChannel }));
-    registry.register(createHubSpotSearchContactAction({ getChannel: () => this.hubSpotChannel }));
-    registry.register(createHubSpotSearchTicketsAction({ getChannel: () => this.hubSpotChannel }));
+    for (const action of this.hubSpotActionDefs()) registry.register(action);
 
     // GitHub
     registry.register(createGitHubCreateIssueAction({ getChannel: () => this.gitHubChannel }));
@@ -999,6 +1055,74 @@ export class ExecutionEngine {
     registry.register(runScriptAction);
 
     return registry;
+  }
+
+  // ── Auto-approval ("don't ask again") rules ──────────────────────
+
+  /** Whether an action type is eligible for "don't ask again" rules at all.
+   *  The bridge rejects rules for anything that could never skip the gate. */
+  autoApprovalSupported(actionType: string): boolean {
+    return actionType in AUTO_APPROVAL_TARGET_PARAM;
+  }
+
+  /**
+   * The param value that identifies an auto-approvable action's destination
+   * (e.g. the Slack channel id), or null if this action type can't be
+   * auto-approved or the target param is missing/empty. Used both to look up an
+   * existing bypass rule and to record a new one from the chat agent.
+   */
+  resolveAutoApprovalTarget(
+    actionType: string,
+    params: Record<string, unknown> | undefined,
+  ): string | null {
+    const paramName = AUTO_APPROVAL_TARGET_PARAM[actionType];
+    if (!paramName) return null;
+    const raw = params?.[paramName];
+    return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+  }
+
+  /** True when a persistent "don't ask again" rule exists for this exact
+   *  (actionType, target). Drives the approval-gate bypass in runChatAction. */
+  private async hasAutoApprovalRule(actionType: string, targetKey: string): Promise<boolean> {
+    const res = await this.backendRequest<{ total: number }>(
+      'GET',
+      `/engine/auto-approvals?action_type=${encodeURIComponent(actionType)}&target_key=${encodeURIComponent(targetKey)}`,
+      null,
+    );
+    return (res?.total ?? 0) > 0;
+  }
+
+  /** Record a persistent "don't ask again" rule. Idempotent on the backend. */
+  async addAutoApprovalRule(
+    actionType: string,
+    targetKey: string,
+    targetLabel?: string,
+  ): Promise<AutoApprovalRule | null> {
+    return this.backendRequest<AutoApprovalRule>('POST', '/engine/auto-approvals', {
+      action_type: actionType,
+      target_key: targetKey,
+      target_label: targetLabel ?? null,
+    });
+  }
+
+  /** All auto-approval rules, newest first (for the chat listing / revoke UI). */
+  async listAutoApprovalRules(): Promise<AutoApprovalRule[]> {
+    const res = await this.backendRequest<{ rules: AutoApprovalRule[] }>(
+      'GET',
+      '/engine/auto-approvals',
+      null,
+    );
+    return res?.rules ?? [];
+  }
+
+  /** Revoke every rule matching an exact (actionType, target). Returns count. */
+  async removeAutoApprovalRulesByTarget(actionType: string, targetKey: string): Promise<number> {
+    const res = await this.backendRequest<{ deleted: number }>(
+      'DELETE',
+      `/engine/auto-approvals?action_type=${encodeURIComponent(actionType)}&target_key=${encodeURIComponent(targetKey)}`,
+      null,
+    );
+    return res?.deleted ?? 0;
   }
 
   /** Fire-and-forget HTTP request to the backend. */

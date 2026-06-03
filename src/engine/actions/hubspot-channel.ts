@@ -14,6 +14,12 @@ export interface HubSpotChannel {
   getDefaultPipeline(): string | null;
   /** Default ticket stage id configured in the Integrations screen. */
   getDefaultStage(): string | null;
+  /** Internal name of the custom ticket property that stores the follow-up
+   *  user, configured in the Integrations screen. null when not configured. */
+  getFollowUpProperty(): string | null;
+  /** Internal name of the custom ticket property that stores the due date,
+   *  configured in the Integrations screen. null when not configured. */
+  getDueDateProperty(): string | null;
   /** HubSpot portal id discovered on token verification; used to build
    *  deep-link URLs back to tickets. */
   getPortalId(): string | null;

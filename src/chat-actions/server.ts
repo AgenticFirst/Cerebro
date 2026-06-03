@@ -138,6 +138,18 @@ export class ChatActionServer {
         return await this.handleTeamMemberUpdate(req, res);
       }
 
+      if (req.method === 'POST' && url.pathname === '/chat-actions/auto-approvals') {
+        return await this.handleAutoApprovalCreate(req, res);
+      }
+
+      if (req.method === 'GET' && url.pathname === '/chat-actions/auto-approvals') {
+        return await this.handleAutoApprovalList(res);
+      }
+
+      if (req.method === 'POST' && url.pathname === '/chat-actions/auto-approvals/revoke') {
+        return await this.handleAutoApprovalRevoke(req, res);
+      }
+
       this.respondJson(res, 404, { error: 'not_found' });
     } catch (err) {
       if (err instanceof HttpError) {
@@ -358,6 +370,72 @@ export class ChatActionServer {
     });
 
     this.respondJson(res, 200, { ok: true });
+  }
+
+  // ── /auto-approvals ───────────────────────────────────────────
+  //
+  // "Don't ask again" rules the chat agent records when the user grants a
+  // standing approval for a specific destination (e.g. one Slack channel).
+  // Persisted device-local; consulted by runChatAction before it gates a send.
+
+  /**
+   * Parse and validate the `{action_type, target_key}` shape both the create
+   * and revoke endpoints require. On any failure it writes the 400 response and
+   * returns null (the caller just bails). `body` is returned so create can also
+   * read its optional `target_label`.
+   */
+  private async readAutoApprovalTarget(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<{ actionType: string; targetKey: string; body: unknown } | null> {
+    const body = await readJsonBody(req);
+    if (!body || typeof body !== 'object') {
+      this.respondJson(res, 400, { error: 'body_must_be_json' });
+      return null;
+    }
+    const actionType = readStringField(body, 'action_type');
+    if (!actionType) {
+      this.respondJson(res, 400, { error: 'missing_action_type' });
+      return null;
+    }
+    const targetKey = readStringField(body, 'target_key');
+    if (!targetKey) {
+      this.respondJson(res, 400, { error: 'missing_target_key' });
+      return null;
+    }
+    return { actionType, targetKey, body };
+  }
+
+  private async handleAutoApprovalCreate(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const parsed = await this.readAutoApprovalTarget(req, res);
+    if (!parsed) return;
+    const { actionType, targetKey, body } = parsed;
+
+    if (!this.deps.engine.autoApprovalSupported(actionType)) {
+      return this.respondJson(res, 400, { error: `not_auto_approvable:${actionType}` });
+    }
+
+    const rule = await this.deps.engine.addAutoApprovalRule(
+      actionType,
+      targetKey,
+      readOptionalString(body, 'target_label'),
+    );
+    if (!rule) return this.respondJson(res, 502, { error: 'backend_unavailable' });
+    this.respondJson(res, 200, { ok: true, rule });
+  }
+
+  private async handleAutoApprovalList(res: ServerResponse): Promise<void> {
+    const rules = await this.deps.engine.listAutoApprovalRules();
+    this.respondJson(res, 200, { rules });
+  }
+
+  private async handleAutoApprovalRevoke(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const parsed = await this.readAutoApprovalTarget(req, res);
+    if (!parsed) return;
+    const { actionType, targetKey } = parsed;
+
+    const deleted = await this.deps.engine.removeAutoApprovalRulesByTarget(actionType, targetKey);
+    this.respondJson(res, 200, { ok: true, deleted });
   }
 
   // ── Helpers ───────────────────────────────────────────────────

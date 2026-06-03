@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSendSlackFileAction } from '../actions/send-slack-file';
 import { RunScratchpad } from '../scratchpad';
+import { resolveMediaInput } from '../actions/utils/media-resolver';
 import type { ActionContext, ActionDefinition } from '../actions/types';
 import type { SlackChannel } from '../actions/slack-channel';
+
+vi.mock('../actions/utils/media-resolver', () => ({
+  resolveMediaInput: vi.fn(),
+}));
+
+const resolveMediaInputMock = resolveMediaInput as unknown as ReturnType<typeof vi.fn>;
 
 function makeContext(): ActionContext {
   return {
@@ -42,6 +49,13 @@ let action: ActionDefinition;
 beforeEach(() => {
   channel = makeChannel();
   action = createSendSlackFileAction({ getChannel: () => channel });
+  resolveMediaInputMock.mockReset();
+  resolveMediaInputMock.mockResolvedValue({
+    absPath: '/tmp/report.pdf',
+    fileName: 'report.pdf',
+    mime: null,
+    sizeBytes: 1024,
+  });
 });
 
 describe('createSendSlackFileAction', () => {
@@ -58,19 +72,65 @@ describe('createSendSlackFileAction', () => {
       channel: 'C01ABCDE',
       error: null,
     });
+    expect(resolveMediaInputMock).toHaveBeenCalledWith(9999, undefined, '/tmp/report.pdf');
+    // The resolved absolute path — not the raw input — reaches the bridge.
     expect(channel.calls[0].filePath).toBe('/tmp/report.pdf');
-    expect(channel.calls[0].options).toMatchObject({ comment: 'See attached' });
+    expect(channel.calls[0].options).toMatchObject({ comment: 'See attached', fileName: 'report.pdf' });
   });
 
-  it('throws when channel or file_path empty', async () => {
+  it('de-annotates a `@/path` file_path via the resolver and uploads the real file', async () => {
+    resolveMediaInputMock.mockResolvedValue({
+      absPath: '/home/agents-ia/Desktop/cerebro-logo.png',
+      fileName: 'cerebro-logo.png',
+      mime: null,
+      sizeBytes: 316_000,
+    });
+    const result = await action.execute({
+      params: { channel: 'C01ABCDE', file_path: '@/home/agents-ia/Desktop/cerebro-logo.png' },
+      wiredInputs: {},
+      scratchpad: new RunScratchpad(),
+      context: makeContext(),
+    });
+    expect(resolveMediaInputMock).toHaveBeenCalledWith(
+      9999,
+      undefined,
+      '@/home/agents-ia/Desktop/cerebro-logo.png',
+    );
+    expect(channel.calls[0].filePath).toBe('/home/agents-ia/Desktop/cerebro-logo.png');
+    expect(result.data).toMatchObject({ sent: true });
+  });
+
+  it('resolves a file_item_id through the resolver', async () => {
+    resolveMediaInputMock.mockResolvedValue({
+      absPath: '/var/cerebro/files/abc.pdf',
+      fileName: 'manual.pdf',
+      mime: 'application/pdf',
+      sizeBytes: 2048,
+    });
+    await action.execute({
+      params: { channel: 'C01ABCDE', file_item_id: 'item-123' },
+      wiredInputs: {},
+      scratchpad: new RunScratchpad(),
+      context: makeContext(),
+    });
+    expect(resolveMediaInputMock).toHaveBeenCalledWith(9999, 'item-123', undefined);
+    expect(channel.calls[0].filePath).toBe('/var/cerebro/files/abc.pdf');
+    expect(channel.calls[0].options).toMatchObject({ fileName: 'manual.pdf' });
+  });
+
+  it('throws when channel is empty', async () => {
     await expect(action.execute({
       params: { channel: '', file_path: '/tmp/x' },
       wiredInputs: {}, scratchpad: new RunScratchpad(), context: makeContext(),
     })).rejects.toThrow(/channel is empty/);
+  });
+
+  it('rethrows resolver failures with a Send Slack File prefix', async () => {
+    resolveMediaInputMock.mockRejectedValue(new Error('must provide either file_item_id or file_path'));
     await expect(action.execute({
-      params: { channel: 'C01ABCDE', file_path: '' },
+      params: { channel: 'C01ABCDE' },
       wiredInputs: {}, scratchpad: new RunScratchpad(), context: makeContext(),
-    })).rejects.toThrow(/file_path is empty/);
+    })).rejects.toThrow(/Send Slack File: must provide either file_item_id or file_path/);
   });
 
   it('returns sent:false when upload fails', async () => {

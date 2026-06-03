@@ -33,6 +33,29 @@ export interface SlackTeamInfo {
 }
 
 /**
+ * A file shared in a message. Slack delivers these in the `files[]` array of a
+ * `message`/`app_mention` event (with `subtype: 'file_share'` on DMs). Voice
+ * notes recorded in Slack arrive here too, with `subtype: 'slack_audio'` and a
+ * `mimetype` like `audio/mp4` or `audio/webm`.
+ *
+ * `url_private`/`url_private_download` require an `Authorization: Bearer <bot
+ * token>` fetch (scope `files:read`) — see `SlackApi.downloadFile`.
+ */
+export interface SlackFile {
+  id: string;            // F…
+  name?: string;
+  mimetype?: string;     // e.g. "audio/mp4", "audio/webm"
+  filetype?: string;     // Slack's short label, e.g. "m4a", "webm"
+  url_private?: string;
+  url_private_download?: string;
+  size?: number;
+  /** "slack_audio" for native voice notes. */
+  subtype?: string;
+  /** Slack's own (partial) transcription. Diagnostic only — we run local STT. */
+  transcription?: { status?: string; preview?: { content?: string } };
+}
+
+/**
  * Common shape extracted from the various event payloads we care about.
  * We don't try to mirror Bolt's full discriminated-union event surface —
  * the bridge converts each event into this normalized form before
@@ -54,6 +77,8 @@ export interface SlackInboundContext {
   threadTs?: string;
   /** Raw inbound text, after Slack mrkdwn → text conversion. */
   text: string;
+  /** Files attached to the inbound message (voice notes, images, docs). */
+  files?: SlackFile[];
   /** Surface that produced the event — drives routing. */
   surface: 'app_mention' | 'message_im' | 'slash_command';
   /** For slash commands only: the subcommand and remaining args. */
@@ -69,6 +94,25 @@ export interface SlackInboundContext {
 
 // ── Settings shape (stored via /settings/{key}) ───────────────────
 
+/**
+ * One persisted Slack→Cerebro conversation mapping. Replaces the old bare
+ * `string` (conversation id) value so we can roll DMs / @mentions over to a
+ * fresh conversation after an idle gap and remember how far we've backfilled
+ * a thread. Legacy string values are migrated on load.
+ */
+export interface SlackConversationEntry {
+  /** Cerebro conversation id this Slack key currently maps to. */
+  conversationId: string;
+  /** epoch ms of the last inbound activity — drives idle-gap rotation. */
+  lastActivityAt: number;
+  /**
+   * For channel threads only: the `ts` of the most recent message we've
+   * already fed Cerebro. The next backfill sends only thread messages after
+   * this high-water mark (the full thread on first contact).
+   */
+  lastSeenTs?: string;
+}
+
 export interface SlackSettings {
   botToken: string | null;
   appToken: string | null;
@@ -77,9 +121,9 @@ export interface SlackSettings {
   allowlistChannels: string[];
   /** Slack user ids (U…/W…). '*' means any user. Empty = closed. */
   allowlistUsers: string[];
-  /** threadKey → Cerebro conversation id. */
-  threadConversationMap: Record<string, string>;
-  /** threadKey → expert id pinned to that conversation. */
+  /** conversation key (see `conversationKey`) → mapping entry. */
+  threadConversationMap: Record<string, SlackConversationEntry>;
+  /** conversation key → expert id pinned to that conversation. */
   threadExpertMap: Record<string, string>;
   /** Cached user-id → display name (refreshed via users.info on inbound). */
   userDisplayNames: Record<string, string>;
@@ -111,6 +155,12 @@ export interface SlackSettings {
    *  "run `claude` in a terminal" message to the requesting user. When
    *  null, falls back to the first id in `allowlistUsers`. */
   operatorUserId: string | null;
+  /**
+   * Hours of silence before a rolling DM / @mention session rolls over into a
+   * fresh Cerebro conversation. `null` uses the built-in default (6h). Lets an
+   * operator tune "every day is one chat" without a code change.
+   */
+  sessionIdleHours: number | null;
 }
 
 export const SLACK_SETTING_KEYS = {
@@ -127,6 +177,7 @@ export const SLACK_SETTING_KEYS = {
   teamName: 'slack_team_name',
   botUserId: 'slack_bot_user_id',
   operatorUserId: 'slack_operator_user_id',
+  sessionIdleHours: 'slack_session_idle_hours',
 } as const;
 
 // ── IPC surface (re-exports of the canonical types in types/ipc.ts) ──

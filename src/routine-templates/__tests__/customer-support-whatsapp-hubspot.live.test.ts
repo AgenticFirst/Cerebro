@@ -182,6 +182,8 @@ function buildHubSpotChannel(): HubSpotChannel {
     getPortalId: () => '0',
     getDefaultPipeline: () => PIPELINE,
     getDefaultStage: () => STAGE,
+    getFollowUpProperty: () => null,
+    getDueDateProperty: () => null,
     isConnected: () => true,
     listPipelines: async () => ({ ok: true, pipelines: [] }),
   };

@@ -58,6 +58,13 @@ const REQUIRED_SCOPES: Array<{ slug: string; reasonKey: string }> = [
   { slug: 'tickets', reasonKey: 'hubspotTour.scopeReasonTickets' },
   { slug: 'crm.objects.contacts.read', reasonKey: 'hubspotTour.scopeReasonContactsRead' },
   { slug: 'crm.objects.contacts.write', reasonKey: 'hubspotTour.scopeReasonContactsWrite' },
+  { slug: 'crm.objects.companies.read', reasonKey: 'hubspotTour.scopeReasonCompaniesRead' },
+  { slug: 'crm.objects.companies.write', reasonKey: 'hubspotTour.scopeReasonCompaniesWrite' },
+  { slug: 'crm.objects.deals.read', reasonKey: 'hubspotTour.scopeReasonDealsRead' },
+  { slug: 'crm.objects.deals.write', reasonKey: 'hubspotTour.scopeReasonDealsWrite' },
+  { slug: 'crm.lists.read', reasonKey: 'hubspotTour.scopeReasonListsRead' },
+  { slug: 'crm.lists.write', reasonKey: 'hubspotTour.scopeReasonListsWrite' },
+  { slug: 'crm.objects.owners.read', reasonKey: 'hubspotTour.scopeReasonOwnersRead' },
 ];
 
 // ── Walkthrough screenshots ─────────────────────────────────────

@@ -1087,6 +1087,12 @@ const es: TranslationKeys = {
     pendingTab: 'Pendientes',
     pendingTabCount: 'Pendientes ({{count}})',
     historyTab: 'Historial',
+    autoTab: 'Auto-aprobados',
+    autoSubtitle: 'Estos destinos se envían sin preguntar. Revoca cualquiera para volver a exigir aprobación.',
+    noAuto: 'No hay destinos auto-aprobados',
+    noAutoDescription:
+      'Dile a Cerebro en el chat que deje de pedir aprobación para un canal de Slack específico y aparecerá aquí.',
+    revoke: 'Revocar',
     noPending: 'No hay aprobaciones pendientes',
     noPendingDescription:
       'Cuando un paso de rutina requiera tu autorizaci\u00f3n, aparecer\u00e1 aqu\u00ed.',
@@ -1105,6 +1111,7 @@ const es: TranslationKeys = {
     newToastAction: 'Revisar',
     newNotificationTitle: 'Aprobaci\u00f3n pendiente',
     newNotificationBody: 'Una acci\u00f3n necesita tu revisi\u00f3n antes de ejecutarse.',
+    inlineTitle: 'Aprobaci\u00f3n requerida',
   },
 
   // ── Pantalla de integraciones ───────────────────────────────
@@ -1178,13 +1185,13 @@ const es: TranslationKeys = {
     },
     hubspot: {
       name: 'HubSpot',
-      description: 'Crea tickets y actualiza contactos en tu CRM de HubSpot.',
+      description: 'Gestiona tickets, contactos, empresas, negocios y listas en tu CRM de HubSpot.',
       fields: { accessToken: 'Token de aplicaci\u00f3n privada' },
       hints: { accessToken: 'pat-na1-\u2026 (token de aplicaci\u00f3n privada de HubSpot)' },
       steps: {
         openSettings: 'En HubSpot, abre Configuraci\u00f3n \u2192 Integraciones \u2192 Aplicaciones privadas.',
         createPrivateApp: 'Pulsa Crear aplicaci\u00f3n privada y dale un nombre.',
-        grantScopes: 'En Permisos, habilita tickets, contacts y pipelines (leer + escribir).',
+        grantScopes: 'En Permisos, habilita tickets y pipelines, además de contacts, companies, deals y lists (leer + escribir) para que Cerebro pueda gestionar tus registros y segmentos del CRM.',
         copyToken: 'Pulsa Crear aplicaci\u00f3n, luego Mostrar token y c\u00f3pialo.',
         pasteHere: 'Pega el token en el siguiente paso.',
       },
@@ -2159,14 +2166,14 @@ const es: TranslationKeys = {
   hubspotSection: {
     title: 'HubSpot CRM',
     description:
-      'Abre y actualiza tickets, contactos y negocios en HubSpot desde una rutina.',
+      'Crea, edita, lista y elimina tickets, contactos, empresas, negocios y listas en HubSpot desde el chat o una rutina.',
     keychainEncrypted:
       'El token de acceso se cifra en el llavero de tu sistema operativo.',
     keychainFallback:
       'Llavero del SO no disponible — el token se guarda con codificación de respaldo.',
     tokenLabel: 'Token de acceso de la Private App',
     tokenHelp:
-      'Crea una Private App en la sección Legacy Apps de HubSpot con los permisos <code>tickets</code>, <code>crm.objects.contacts.read</code> y <code>crm.objects.contacts.write</code>, y luego pega el token generado abajo. (Haz clic en <bold>Conectar</bold> en la cabecera de la tarjeta para un tour guiado.)',
+      'Crea una Private App en la sección Legacy Apps de HubSpot con el permiso <code>tickets</code> más lectura + escritura en <code>contacts</code>, <code>companies</code>, <code>deals</code> y <code>lists</code>, y luego pega el token generado abajo. (Haz clic en <bold>Conectar</bold> en la cabecera de la tarjeta para un tour guiado.)',
     tokenPlaceholder: 'pat-na1-...',
     verify: 'Verificar',
     verifying: 'Verificando…',
@@ -2184,6 +2191,11 @@ const es: TranslationKeys = {
     loadingPipelines: 'Cargando pipelines…',
     pipelinePlaceholder: '— Pipeline —',
     stagePlaceholder: '— Etapa —',
+    customFieldsHelp:
+      'Opcional: asigna las propiedades personalizadas de tickets de tu portal para que el chat y las rutinas puedan establecer un usuario de seguimiento y una fecha de vencimiento por nombre. Deja en blanco para desactivar cada una.',
+    followUpPropertyLabel: 'Propiedad de usuario de seguimiento',
+    dueDatePropertyLabel: 'Propiedad de fecha de vencimiento',
+    propertyNone: '— Ninguna —',
     saved: 'Guardado',
     saveDefaults: 'Guardar predeterminados',
     unknownError: 'Error desconocido',
@@ -2233,7 +2245,7 @@ const es: TranslationKeys = {
       'Elige algo memorable, p. ej. "Cerebro". Luego haz clic en la pestaña "Scopes" arriba.',
     walk5Caption: 'Scopes — elige qué puede hacer Cerebro.',
     walk5Hint:
-      'Haz clic en "Add new scope", luego busca y marca los tres scopes que aparecen debajo de este tutorial. Haz clic en Update y luego en "Create app" arriba a la derecha.',
+      'Haz clic en "Add new scope", luego busca y marca los scopes que aparecen debajo de este tutorial. Haz clic en Update y luego en "Create app" arriba a la derecha.',
     walk6Caption: 'HubSpot confirma.',
     walk6Hint: 'Haz clic en "Continue creating".',
     walk7Caption: 'Listo — tu token de acceso está en la pestaña Auth.',
@@ -2246,6 +2258,20 @@ const es: TranslationKeys = {
       'Buscar un cliente existente por email o teléfono antes de crear un ticket.',
     scopeReasonContactsWrite:
       'Crear o actualizar el registro de contacto del cliente.',
+    scopeReasonCompaniesRead:
+      'Listar y leer empresas, y saber a qué empresa pertenece un ticket o contacto.',
+    scopeReasonCompaniesWrite:
+      'Crear, editar y eliminar empresas desde el chat o una rutina.',
+    scopeReasonDealsRead:
+      'Listar y leer negocios en todos tus pipelines.',
+    scopeReasonDealsWrite:
+      'Crear, editar y eliminar negocios desde el chat o una rutina.',
+    scopeReasonListsRead:
+      'Listar y leer tus listas (segmentos).',
+    scopeReasonListsWrite:
+      'Crear, renombrar y eliminar listas, y añadir o quitar registros de ellas.',
+    scopeReasonOwnersRead:
+      'Resolver el propietario de un ticket o el usuario de seguimiento indicado por nombre o correo al usuario de HubSpot correcto.',
 
     step3AlreadySavedBody:
       'Ya hay un token de HubSpot guardado. Continúa para elegir tu pipeline de tickets predeterminado, o reemplaza el token si lo rotaste.',

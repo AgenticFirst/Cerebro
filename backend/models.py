@@ -262,6 +262,31 @@ class ApprovalRequest(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class AutoApprovalRule(Base):
+    """A user-granted "don't ask again" rule that skips the approval gate for a
+    specific chat action aimed at a specific destination — e.g. Slack messages
+    to one channel id.
+
+    Scoped narrowly to one (action_type, target_key) pair: a new target still
+    pauses for approval the first time. Device-local — never replicates to the
+    cloud (omitted from cloud_sync SYNCED_TABLES), so granting an approval
+    bypass on one machine can't silently weaken the gate on another.
+    """
+
+    __tablename__ = "auto_approval_rules"
+    __table_args__ = (
+        UniqueConstraint("action_type", "target_key", name="uq_auto_approval_action_target"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    action_type: Mapped[str] = mapped_column(String(50), index=True)
+    target_key: Mapped[str] = mapped_column(String(255))
+    # Human-readable destination shown in the revoke UI (e.g. "#general").
+    # Falls back to target_key when absent.
+    target_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class ExecutionEventRecord(Base):
     __tablename__ = "execution_events"
     __table_args__ = (

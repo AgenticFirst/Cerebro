@@ -6,11 +6,13 @@
 
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { renderTemplate } from './utils/template';
+import { resolveMediaInput } from './utils/media-resolver';
 import type { SlackChannel } from './slack-channel';
 
 interface SendSlackFileParams {
   channel: string;
-  file_path: string;
+  file_item_id?: string;
+  file_path?: string;
   comment?: string;
   file_name?: string;
   thread_ts?: string;
@@ -46,12 +48,16 @@ export function createSendSlackFileAction(deps: { getChannel: () => SlackChannel
       type: 'object',
       properties: {
         channel: { type: 'string', description: 'Slack channel id (C…/G…) or DM channel id (D…).' },
-        file_path: { type: 'string', description: 'Absolute path of the file to upload.' },
+        file_item_id: { type: 'string', description: 'Preferred: id of a registered FileItem on disk.' },
+        file_path: {
+          type: 'string',
+          description: 'Escape hatch: absolute path to a file on disk Cerebro just created.',
+        },
         comment: { type: 'string', description: 'Optional comment posted with the file.' },
         file_name: { type: 'string', description: 'Optional override for the displayed filename.' },
         thread_ts: { type: 'string', description: 'Optional thread root ts.' },
       },
-      required: ['channel', 'file_path'],
+      required: ['channel'],
     },
 
     outputSchema: {
@@ -76,18 +82,34 @@ export function createSendSlackFileAction(deps: { getChannel: () => SlackChannel
       const params = input.params as unknown as SendSlackFileParams;
       const vars = input.wiredInputs ?? {};
       const channelId = renderTemplate(params.channel ?? '', vars).trim();
-      const filePath = renderTemplate(params.file_path ?? '', vars).trim();
       const comment = params.comment ? renderTemplate(params.comment, vars) : undefined;
-      const fileName = params.file_name ? renderTemplate(params.file_name, vars) : undefined;
       const threadTs = params.thread_ts ? renderTemplate(params.thread_ts, vars).trim() : undefined;
 
       if (!channelId) throw new Error('Send Slack File: channel is empty.');
-      if (!filePath) throw new Error('Send Slack File: file_path is empty.');
       if (!channel.isAllowlisted(channelId)) {
         throw new Error(`Send Slack File: channel ${channelId} is not in the Slack allowlist.`);
       }
 
-      const { fileId, error } = await channel.sendFileActionMessage(channelId, filePath, {
+      const fileItemId = params.file_item_id
+        ? renderTemplate(params.file_item_id, vars).trim() || undefined
+        : undefined;
+      const filePath = params.file_path
+        ? renderTemplate(params.file_path, vars).trim() || undefined
+        : undefined;
+
+      let resolved;
+      try {
+        resolved = await resolveMediaInput(input.context.backendPort, fileItemId, filePath);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Send Slack File: ${msg}`);
+      }
+
+      const fileName = params.file_name
+        ? renderTemplate(params.file_name, vars)
+        : resolved.fileName;
+
+      const { fileId, error } = await channel.sendFileActionMessage(channelId, resolved.absPath, {
         comment, fileName, threadTs,
       });
 

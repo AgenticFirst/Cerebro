@@ -9,7 +9,13 @@
  * any boundary the operator might see.
  */
 
+import { createWriteStream } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { WebClient, type ChatPostMessageArguments, type ChatUpdateArguments, type ChatDeleteArguments } from '@slack/web-api';
+
+/** Block Kit array shape accepted by chat.postMessage / chat.update. */
+export type SlackBlocks = NonNullable<ChatPostMessageArguments['blocks']>;
 
 /** Remove anything resembling a Slack token from a string. */
 export function scrubTokenish(s: string): string {
@@ -255,6 +261,37 @@ export class SlackApi {
     }
   }
 
+  /**
+   * Fetch the messages of a thread (the root + its replies), oldest-first.
+   * Used to backfill context when Cerebro is @mentioned mid-thread — it only
+   * receives messages that mention it, so without this it's blind to the rest
+   * of the conversation. Requires a `*:history` scope for the surface
+   * (`im:history` for DMs, `channels:history`/`groups:history`/`mpim:history`
+   * for channels).
+   */
+  async conversationsReplies(args: {
+    channel: string;
+    ts: string;
+    limit?: number;
+  }): Promise<Array<{ ts: string; user?: string; text: string }>> {
+    try {
+      const res = await this.client.conversations.replies({
+        channel: args.channel,
+        ts: args.ts,
+        limit: args.limit ?? 200,
+      });
+      const messages = (res as { messages?: Array<{ ts?: string; user?: string; text?: string }> }).messages;
+      if (!Array.isArray(messages)) return [];
+      return messages.map((m) => ({
+        ts: String(m.ts ?? ''),
+        user: m.user,
+        text: m.text ?? '',
+      }));
+    } catch (err) {
+      throw this.wrap('conversations.replies', err);
+    }
+  }
+
   /** Publish (or update) a user's App Home tab view. */
   async viewsPublish(args: { userId: string; view: object }): Promise<void> {
     try {
@@ -291,6 +328,37 @@ export class SlackApi {
     } catch (err) {
       throw this.wrap('files.uploadV2', err);
     }
+  }
+
+  /**
+   * Download a file shared in a message to `destPath`. Slack's `url_private` /
+   * `url_private_download` are bearer-authed with the bot token and require the
+   * `files:read` scope — installs created before that scope was added must be
+   * reinstalled or these return HTTP 403.
+   *
+   * Guard: an expired/invalid `url_private` answers with the workspace login
+   * HTML page at HTTP 200, not a 4xx. We sniff `content-type` and treat any
+   * `text/html` body as a failure rather than writing a useless HTML file.
+   */
+  async downloadFile(url: string, destPath: string): Promise<void> {
+    let res: Response;
+    try {
+      res = await fetch(url, { headers: { Authorization: `Bearer ${this.token}` } });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new SlackApiError('files.download', null, scrubTokenish(msg));
+    }
+    if (!res.ok || !res.body) {
+      throw new SlackApiError('files.download', null, `download failed (${res.status})`);
+    }
+    const contentType = res.headers.get('content-type') ?? '';
+    if (contentType.toLowerCase().startsWith('text/html')) {
+      // Stale url_private → login page. Bot likely lacks files:read or the URL expired.
+      throw new SlackApiError('files.download', 'not_authed', 'download returned an HTML login page (missing files:read or expired URL)');
+    }
+    // Node's fetch returns a Web ReadableStream — convert to a Node Readable for pipeline.
+    const nodeStream = Readable.fromWeb(res.body as unknown as import('node:stream/web').ReadableStream);
+    await pipeline(nodeStream, createWriteStream(destPath));
   }
 
   async conversationsList(types: string = 'public_channel,private_channel'): Promise<SlackChannelSummary[]> {
@@ -383,4 +451,59 @@ export class SlackApi {
     }
     return new SlackApiError(method, code, scrubTokenish(msg));
   }
+}
+
+// ── Approval Block Kit builders ───────────────────────────────────
+
+/** action_id prefix used by the interactive approval buttons (matched in the bridge). */
+export const APPROVAL_ACTION_APPROVE = 'approval_approve';
+export const APPROVAL_ACTION_DENY = 'approval_deny';
+
+/**
+ * Build the interactive Approve/Deny message for an approval — mirrors
+ * Telegram's `approvalKeyboard`. The approvalId rides in each button's `value`
+ * so the bridge's `app.action` handler can resolve it. Summary is assumed
+ * already scrubbed by the caller.
+ */
+export function approvalBlocks(approvalId: string, summary: string): SlackBlocks {
+  return [
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `:lock: *Approval pending*\n\n> ${summary}` },
+    },
+    {
+      type: 'actions',
+      block_id: `approval:${approvalId}`,
+      elements: [
+        {
+          type: 'button',
+          action_id: APPROVAL_ACTION_APPROVE,
+          text: { type: 'plain_text', text: 'Approve' },
+          style: 'primary',
+          value: approvalId,
+        },
+        {
+          type: 'button',
+          action_id: APPROVAL_ACTION_DENY,
+          text: { type: 'plain_text', text: 'Deny' },
+          style: 'danger',
+          value: approvalId,
+        },
+      ],
+    },
+  ];
+}
+
+/**
+ * Build the static (button-less) replacement shown once an approval is
+ * resolved — used to `chat.update` the original message so the buttons can't be
+ * clicked again, regardless of which surface resolved it.
+ */
+export function approvalResolvedBlocks(text: string): SlackBlocks {
+  return [
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text },
+    },
+  ];
 }

@@ -4,6 +4,7 @@ import { HelpCircle } from 'lucide-react';
 import clsx from 'clsx';
 import type { Conversation } from '../../types/chat';
 import MessageList from './MessageList';
+import InlineApprovals from './InlineApprovals';
 import ChatInput, { type ChatInputHandle } from './ChatInput';
 import CapabilitiesModal from './CapabilitiesModal';
 import SandboxBanner from './SandboxBanner';
@@ -85,7 +86,11 @@ export default function ChatView({ conversation, onSend, isStreaming, isThinking
         <HelpCircle size={16} />
       </button>
 
-      <MessageList messages={conversation.messages} conversationId={conversation.id} />
+      <MessageList
+        messages={conversation.messages}
+        conversationId={conversation.id}
+        footer={<InlineApprovals conversationId={conversation.id} />}
+      />
       <div className="px-4 pb-4">
         <div className="mx-auto max-w-3xl">
           <ChatInput ref={chatInputRef} onSend={onSend} onStop={stopMessage} isStreaming={isStreaming} />

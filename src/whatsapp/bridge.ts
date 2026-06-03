@@ -49,6 +49,7 @@ import {
 import crypto from 'node:crypto';
 import { MediaIngestService } from '../files/media-ingest';
 import { IntegrationStaging } from '../files/staging';
+import { SttLoader, STT_LOADING_NOTICE } from '../files/stt-loader';
 
 // ── Tunables ────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ const HISTORY_MESSAGES_IN_PAYLOAD = 20;
 const WATCHDOG_INTERVAL_MS = 45_000;        // probe a connected socket every 45s
 const WATCHDOG_PROBE_TIMEOUT_MS = 20_000;   // a probe that hangs >20s counts as a failure
 const WATCHDOG_MAX_FAILURES = 3;            // ~2-3 min of silence before forced reconnect
+
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -141,6 +143,8 @@ export class WhatsAppBridge implements WhatsAppChannel {
   private staging: IntegrationStaging;
   // Lazily-cached Baileys helper for downloading inbound media bytes.
   private downloadMedia: ((msg: any) => Promise<Buffer>) | null = null;
+  /** Voice STT lazy-load, shared across bridges (coalesces concurrent loads). */
+  private readonly sttLoader = new SttLoader(() => this.deps.backendPort);
 
   constructor(deps: BridgeDeps) {
     this.deps = deps;
@@ -194,6 +198,7 @@ export class WhatsAppBridge implements WhatsAppChannel {
     } catch { /* ignore */ }
     this.sock = null;
     this.saveCreds = null;
+    this.sttLoader.reset();
     this.setState({ state: 'off', qr: null });
   }
 
@@ -787,6 +792,27 @@ export class WhatsAppBridge implements WhatsAppChannel {
     // TTL cleanup mirrors Telegram (30 min).
     this.staging.scheduleCleanup(dest);
 
+    // Voice notes / audio: make sure the Whisper STT model is loaded before
+    // MediaIngestService hits /voice/stt/transcribe-file. The first voice note
+    // in a session may need to download the model (~30–60s) — ensureSTTReady
+    // sends a one-time notice so the user knows why there's a delay. Mirrors
+    // Telegram and Slack. Without this the backend returns 503 and the agent
+    // only sees a "transcription unavailable" placeholder.
+    if (media.kind === 'voice' || media.kind === 'audio') {
+      const jid = msg?.key?.remoteJid as string | undefined;
+      const ready = await this.ensureSTTReady(jid);
+      if (!ready) {
+        if (jid) {
+          await this.notifyUser(
+            jid,
+            '🎙️ Voice transcription is unavailable right now. '
+            + 'Try typing your message, or open Settings → Voice to set it up.',
+          );
+        }
+        return null;
+      }
+    }
+
     try {
       const resolved = await this.mediaIngest.ingest({
         filePath: dest,
@@ -797,6 +823,26 @@ export class WhatsAppBridge implements WhatsAppChannel {
       logError('media ingest failed:', err instanceof Error ? err.message : String(err));
       return `[attachment at ${dest}]`;
     }
+  }
+
+  /** Send a transient system note straight to the socket — no rate-limit spend,
+   *  no history persistence (unlike sendActionMessage). Best-effort. */
+  private async notifyUser(jid: string, text: string): Promise<void> {
+    if (!this.sock || this.state.state !== 'connected') return;
+    try {
+      await this.sock.sendMessage(jid, { text });
+    } catch { /* non-fatal */ }
+  }
+
+  /**
+   * Ensure the Whisper STT model is loaded, sending a one-time "loading…" notice
+   * to the user on a cold start. Returns true once /voice/stt/transcribe-file is
+   * safe to call. See `SttLoader` for the shared load/download/coalesce logic.
+   */
+  private ensureSTTReady(jid: string | undefined): Promise<boolean> {
+    return this.sttLoader.ensureReady(async () => {
+      if (jid) await this.notifyUser(jid, STT_LOADING_NOTICE);
+    });
   }
 
   // ── Backend helpers ──────────────────────────────────────────

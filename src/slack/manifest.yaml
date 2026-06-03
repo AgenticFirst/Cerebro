@@ -1,6 +1,6 @@
 _metadata:
   major_version: 1
-  minor_version: 1
+  minor_version: 3
 
 display_information:
   name: Cerebro
@@ -39,6 +39,16 @@ oauth_config:
       - users:read
       - reactions:write
       - files:write
+      # files:read lets the bot download shared files (e.g. voice notes) via
+      # url_private. Scope grants are NOT retroactive — existing installs must
+      # reinstall/reauthorize Cerebro before voice-note downloads stop 403ing.
+      - files:read
+      # channels/groups/mpim history let the bot read a thread it was mentioned
+      # in (conversations.replies) so it has the full context, not just the
+      # message that pinged it. Also NOT retroactive — reinstall to grant.
+      - channels:history
+      - groups:history
+      - mpim:history
 
 settings:
   event_subscriptions:

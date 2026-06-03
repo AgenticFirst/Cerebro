@@ -21,12 +21,15 @@ import {
 } from '../secure-token';
 import { backendGetSetting, backendPutSetting } from '../shared/backend-settings';
 import { callHubSpotApi } from './api';
+import { listTicketProperties, type ListTicketPropertiesResult } from './properties';
 
 export const HUBSPOT_SETTING_KEYS = {
   accessToken: 'hubspot_access_token',
   portalId: 'hubspot_portal_id',
   defaultPipeline: 'hubspot_default_pipeline',
   defaultStage: 'hubspot_default_stage',
+  followUpProperty: 'hubspot_followup_property',
+  dueDateProperty: 'hubspot_duedate_property',
   enabled: 'hubspot_enabled',
 } as const;
 
@@ -41,6 +44,8 @@ export class HubSpotHolder implements HubSpotChannel {
   private portalId: string | null = null;
   private defaultPipeline: string | null = null;
   private defaultStage: string | null = null;
+  private followUpProperty: string | null = null;
+  private dueDateProperty: string | null = null;
   private pipelinesCache: { pipelines: HubSpotPipelineSummary[]; at: number } | null = null;
 
   constructor(private deps: HolderDeps) {}
@@ -49,17 +54,21 @@ export class HubSpotHolder implements HubSpotChannel {
   getPortalId(): string | null { return this.portalId; }
   getDefaultPipeline(): string | null { return this.defaultPipeline; }
   getDefaultStage(): string | null { return this.defaultStage; }
+  getFollowUpProperty(): string | null { return this.followUpProperty; }
+  getDueDateProperty(): string | null { return this.dueDateProperty; }
   isConnected(): boolean {
     return Boolean(this.accessToken && this.defaultPipeline && this.defaultStage);
   }
 
   /** Load from backend settings on startup. */
   async init(): Promise<void> {
-    const [encToken, portal, pipeline, stage] = await Promise.all([
+    const [encToken, portal, pipeline, stage, followUp, dueDate] = await Promise.all([
       backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.accessToken),
       backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.portalId),
       backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultPipeline),
       backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultStage),
+      backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.followUpProperty),
+      backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.dueDateProperty),
     ]);
     if (typeof encToken === 'string' && encToken) {
       this.accessToken = decryptFromStorage(encToken);
@@ -67,6 +76,8 @@ export class HubSpotHolder implements HubSpotChannel {
     this.portalId = typeof portal === 'string' ? portal : null;
     this.defaultPipeline = typeof pipeline === 'string' ? pipeline : null;
     this.defaultStage = typeof stage === 'string' ? stage : null;
+    this.followUpProperty = typeof followUp === 'string' && followUp ? followUp : null;
+    this.dueDateProperty = typeof dueDate === 'string' && dueDate ? dueDate : null;
   }
 
   /** Verify a token by calling the HubSpot account-info endpoint. Returns the
@@ -109,6 +120,13 @@ export class HubSpotHolder implements HubSpotChannel {
     return { ok: true, pipelines };
   }
 
+  /** List the portal's ticket properties so the settings UI can offer the
+   *  follow-up-user and due-date pickers. Cached per token in properties.ts. */
+  async listTicketProperties(): Promise<ListTicketPropertiesResult> {
+    if (!this.accessToken) return { ok: false, error: 'No access token configured' };
+    return listTicketProperties(this.accessToken);
+  }
+
   async setToken(token: string): Promise<{ ok: boolean; error?: string }> {
     const trimmed = token.trim();
     if (!trimmed) return { ok: false, error: 'Empty token' };
@@ -131,23 +149,43 @@ export class HubSpotHolder implements HubSpotChannel {
     this.portalId = null;
     this.defaultPipeline = null;
     this.defaultStage = null;
+    this.followUpProperty = null;
+    this.dueDateProperty = null;
     this.pipelinesCache = null;
     await Promise.all([
       backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.accessToken, ''),
       backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.portalId, ''),
       backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultPipeline, ''),
       backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultStage, ''),
+      backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.followUpProperty, ''),
+      backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.dueDateProperty, ''),
       backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.enabled, false),
     ]);
   }
 
-  async setDefaults(defaults: { pipeline: string | null; stage: string | null }): Promise<void> {
+  async setDefaults(defaults: {
+    pipeline: string | null;
+    stage: string | null;
+    followUpProperty?: string | null;
+    dueDateProperty?: string | null;
+  }): Promise<void> {
     this.defaultPipeline = defaults.pipeline ?? null;
     this.defaultStage = defaults.stage ?? null;
-    await Promise.all([
+    const writes: Array<Promise<unknown>> = [
       backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultPipeline, this.defaultPipeline ?? ''),
       backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultStage, this.defaultStage ?? ''),
-    ]);
+    ];
+    // Only touch the custom-property settings when the caller passes them, so an
+    // older client that omits these fields doesn't blank them out.
+    if (defaults.followUpProperty !== undefined) {
+      this.followUpProperty = defaults.followUpProperty || null;
+      writes.push(backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.followUpProperty, this.followUpProperty ?? ''));
+    }
+    if (defaults.dueDateProperty !== undefined) {
+      this.dueDateProperty = defaults.dueDateProperty || null;
+      writes.push(backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.dueDateProperty, this.dueDateProperty ?? ''));
+    }
+    await Promise.all(writes);
   }
 
   status(): HubSpotStatusResponse {
@@ -156,6 +194,8 @@ export class HubSpotHolder implements HubSpotChannel {
       portalId: this.portalId,
       defaultPipeline: this.defaultPipeline,
       defaultStage: this.defaultStage,
+      followUpProperty: this.followUpProperty,
+      dueDateProperty: this.dueDateProperty,
       tokenBackend: secureTokenBackend(),
     };
   }

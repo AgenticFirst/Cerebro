@@ -48,19 +48,22 @@ export async function resolveMediaInput(
     };
   }
   if (filePath) {
-    if (!filePath.startsWith('/')) {
+    // `@/abs/path` is Cerebro's chat attachment annotation (see media-ingest.ts);
+    // the agent often copies it verbatim. Strip the leading sentinel.
+    const normalized = filePath.startsWith('@/') ? filePath.slice(1) : filePath;
+    if (!normalized.startsWith('/')) {
       throw new Error('file_path must be an absolute path');
     }
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`file_path not found on disk: ${filePath}`);
+    if (!fs.existsSync(normalized)) {
+      throw new Error(`file_path not found on disk: ${normalized}`);
     }
-    const stat = fs.statSync(filePath);
+    const stat = fs.statSync(normalized);
     if (!stat.isFile()) {
-      throw new Error(`file_path is not a regular file: ${filePath}`);
+      throw new Error(`file_path is not a regular file: ${normalized}`);
     }
     return {
-      absPath: filePath,
-      fileName: basename(filePath),
+      absPath: normalized,
+      fileName: basename(normalized),
       mime: null,
       sizeBytes: stat.size,
     };

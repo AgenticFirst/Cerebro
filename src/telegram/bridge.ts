@@ -52,6 +52,7 @@ import {
 import { MediaIngestService } from '../files/media-ingest';
 import type { ResolvedAttachment } from '../files/types';
 import { IntegrationStaging } from '../files/staging';
+import { SttLoader, STT_LOADING_NOTICE } from '../files/stt-loader';
 import { getLoginOrchestrator, type LoginSnapshot } from '../claude-code/login-orchestrator';
 
 // ── Tunables ──────────────────────────────────────────────────────
@@ -81,10 +82,6 @@ const RUN_WATCHDOG_INTERVAL_MS = 30_000;
 // the same effect. Drop any message we've already touched in the last minute.
 const MESSAGE_DEDUPE_WINDOW_MS = 60_000;
 const MESSAGE_DEDUPE_MAX_ENTRIES = 200;
-// faster-whisper-base — the STT model Settings → Voice installs and the
-// /voice/stt/load endpoint expects. Defined in backend/voice/catalog.py.
-const STT_MODEL_ID = 'faster-whisper-base';
-
 const ALLOWED_MIME = new Set([
   'image/png',
   'image/jpeg',
@@ -508,10 +505,9 @@ export class TelegramBridge implements TelegramChannel {
   // this message_id within MESSAGE_DEDUPE_WINDOW_MS, drop the redelivery.
   private recentlyHandledMessageIds = new Map<number, number>();
 
-  // Voice STT lazy-load: shared in-flight promise so a burst of voice notes
-  // from any chat coalesces to a single load attempt instead of triggering
-  // parallel /voice/stt/load calls.
-  private sttLoadInFlight: Promise<boolean> | null = null;
+  // Voice STT lazy-load, shared across bridges (coalesces a burst of voice
+  // notes onto one load attempt).
+  private readonly sttLoader = new SttLoader(() => this.deps.backendPort);
 
   private engineListener: ((event: ExecutionEvent, ctx: EngineEventContext) => void) | null = null;
 
@@ -1705,10 +1701,21 @@ export class TelegramBridge implements TelegramChannel {
       return;
     }
 
-    const res = await backendRequest(this.deps.backendPort, 'PATCH', `/engine/approvals/${approvalId}/resolve`, {
-      decision: approved ? 'approved' : 'denied',
-      reason: approved ? null : 'Denied via Telegram',
-    });
+    // Resolve through the in-process engine — that's the only path that unblocks
+    // the paused run AND broadcasts approval_granted/denied to the other surfaces
+    // (the in-app card, the Approvals screen). A bare backend PATCH would update
+    // the DB row but leave the run paused forever.
+    const reason = approved ? undefined : 'Denied via Telegram';
+    let ok = false;
+    if (this.deps.executionEngine) {
+      ok = await this.deps.executionEngine.resolveApproval(approvalId, approved, reason);
+    } else {
+      const res = await backendRequest(this.deps.backendPort, 'PATCH', `/engine/approvals/${approvalId}/resolve`, {
+        decision: approved ? 'approved' : 'denied',
+        reason: reason ?? null,
+      });
+      ok = res.ok;
+    }
 
     const note = approved ? '✅ Approved' : '❌ Denied';
     if (cb.message) {
@@ -1720,7 +1727,7 @@ export class TelegramBridge implements TelegramChannel {
         );
       } catch { /* ignore */ }
     }
-    await this.api.answerCallbackQuery(cb.id, res.ok ? note : 'Failed').catch(() => { /* ignore */ });
+    await this.api.answerCallbackQuery(cb.id, ok ? note : 'Failed').catch(() => { /* ignore */ });
   }
 
   private async ensureConversation(chatId: number): Promise<string> {
@@ -2020,121 +2027,16 @@ export class TelegramBridge implements TelegramChannel {
 
 
   /**
-   * Ensure the Whisper STT model is loaded and ready to transcribe. Idempotent
-   * and safe to call from concurrent voice-note handlers — all callers share
-   * a single in-flight load promise. On a cold start the helper sends a
-   * one-time "loading transcription model" notice to `chatId` so the user
-   * knows to expect a delay; downstream voice notes that arrive after the
-   * model is loaded skip the notice and complete instantly.
-   *
-   * Returns true once `/voice/stt/transcribe-file` is safe to call. Returns
-   * false on any unrecoverable failure (network, missing model that can't be
-   * auto-downloaded, etc.) — callers should surface a graceful message and
-   * skip the agent invocation entirely.
+   * Ensure the Whisper STT model is loaded and ready to transcribe. On a cold
+   * start it posts a one-time "loading transcription model" notice to `chatId`
+   * so the user expects a delay. Returns true once
+   * `/voice/stt/transcribe-file` is safe to call, false on any unrecoverable
+   * failure — callers should surface a graceful message and skip the agent
+   * invocation. See `SttLoader` for the shared load/download/coalesce logic.
    */
-  private async ensureSTTReady(chatId: number): Promise<boolean> {
-    const port = this.deps.backendPort;
-
-    // Fast path: already loaded.
-    const status = await backendRequest<{ stt: { is_loaded: boolean } }>(port, 'GET', '/voice/status');
-    if (status.ok && status.data?.stt?.is_loaded) return true;
-
-    // Coalesce a burst of voice notes onto one load attempt.
-    if (this.sttLoadInFlight) {
-      return this.sttLoadInFlight;
-    }
-
-    const load = (async (): Promise<boolean> => {
-      // Tell the user this first one is slow before we start downloading.
-      if (this.api) {
-        try {
-          await this.api.sendMessage(
-            chatId,
-            '🎙️ First voice note in this session — loading the transcription model. '
-            + 'Future voice notes will be instant. (~30–60s if downloading for the first time.)',
-          );
-        } catch { /* non-fatal */ }
-      }
-
-      // Try loading directly. 404 means the model isn't on disk → auto-download.
-      let loadRes = await backendRequest(port, 'POST', '/voice/stt/load');
-      if (loadRes.status === 404) {
-        const downloaded = await this.downloadSTTModel();
-        if (!downloaded) return false;
-        loadRes = await backendRequest(port, 'POST', '/voice/stt/load');
-      }
-      return loadRes.ok;
-    })();
-
-    this.sttLoadInFlight = load.finally(() => {
-      this.sttLoadInFlight = null;
-    });
-    return this.sttLoadInFlight;
-  }
-
-  /**
-   * Trigger and wait for the Whisper STT model download via the existing
-   * /voice/download SSE stream. Resolves true when the catalog reports the
-   * model installed, false on any error or unexpected terminal state.
-   */
-  private async downloadSTTModel(): Promise<boolean> {
-    const port = this.deps.backendPort;
-    const start = await backendRequest<{ state: { status: string } }>(
-      port,
-      'POST',
-      '/voice/download/start',
-      { model_id: STT_MODEL_ID },
-    );
-    // 409 = already in progress — fine, we'll just attach to the stream.
-    if (!start.ok && start.status !== 409) return false;
-
-    return new Promise<boolean>((resolve) => {
-      let settled = false;
-      const finish = (ok: boolean): void => {
-        if (settled) return;
-        settled = true;
-        req.destroy();
-        resolve(ok);
-      };
-      const req = http.get(
-        `http://127.0.0.1:${port}/voice/download/stream/${STT_MODEL_ID}`,
-        (res) => {
-          if (res.statusCode !== 200) {
-            res.resume();
-            finish(false);
-            return;
-          }
-          let buf = '';
-          res.on('data', (c: Buffer) => {
-            buf += c.toString();
-            // SSE frames are `data: <json>\n\n`. Process complete frames.
-            let idx;
-            while ((idx = buf.indexOf('\n\n')) !== -1) {
-              const frame = buf.slice(0, idx);
-              buf = buf.slice(idx + 2);
-              const line = frame.split('\n').find((l) => l.startsWith('data: '));
-              if (!line) continue;
-              try {
-                const evt = JSON.parse(line.slice(6)) as { state?: string; status?: string };
-                const state = evt.state || evt.status;
-                if (state === 'installed' || state === 'completed' || state === 'done') {
-                  finish(true);
-                  return;
-                }
-                if (state === 'failed' || state === 'cancelled' || state === 'error') {
-                  finish(false);
-                  return;
-                }
-              } catch { /* ignore malformed frame */ }
-            }
-          });
-          res.on('end', () => finish(false));
-          res.on('error', () => finish(false));
-        },
-      );
-      req.on('error', () => finish(false));
-      // Allow plenty of time — the model is ~150MB.
-      req.setTimeout(5 * 60 * 1000, () => finish(false));
+  private ensureSTTReady(chatId: number): Promise<boolean> {
+    return this.sttLoader.ensureReady(async () => {
+      if (this.api) await this.api.sendMessage(chatId, STT_LOADING_NOTICE);
     });
   }
 

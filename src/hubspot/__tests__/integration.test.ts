@@ -50,6 +50,8 @@ function buildChannel(token: string, opts: Partial<{ pipeline: string; stage: st
     getPortalId: () => opts.portalId ?? null,
     getDefaultPipeline: () => opts.pipeline ?? null,
     getDefaultStage: () => opts.stage ?? null,
+    getFollowUpProperty: () => null,
+    getDueDateProperty: () => null,
     isConnected: () => Boolean(token && opts.pipeline && opts.stage),
     listPipelines: async () => callHubSpotApi<{
       results?: Array<{ id: string; label: string; stages?: Array<{ id: string; label: string; displayOrder?: number }> }>;

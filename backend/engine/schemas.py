@@ -131,6 +131,10 @@ class ApprovalResolve(BaseModel):
 class ApprovalResponse(BaseModel):
     id: str
     run_id: str
+    # Conversation that originated this approval's run, when known. Joined from
+    # RunRecord at read time (the approval row itself has no conversation_id).
+    # Lets the chat surface render the approval inline in the right thread.
+    conversation_id: str | None = None
     step_id: str
     step_name: str
     summary: str
@@ -145,6 +149,30 @@ class ApprovalResponse(BaseModel):
 
 class ApprovalListResponse(BaseModel):
     approvals: list[ApprovalResponse]
+    total: int
+
+
+# ── Auto-Approval Rules ──────────────────────────────────────────
+
+
+class AutoApprovalRuleCreate(BaseModel):
+    action_type: str
+    target_key: str
+    target_label: str | None = None
+
+
+class AutoApprovalRuleResponse(BaseModel):
+    id: str
+    action_type: str
+    target_key: str
+    target_label: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AutoApprovalRuleListResponse(BaseModel):
+    rules: list[AutoApprovalRuleResponse]
     total: int
 
 

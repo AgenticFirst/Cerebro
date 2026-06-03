@@ -4,7 +4,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  threadKey,
+  conversationKey,
+  isSessionExpired,
+  migrateConversationMap,
   parseAllowlistRaw,
   parseSlashCommandText,
   chunkSlackText,
@@ -18,20 +20,75 @@ import {
   type BackendRoutineRecord,
 } from '../helpers';
 
-describe('threadKey', () => {
-  it('uses thread_ts when present', () => {
-    expect(threadKey({ teamId: 'T1', channel: 'C1', ts: '2.000', threadTs: '1.000' })).toBe('T1:C1:1.000');
+describe('conversationKey', () => {
+  it('keeps a DM stable across messages (ignores per-message ts)', () => {
+    // The original bug: every DM message had a unique ts → a new conversation.
+    const first = conversationKey({ teamId: 'T1', channel: 'D1', channelType: 'im', userId: 'U1', ts: '1.000' });
+    const second = conversationKey({ teamId: 'T1', channel: 'D1', channelType: 'im', userId: 'U1', ts: '99.000' });
+    expect(first.key).toBe('dm:T1:D1');
+    expect(second.key).toBe(first.key);
+    expect(first.surface).toBe('dm');
+    expect(first.rotates).toBe(true);
   });
-  it('falls back to ts when no thread_ts', () => {
-    expect(threadKey({ teamId: 'T1', channel: 'C1', ts: '2.000' })).toBe('T1:C1:2.000');
+
+  it('keeps a DM stable even when a reply lands in a thread', () => {
+    const top = conversationKey({ teamId: 'T1', channel: 'D1', channelType: 'im', userId: 'U1', ts: '1.000' });
+    const threaded = conversationKey({ teamId: 'T1', channel: 'D1', channelType: 'im', userId: 'U1', ts: '5.000', threadTs: '2.000' });
+    expect(threaded.key).toBe(top.key);
   });
-  it('treats null thread_ts as missing', () => {
-    expect(threadKey({ teamId: 'T1', channel: 'C1', ts: '2.000', threadTs: null })).toBe('T1:C1:2.000');
+
+  it('keys a channel thread by its root and never rotates', () => {
+    const k = conversationKey({ teamId: 'T1', channel: 'C1', channelType: 'channel', userId: 'U1', ts: '5.000', threadTs: '2.000' });
+    expect(k.key).toBe('thread:T1:C1:2.000');
+    expect(k.surface).toBe('thread');
+    expect(k.rotates).toBe(false);
   });
-  it('produces distinct keys for distinct threads in the same channel', () => {
-    const a = threadKey({ teamId: 'T1', channel: 'C1', ts: '2.000', threadTs: '1.000' });
-    const b = threadKey({ teamId: 'T1', channel: 'C1', ts: '3.000', threadTs: '2.500' });
-    expect(a).not.toBe(b);
+
+  it('keys a top-level channel @mention per channel+user and rotates', () => {
+    const k = conversationKey({ teamId: 'T1', channel: 'C1', channelType: 'channel', userId: 'U1', ts: '5.000' });
+    expect(k.key).toBe('mention:T1:C1:U1');
+    expect(k.surface).toBe('mention');
+    expect(k.rotates).toBe(true);
+    // A different user in the same channel gets a distinct conversation.
+    const other = conversationKey({ teamId: 'T1', channel: 'C1', channelType: 'channel', userId: 'U2', ts: '5.000' });
+    expect(other.key).not.toBe(k.key);
+  });
+});
+
+describe('isSessionExpired', () => {
+  const now = 1_000_000_000;
+  const sixHours = 6 * 60 * 60_000;
+  it('is not expired within the idle window', () => {
+    expect(isSessionExpired(now - sixHours + 1, now, sixHours)).toBe(false);
+  });
+  it('is expired once the window is exceeded', () => {
+    expect(isSessionExpired(now - sixHours - 1, now, sixHours)).toBe(true);
+  });
+  it('treats a missing/zero timestamp as expired', () => {
+    expect(isSessionExpired(0, now, sixHours)).toBe(true);
+    expect(isSessionExpired(NaN, now, sixHours)).toBe(true);
+  });
+});
+
+describe('migrateConversationMap', () => {
+  const now = 1_700_000_000_000;
+  it('wraps legacy string values without losing the conversation id', () => {
+    const out = migrateConversationMap({ 'dm:T1:D1': 'conv123' }, now);
+    expect(out['dm:T1:D1']).toEqual({ conversationId: 'conv123', lastActivityAt: now });
+  });
+  it('preserves already-migrated entry objects', () => {
+    const entry = { conversationId: 'conv9', lastActivityAt: 42, lastSeenTs: '5.000' };
+    const out = migrateConversationMap({ 'thread:T1:C1:2.000': entry }, now);
+    expect(out['thread:T1:C1:2.000']).toEqual(entry);
+  });
+  it('backfills a missing timestamp on a malformed entry', () => {
+    const out = migrateConversationMap({ k: { conversationId: 'c' } }, now);
+    expect(out.k).toEqual({ conversationId: 'c', lastActivityAt: now, lastSeenTs: undefined });
+  });
+  it('drops junk values and tolerates non-object input', () => {
+    const out = migrateConversationMap({ good: 'c1', bad: 123, empty: {} }, now);
+    expect(Object.keys(out)).toEqual(['good']);
+    expect(migrateConversationMap(null, now)).toEqual({});
   });
 });
 

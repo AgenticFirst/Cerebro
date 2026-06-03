@@ -1094,6 +1094,12 @@ const en = {
     pendingTab: 'Pending',
     pendingTabCount: 'Pending ({{count}})',
     historyTab: 'History',
+    autoTab: 'Auto-approved',
+    autoSubtitle: 'These destinations send without asking. Revoke any to require approval again.',
+    noAuto: 'No auto-approved destinations',
+    noAutoDescription:
+      'Tell Cerebro in chat to stop asking for approval for a specific Slack channel, and it will appear here.',
+    revoke: 'Revoke',
     noPending: 'No pending approvals',
     noPendingDescription:
       'When a routine step requires your sign-off, it will appear here.',
@@ -1111,6 +1117,7 @@ const en = {
     newToastAction: 'Review',
     newNotificationTitle: 'Approval pending',
     newNotificationBody: 'An action needs your review before it can run.',
+    inlineTitle: 'Approval needed',
   },
 
   // ── Integrations screen ─────────────────────────────────────
@@ -1184,13 +1191,13 @@ const en = {
     },
     hubspot: {
       name: 'HubSpot',
-      description: 'Create tickets and update contacts in your HubSpot CRM.',
+      description: 'Manage tickets, contacts, companies, deals, and lists in your HubSpot CRM.',
       fields: { accessToken: 'Private app access token' },
       hints: { accessToken: 'pat-na1-… (HubSpot private-app token)' },
       steps: {
         openSettings: 'In HubSpot, open Settings → Integrations → Private Apps.',
         createPrivateApp: 'Click Create a private app and give it a name.',
-        grantScopes: 'Under Scopes, enable tickets, contacts, and pipelines (read + write).',
+        grantScopes: 'Under Scopes, enable tickets and pipelines, plus contacts, companies, deals, and lists (read + write) so Cerebro can manage your CRM records and segments.',
         copyToken: 'Click Create app, then Show token and copy it.',
         pasteHere: 'Paste the token in the next step.',
       },
@@ -2185,14 +2192,14 @@ const en = {
   hubspotSection: {
     title: 'HubSpot CRM',
     description:
-      'Open and update tickets, contacts, and deals in HubSpot from a routine.',
+      'Create, edit, list, and delete tickets, contacts, companies, deals, and lists in HubSpot from chat or a routine.',
     keychainEncrypted: 'Access token is encrypted in your OS keychain.',
     keychainFallback:
       'No OS keychain available — token stored with fallback encoding.',
     tokenLabel: 'Private App access token',
     // Renders with <Trans> so the bold "Connect" word can be emphasized.
     tokenHelp:
-      'Create a Private App under HubSpot\'s Legacy Apps section with the <code>tickets</code>, <code>crm.objects.contacts.read</code>, and <code>crm.objects.contacts.write</code> scopes, then paste the generated token below. (Click <bold>Connect</bold> in the card header for a guided tour.)',
+      'Create a Private App under HubSpot\'s Legacy Apps section with the <code>tickets</code> scope plus read + write on <code>contacts</code>, <code>companies</code>, <code>deals</code>, and <code>lists</code>, then paste the generated token below. (Click <bold>Connect</bold> in the card header for a guided tour.)',
     tokenPlaceholder: 'pat-na1-...',
     verify: 'Verify',
     verifying: 'Verifying…',
@@ -2210,6 +2217,11 @@ const en = {
     loadingPipelines: 'Loading pipelines…',
     pipelinePlaceholder: '— Pipeline —',
     stagePlaceholder: '— Stage —',
+    customFieldsHelp:
+      'Optional: map your portal\'s custom ticket properties so chat and routines can set a follow-up user and a due date by name. Leave blank to disable each.',
+    followUpPropertyLabel: 'Follow-up user property',
+    dueDatePropertyLabel: 'Due date property',
+    propertyNone: '— None —',
     saved: 'Saved',
     saveDefaults: 'Save defaults',
     unknownError: 'Unknown error',
@@ -2259,7 +2271,7 @@ const en = {
       'Pick anything memorable, e.g. "Cerebro". Then click the "Scopes" tab at the top.',
     walk5Caption: 'Scopes — pick what Cerebro can do.',
     walk5Hint:
-      'Click "Add new scope", then search for and tick the three scopes listed below this walkthrough. Click Update, then "Create app" in the top-right.',
+      'Click "Add new scope", then search for and tick the scopes listed below this walkthrough. Click Update, then "Create app" in the top-right.',
     walk6Caption: 'HubSpot confirms.',
     walk6Hint: 'Click "Continue creating".',
     walk7Caption: 'Done — your access token is on the Auth tab.',
@@ -2273,6 +2285,20 @@ const en = {
       'Look up an existing customer by email or phone before creating a ticket.',
     scopeReasonContactsWrite:
       "Create or update the customer's contact record.",
+    scopeReasonCompaniesRead:
+      'List and read companies, and tell which company a ticket or contact belongs to.',
+    scopeReasonCompaniesWrite:
+      'Create, edit, and delete companies from chat or a routine.',
+    scopeReasonDealsRead:
+      'List and read deals across your pipelines.',
+    scopeReasonDealsWrite:
+      'Create, edit, and delete deals from chat or a routine.',
+    scopeReasonListsRead:
+      'List and read your lists (segments).',
+    scopeReasonListsWrite:
+      'Create, rename, and delete lists, and add or remove records from them.',
+    scopeReasonOwnersRead:
+      'Resolve a ticket owner or follow-up user given by name or email to the right HubSpot user.',
 
     // Step 3 — paste token
     step3AlreadySavedBody:

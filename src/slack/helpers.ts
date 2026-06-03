@@ -4,23 +4,95 @@
  */
 
 import { scrubTokenish } from './api';
+import type { SlackConversationEntry } from './types';
 import type { DAGDefinition } from '../engine/dag/types';
 
-// ── Conversation thread keying ────────────────────────────────────
+// ── Conversation keying ───────────────────────────────────────────
+
+export type SlackSurfaceKind = 'dm' | 'thread' | 'mention';
+
+export interface SlackConversationKey {
+  /** Stable key used as the conversation map key + Cerebro external_chat_id. */
+  key: string;
+  surface: SlackSurfaceKind;
+  /**
+   * Whether this key rotates to a fresh Cerebro conversation after an idle
+   * gap. DMs and top-level @mentions roll a new conversation once the user
+   * has been silent past the idle window; a channel thread is a bounded
+   * conversation and never rotates.
+   */
+  rotates: boolean;
+}
 
 /**
- * Slack's idiomatic conversation key is `(team, channel, thread_ts || ts)`.
- * Each Slack thread is one Cerebro conversation; replies inside the thread
- * are continuations, replies elsewhere start a new conversation.
+ * Map an inbound Slack message to a *stable* conversation key.
+ *
+ * The old scheme keyed by `(team, channel, thread_ts || ts)`, which in a DM
+ * (no thread) collapsed to the message's own `ts` — a fresh key, and so a
+ * fresh Cerebro conversation, for every single message. That broke memory and
+ * defeated the per-thread single-flight guard. We now key by surface:
+ *
+ *  - DM (`im`/`mpim`): the whole DM is one rolling session. We deliberately
+ *    ignore `thread_ts` so a threaded reply inside a DM continues the same
+ *    conversation rather than forking a new one.
+ *  - Channel thread: one conversation per thread root. Context for messages
+ *    Cerebro never received (it only sees @mentions) comes from a
+ *    `conversations.replies` backfill, not from a new key.
+ *  - Top-level channel @mention: one rolling session per channel + user.
  */
-export function threadKey(args: {
+export function conversationKey(args: {
   teamId: string;
   channel: string;
+  channelType?: string;
+  userId: string;
   ts: string;
   threadTs?: string | null;
-}): string {
-  const root = (args.threadTs ?? args.ts).trim();
-  return `${args.teamId}:${args.channel}:${root}`;
+}): SlackConversationKey {
+  const team = args.teamId;
+  const channel = args.channel;
+  const isDm = args.channelType === 'im' || args.channelType === 'mpim';
+  if (isDm) {
+    return { key: `dm:${team}:${channel}`, surface: 'dm', rotates: true };
+  }
+  const threadTs = (args.threadTs ?? '').trim();
+  if (threadTs) {
+    return { key: `thread:${team}:${channel}:${threadTs}`, surface: 'thread', rotates: false };
+  }
+  return { key: `mention:${team}:${channel}:${args.userId}`, surface: 'mention', rotates: true };
+}
+
+/**
+ * True when a rolling session has been idle long enough to roll over into a
+ * fresh conversation. A non-finite / zero timestamp counts as expired so a
+ * malformed entry self-heals into a new conversation.
+ */
+export function isSessionExpired(lastActivityAt: number, now: number, idleMs: number): boolean {
+  if (!Number.isFinite(lastActivityAt) || lastActivityAt <= 0) return true;
+  return now - lastActivityAt > idleMs;
+}
+
+/**
+ * Coerce the persisted conversation map into the current entry shape. Legacy
+ * installs stored a bare `string` (conversation id); we wrap those as a fresh,
+ * reusable entry so existing chats aren't wiped on upgrade. Orphaned keys from
+ * the old per-message scheme are simply never looked up again.
+ */
+export function migrateConversationMap(raw: unknown, now: number): Record<string, SlackConversationEntry> {
+  const out: Record<string, SlackConversationEntry> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === 'string') {
+      out[k] = { conversationId: v, lastActivityAt: now };
+    } else if (v && typeof v === 'object' && typeof (v as { conversationId?: unknown }).conversationId === 'string') {
+      const e = v as { conversationId: string; lastActivityAt?: unknown; lastSeenTs?: unknown };
+      out[k] = {
+        conversationId: e.conversationId,
+        lastActivityAt: typeof e.lastActivityAt === 'number' ? e.lastActivityAt : now,
+        lastSeenTs: typeof e.lastSeenTs === 'string' ? e.lastSeenTs : undefined,
+      };
+    }
+  }
+  return out;
 }
 
 // ── Allowlist parsing ─────────────────────────────────────────────

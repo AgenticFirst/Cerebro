@@ -3,7 +3,7 @@ import { CheckCircle2, Eye, EyeOff, Loader2, Lock, ShieldAlert, XCircle } from '
 import clsx from 'clsx';
 import { Trans, useTranslation } from 'react-i18next';
 import { HubSpotIcon } from '../../icons/BrandIcons';
-import type { HubSpotPipelineSummary, HubSpotStatusResponse } from '../../../types/ipc';
+import type { HubSpotPipelineSummary, HubSpotStatusResponse, HubSpotTicketPropertySummary } from '../../../types/ipc';
 
 type VerifyState =
   | { kind: 'idle' }
@@ -28,6 +28,9 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
   const [selectedPipeline, setSelectedPipeline] = useState<string>('');
   const [selectedStage, setSelectedStage] = useState<string>('');
   const [pipelinesLoading, setPipelinesLoading] = useState(false);
+  const [ticketProperties, setTicketProperties] = useState<HubSpotTicketPropertySummary[]>([]);
+  const [followUpProp, setFollowUpProp] = useState<string>('');
+  const [dueDateProp, setDueDateProp] = useState<string>('');
   const [savedFlash, setSavedFlash] = useState(false);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -43,6 +46,8 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
     setStatus(s);
     if (s.defaultPipeline) setSelectedPipeline(s.defaultPipeline);
     if (s.defaultStage) setSelectedStage(s.defaultStage);
+    setFollowUpProp(s.followUpProperty ?? '');
+    setDueDateProp(s.dueDateProperty ?? '');
   }, []);
 
   const loadPipelines = useCallback(async () => {
@@ -52,6 +57,11 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
     if (res.ok && res.pipelines) setPipelines(res.pipelines);
   }, []);
 
+  const loadTicketProperties = useCallback(async () => {
+    const res = await window.cerebro.hubspot.listTicketProperties();
+    if (res.ok && res.properties) setTicketProperties(res.properties);
+  }, []);
+
   useEffect(() => {
     void refreshStatus();
   }, [refreshStatus]);
@@ -59,12 +69,16 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
   useEffect(() => {
     if (status?.hasToken) {
       void loadPipelines();
+      void loadTicketProperties();
     } else {
       setPipelines([]);
       setSelectedPipeline('');
       setSelectedStage('');
+      setTicketProperties([]);
+      setFollowUpProp('');
+      setDueDateProp('');
     }
-  }, [status?.hasToken, loadPipelines]);
+  }, [status?.hasToken, loadPipelines, loadTicketProperties]);
 
   const handleVerify = useCallback(async () => {
     if (!tokenDraft.trim()) return;
@@ -92,6 +106,9 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
     setPipelines([]);
     setSelectedPipeline('');
     setSelectedStage('');
+    setTicketProperties([]);
+    setFollowUpProp('');
+    setDueDateProp('');
     await refreshStatus();
   }, [refreshStatus, resetTokenEditor]);
 
@@ -99,12 +116,14 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
     await window.cerebro.hubspot.setDefaults({
       pipeline: selectedPipeline || null,
       stage: selectedStage || null,
+      followUpProperty: followUpProp || null,
+      dueDateProperty: dueDateProp || null,
     });
     await refreshStatus();
     setSavedFlash(true);
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     flashTimerRef.current = setTimeout(() => setSavedFlash(false), 1_500);
-  }, [selectedPipeline, selectedStage, refreshStatus]);
+  }, [selectedPipeline, selectedStage, followUpProp, dueDateProp, refreshStatus]);
 
   useEffect(() => () => {
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
@@ -288,6 +307,42 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
               </select>
             </div>
           )}
+
+          {/* Custom property mapping for follow-up user + due date */}
+          <p className="text-[11px] text-text-tertiary mt-4 leading-relaxed">
+            {t('hubspotSection.customFieldsHelp')}
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[11px] text-text-tertiary">{t('hubspotSection.followUpPropertyLabel')}</label>
+              <select
+                value={followUpProp}
+                onChange={(e) => setFollowUpProp(e.target.value)}
+                className="mt-1 w-full h-9 px-3 text-sm bg-bg-surface border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
+              >
+                <option value="">{t('hubspotSection.propertyNone')}</option>
+                {ticketProperties.map((p) => (
+                  <option key={p.name} value={p.name}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] text-text-tertiary">{t('hubspotSection.dueDatePropertyLabel')}</label>
+              <select
+                value={dueDateProp}
+                onChange={(e) => setDueDateProp(e.target.value)}
+                className="mt-1 w-full h-9 px-3 text-sm bg-bg-surface border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
+              >
+                <option value="">{t('hubspotSection.propertyNone')}</option>
+                {ticketProperties
+                  .filter((p) => p.type === 'date' || p.type === 'datetime')
+                  .map((p) => (
+                    <option key={p.name} value={p.name}>{p.label}</option>
+                  ))}
+              </select>
+            </div>
+          </div>
+
           <div className="mt-3 flex items-center justify-end gap-3">
             {savedFlash && (
               <span className="text-xs text-emerald-400 flex items-center gap-1.5">

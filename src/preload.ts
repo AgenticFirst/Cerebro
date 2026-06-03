@@ -26,6 +26,7 @@ import type {
   HubSpotStatusResponse,
   HubSpotVerifyResult,
   HubSpotPipelineSummary,
+  HubSpotTicketPropertySummary,
   GHLStatusResponse,
   GHLVerifyResult,
   GitHubStatusResponse,
@@ -526,6 +527,9 @@ const api: CerebroAPI = {
     listPipelines(): Promise<{ ok: boolean; pipelines?: HubSpotPipelineSummary[]; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_LIST_PIPELINES);
     },
+    listTicketProperties(): Promise<{ ok: boolean; properties?: HubSpotTicketPropertySummary[]; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_LIST_TICKET_PROPERTIES);
+    },
     status(): Promise<HubSpotStatusResponse> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_STATUS);
     },
@@ -535,7 +539,12 @@ const api: CerebroAPI = {
     clearToken(): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_CLEAR_TOKEN);
     },
-    setDefaults(defaults: { pipeline: string | null; stage: string | null }): Promise<{ ok: boolean; error?: string }> {
+    setDefaults(defaults: {
+      pipeline: string | null;
+      stage: string | null;
+      followUpProperty?: string | null;
+      dueDateProperty?: string | null;
+    }): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_SET_DEFAULTS, defaults);
     },
   },

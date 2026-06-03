@@ -5,13 +5,24 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from database import get_db
-from models import ApprovalRequest, ExecutionEventRecord, RunRecord, StepRecord, _uuid_hex, _utcnow
+from models import (
+    ApprovalRequest,
+    AutoApprovalRule,
+    ExecutionEventRecord,
+    RunRecord,
+    StepRecord,
+    _uuid_hex,
+    _utcnow,
+)
 
 from .schemas import (
     ApprovalCreate,
     ApprovalListResponse,
     ApprovalResolve,
     ApprovalResponse,
+    AutoApprovalRuleCreate,
+    AutoApprovalRuleListResponse,
+    AutoApprovalRuleResponse,
     EventBatchCreate,
     EventRecordResponse,
     RunRecordCreate,
@@ -48,6 +59,27 @@ def _run_to_response(run: RunRecord, steps: list[StepRecordResponse] | None = No
         completed_at=run.completed_at,
         duration_ms=run.duration_ms,
         steps=steps,
+    )
+
+
+def _approval_to_response(
+    approval: ApprovalRequest, conversation_id: str | None
+) -> ApprovalResponse:
+    # conversation_id is joined from RunRecord, not a column on ApprovalRequest,
+    # so build the response explicitly rather than via model_validate (which
+    # would silently leave it None).
+    return ApprovalResponse(
+        id=approval.id,
+        run_id=approval.run_id,
+        conversation_id=conversation_id,
+        step_id=approval.step_id,
+        step_name=approval.step_name,
+        summary=approval.summary,
+        payload_json=approval.payload_json,
+        status=approval.status,
+        decision_reason=approval.decision_reason,
+        requested_at=approval.requested_at,
+        resolved_at=approval.resolved_at,
     )
 
 
@@ -279,7 +311,7 @@ def create_approval(body: ApprovalCreate, db=Depends(get_db)):
     db.add(approval)
     db.commit()
     db.refresh(approval)
-    return ApprovalResponse.model_validate(approval)
+    return _approval_to_response(approval, run.conversation_id)
 
 
 @router.get("/approvals", response_model=ApprovalListResponse)
@@ -298,8 +330,20 @@ def list_approvals(
 
     total = q.count()
     approvals = q.order_by(ApprovalRequest.requested_at.desc()).offset(offset).limit(limit).all()
+
+    # Batch-resolve conversation_id for all approvals in one query (avoid N+1).
+    run_ids = {a.run_id for a in approvals}
+    conv_map: dict[str, str | None] = {}
+    if run_ids:
+        rows = (
+            db.query(RunRecord.id, RunRecord.conversation_id)
+            .filter(RunRecord.id.in_(run_ids))
+            .all()
+        )
+        conv_map = {rid: cid for rid, cid in rows}
+
     return ApprovalListResponse(
-        approvals=[ApprovalResponse.model_validate(a) for a in approvals],
+        approvals=[_approval_to_response(a, conv_map.get(a.run_id)) for a in approvals],
         total=total,
     )
 
@@ -315,7 +359,8 @@ def get_approval(approval_id: str, db=Depends(get_db)):
     approval = db.get(ApprovalRequest, approval_id)
     if not approval:
         raise HTTPException(status_code=404, detail="Approval request not found")
-    return ApprovalResponse.model_validate(approval)
+    run = db.get(RunRecord, approval.run_id)
+    return _approval_to_response(approval, run.conversation_id if run else None)
 
 
 @router.patch("/approvals/{approval_id}/resolve", response_model=ApprovalResponse)
@@ -331,7 +376,98 @@ def resolve_approval(approval_id: str, body: ApprovalResolve, db=Depends(get_db)
     approval.resolved_at = _utcnow()
     db.commit()
     db.refresh(approval)
-    return ApprovalResponse.model_validate(approval)
+    run = db.get(RunRecord, approval.run_id)
+    return _approval_to_response(approval, run.conversation_id if run else None)
+
+
+# ── Auto-Approval Rules ──────────────────────────────────────────
+
+
+@router.post("/auto-approvals", response_model=AutoApprovalRuleResponse)
+def create_auto_approval_rule(body: AutoApprovalRuleCreate, response: Response, db=Depends(get_db)):
+    """Record a "don't ask again" rule for one (action_type, target). Idempotent:
+    re-recording the same pair returns the existing rule (refreshing its label)
+    rather than erroring on the unique constraint."""
+    existing = (
+        db.query(AutoApprovalRule)
+        .filter(
+            AutoApprovalRule.action_type == body.action_type,
+            AutoApprovalRule.target_key == body.target_key,
+        )
+        .first()
+    )
+    if existing:
+        if body.target_label and body.target_label != existing.target_label:
+            existing.target_label = body.target_label
+            db.commit()
+            db.refresh(existing)
+        response.status_code = 200
+        return AutoApprovalRuleResponse.model_validate(existing)
+
+    rule = AutoApprovalRule(
+        action_type=body.action_type,
+        target_key=body.target_key,
+        target_label=body.target_label,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    response.status_code = 201
+    return AutoApprovalRuleResponse.model_validate(rule)
+
+
+@router.get("/auto-approvals", response_model=AutoApprovalRuleListResponse)
+def list_auto_approval_rules(
+    action_type: str | None = None,
+    target_key: str | None = None,
+    db=Depends(get_db),
+):
+    """List rules, newest first. With both action_type and target_key supplied,
+    this is the exact-match lookup the engine uses before gating a chat action."""
+    q = db.query(AutoApprovalRule)
+    if action_type:
+        q = q.filter(AutoApprovalRule.action_type == action_type)
+    if target_key:
+        q = q.filter(AutoApprovalRule.target_key == target_key)
+
+    # Never paginated — the full set is small and the engine reads it whole,
+    # so the row count is just the length (no separate COUNT(*) query).
+    rules = q.order_by(AutoApprovalRule.created_at.desc()).all()
+    return AutoApprovalRuleListResponse(
+        rules=[AutoApprovalRuleResponse.model_validate(r) for r in rules],
+        total=len(rules),
+    )
+
+
+@router.delete("/auto-approvals")
+def delete_auto_approval_rules_by_target(
+    action_type: str = Query(...),
+    target_key: str = Query(...),
+    db=Depends(get_db),
+):
+    """Revoke by (action_type, target) — the path the chat agent uses when the
+    user says "ask me again for #X" (it has the target, not the rule id)."""
+    deleted = (
+        db.query(AutoApprovalRule)
+        .filter(
+            AutoApprovalRule.action_type == action_type,
+            AutoApprovalRule.target_key == target_key,
+        )
+        .delete()
+    )
+    db.commit()
+    return {"deleted": deleted}
+
+
+@router.delete("/auto-approvals/{rule_id}", status_code=204)
+def delete_auto_approval_rule(rule_id: str, db=Depends(get_db)):
+    """Revoke a single rule by id — the path the Approvals UI uses."""
+    rule = db.get(AutoApprovalRule, rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Auto-approval rule not found")
+    db.delete(rule)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/runs/recover-stale")

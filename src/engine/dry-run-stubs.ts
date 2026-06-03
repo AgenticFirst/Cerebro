@@ -42,6 +42,10 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
         created: true,
         contact_id: hasContact ? syntheticId('dryrun-contact-') : null,
         contact_associated: hasContact,
+        owner_resolved: null,
+        follow_up_resolved: null,
+        due_date_set: null,
+        warnings: [],
         error: null,
       },
       summary: '[dry-run] Would create HubSpot ticket',
@@ -67,6 +71,153 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
     },
     summary: '[dry-run] Would search HubSpot contact',
   }),
+  hubspot_get_ticket: (input) => {
+    const contactId = syntheticId('dryrun-contact-');
+    return {
+      data: {
+        found: true,
+        ticket_id: String((input.params as Record<string, unknown>).ticket_id ?? '') || syntheticId('dryrun-ticket-'),
+        subject: '[dry-run] ticket',
+        content: null,
+        pipeline: null,
+        pipeline_label: null,
+        stage: null,
+        stage_label: null,
+        priority: null,
+        created_at: null,
+        updated_at: null,
+        owner_id: null,
+        owner_name: null,
+        follow_up_user: null,
+        follow_up_name: null,
+        due_date: null,
+        ticket_url: null,
+        contacts: [
+          { contact_id: contactId, email: 'dry@example.com', firstname: '[dry-run]', lastname: '[dry-run]' },
+        ],
+        companies: [
+          { company_id: syntheticId('dryrun-company-'), name: '[dry-run] Co', domain: 'example.com', source: 'contact', via_contact_id: contactId },
+        ],
+        error: null,
+      },
+      summary: '[dry-run] Would fetch HubSpot ticket with associations',
+    };
+  },
+  hubspot_update_ticket: (input) => ({
+    data: {
+      ticket_id: String((input.params as Record<string, unknown>).ticket_id ?? '') || syntheticId('dryrun-ticket-'),
+      updated: true,
+      updated_fields: [],
+      ticket_url: null,
+      owner_resolved: null,
+      follow_up_resolved: null,
+      due_date_set: null,
+      warnings: [],
+      error: null,
+    },
+    summary: '[dry-run] Would update HubSpot ticket properties',
+  }),
+  hubspot_list_objects: (input) => {
+    const objectType = String((input.params as Record<string, unknown>).object_type ?? 'contacts');
+    return {
+      data: {
+        object_type: objectType,
+        objects: [
+          { id: syntheticId('dryrun-obj-'), label: '[dry-run] record', properties: {}, url: null },
+        ],
+        count: 1,
+        error: null,
+      },
+      summary: `[dry-run] Would list HubSpot ${objectType}`,
+    };
+  },
+  hubspot_create_object: (input) => {
+    const objectType = String((input.params as Record<string, unknown>).object_type ?? 'contacts');
+    return {
+      data: {
+        object_type: objectType,
+        id: syntheticId('dryrun-obj-'),
+        created: true,
+        url: null,
+        error: null,
+      },
+      summary: `[dry-run] Would create HubSpot ${objectType.replace(/s$/, '')}`,
+    };
+  },
+  hubspot_update_object: (input) => {
+    const params = input.params as Record<string, unknown>;
+    const objectType = String(params.object_type ?? 'contacts');
+    return {
+      data: {
+        object_type: objectType,
+        id: String(params.object_id ?? '') || syntheticId('dryrun-obj-'),
+        updated: true,
+        url: null,
+        error: null,
+      },
+      summary: `[dry-run] Would update HubSpot ${objectType.replace(/s$/, '')}`,
+    };
+  },
+  hubspot_delete_object: (input) => {
+    const params = input.params as Record<string, unknown>;
+    const objectType = String(params.object_type ?? 'contacts');
+    return {
+      data: {
+        object_type: objectType,
+        id: String(params.object_id ?? '') || syntheticId('dryrun-obj-'),
+        deleted: true,
+        error: null,
+      },
+      summary: `[dry-run] Would archive HubSpot ${objectType.replace(/s$/, '')}`,
+    };
+  },
+  hubspot_list_lists: () => ({
+    data: {
+      lists: [
+        { list_id: syntheticId('dryrun-list-'), name: '[dry-run] list', processing_type: 'MANUAL', size: 0 },
+      ],
+      count: 1,
+      error: null,
+    },
+    summary: '[dry-run] Would list HubSpot lists',
+  }),
+  hubspot_create_list: (input) => ({
+    data: {
+      list_id: syntheticId('dryrun-list-'),
+      created: true,
+      error: null,
+    },
+    summary: `[dry-run] Would create HubSpot list "${String((input.params as Record<string, unknown>).name ?? '')}"`,
+  }),
+  hubspot_update_list: (input) => ({
+    data: {
+      list_id: String((input.params as Record<string, unknown>).list_id ?? '') || syntheticId('dryrun-list-'),
+      updated: true,
+      error: null,
+    },
+    summary: '[dry-run] Would rename HubSpot list',
+  }),
+  hubspot_delete_list: (input) => ({
+    data: {
+      list_id: String((input.params as Record<string, unknown>).list_id ?? '') || syntheticId('dryrun-list-'),
+      deleted: true,
+      error: null,
+    },
+    summary: '[dry-run] Would archive HubSpot list',
+  }),
+  hubspot_list_membership: (input) => {
+    const params = input.params as Record<string, unknown>;
+    const mode = String(params.mode ?? 'add').toLowerCase() === 'remove' ? 'remove' : 'add';
+    return {
+      data: {
+        list_id: String(params.list_id ?? '') || syntheticId('dryrun-list-'),
+        mode,
+        updated: 1,
+        error: null,
+      },
+      summary: `[dry-run] Would ${mode} HubSpot list members`,
+    };
+  },
   send_telegram_message: (input) => ({
     data: {
       sent: true,

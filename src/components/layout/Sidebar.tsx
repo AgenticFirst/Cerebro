@@ -43,9 +43,10 @@ interface NavItem extends NavItemDef {
   badge?: number;
 }
 
-// Primary — daily-use surfaces
+// Primary — daily-use surfaces. Chat is now the "Cerebro" collapsible group
+// at the top of the nav (its body is the conversation history), so it's no
+// longer a flat nav item here.
 const NAV_PRIMARY: NavItemDef[] = [
-  { id: 'chat', icon: MessageSquare },
   { id: 'experts', icon: Users },
   { id: 'tasks', icon: Target },
   { id: 'routines', icon: Zap },
@@ -237,6 +238,10 @@ export default function Sidebar() {
 
   const [collapsed, setCollapsed] = useState(false);
   const [appsExpanded, setAppsExpanded] = useState(false);
+  // Cerebro (chat) is a collapsible group whose body is the conversation
+  // history. Expanded by default so chats are visible on load — the whole
+  // point of this layout is to keep them reachable on short laptop screens.
+  const [cerebroExpanded, setCerebroExpanded] = useState(true);
   const grouped = useMemo(() => groupByTime(generalConversations), [generalConversations]);
 
   /** Resolve a NavItemDef[] to NavItem[] with translated labels */
@@ -270,6 +275,17 @@ export default function Sidebar() {
   const handleNewChat = () => {
     setActiveScreen('chat');
     startNewChat();
+  };
+
+  // Clicking the Cerebro group header toggles the conversation list AND lands
+  // on a fresh chat. We deliberately route to chat with NO active conversation
+  // (a draft): AppLayout shows WelcomeView and ChatContext.sendMessage only
+  // persists the conversation once the first message is sent — unlike the
+  // "New Chat" button, which eagerly reuses/creates a row via startNewChat().
+  const handleCerebroHeader = () => {
+    setCerebroExpanded((v) => !v);
+    setActiveScreen('chat');
+    setActiveConversation(null);
   };
 
   const handleNavClick = (screen: Screen) => {
@@ -344,112 +360,176 @@ export default function Sidebar() {
 
       <GhostSeparator collapsed={collapsed} />
 
-      {/* ── Navigation ───────────────────────────────────────── */}
-      <nav className="px-2.5">
-        {/* Primary: Chat, Tasks, Experts, Routines */}
-        <NavGroup
-          items={navPrimary}
-          activeScreen={activeScreen}
-          collapsed={collapsed}
-          onNavClick={handleNavClick}
-          spotlightedNavId={spotlightedNavId}
-        />
-
-        <GhostSeparator collapsed={collapsed} />
-
-        {/* Apps: an expandable group with its apps (Knowledge Base, …) nested
-            inside. Collapsed (icon rail) shows the apps directly. */}
+      {/* ── Navigation ───────────────────────────────────────────
+          The nav is the single flexible region (flex-1 min-h-0 flex-col).
+          The Cerebro conversation list is the only flex-grow child, so it
+          absorbs leftover height and scrolls internally while every other
+          group stays pinned and visible — even on short laptop screens. */}
+      <nav className="flex-1 min-h-0 flex flex-col px-2.5">
+        {/* ── Cerebro: collapsible group whose body is the conversation
+            history. Collapsed (icon rail) shows a single chat shortcut. */}
         {collapsed ? (
+          <NavButton
+            item={{ id: 'chat', label: t('nav.chat'), icon: MessageSquare }}
+            isActive={activeScreen === 'chat'}
+            collapsed={collapsed}
+            onClick={() => handleNavClick('chat')}
+            isTourSpotlit={spotlightedNavId === 'chat'}
+          />
+        ) : (
+          <>
+            <button
+              onClick={handleCerebroHeader}
+              data-tour-id="nav-chat"
+              className={clsx(
+                'group w-full flex items-center gap-2.5 px-2.5 py-[5px] rounded-md flex-shrink-0',
+                'transition-all duration-150 cursor-pointer',
+                activeScreen === 'chat'
+                  ? 'nav-item-active text-text-primary font-medium'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]',
+                spotlightedNavId === 'chat' && 'tour-spotlit-nav',
+              )}
+            >
+              <div
+                className={clsx(
+                  'flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0 transition-all duration-150',
+                  activeScreen === 'chat'
+                    ? 'bg-accent/15 text-accent'
+                    : 'text-text-tertiary group-hover:text-text-secondary',
+                )}
+              >
+                <MessageSquare size={14} strokeWidth={activeScreen === 'chat' ? 2 : 1.5} />
+              </div>
+              <span className="text-[13px] leading-none">{t('nav.chat')}</span>
+              <ChevronRight
+                size={13}
+                className={clsx(
+                  'ml-auto text-text-tertiary transition-transform duration-150',
+                  cerebroExpanded && 'rotate-90',
+                )}
+              />
+            </button>
+            {/* Conversation list — an accordion that stays mounted so the
+                expand/collapse animation (height via grid-rows + fade) plays
+                in both directions. Expanded: flex-grow so it fills the middle
+                space and scrolls internally; collapsed: 0 height. */}
+            <div
+              className={clsx(
+                'grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+                cerebroExpanded
+                  ? 'flex-1 min-h-0 grid-rows-[1fr] opacity-100'
+                  : 'grid-rows-[0fr] opacity-0 pointer-events-none',
+              )}
+            >
+              <div className="overflow-hidden min-h-0">
+                {/* The left rail visually nests these threads under Cerebro,
+                    setting them apart from the icon-led menu items below. */}
+                <div className="h-full overflow-y-auto scrollbar-thin ml-[17px] pl-2.5 border-l border-white/[0.06] pb-2 mt-1">
+                  {grouped.length === 0 && (
+                    <div className="px-2 py-5 text-[11px] text-text-tertiary text-center">
+                      {isLoading ? t('common.loading') : t('nav.noConversationsYet')}
+                    </div>
+                  )}
+                  {grouped.map((group) => (
+                    <div key={group.label} className="mb-1">
+                      <div className="px-2 pt-2.5 pb-1 text-[10px] font-semibold text-text-tertiary/70 uppercase tracking-[0.1em] select-none">
+                        {t(`timeGroups.${group.label}`)}
+                      </div>
+                      <div className="space-y-px">
+                        {group.conversations.map((conv) => (
+                          <ConversationRow
+                            key={conv.id}
+                            conv={conv}
+                            isActive={conv.id === activeConversationId}
+                            // Selecting a thread may happen from any screen, so
+                            // route to chat as well as setting the conversation.
+                            onSelect={() => { setActiveScreen('chat'); setActiveConversation(conv.id); }}
+                            onRename={renameConversation}
+                            onDelete={(e) => handleDelete(e, conv.id)}
+                            onResetSession={() => { void window.cerebro.chatActions.resetSession(conv.id); }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="flex-shrink-0">
+          <GhostSeparator collapsed={collapsed} />
+
+          {/* Primary: Experts, Tasks, Routines, Files */}
           <NavGroup
-            items={navApps}
+            items={navPrimary}
             activeScreen={activeScreen}
             collapsed={collapsed}
             onNavClick={handleNavClick}
             spotlightedNavId={spotlightedNavId}
           />
-        ) : (
-          <div className="space-y-px">
-            <button
-              onClick={() => setAppsExpanded((v) => !v)}
-              className={clsx(
-                'group w-full flex items-center gap-2.5 px-2.5 py-[5px] rounded-md',
-                'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]',
-                'transition-all duration-150 cursor-pointer',
-              )}
-            >
-              <div className="flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0 text-text-tertiary group-hover:text-text-secondary">
-                <LayoutGrid size={14} strokeWidth={1.5} />
-              </div>
-              <span className="text-[13px] leading-none">{t('nav.apps')}</span>
-              <ChevronRight
-                size={13}
+
+          <GhostSeparator collapsed={collapsed} />
+
+          {/* Apps: an expandable group with its apps (Knowledge Base, …) nested
+              inside. Collapsed (icon rail) shows the apps directly. */}
+          {collapsed ? (
+            <NavGroup
+              items={navApps}
+              activeScreen={activeScreen}
+              collapsed={collapsed}
+              onNavClick={handleNavClick}
+              spotlightedNavId={spotlightedNavId}
+            />
+          ) : (
+            <div className="space-y-px">
+              <button
+                onClick={() => setAppsExpanded((v) => !v)}
                 className={clsx(
-                  'ml-auto text-text-tertiary transition-transform duration-150',
-                  appsExpanded && 'rotate-90',
+                  'group w-full flex items-center gap-2.5 px-2.5 py-[5px] rounded-md',
+                  'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]',
+                  'transition-all duration-150 cursor-pointer',
                 )}
-              />
-            </button>
-            {appsExpanded && (
-              <div className="ml-3 pl-2 border-l border-white/[0.06]">
-                <NavGroup
-                  items={navApps}
-                  activeScreen={activeScreen}
-                  collapsed={collapsed}
-                  onNavClick={handleNavClick}
-                  spotlightedNavId={spotlightedNavId}
+              >
+                <div className="flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0 text-text-tertiary group-hover:text-text-secondary">
+                  <LayoutGrid size={14} strokeWidth={1.5} />
+                </div>
+                <span className="text-[13px] leading-none">{t('nav.apps')}</span>
+                <ChevronRight
+                  size={13}
+                  className={clsx(
+                    'ml-auto text-text-tertiary transition-transform duration-150',
+                    appsExpanded && 'rotate-90',
+                  )}
                 />
-              </div>
-            )}
-          </div>
-        )}
+              </button>
+              {appsExpanded && (
+                <div className="ml-3 pl-2 border-l border-white/[0.06]">
+                  <NavGroup
+                    items={navApps}
+                    activeScreen={activeScreen}
+                    collapsed={collapsed}
+                    onNavClick={handleNavClick}
+                    spotlightedNavId={spotlightedNavId}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
-        <GhostSeparator collapsed={collapsed} />
+          <GhostSeparator collapsed={collapsed} />
 
-        {/* Oversight: Activity, Approvals */}
-        <NavGroup
-          items={navOversight}
-          activeScreen={activeScreen}
-          collapsed={collapsed}
-          onNavClick={handleNavClick}
-          spotlightedNavId={spotlightedNavId}
-        />
+          {/* Oversight: Activity, Approvals */}
+          <NavGroup
+            items={navOversight}
+            activeScreen={activeScreen}
+            collapsed={collapsed}
+            onNavClick={handleNavClick}
+            spotlightedNavId={spotlightedNavId}
+          />
+        </div>
       </nav>
-
-      {/* ── Conversation history (Chat screen, expanded only) ── */}
-      {activeScreen === 'chat' && !collapsed ? (
-        <>
-          <div className="mx-3 my-2 border-t border-border-subtle" />
-          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-2.5 pb-2">
-            {grouped.length === 0 && (
-              <div className="px-3 py-6 text-[11px] text-text-tertiary text-center">
-                {isLoading ? t('common.loading') : t('nav.noConversationsYet')}
-              </div>
-            )}
-            {grouped.map((group) => (
-              <div key={group.label} className="mb-1.5">
-                <div className="px-2 pt-3 pb-1 text-[11px] font-semibold text-text-tertiary uppercase tracking-[0.08em] select-none">
-                  {t(`timeGroups.${group.label}`)}
-                </div>
-                <div className="space-y-px">
-                  {group.conversations.map((conv) => (
-                    <ConversationRow
-                      key={conv.id}
-                      conv={conv}
-                      isActive={conv.id === activeConversationId}
-                      onSelect={() => setActiveConversation(conv.id)}
-                      onRename={renameConversation}
-                      onDelete={(e) => handleDelete(e, conv.id)}
-                      onResetSession={() => { void window.cerebro.chatActions.resetSession(conv.id); }}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className="flex-1" />
-      )}
 
       {/* ── Settings (footer) ────────────────────────────────── */}
       <div className="px-2.5 py-2 border-t border-white/[0.04]">

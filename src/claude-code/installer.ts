@@ -257,7 +257,8 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`update-expert\` — modify an existing expert's name, description, or system prompt. Use only when the user explicitly asks to change the expert itself (not when they ask the expert to do work). Always confirm the new wording with the user before invoking.
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
-- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot ticket, Telegram/WhatsApp/Slack **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — GitHub issue/PR/comment/review, **calendar event create/move/delete/RSVP and free-time lookup**, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Always pauses for human approval before the action runs.
+- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot tickets, contacts, companies, deals and lists, Telegram/WhatsApp/Slack **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — GitHub issue/PR/comment/review, **calendar event create/move/delete/RSVP and free-time lookup**, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. Pauses for human approval before the action runs, unless the user has set a per-destination "don't ask again" rule (see \`manage-auto-approvals\`).
+- \`manage-auto-approvals\` — record or revoke a "don't ask again" rule when the user wants Cerebro to stop (or resume) asking for approval before posting to a **specific Slack channel** ("no me pidas aprobación otra vez para #general", "don't ask again for #alerts", "vuelve a pedirme aprobación para #X"). Scoped to one channel, persistent, revocable. There is no global skip-all-approvals option.
 - \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, Slack, HubSpot, WhatsApp, GoHighLevel, GitHub, Calendar/Google/Outlook, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
 - \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "when a Slack DM arrives…", "when a new GitHub issue opens…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
 - \`knowledge-base\` — read from and write to the Knowledge Base (the built-in Notion-style pages app under Apps → Knowledge Base). Use when the user wants to look something up in, find, create, add to, or update a Knowledge Base / wiki / docs page, or save notes as a page ("save this as a page", "add a doc about X to my knowledge base", "what does my KB say about Y", "guarda esto como una página", "busca en la base de conocimiento", "crea una nota sobre…"). You work in markdown; the editor renders it as rich blocks.
@@ -265,9 +266,9 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 
 ## Integration actions
 
-When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), post a Slack message or file in a channel, DM a Slack user, open a GitHub issue, comment on a PR, submit a PR review, create/move/delete a calendar event, RSVP to an invite, find free time, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "publica en #general en Slack", "mándale un DM a Pablo por Slack", "mándale el manual en PDF", "crea una reunión con Pablo mañana a las 2", "mueve mi reunión de las 3 al viernes", "avísame en 30 minutos", "abre un issue en GitHub", "revisa el PR #42", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome.
+When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), post a Slack message or file in a channel, DM a Slack user, open a GitHub issue, comment on a PR, submit a PR review, create/move/delete a calendar event, RSVP to an invite, find free time, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "publica en #general en Slack", "mándale un DM a Pablo por Slack", "mándale el manual en PDF", "crea una reunión con Pablo mañana a las 2", "mueve mi reunión de las 3 al viernes", "avísame en 30 minutos", "abre un issue en GitHub", "revisa el PR #42", etc.) — use the \`run-chat-action\` skill. Always confirm the parameters with the user before invoking, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome. The one exception: if the user has set a "don't ask again" rule for that exact Slack channel (via \`manage-auto-approvals\`), the send runs immediately without pausing. If the user asks you to stop asking for approval for a channel, use \`manage-auto-approvals\` — never claim you can disable approvals entirely.
 
-When sending media, prefer \`file_item_id\` (referencing a file Cerebro already has — e.g., one a previous step generated and registered). Use \`file_path\` only as an escape hatch for an absolute path Cerebro just wrote to disk.
+When sending media, prefer \`file_item_id\` (referencing a file Cerebro already has — e.g., one a previous step generated and registered). Use \`file_path\` only as an escape hatch for an absolute path Cerebro just wrote to disk — and if a file shows up in context as a \`@/path\` line, drop the leading \`@\` (the real path starts at the \`/\`). To send a **file** on Slack, use \`send_slack_file\` (it uploads the bytes); never paste a path into a \`send_slack_message\` text body — that posts an unusable local path instead of the file.
 
 ### "Tickets" vs "tareas" — when in doubt, check both
 
@@ -1145,9 +1146,11 @@ curl -sf "http://127.0.0.1:$PORT/chat-actions/catalog?lang=$LANG_CODE" \\
 set -euo pipefail
 
 # Runs a single chat-triggered integration action through Cerebro's routine
-# engine. Always pauses for human approval before the action executes — the
-# call below blocks until the user clicks Approve or Deny in the Approvals
-# tab, then prints the structured result.
+# engine. Pauses for human approval before the action executes — the call below
+# blocks until the user clicks Approve or Deny in the Approvals tab, then prints
+# the structured result. (Exception: if the user has set a "don't ask again"
+# auto-approval rule for this exact destination, the action runs immediately and
+# the call returns without pausing.)
 #
 # Usage: bash run-chat-action.sh <json-file>
 #
@@ -1233,6 +1236,108 @@ case "$STATUS" in
     exit 1
     ;;
 esac
+`,
+    },
+    {
+      name: 'manage-auto-approvals.sh',
+      content: `#!/usr/bin/env bash
+set -euo pipefail
+
+# Manage "don't ask again" auto-approval rules. A rule lets ONE chat action skip
+# the approval gate for ONE exact destination (e.g. Slack messages to a single
+# channel). A brand-new destination still pauses for approval the first time.
+# Rules persist across restarts and are revocable here or in the Approvals tab.
+#
+# Usage:
+#   bash manage-auto-approvals.sh add <action_type> <target_key> [target_label]
+#   bash manage-auto-approvals.sh revoke <action_type> <target_key>
+#   bash manage-auto-approvals.sh list
+#
+#   <action_type>  chat action, e.g. send_slack_message or send_slack_file
+#   <target_key>   destination id, e.g. a Slack channel id (C…/G…/D…)
+#   <target_label> optional human label for the UI, e.g. "#general"
+#
+# Exit codes: 0 success · 1 failure
+
+RUNTIME_JSON="\${CLAUDE_PROJECT_DIR:-.}/.claude/cerebro-runtime.json"
+
+if [ ! -f "$RUNTIME_JSON" ]; then
+  echo "ERROR: Runtime info not found at $RUNTIME_JSON" >&2
+  exit 1
+fi
+
+PORT=$(jq -r .chat_actions_port "$RUNTIME_JSON" 2>/dev/null)
+TOKEN=$(jq -r .chat_actions_token "$RUNTIME_JSON" 2>/dev/null)
+if [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+  echo "ERROR: chat-actions server not running (no chat_actions_port/token in $RUNTIME_JSON)" >&2
+  exit 1
+fi
+
+BASE="http://127.0.0.1:$PORT/chat-actions/auto-approvals"
+CMD="\${1:-}"
+
+post_json() { # $1=url  $2=json-body
+  curl -s --max-time 30 -w "\\n%{http_code}" \\
+    -X POST "$1" \\
+    -H "Authorization: Bearer $TOKEN" \\
+    -H "Content-Type: application/json" \\
+    -d "$2" 2>&1
+}
+
+case "$CMD" in
+  add)
+    ACTION_TYPE="\${2:-}"; TARGET_KEY="\${3:-}"; TARGET_LABEL="\${4:-}"
+    if [ -z "$ACTION_TYPE" ] || [ -z "$TARGET_KEY" ]; then
+      echo "ERROR: Usage: manage-auto-approvals.sh add <action_type> <target_key> [target_label]" >&2
+      exit 1
+    fi
+    PAYLOAD=$(jq -n --arg a "$ACTION_TYPE" --arg t "$TARGET_KEY" --arg l "$TARGET_LABEL" \\
+      '{action_type:$a, target_key:$t} + (if $l == "" then {} else {target_label:$l} end)')
+    RESPONSE=$(post_json "$BASE" "$PAYLOAD") || { echo "ERROR: Cannot reach chat-actions server" >&2; exit 1; }
+    ;;
+  revoke)
+    ACTION_TYPE="\${2:-}"; TARGET_KEY="\${3:-}"
+    if [ -z "$ACTION_TYPE" ] || [ -z "$TARGET_KEY" ]; then
+      echo "ERROR: Usage: manage-auto-approvals.sh revoke <action_type> <target_key>" >&2
+      exit 1
+    fi
+    PAYLOAD=$(jq -n --arg a "$ACTION_TYPE" --arg t "$TARGET_KEY" '{action_type:$a, target_key:$t}')
+    RESPONSE=$(post_json "$BASE/revoke" "$PAYLOAD") || { echo "ERROR: Cannot reach chat-actions server" >&2; exit 1; }
+    ;;
+  list)
+    RESPONSE=$(curl -s --max-time 30 -w "\\n%{http_code}" \\
+      -X GET "$BASE" -H "Authorization: Bearer $TOKEN" 2>&1) || { echo "ERROR: Cannot reach chat-actions server" >&2; exit 1; }
+    ;;
+  *)
+    echo "ERROR: Unknown command '\${CMD}'. Use: add | revoke | list" >&2
+    exit 1
+    ;;
+esac
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_RESPONSE=$(echo "$RESPONSE" | sed '$ d')
+
+if [ "$HTTP_CODE" -ge 200 ] 2>/dev/null && [ "$HTTP_CODE" -lt 300 ] 2>/dev/null; then
+  case "$CMD" in
+    add)
+      LABEL=$(echo "$BODY_RESPONSE" | jq -r '.rule.target_label // .rule.target_key // ""')
+      echo "SUCCESS: Auto-approval enabled for $ACTION_TYPE → \${LABEL}"
+      ;;
+    revoke)
+      DELETED=$(echo "$BODY_RESPONSE" | jq -r '.deleted // 0')
+      echo "SUCCESS: Removed $DELETED auto-approval rule(s) for $ACTION_TYPE → $TARGET_KEY"
+      ;;
+    list)
+      echo "SUCCESS: Auto-approval rules"
+      echo "$BODY_RESPONSE" | jq '.rules // []'
+      ;;
+  esac
+  exit 0
+else
+  ERROR=$(echo "$BODY_RESPONSE" | jq -r '.error // ""' 2>/dev/null)
+  echo "ERROR: \${ERROR:-request failed} (HTTP $HTTP_CODE)" >&2
+  exit 1
+fi
 `,
     },
     {
@@ -2016,7 +2121,7 @@ Present a concise list — title, column, priority, and due date when present. I
     },
     {
       name: 'run-chat-action',
-      description: 'Invoke a connected integration action (HubSpot, Telegram, Slack, WhatsApp, …) directly from chat. Always pauses for human approval.',
+      description: 'Invoke a connected integration action (HubSpot, Telegram, Slack, WhatsApp, …) directly from chat. Pauses for human approval unless the user has set a "don\'t ask again" rule for that exact destination.',
       body: `# Run chat action
 
 Use this skill whenever the user asks Cerebro to **do** something through a connected integration — anything that touches an external service (HubSpot, Telegram, Slack, WhatsApp, HTTP endpoints, desktop notifications, and any future integrations like GitHub or iMessage).
@@ -2027,10 +2132,27 @@ The user may speak in **English or Spanish** (or mix them). Recognize natural-la
 | --- | --- |
 | "Create a HubSpot ticket about X" / "Crea un ticket de HubSpot sobre X" | \`hubspot_create_ticket\` |
 | "Create a HubSpot ticket about X and link it to juan@…" / "Crea un ticket de HubSpot sobre X y asócialo a juan@…" | \`hubspot_create_ticket\` (pass \`contact_email\`) |
+| "Create a HubSpot ticket about X and assign it to María" / "Crea un ticket de HubSpot sobre X y asígnalo a María" | \`hubspot_create_ticket\` (pass \`owner\`) |
+| "Create a HubSpot ticket due 2026-06-10 with follow-up juan@…" / "Crea un ticket de HubSpot con vencimiento 2026-06-10 y seguimiento a juan@…" | \`hubspot_create_ticket\` (pass \`due_date\`, \`follow_up_user\`) |
+| "Reassign HubSpot ticket 12345 to juan@…" / "Reasigna el ticket 12345 de HubSpot a juan@…" | \`hubspot_update_ticket\` (pass \`owner\`) |
+| "Set the due date of HubSpot ticket 12345 to 2026-06-10" / "Pon la fecha de vencimiento del ticket 12345 al 2026-06-10" | \`hubspot_update_ticket\` (pass \`due_date\`) |
 | "Add Maria to HubSpot" / "Agrega a María a HubSpot" | \`hubspot_upsert_contact\` |
 | "Is juan@… a contact in HubSpot?" / "¿Está juan@… como contacto en HubSpot?" | \`hubspot_search_contact\` |
 | "List the HubSpot tickets created today" / "Lista los tickets de HubSpot creados hoy" | \`hubspot_search_tickets\` |
 | "Show me the open HubSpot tickets" / "Muéstrame los tickets de HubSpot abiertos" | \`hubspot_search_tickets\` |
+| "Which company / contact is HubSpot ticket 12345 from?" / "¿De qué empresa / contacto es el ticket 12345 de HubSpot?" | \`hubspot_get_ticket\` |
+| "Change HubSpot ticket 12345 priority to High" / "Cambia la prioridad del ticket 12345 de HubSpot a alta" | \`hubspot_update_ticket\` |
+| "Move HubSpot ticket 12345 to the Waiting stage" / "Mueve el ticket 12345 de HubSpot a la etapa En espera" | \`hubspot_update_ticket\` |
+| "List my HubSpot companies / deals" / "Lista mis empresas / negocios de HubSpot" | \`hubspot_list_objects\` (\`object_type\`) |
+| "Add the company Acme (acme.com) to HubSpot" / "Agrega la empresa Acme (acme.com) a HubSpot" | \`hubspot_create_object\` (\`object_type: companies\`) |
+| "Create a HubSpot deal called Q3 Renewal for 5000" / "Crea un negocio llamado Renovación Q3 por 5000" | \`hubspot_create_object\` (\`object_type: deals\`) |
+| "Update the deal 12345 amount to 8000" / "Actualiza el monto del negocio 12345 a 8000" | \`hubspot_update_object\` (\`object_type: deals\`) |
+| "Delete company 678 from HubSpot" / "Elimina la empresa 678 de HubSpot" | \`hubspot_delete_object\` |
+| "List my HubSpot lists / segments" / "Lista mis listas / segmentos de HubSpot" | \`hubspot_list_lists\` |
+| "Create a HubSpot list called VIP" / "Crea una lista de HubSpot llamada VIP" | \`hubspot_create_list\` |
+| "Rename HubSpot list 42 to Top accounts" / "Renombra la lista 42 a Cuentas top" | \`hubspot_update_list\` |
+| "Delete HubSpot list 42" / "Elimina la lista 42 de HubSpot" | \`hubspot_delete_list\` |
+| "Add contact 789 to the VIP list 42" / "Añade el contacto 789 a la lista VIP 42" | \`hubspot_list_membership\` (\`mode: add\`) |
 | "Send Pablo a Telegram" / "Envíale un Telegram a Pablo" | \`send_telegram_message\` |
 | "Post in #general on Slack saying X" / "Publica en #general en Slack diciendo X" | \`send_slack_message\` |
 | "DM @Pablo on Slack about X" / "Mándale un DM a @Pablo por Slack sobre X" | \`send_slack_message\` (use the DM channel id, D…) |
@@ -2057,6 +2179,30 @@ The user may speak in **English or Spanish** (or mix them). Recognize natural-la
 
 **HubSpot — listing tickets.** When the user asks to *see* or *list* tickets ("list the tickets created today", "lista los tickets de hoy", "show open tickets"), use \`hubspot_search_tickets\` — it's read-only. For "created today", pass \`created_after\` = the start of today and \`created_before\` = the start of tomorrow, as ISO dates in the user's local day (e.g. \`2026-05-28\` / \`2026-05-29\`). The result includes each ticket's \`stage_label\` and a \`ticket_url\` — use those in your reply rather than the raw ids. Note "ticket" is ambiguous in Spanish: see the \`list-tasks\` skill and the check-both rule in your main instructions before deciding whether the user means a HubSpot ticket or a Cerebro task.
 
+**HubSpot — which company / contact is a ticket from.** When the user asks *who* or *which company* a ticket belongs to ("¿de qué empresa es el ticket 12345?", "who's the contact on this ticket?"), use \`hubspot_get_ticket\` with the \`ticket_id\`. It returns the ticket plus its associated \`contacts[]\` and \`companies[]\`. In HubSpot the company is usually **not** linked to the ticket directly — it comes from the ticket's associated *contact* — so each company carries \`source\` (\`"ticket"\` for a direct link, \`"contact"\` when derived through the contact) and \`via_contact_id\`. When \`source\` is \`"contact"\`, say so ("Acme — through the contact María"). To see the companies for *many* tickets at once (e.g. "how many of today's tickets are from Argos vs Keralty?"), pass \`include_associations: true\` to \`hubspot_search_tickets\` and group by company.
+
+**HubSpot — editing a ticket.** When the user asks to *change*, *edit*, *update*, or *move* an existing ticket ("change ticket 12345 priority to high", "cambia la prioridad del ticket 12345", "mueve el ticket a la etapa En espera", "update the subject", "reassign the ticket"), use \`hubspot_update_ticket\` with the \`ticket_id\` plus only the fields to change. Named fields cover the common cases — \`subject\`, \`content\`, \`priority\` (LOW/MEDIUM/HIGH), \`pipeline\`, \`stage\`, \`owner\` (assign by name/email — see below), \`follow_up_user\`, \`due_date\`, \`source_type\`; for any other (including **custom**) ticket property, pass a \`properties\` map of HubSpot internal name → value (it overrides the named fields on conflict). Only the fields you send are changed — everything else is left untouched. If you don't know the ticket id, find it first with \`hubspot_search_tickets\`; to confirm the current values (or the stage/pipeline ids) before editing, use \`hubspot_get_ticket\`. Like every HubSpot write this pauses for approval — confirm the change with the user first, then wait for the Approvals result before replying.
+
+**HubSpot — owner, follow-up user, and due date.** To **assign** a ticket (on \`hubspot_create_ticket\` or \`hubspot_update_ticket\`), pass \`owner\` with the person's **name or email** — Cerebro resolves it to the HubSpot user id for you (you don't need the numeric owner id). Same for \`follow_up_user\` (the *usuario de seguimiento*). For the **due date** (*fecha de vencimiento*) pass \`due_date\` as an absolute \`YYYY-MM-DD\` (you know today's date — convert "mañana"/"next Friday" yourself). If a name is ambiguous the action returns a \`warnings\` entry listing the matching emails — re-run with the exact email. Follow-up user and due date are **custom** ticket properties: they only apply if the user mapped them in Settings → Integrations → HubSpot; if they aren't configured the ticket is still created/updated and a \`warning\` explains the field was skipped, so relay that to the user. Resolving names needs the \`crm.objects.owners.read\` scope on the Private App — if owners can't be read the \`warnings\` will say so.
+
+**HubSpot — contacts, companies, deals (CRUD).** Beyond tickets, you can list/create/edit/delete the core CRM objects. Map the noun the user uses to \`object_type\`: people → \`contacts\`, *empresa(s)* / company → \`companies\`, *negocio(s)* / deal → \`deals\`. Use \`hubspot_list_objects\` to *see* records (read-only; filter by \`query\` or a typed field like \`email\`/\`domain\`/\`name\`/\`dealstage\`/\`pipeline\`), \`hubspot_create_object\` to add, \`hubspot_update_object\` (needs \`object_id\`) to edit, and \`hubspot_delete_object\` (needs \`object_id\`) to remove. Pass the common fields as named params (\`name\`, \`domain\`, \`dealname\`, \`amount\`, …) and anything exotic via the \`properties\` map. **For contacts specifically, prefer \`hubspot_upsert_contact\`** — it dedups by email/phone, whereas \`hubspot_create_object\` with \`object_type: contacts\` just routes through the same upsert. If you don't have an id to edit/delete, find it first with \`hubspot_list_objects\`. \`hubspot_delete_object\` **archives** the record (recoverable in HubSpot) — it still pauses for approval like every write, so confirm with the user before invoking.
+
+**HubSpot — lists / segments.** A "list" and a "segment" are the same thing. Use \`hubspot_list_lists\` to see them, \`hubspot_create_list\` to add one (defaults to a **static** list you can put records into; pass \`processing_type: DYNAMIC\` for a filter-based one), \`hubspot_update_list\` to rename, and \`hubspot_delete_list\` to archive it (the records on it are **not** deleted). To put someone *on* a list, use \`hubspot_list_membership\` with \`list_id\`, \`mode\` (\`add\`/\`remove\`) and \`record_ids\` — but you need the record's id first, so look the contact up with \`hubspot_list_objects\` or \`hubspot_search_contact\` and pass that id. **Only static lists accept manual membership** — dynamic lists are populated by HubSpot from their filters, so an add/remove there will come back as an error; tell the user the list is dynamic if that happens.
+
+**HubSpot — when companies can't be read (missing scope).** If the action result has \`companies_scope_missing: true\` (or the summary notes companies weren't returned), the contacts came back fine but the HubSpot token lacks the \`crm.objects.companies.read\` permission. Don't just say "I can't" — tell the user exactly how to fix it, **step by step**, and reassure them the token does **not** change so they won't have to re-paste it. Walk them through it in their language, roughly:
+
+1. In HubSpot, click the **⚙ Settings** gear (top right).
+2. In the left menu, go to **Integrations → Private Apps**.
+3. Open the private app you connected to Cerebro.
+4. Go to the **Scopes** tab and click **Edit scopes** (or **Add new scopes**).
+5. Search for **companies** and tick **\`crm.objects.companies.read\`**.
+6. Click **Commit changes** (top right) to save.
+7. That's it — the access token stays the same, so nothing to re-paste in Cerebro. Then ask the same question again and Cerebro will read the company.
+
+Adjust the wording naturally and translate to Spanish when the user writes in Spanish ("haz clic en el engranaje ⚙ Configuración", "Integraciones → Aplicaciones privadas", "pestaña Permisos", "marca \`crm.objects.companies.read\`", "pulsa Confirmar cambios", "el token no cambia"). Keep it friendly and concrete, not a raw paste of this list.
+
+**Slack — sending a file vs a message.** To send/share a **file** (an image, PDF, doc, the logo, …) on Slack, always use \`send_slack_file\` — it uploads the actual bytes so the recipient can open and download it. **Never** put a file path in a \`send_slack_message\` text body: that posts a useless local path like \`@/home/…/logo.png\`, not the file. Same rule for Telegram/WhatsApp media — use the dedicated media action, not a text message. When you reference a file, prefer \`file_item_id\` (a file Cerebro generated/registered); otherwise pass \`file_path\` as the **real absolute path** — and if the attachment shows up in context as \`@/abs/path\`, drop the leading \`@\` (the real path starts at the \`/\`).
+
 ## Workflow
 
 1. **List what's available.** Run \`list-chat-actions\` to see the current catalog and which integrations are connected. If the action the user wants shows \`availability: "not_connected"\`, tell them which integration to wire up (point to **Connections** / **Integrations**) and stop.
@@ -2073,7 +2219,7 @@ jq -n \\
 bash "$CLAUDE_PROJECT_DIR/.claude/scripts/run-chat-action.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/chat-action.json"
 \`\`\`
 
-5. **Tell the user the run is paused for approval.** The script blocks until the user clicks Approve or Deny in the **Approvals** tab. While you're waiting, do not start another action.
+5. **Tell the user the run is paused for approval.** The script blocks until the user clicks Approve or Deny in the **Approvals** tab. While you're waiting, do not start another action. (If the user previously said "don't ask again" for this exact Slack channel, the action runs immediately and you'll get \`SUCCESS\` straight away — no pause. See the \`manage-auto-approvals\` skill.)
 
 ## Interpreting the result
 
@@ -2084,9 +2230,67 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/run-chat-action.sh" "$CLAUDE_PROJECT_D
 
 ## What this skill does NOT do
 
-- Skip approval. Every action runs through the human approval gate by design.
+- Turn off approval wholesale. Every action runs through the human approval gate by default. The **only** exception is a per-destination "don't ask again" rule the user sets explicitly — recorded via the \`manage-auto-approvals\` skill, scoped to one exact Slack channel. There is no global "skip all approvals" switch; never imply one exists.
 - Compose multi-step workflows. Use **Routines** for anything that should run more than once.
 - Read or modify the file system, run code, or call experts — pick a different tool for that.
+`,
+    },
+    {
+      name: 'manage-auto-approvals',
+      description:
+        'Record or revoke a "don\'t ask again" approval rule for a specific Slack channel. Use when the user says to stop (or resume) asking for approval for messages to a given channel. Spanish: "no me pidas aprobación otra vez para este canal", "ya no me pidas aprobar los mensajes a #X", "vuelve a pedirme aprobación para #X".',
+      body: `# Manage auto-approvals
+
+By default **every** integration send pauses for human approval. A user can lift that for **one exact destination** — today, a specific Slack channel — by telling you so in chat. This skill records (or revokes) that standing "don't ask again" rule. The rule is **narrow** (one action + one channel), **persistent** (survives restart), and **revocable** here or in the Approvals tab. A brand-new channel still asks the first time.
+
+Use the **Bash** tool to run \`manage-auto-approvals.sh\`.
+
+## When to use it
+
+Match natural-language requests in **English or Spanish**, usually right after you've sent something to a Slack channel:
+
+| User says (EN / ES) | Do |
+| --- | --- |
+| "Don't ask me for approval again for #general" / "No me pidas aprobación otra vez para #general" | **add** a rule for that channel |
+| "Stop asking me to approve messages to this channel" / "Ya no me pidas aprobar los mensajes a este canal" | **add** a rule for that channel |
+| "You can post to #alerts without asking" / "Puedes publicar en #alertas sin preguntar" | **add** a rule for that channel |
+| "Ask me again before posting to #general" / "Vuelve a pedirme aprobación para #general" | **revoke** the rule |
+| "Which channels post without approval?" / "¿En qué canales publicas sin aprobación?" | **list** the rules |
+
+This only applies to Slack sends (\`send_slack_message\`, \`send_slack_file\`). It does **not** disable approval globally — there is no all-actions "off switch", and you must never imply there is one.
+
+## You need the channel **id**
+
+Rules key off the Slack **channel id** (\`C…\`/\`G…\`/\`D…\`), not the name. If you already sent to this channel in the conversation, reuse that id. If you only have a name like \`#general\`, run \`list_slack_channels\` via \`run-chat-action\` first to resolve the id. Pass the human name as the optional label so the Approvals UI reads nicely.
+
+## Add a rule
+
+When the user refers to a channel generally ("don't ask again for #X"), add rules for **both** Slack send actions so neither messages nor files re-prompt:
+
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" add send_slack_message C0123456 "#general"
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" add send_slack_file C0123456 "#general"
+\`\`\`
+
+If they clearly mean only text messages, add just \`send_slack_message\`.
+
+## Revoke a rule
+
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" revoke send_slack_message C0123456
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" revoke send_slack_file C0123456
+\`\`\`
+
+## List rules
+
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" list
+\`\`\`
+
+## After running
+
+- On \`SUCCESS\`, confirm plainly in the user's language and be explicit about scope — e.g. "Done — I won't ask for approval again before posting to #general. Other channels will still ask, and you can revoke this anytime from Approvals." / "Listo — ya no te pediré aprobación para publicar en #general. Los demás canales seguirán pidiéndola y puedes revocarlo cuando quieras desde Aprobaciones."
+- On \`ERROR\`, surface the message. \`not_auto_approvable:<type>\` means that action can't be auto-approved — tell the user only Slack sends support this today.
 `,
     },
     {
@@ -2128,7 +2332,7 @@ Find these in the conversation. If anything is missing, **ask one short clarifyi
   }
   \`\`\`
 
-To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`hubspot_search_contact\`, \`send_telegram_message\`, \`send_slack_message\`, \`send_slack_file\`, \`list_slack_channels\`, \`send_whatsapp_message\`, \`send_notification\`, \`github_create_issue\`, \`github_comment_issue\`, \`github_comment_pr\`, \`github_review_pr\`, \`github_open_pr\`, \`github_fetch_issue\`, \`github_fetch_pr\`, \`github_clone_worktree\`, \`github_commit_and_push\`, \`calendar_create_event\`, \`calendar_update_event\`, \`calendar_delete_event\`, \`calendar_rsvp\`, \`calendar_query_events\`, \`calendar_find_free_time\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, Slack, HubSpot, WhatsApp, email), any calendar mutation (\`calendar_create_event\`, \`calendar_update_event\`, \`calendar_delete_event\`, \`calendar_rsvp\`), and for any GitHub mutation (\`github_create_issue\`, \`github_comment_*\`, \`github_review_pr\`, \`github_open_pr\`, \`github_commit_and_push\`).
+To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`hubspot_search_contact\`, \`hubspot_search_tickets\`, \`hubspot_get_ticket\`, \`hubspot_update_ticket\`, \`hubspot_list_objects\`, \`hubspot_create_object\`, \`hubspot_update_object\`, \`hubspot_delete_object\`, \`hubspot_list_lists\`, \`hubspot_create_list\`, \`hubspot_update_list\`, \`hubspot_delete_list\`, \`hubspot_list_membership\`, \`send_telegram_message\`, \`send_slack_message\`, \`send_slack_file\`, \`list_slack_channels\`, \`send_whatsapp_message\`, \`send_notification\`, \`github_create_issue\`, \`github_comment_issue\`, \`github_comment_pr\`, \`github_review_pr\`, \`github_open_pr\`, \`github_fetch_issue\`, \`github_fetch_pr\`, \`github_clone_worktree\`, \`github_commit_and_push\`, \`calendar_create_event\`, \`calendar_update_event\`, \`calendar_delete_event\`, \`calendar_rsvp\`, \`calendar_query_events\`, \`calendar_find_free_time\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, Slack, HubSpot, WhatsApp, email), any calendar mutation (\`calendar_create_event\`, \`calendar_update_event\`, \`calendar_delete_event\`, \`calendar_rsvp\`), and for any GitHub mutation (\`github_create_issue\`, \`github_comment_*\`, \`github_review_pr\`, \`github_open_pr\`, \`github_commit_and_push\`).
 
 For the auto-fix-issue → PR pattern, the canonical DAG is: trigger \`github_issue_opened\` → \`github_fetch_issue\` (\`include_comments: true\`) → \`run_expert\` (analyze + plan) → \`github_clone_worktree\` → \`run_expert\` (write code in the worktree path) → \`github_commit_and_push\` (approval-gated) → \`github_open_pr\` (approval-gated). The expert step that writes code should pass \`workspacePath\` set to the worktree path so the file edits land in the cloned repo.
 
@@ -2266,7 +2470,7 @@ Currently supported \`integration_id\` values: \`telegram\`, \`slack\`, \`hubspo
    ### HubSpot (Private App access token)
    - In HubSpot, open **Settings → Integrations → Private Apps** (also reachable via the Legacy Apps shortcut).
    - Click **Create a private app**, name it (e.g. "Cerebro"), and click **Scopes**.
-   - Enable read+write on **tickets**, **contacts**, and **pipelines** (CRM scopes).
+   - Enable **tickets** and **pipelines**, plus **read + write** on **contacts**, **companies**, **deals**, and **lists** (the \`crm.objects.*\` and \`crm.lists.*\` CRM scopes) so Cerebro can manage your CRM records and segments.
    - Click **Create app**, then **Show token** and copy the \`pat-na1-…\` value.
    - Paste the token in the card's step 2. Cerebro verifies it via the HubSpot account-info API.
 

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useLayoutEffect, useCallback } from 'react';
+import { lazy, Suspense, useRef, useLayoutEffect, useCallback, type ReactNode } from 'react';
 import type { Message } from '../../types/chat';
 import ChatMessage from './ChatMessage';
 
@@ -7,9 +7,11 @@ const ChatEmptyState = lazy(() => import('./ChatEmptyState'));
 interface MessageListProps {
   messages: Message[];
   conversationId: string;
+  /** Rendered at the end of the scrollable stream, after the last message. */
+  footer?: ReactNode;
 }
 
-export default function MessageList({ messages, conversationId }: MessageListProps) {
+export default function MessageList({ messages, conversationId, footer }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const messageNodes = useRef(new Map<string, HTMLDivElement>());
   const prevConvIdRef = useRef<string | null>(null);
@@ -72,6 +74,7 @@ export default function MessageList({ messages, conversationId }: MessageListPro
         {messages.map((msg) => (
           <ChatMessage key={msg.id} message={msg} nodeRef={setMessageNode(msg.id)} />
         ))}
+        {footer}
       </div>
     </div>
   );

@@ -1,12 +1,29 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ShieldCheck, Loader2 } from 'lucide-react';
+import { ShieldCheck, Loader2, ShieldOff, Trash2, Hash } from 'lucide-react';
 import clsx from 'clsx';
 import { useApprovals } from '../../context/ApprovalContext';
-import type { ApprovalRequest, ApprovalListResponse } from '../../types/approvals';
+import type {
+  ApprovalRequest,
+  ApprovalListResponse,
+  AutoApprovalRule,
+  AutoApprovalRuleListResponse,
+} from '../../types/approvals';
 import ApprovalCard from './approvals/ApprovalCard';
 
-type Tab = 'pending' | 'history';
+type Tab = 'pending' | 'history' | 'auto';
+
+/** Humanize an auto-approval action type for display, e.g. "Slack message". */
+function actionTypeLabel(actionType: string): string {
+  switch (actionType) {
+    case 'send_slack_message':
+      return 'Slack message';
+    case 'send_slack_file':
+      return 'Slack file';
+    default:
+      return actionType;
+  }
+}
 
 export default function ApprovalsScreen() {
   const { t } = useTranslation();
@@ -15,6 +32,44 @@ export default function ApprovalsScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('pending');
   const [history, setHistory] = useState<ApprovalRequest[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  const [autoRules, setAutoRules] = useState<AutoApprovalRule[]>([]);
+  const [isLoadingAuto, setIsLoadingAuto] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  const loadAutoRules = useCallback(async () => {
+    setIsLoadingAuto(true);
+    try {
+      const res = await window.cerebro.invoke<AutoApprovalRuleListResponse>({
+        method: 'GET',
+        path: '/engine/auto-approvals',
+      });
+      if (res.ok && res.data?.rules) {
+        setAutoRules(res.data.rules);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsLoadingAuto(false);
+    }
+  }, []);
+
+  const revokeAutoRule = useCallback(async (id: string) => {
+    setRevokingId(id);
+    try {
+      const res = await window.cerebro.invoke({
+        method: 'DELETE',
+        path: `/engine/auto-approvals/${id}`,
+      });
+      if (res.ok) {
+        setAutoRules((prev) => prev.filter((r) => r.id !== id));
+      }
+    } catch {
+      // ignore
+    } finally {
+      setRevokingId(null);
+    }
+  }, []);
 
   const loadHistory = useCallback(async () => {
     setIsLoadingHistory(true);
@@ -33,12 +88,14 @@ export default function ApprovalsScreen() {
     }
   }, []);
 
-  // Load history when switching to that tab
+  // Load history / auto-approval rules when switching to those tabs
   useEffect(() => {
     if (activeTab === 'history') {
       loadHistory();
+    } else if (activeTab === 'auto') {
+      loadAutoRules();
     }
-  }, [activeTab, loadHistory]);
+  }, [activeTab, loadHistory, loadAutoRules]);
 
   // Refresh pending on mount
   useEffect(() => {
@@ -76,7 +133,7 @@ export default function ApprovalsScreen() {
 
         {/* Tabs */}
         <div className="flex gap-0 border-b border-border-subtle" data-tour-id="approvals-tabs">
-          {(['pending', 'history'] as Tab[]).map((tab) => (
+          {(['pending', 'history', 'auto'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -89,7 +146,9 @@ export default function ApprovalsScreen() {
             >
               {tab === 'pending'
                 ? (pendingApprovals.length > 0 ? t('approvals.pendingTabCount', { count: pendingApprovals.length }) : t('approvals.pendingTab'))
-                : t('approvals.historyTab')}
+                : tab === 'history'
+                  ? t('approvals.historyTab')
+                  : t('approvals.autoTab')}
             </button>
           ))}
         </div>
@@ -121,7 +180,7 @@ export default function ApprovalsScreen() {
               ))}
             </div>
           )
-        ) : (
+        ) : activeTab === 'history' ? (
           isLoadingHistory ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 size={20} className="animate-spin text-text-tertiary" />
@@ -144,6 +203,56 @@ export default function ApprovalsScreen() {
                   approval={approval}
                   variant="history"
                 />
+              ))}
+            </div>
+          )
+        ) : (
+          isLoadingAuto ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 size={20} className="animate-spin text-text-tertiary" />
+            </div>
+          ) : autoRules.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center py-16">
+              <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/[0.03] mb-4">
+                <ShieldOff size={24} className="text-text-tertiary" />
+              </div>
+              <h2 className="text-[15px] font-medium text-text-secondary mb-1">{t('approvals.noAuto')}</h2>
+              <p className="text-[12px] text-text-tertiary max-w-xs">
+                {t('approvals.noAutoDescription')}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-w-2xl">
+              <p className="text-[12px] text-text-tertiary mb-1">{t('approvals.autoSubtitle')}</p>
+              {autoRules.map((rule) => (
+                <div
+                  key={rule.id}
+                  className="flex items-center gap-3 rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3"
+                >
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent/10 flex-shrink-0">
+                    <Hash size={15} className="text-accent" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-text-primary truncate">
+                      {rule.target_label || rule.target_key}
+                    </p>
+                    <p className="text-[11px] text-text-tertiary truncate">
+                      {actionTypeLabel(rule.action_type)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => revokeAutoRule(rule.id)}
+                    disabled={revokingId === rule.id}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-text-secondary hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                  >
+                    {revokingId === rule.id ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={13} />
+                    )}
+                    {t('approvals.revoke')}
+                  </button>
+                </div>
               ))}
             </div>
           )

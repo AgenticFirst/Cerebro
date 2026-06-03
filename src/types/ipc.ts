@@ -206,6 +206,7 @@ export const IPC_CHANNELS = {
   // HubSpot CRM
   HUBSPOT_VERIFY: 'hubspot:verify',
   HUBSPOT_LIST_PIPELINES: 'hubspot:list-pipelines',
+  HUBSPOT_LIST_TICKET_PROPERTIES: 'hubspot:list-ticket-properties',
   HUBSPOT_STATUS: 'hubspot:status',
   HUBSPOT_SET_TOKEN: 'hubspot:set-token',
   HUBSPOT_CLEAR_TOKEN: 'hubspot:clear-token',
@@ -1152,11 +1153,20 @@ export interface HubSpotPipelineSummary {
   stages: Array<{ id: string; label: string; displayOrder: number }>;
 }
 
+export interface HubSpotTicketPropertySummary {
+  name: string;
+  label: string;
+  type: string;
+  fieldType: string;
+}
+
 export interface HubSpotStatusResponse {
   hasToken: boolean;
   portalId: string | null;
   defaultPipeline: string | null;
   defaultStage: string | null;
+  followUpProperty: string | null;
+  dueDateProperty: string | null;
   tokenBackend: 'os-keychain' | 'plaintext-fallback';
 }
 
@@ -1169,10 +1179,16 @@ export interface HubSpotVerifyResult {
 export interface HubSpotAPI {
   verify(token: string): Promise<HubSpotVerifyResult>;
   listPipelines(): Promise<{ ok: boolean; pipelines?: HubSpotPipelineSummary[]; error?: string }>;
+  listTicketProperties(): Promise<{ ok: boolean; properties?: HubSpotTicketPropertySummary[]; error?: string }>;
   status(): Promise<HubSpotStatusResponse>;
   setToken(token: string): Promise<{ ok: boolean; error?: string }>;
   clearToken(): Promise<{ ok: boolean; error?: string }>;
-  setDefaults(defaults: { pipeline: string | null; stage: string | null }): Promise<{ ok: boolean; error?: string }>;
+  setDefaults(defaults: {
+    pipeline: string | null;
+    stage: string | null;
+    followUpProperty?: string | null;
+    dueDateProperty?: string | null;
+  }): Promise<{ ok: boolean; error?: string }>;
 }
 
 // --- Calendar sync (Google + Outlook) ---

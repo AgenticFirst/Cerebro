@@ -10,7 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export type StagingSource = 'telegram' | 'whatsapp' | 'chat';
+export type StagingSource = 'telegram' | 'whatsapp' | 'slack' | 'chat';
 
 export const ATTACHMENT_TTL_MS = 30 * 60 * 1000;   // 30 min — same as legacy Telegram
 export const ORPHAN_THRESHOLD_MS = 24 * 60 * 60 * 1000;   // boot-time sweep cutoff

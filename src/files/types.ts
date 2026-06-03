@@ -51,6 +51,7 @@ export type IngestSource =
   | 'chat-upload'
   | 'telegram-inbound'
   | 'whatsapp-inbound'
+  | 'slack-inbound'
   | 'expert-context';
 
 export interface IngestRequest {

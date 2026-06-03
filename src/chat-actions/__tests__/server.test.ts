@@ -58,6 +58,10 @@ describe('ChatActionServer', () => {
   let mockEngine: {
     getChatActionCatalog: ReturnType<typeof vi.fn>;
     runChatAction: ReturnType<typeof vi.fn>;
+    autoApprovalSupported: ReturnType<typeof vi.fn>;
+    addAutoApprovalRule: ReturnType<typeof vi.fn>;
+    listAutoApprovalRules: ReturnType<typeof vi.fn>;
+    removeAutoApprovalRulesByTarget: ReturnType<typeof vi.fn>;
   };
   let mockSend: ReturnType<typeof vi.fn>;
 
@@ -91,6 +95,14 @@ describe('ChatActionServer', () => {
         data: { sent: true },
       }),
       dryRunRoutine: mockEngineDryRun,
+      autoApprovalSupported: vi.fn((t: string) => t === 'send_slack_message' || t === 'send_slack_file'),
+      addAutoApprovalRule: vi.fn(async (action_type: string, target_key: string, target_label?: string) => ({
+        id: 'rule1', action_type, target_key, target_label: target_label ?? null, created_at: '2026-01-01T00:00:00Z',
+      })),
+      listAutoApprovalRules: vi.fn(async () => [
+        { id: 'rule1', action_type: 'send_slack_message', target_key: 'C123', target_label: '#general', created_at: '2026-01-01T00:00:00Z' },
+      ]),
+      removeAutoApprovalRulesByTarget: vi.fn(async () => 2),
     };
     mockSend = vi.fn();
     server = new ChatActionServer({
@@ -385,5 +397,69 @@ describe('ChatActionServer', () => {
     const body = res.body as { ok: boolean; failedStepId?: string };
     expect(body.ok).toBe(false);
     expect(body.failedStepId).toBe('s1');
+  });
+
+  // ── Auto-approval rules ──────────────────────────────────────
+
+  it('creates an auto-approval rule for an eligible action', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/auto-approvals',
+      token,
+      body: { action_type: 'send_slack_message', target_key: 'C123', target_label: '#general' },
+    });
+    expect(res.status).toBe(200);
+    expect(mockEngine.addAutoApprovalRule).toHaveBeenCalledWith('send_slack_message', 'C123', '#general');
+    const body = res.body as { ok: boolean; rule: { target_key: string } };
+    expect(body.ok).toBe(true);
+    expect(body.rule.target_key).toBe('C123');
+  });
+
+  it('rejects an auto-approval rule for an ineligible action', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/auto-approvals',
+      token,
+      body: { action_type: 'hubspot_create_ticket', target_key: 'X' },
+    });
+    expect(res.status).toBe(400);
+    expect((res.body as { error: string }).error).toContain('not_auto_approvable');
+    expect(mockEngine.addAutoApprovalRule).not.toHaveBeenCalled();
+  });
+
+  it('rejects an auto-approval rule with no target_key', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/auto-approvals',
+      token,
+      body: { action_type: 'send_slack_message' },
+    });
+    expect(res.status).toBe(400);
+    expect((res.body as { error: string }).error).toBe('missing_target_key');
+  });
+
+  it('lists auto-approval rules', async () => {
+    const res = await request(port, { path: '/chat-actions/auto-approvals', token });
+    expect(res.status).toBe(200);
+    expect(mockEngine.listAutoApprovalRules).toHaveBeenCalled();
+    const body = res.body as { rules: Array<{ target_key: string }> };
+    expect(body.rules[0].target_key).toBe('C123');
+  });
+
+  it('revokes auto-approval rules by target', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/auto-approvals/revoke',
+      token,
+      body: { action_type: 'send_slack_message', target_key: 'C123' },
+    });
+    expect(res.status).toBe(200);
+    expect(mockEngine.removeAutoApprovalRulesByTarget).toHaveBeenCalledWith('send_slack_message', 'C123');
+    expect((res.body as { deleted: number }).deleted).toBe(2);
+  });
+
+  it('requires auth for auto-approval endpoints', async () => {
+    const res = await request(port, { path: '/chat-actions/auto-approvals' });
+    expect(res.status).toBe(401);
   });
 });

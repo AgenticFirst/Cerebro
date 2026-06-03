@@ -98,6 +98,33 @@ def test_list_approvals_empty(client):
     assert body["total"] == 0
 
 
+def test_approval_surfaces_run_conversation_id(client):
+    # conversation_id is joined from the run so the chat surface can render the
+    # approval inline in the right thread.
+    conv_id = _hex_id()
+    assert client.post("/conversations", json={"id": conv_id, "title": "Chat"}).status_code in (200, 201)
+    run = _create_run(client, conversation_id=conv_id)
+    created = _create_approval(client, run["id"])
+    assert created["conversation_id"] == conv_id
+
+    # ...on get
+    r = client.get(f"/engine/approvals/{created['id']}")
+    assert r.json()["conversation_id"] == conv_id
+
+    # ...on list
+    r = client.get("/engine/approvals", params={"run_id": run["id"]})
+    assert r.json()["approvals"][0]["conversation_id"] == conv_id
+
+    # ...and on resolve
+    r = client.patch(f"/engine/approvals/{created['id']}/resolve", json={"decision": "approved"})
+    assert r.json()["conversation_id"] == conv_id
+
+    # A run with no conversation yields null (e.g. routine-triggered approvals).
+    run2 = _create_run(client)
+    created2 = _create_approval(client, run2["id"])
+    assert created2["conversation_id"] is None
+
+
 def test_list_approvals_filter_by_status(client):
     run = _create_run(client)
     a1 = _create_approval(client, run["id"], step_name="A1")

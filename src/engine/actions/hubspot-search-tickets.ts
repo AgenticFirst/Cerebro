@@ -14,6 +14,9 @@ import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { renderTemplate } from './utils/template';
 import type { HubSpotChannel } from './hubspot-channel';
 import { callHubSpotApi } from '../../hubspot/api';
+import { resolveTicketAssociations, toContactOutputs, toCompanyOutputs } from '../../hubspot/associations';
+import { ownerDisplayNames } from '../../hubspot/owners';
+import { formatHubSpotDate } from '../../hubspot/ticket-fields';
 
 interface SearchTicketsParams {
   created_after?: string;
@@ -22,6 +25,7 @@ interface SearchTicketsParams {
   pipeline?: string;
   stage?: string;
   limit?: number | string;
+  include_associations?: boolean | string;
 }
 
 interface TicketResult {
@@ -86,6 +90,11 @@ export function createHubSpotSearchTicketsAction(deps: {
         pipeline: { type: 'string', description: 'Filter to a ticket pipeline id. Optional.' },
         stage: { type: 'string', description: 'Filter to a pipeline stage id. Optional.' },
         limit: { type: 'number', description: 'Max tickets to return. Default 50, capped at 100.' },
+        include_associations: {
+          type: 'boolean',
+          description:
+            'When true, attach each ticket\'s associated contacts[] and companies[] (the company is resolved through the contact when the ticket has no direct company link). Default false. Adds one batched lookup over the result page.',
+        },
       },
     },
 
@@ -108,11 +117,45 @@ export function createHubSpotSearchTicketsAction(deps: {
               created_at: { type: ['string', 'null'] },
               updated_at: { type: ['string', 'null'] },
               owner_id: { type: ['string', 'null'] },
+              owner_name: { type: ['string', 'null'] },
+              follow_up_user: { type: ['string', 'null'] },
+              follow_up_name: { type: ['string', 'null'] },
+              due_date: { type: ['string', 'null'] },
               ticket_url: { type: ['string', 'null'] },
+              contacts: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    contact_id: { type: ['string', 'null'] },
+                    email: { type: ['string', 'null'] },
+                    firstname: { type: ['string', 'null'] },
+                    lastname: { type: ['string', 'null'] },
+                  },
+                },
+              },
+              companies: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    company_id: { type: ['string', 'null'] },
+                    name: { type: ['string', 'null'] },
+                    domain: { type: ['string', 'null'] },
+                    source: { type: ['string', 'null'] },
+                    via_contact_id: { type: ['string', 'null'] },
+                  },
+                },
+              },
             },
           },
         },
         count: { type: 'number' },
+        companies_scope_missing: {
+          type: 'boolean',
+          description:
+            'True when include_associations was requested but companies could not be read because the HubSpot token lacks crm.objects.companies.read. Tell the user to grant the scope.',
+        },
         error: { type: ['string', 'null'] },
       },
       required: ['tickets', 'count'],
@@ -155,6 +198,9 @@ export function createHubSpotSearchTicketsAction(deps: {
       if (pipeline) filters.push({ propertyName: 'hs_pipeline', operator: 'EQ', value: pipeline });
       if (stage) filters.push({ propertyName: 'hs_pipeline_stage', operator: 'EQ', value: stage });
 
+      // Pull the configured custom follow-up / due-date properties too, when set.
+      const followUpProp = (channel.getFollowUpProperty() ?? '').trim();
+      const dueDateProp = (channel.getDueDateProperty() ?? '').trim();
       const body: Record<string, unknown> = {
         filterGroups: filters.length ? [{ filters }] : [],
         properties: [
@@ -166,6 +212,8 @@ export function createHubSpotSearchTicketsAction(deps: {
           'createdate',
           'hs_lastmodifieddate',
           'hubspot_owner_id',
+          ...(followUpProp ? [followUpProp] : []),
+          ...(dueDateProp ? [dueDateProp] : []),
         ],
         sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
         limit,
@@ -220,14 +268,69 @@ export function createHubSpotSearchTicketsAction(deps: {
           created_at: props.createdate ?? null,
           updated_at: props.hs_lastmodifieddate ?? null,
           owner_id: props.hubspot_owner_id ?? null,
+          owner_name: null as string | null,
+          follow_up_user: followUpProp ? (props[followUpProp] ?? null) : null,
+          follow_up_name: null as string | null,
+          due_date: dueDateProp ? formatHubSpotDate(props[dueDateProp]) : null,
           ticket_url: portal ? `https://app.hubspot.com/contacts/${portal}/ticket/${t.id}` : null,
+          contacts: [] as Array<{ contact_id: string; email: string | null; firstname: string | null; lastname: string | null }>,
+          companies: [] as Array<{ company_id: string; name: string | null; domain: string | null; source: 'ticket' | 'contact'; via_contact_id: string | null }>,
         };
       });
 
+      // Resolve owner + follow-up user ids → display names in one batched call.
+      // Best-effort: a failed lookup just leaves the names null.
+      const ownerIds = new Set<string>();
+      for (const t of tickets) {
+        if (t.owner_id) ownerIds.add(t.owner_id);
+        if (t.follow_up_user) ownerIds.add(t.follow_up_user);
+      }
+      if (ownerIds.size > 0) {
+        try {
+          const names = await ownerDisplayNames(token, [...ownerIds], input.context.signal);
+          for (const t of tickets) {
+            if (t.owner_id) t.owner_name = names.get(t.owner_id) ?? null;
+            if (t.follow_up_user) t.follow_up_name = names.get(t.follow_up_user) ?? null;
+          }
+        } catch (err) {
+          input.context.log(`HubSpot search_tickets: owner name lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      // Opt-in association enrichment. Best-effort — like the pipeline-label
+      // lookup above, a failure here keeps the tickets and just leaves the
+      // arrays empty rather than failing the whole search.
+      const includeAssociations =
+        params.include_associations === true || String(params.include_associations ?? '').toLowerCase() === 'true';
+      let companiesScopeMissing = false;
+      if (includeAssociations && tickets.length > 0) {
+        const assoc = await resolveTicketAssociations(
+          token,
+          tickets.map((t) => t.ticket_id),
+          input.context.signal,
+        );
+        if (assoc.error) {
+          input.context.log(`HubSpot search_tickets: association lookup failed: ${assoc.error}`);
+        }
+        companiesScopeMissing = assoc.companiesScopeMissing;
+        if (assoc.companiesScopeMissing) {
+          input.context.log('HubSpot search_tickets: companies unavailable — token lacks crm.objects.companies.read');
+        }
+        for (const ticket of tickets) {
+          const resolved = assoc.byTicket.get(ticket.ticket_id);
+          if (!resolved) continue;
+          ticket.contacts = toContactOutputs(resolved.contacts);
+          ticket.companies = toCompanyOutputs(resolved.companies);
+        }
+      }
+
       input.context.log(`HubSpot search_tickets: found ${tickets.length} ticket(s)`);
+      const scopeNote = companiesScopeMissing
+        ? ' (companies not returned — grant crm.objects.companies.read on the HubSpot Private App)'
+        : '';
       return {
-        data: { tickets, count: tickets.length, error: null },
-        summary: `Found ${tickets.length} HubSpot ticket(s)`,
+        data: { tickets, count: tickets.length, companies_scope_missing: companiesScopeMissing, error: null },
+        summary: `Found ${tickets.length} HubSpot ticket(s)${scopeNote}`,
       };
     },
   };

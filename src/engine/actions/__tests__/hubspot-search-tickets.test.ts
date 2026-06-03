@@ -18,6 +18,8 @@ function buildChannel(opts: Partial<{ token: string | null; portalId: string }> 
     getPortalId: () => opts.portalId ?? '999',
     getDefaultPipeline: () => null,
     getDefaultStage: () => null,
+    getFollowUpProperty: () => null,
+    getDueDateProperty: () => null,
     isConnected: () => Boolean(opts.token ?? 'pat-test'),
     listPipelines: async () => ({
       ok: true,

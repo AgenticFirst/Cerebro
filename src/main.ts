@@ -2348,6 +2348,11 @@ function registerIpcHandlers(): void {
     return hubSpotHolder.listPipelines();
   });
 
+  ipcMain.handle(IPC_CHANNELS.HUBSPOT_LIST_TICKET_PROPERTIES, async () => {
+    if (!hubSpotHolder) return { ok: false, error: 'HubSpot holder not initialized' };
+    return hubSpotHolder.listTicketProperties();
+  });
+
   ipcMain.handle(IPC_CHANNELS.HUBSPOT_STATUS, async () => {
     if (!hubSpotHolder) {
       return {
@@ -2355,6 +2360,8 @@ function registerIpcHandlers(): void {
         portalId: null,
         defaultPipeline: null,
         defaultStage: null,
+        followUpProperty: null,
+        dueDateProperty: null,
         tokenBackend: 'plaintext-fallback' as const,
       };
     }
@@ -2373,12 +2380,19 @@ function registerIpcHandlers(): void {
     return { ok: true };
   });
 
-  ipcMain.handle(IPC_CHANNELS.HUBSPOT_SET_DEFAULTS, async (_event, defaults: { pipeline: string | null; stage: string | null }) => {
+  ipcMain.handle(IPC_CHANNELS.HUBSPOT_SET_DEFAULTS, async (_event, defaults: {
+    pipeline: string | null;
+    stage: string | null;
+    followUpProperty?: string | null;
+    dueDateProperty?: string | null;
+  }) => {
     if (!hubSpotHolder) return { ok: false, error: 'HubSpot holder not initialized' };
     try {
       await hubSpotHolder.setDefaults({
         pipeline: defaults?.pipeline ?? null,
         stage: defaults?.stage ?? null,
+        ...(defaults?.followUpProperty !== undefined ? { followUpProperty: defaults.followUpProperty } : {}),
+        ...(defaults?.dueDateProperty !== undefined ? { dueDateProperty: defaults.dueDateProperty } : {}),
       });
       return { ok: true };
     } catch (err) {

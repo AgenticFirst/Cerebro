@@ -5,8 +5,11 @@
  *
  * Architecture invariants (mirror Telegram):
  *  - Allowlist gate (channel AND user IDs) before any inference.
- *  - Each Slack thread is one Cerebro conversation (threadKey).
- *  - One in-flight run per thread — duplicate messages reply with a
+ *  - Each Slack surface maps to a *stable* Cerebro conversation (see
+ *    `conversationKey`): a DM is one rolling session (idle-gap rotation), a
+ *    channel thread is one conversation (with `conversations.replies`
+ *    backfill), a top-level @mention is one rolling session per channel+user.
+ *  - One in-flight run per session key — duplicate messages reply with a
  *    "still working" note instead of stacking subprocesses.
  *  - Token plaintext stays in the main process; the renderer only sees
  *    `hasBotToken` / `hasAppToken` booleans.
@@ -35,13 +38,23 @@ import {
   isStoredPlaintext,
   backend as secureTokenBackend,
 } from '../secure-token';
-import { SlackApi, SlackApiError, scrubTokenish } from './api';
+import {
+  SlackApi,
+  SlackApiError,
+  scrubTokenish,
+  approvalBlocks,
+  approvalResolvedBlocks,
+  APPROVAL_ACTION_APPROVE,
+  APPROVAL_ACTION_DENY,
+} from './api';
 import { SlackStreamSink } from './SlackStreamSink';
 import { markdownToMrkdwn } from './mrkdwn';
 import { pickApprovalRun } from '../utils/approval-routing';
 import { getLoginOrchestrator, type LoginSnapshot } from '../claude-code/login-orchestrator';
 import {
-  threadKey,
+  conversationKey,
+  isSessionExpired,
+  migrateConversationMap,
   EventDedupe,
   SlidingWindowLimiter,
   parseSlashCommandText,
@@ -50,6 +63,7 @@ import {
   stripBotMention,
   redactSlackPayload,
   chunkSlackText,
+  type SlackConversationKey,
   type SlackTriggerRoutine,
   type BackendRoutineRecord,
 } from './helpers';
@@ -57,7 +71,12 @@ import {
   SLACK_SETTING_KEYS,
   type SlackSettings,
   type SlackInboundContext,
+  type SlackFile,
 } from './types';
+import { MediaIngestService } from '../files/media-ingest';
+import { IntegrationStaging } from '../files/staging';
+import type { ResolvedAttachment } from '../files/types';
+import { SttLoader, STT_LOADING_NOTICE } from '../files/stt-loader';
 import type { SlackStatusResponse } from '../types/ipc';
 
 // ── Tunables ──────────────────────────────────────────────────────
@@ -65,12 +84,42 @@ import type { SlackStatusResponse } from '../types/ipc';
 const AUTHORIZED_RATE_LIMIT_PER_MIN = 20;
 const PROACTIVE_RATE_LIMIT_PER_HOUR = 30;
 const ROUTINE_CACHE_TTL_MS = 30_000;
+// A rolling DM / @mention session rolls over into a fresh Cerebro conversation
+// after this much silence. Default 6h: a late-night 11pm→3am stretch stays one
+// chat (gaps stay short), but the next morning starts clean. Operator-tunable
+// via the `slack_session_idle_hours` setting.
+const SESSION_IDLE_MS = 6 * 60 * 60_000;
 const RUN_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
 const RUN_WATCHDOG_INTERVAL_MS = 30_000;
 // If no events arrive for IDLE_WATCHDOG_MS while we expect activity, bounce
 // the Bolt app. Production fallback for the rare Socket Mode silent-stall.
 const IDLE_WATCHDOG_MS = 5 * 60_000;
 const IDLE_WATCHDOG_INTERVAL_MS = 60_000;
+
+// Voice-note / attachment handling (mirrors Telegram bridge).
+const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+
+// Audio MIME types Slack uses for voice notes / shared audio. Native voice
+// notes arrive as audio/mp4 (.m4a) or audio/webm; shared clips can be any.
+const ALLOWED_AUDIO_MIME = new Set([
+  'audio/mp4',
+  'audio/webm',
+  'audio/ogg',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/x-wav',
+]);
+
+// Fallback when a file lacks an extension in its name — MediaIngestService
+// keys its category off the on-disk extension.
+const AUDIO_MIME_TO_EXT: Record<string, string> = {
+  'audio/mp4': 'm4a',
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+};
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -194,6 +243,7 @@ function emptySettings(): SlackSettings {
     teamName: null,
     botUserId: null,
     operatorUserId: null,
+    sessionIdleHours: null,
   };
 }
 
@@ -279,16 +329,37 @@ export class SlackBridge implements SlackChannel {
 
   private routineCache: { fetchedAt: number; routines: SlackTriggerRoutine[] } | null = null;
 
-  /** approvalId → { channel, threadTs } so the engine listener can reply
-   *  in the originating Slack thread once an approval resolves. threadTs
-   *  is undefined when the run was a top-level reply. */
-  private approvalThreadMap = new Map<string, { channel: string; threadTs: string | undefined }>();
+  /** approvalId → { channel, threadTs, messageTs } so the engine listener can
+   *  edit the original approval message (stripping the Approve/Deny buttons)
+   *  once it resolves — from any surface. threadTs is undefined when the run
+   *  was a top-level reply; messageTs is the ts of the posted approval message. */
+  private approvalThreadMap = new Map<
+    string,
+    { channel: string; threadTs: string | undefined; messageTs: string }
+  >();
   private engineListener: ((event: ExecutionEvent, ctx: EngineEventContext) => void) | null = null;
 
   private webContents: WebContents | null = null;
 
+  // Voice-note / attachment ingestion (mirrors Telegram bridge).
+  private mediaIngest: MediaIngestService;
+  private staging: IntegrationStaging;
+  /** dest path → TTL cleanup timer for downloaded attachments. */
+  private tempFiles = new Map<string, NodeJS.Timeout>();
+  /** Voice STT lazy-load, shared across bridges (coalesces concurrent loads). */
+  private readonly sttLoader = new SttLoader(() => this.deps.backendPort);
+
   constructor(deps: SlackBridgeDeps) {
     this.deps = deps;
+    this.mediaIngest = new MediaIngestService({
+      getBackendPort: () => this.deps.backendPort,
+      transcriptDir: path.join(this.deps.dataDir, 'files', '_transcripts'),
+    });
+    this.staging = new IntegrationStaging(this.deps.dataDir);
+  }
+
+  private tempDir(): string {
+    return this.staging.dirFor('slack');
   }
 
   setExecutionEngine(engine: ExecutionEngine): void {
@@ -344,6 +415,9 @@ export class SlackBridge implements SlackChannel {
 
       this.wireBoltHandlers();
 
+      // Drop attachments left behind by a prior crash/quit.
+      void this.staging.sweepOrphans();
+
       try {
         await this.app.start();
         this.running = true;
@@ -386,6 +460,11 @@ export class SlackBridge implements SlackChannel {
     }
     this.activeRuns.clear();
     this.approvalThreadMap.clear();
+
+    // Cancel pending attachment cleanups (the staging dir is swept on next start).
+    for (const [, timer] of this.tempFiles) clearTimeout(timer);
+    this.tempFiles.clear();
+    this.sttLoader.reset();
 
     if (this.app) {
       try { await this.app.stop(); } catch (err) {
@@ -770,6 +849,8 @@ export class SlackBridge implements SlackChannel {
           // makes our reply land at the channel top level.
           threadTs: event.thread_ts,
           text: stripped,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          files: Array.isArray((event as any).files) ? ((event as any).files as SlackFile[]) : undefined,
           surface: 'app_mention',
         };
         await this.handleInbound(ctx);
@@ -786,7 +867,9 @@ export class SlackBridge implements SlackChannel {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const m = event as any;
       if (m.channel_type !== 'im') return;
-      if (m.subtype) return; // skip edits, bot_messages, joins, etc.
+      // Skip edits, bot_messages, joins, etc. — but let `file_share` through so
+      // voice notes and other attachments reach handleInbound.
+      if (m.subtype && m.subtype !== 'file_share') return;
       if (m.bot_id || m.user === this.settings.botUserId) return;
       try {
         const eid = body.event_id ?? `${m.channel}:${m.ts}`;
@@ -802,6 +885,7 @@ export class SlackBridge implements SlackChannel {
           // lands at the top of the DM channel (no thread side panel).
           threadTs: m.thread_ts,
           text: m.text ?? '',
+          files: Array.isArray(m.files) ? (m.files as SlackFile[]) : undefined,
           surface: 'message_im',
         };
         await this.handleInbound(ctx);
@@ -842,6 +926,77 @@ export class SlackBridge implements SlackChannel {
         logError('views.publish failed:', err instanceof Error ? err.message : String(err));
       }
     });
+
+    // Approve/Deny buttons on an approval message (mirrors Telegram's callback
+    // flow). Resolving goes through the in-process engine — that's the only path
+    // that unblocks the paused run AND broadcasts approval_granted/denied so the
+    // in-app card, Approvals screen, and this Slack message all update.
+    app.action(/^approval_(approve|deny)$/, async ({ ack, body, action }) => {
+      await ack();
+      this.lastEventAt = Date.now();
+      await this.handleApprovalAction(body, action);
+    });
+  }
+
+  /**
+   * Resolve an approval triggered by a Slack button click. Authorizes the
+   * clicker against the allowlist, resolves via the engine, and (only when the
+   * engine had nothing to resolve, e.g. a double-click) edits the message
+   * itself — the success path is handled by `handleApprovalResolved` off the
+   * broadcast event so every surface updates identically.
+   */
+  private async handleApprovalAction(body: unknown, action: unknown): Promise<void> {
+    if (!this.api) return;
+    const b = body as {
+      user?: { id?: string };
+      channel?: { id?: string };
+      message?: { ts?: string };
+    };
+    const a = action as { action_id?: string; value?: string };
+    const channelId = b.channel?.id;
+    const userId = b.user?.id;
+    const approvalId = a.value;
+    const messageTs = b.message?.ts;
+    if (!approvalId) return;
+
+    // Gate on the allowlist (channel + clicker), matching every other inbound path.
+    if (channelId && !this.isAllowlisted(channelId, userId)) {
+      try {
+        if (userId) {
+          await this.api.chatPostEphemeral({
+            channel: channelId,
+            user: userId,
+            text: ":no_entry: You're not authorized to resolve approvals here.",
+          });
+        }
+      } catch { /* ignore */ }
+      return;
+    }
+
+    const approved = a.action_id === APPROVAL_ACTION_APPROVE;
+    const reason = approved ? undefined : 'Denied via Slack';
+
+    let resolved = false;
+    if (this.deps.executionEngine) {
+      resolved = await this.deps.executionEngine.resolveApproval(approvalId, approved, reason);
+    } else {
+      // Defensive fallback — shouldn't happen (bridge + engine share a process).
+      const res = await backendRequest(this.deps.backendPort, 'PATCH', `/engine/approvals/${approvalId}/resolve`, {
+        decision: approved ? 'approved' : 'denied',
+        reason: reason ?? null,
+      });
+      resolved = res.ok;
+    }
+
+    // If nothing was pending (already resolved / run ended), no broadcast event
+    // will fire — edit the message here so the stale buttons still go away.
+    if (!resolved && channelId && messageTs) {
+      const text = ':information_source: This approval was already resolved.';
+      try {
+        await this.api.chatUpdate({ channel: channelId, ts: messageTs, text, blocks: approvalResolvedBlocks(text) });
+      } catch { /* ignore */ }
+      this.approvalThreadMap.delete(approvalId);
+    }
   }
 
   // ── Inbound dispatch ────────────────────────────────────────────
@@ -894,7 +1049,14 @@ export class SlackBridge implements SlackChannel {
       return;
     }
 
-    // 3. Inline expert commands ("expert list", "expert <slug>", "expert clear")
+    // 3. Voice notes / audio attachments: download + transcribe before we read
+    //    ctx.text below, so the transcript flows through persistence, routine
+    //    matching, and the agent run exactly like a typed message. Runs after
+    //    the allowlist + rate-limit gates so we never burn STT on unauthorized
+    //    or flooding users. No-op for text-only messages.
+    await this.buildPromptFromContext(ctx);
+
+    // 4. Inline expert commands ("expert list", "expert <slug>", "expert clear")
     //    work in DMs and channel threads as plain text too — parity with Telegram.
     const trimmed = (ctx.text ?? '').trim();
     if (/^expert(\s|$)/i.test(trimmed)) {
@@ -902,17 +1064,19 @@ export class SlackBridge implements SlackChannel {
       return;
     }
 
-    const key = threadKey({ teamId: ctx.teamId, channel: ctx.channel, ts: ctx.ts, threadTs: ctx.threadTs });
-    // Captured before ensureConversation creates one: tells the runtime whether
-    // to --resume an existing Claude Code session or --session-id a fresh one.
-    const conversationExisted = !!this.settings.threadConversationMap[key];
-    let conversationId = await this.ensureConversation(key, ctx);
+    const keyInfo = conversationKey(ctx);
+    const key = keyInfo.key;
+    // `reused` tells the runtime whether to --resume an existing Claude Code
+    // session or --session-id a fresh one. A rolling DM / @mention that's been
+    // idle past the window rolls over to a brand-new conversation here.
+    const { conversationId: resolvedId, reused } = await this.resolveConversation(keyInfo, ctx);
+    let conversationId = resolvedId;
 
-    // 4. Persist the inbound user message.
+    // 5. Persist the inbound user message.
     conversationId = await this.postUserMessageWithRecovery(conversationId, ctx);
     this.emitConversationUpdated(conversationId, 'message');
 
-    // 5. Routine trigger dispatch — if any match, fire and skip the AI reply.
+    // 6. Routine trigger dispatch — if any match, fire and skip the AI reply.
     const matchedRoutines = await this.matchSlackTriggers(ctx);
     if (matchedRoutines.length > 0) {
       const displayName = await this.resolveDisplayName(ctx.userId);
@@ -932,10 +1096,10 @@ export class SlackBridge implements SlackChannel {
       return;
     }
 
-    // 6. Skip empty bodies.
+    // 7. Skip empty bodies.
     if (!trimmed) return;
 
-    // 7. Concurrency: one in-flight run per thread.
+    // 8. Concurrency: one in-flight run per thread.
     const existing = this.activeRuns.get(key);
     if (existing) {
       const elapsedSec = Math.round((Date.now() - existing.startedAt) / 1000);
@@ -952,7 +1116,7 @@ export class SlackBridge implements SlackChannel {
       return;
     }
 
-    // 8. Start the agent run. Reply lands at the channel/DM top level unless
+    // 9. Start the agent run. Reply lands at the channel/DM top level unless
     //    the inbound message was already inside an existing thread — keeps
     //    Cerebro from forcing users to open a thread side panel for every
     //    DM or top-level @mention.
@@ -1003,13 +1167,27 @@ export class SlackBridge implements SlackChannel {
       expertId = null;
     }
 
+    // For channel-thread mentions, backfill the thread Cerebro didn't see
+    // (it only receives messages that mention it) as a context preamble, then
+    // advance the high-water mark so the next mention only sends the delta.
+    let promptContent = trimmed;
+    if (keyInfo.surface === 'thread') {
+      const entry = this.settings.threadConversationMap[key];
+      const threadContext = await this.buildThreadContext(ctx, entry?.lastSeenTs);
+      if (threadContext) promptContent = `${threadContext}\n\n${trimmed}`;
+      if (entry) {
+        entry.lastSeenTs = ctx.ts;
+        await this.persistThreadConversationMap();
+      }
+    }
+
     const runRequest: AgentRunRequest = {
       conversationId,
-      content: trimmed,
+      content: promptContent,
       expertId,
       // The bridge doesn't ship a transcript — Claude Code's own --resume
       // carries history — so hint the create-vs-resume decision explicitly.
-      resume: conversationExisted,
+      resume: reused,
       source: { kind: 'slack', channel: ctx.channel, threadTs: threadTsForReply, teamId: ctx.teamId },
       accessibleExpertIds,
     };
@@ -1056,7 +1234,7 @@ export class SlackBridge implements SlackChannel {
   private async handleInlineExpertCommand(ctx: SlackInboundContext, raw: string): Promise<void> {
     if (!this.api) return;
     const args = raw.replace(/^expert\s*/i, '').trim();
-    const key = threadKey({ teamId: ctx.teamId, channel: ctx.channel, ts: ctx.ts, threadTs: ctx.threadTs });
+    const key = conversationKey(ctx).key;
     if (!args || args.toLowerCase() === 'list') {
       await this.replyExpertsList(ctx.channel, ctx.threadTs ?? ctx.ts, ctx.userId, key);
       return;
@@ -1180,7 +1358,9 @@ export class SlackBridge implements SlackChannel {
       },
     };
 
-    const conversationId = await this.ensureConversation(key, ctx);
+    // Slash commands are stateless from Slack's POV — each `key` is unique
+    // (`…:slash:<now>`), so this always mints a fresh one-shot conversation.
+    const conversationId = await this.createConversation(key, ctx, Date.now());
     await this.postUserMessageWithRecovery(conversationId, ctx);
     this.emitConversationUpdated(conversationId, 'message');
 
@@ -1232,25 +1412,99 @@ export class SlackBridge implements SlackChannel {
 
   // ── Conversation persistence ───────────────────────────────────
 
-  private async ensureConversation(key: string, ctx: SlackInboundContext): Promise<string> {
-    const existing = this.settings.threadConversationMap[key];
-    if (existing) return existing;
-    return this.createConversation(key, ctx);
+  /** Idle window before a rolling session rolls over (operator-tunable). */
+  private sessionIdleMs(): number {
+    const h = this.settings.sessionIdleHours;
+    return typeof h === 'number' && h > 0 ? h * 60 * 60_000 : SESSION_IDLE_MS;
   }
 
-  private async createConversation(key: string, ctx: SlackInboundContext): Promise<string> {
+  /**
+   * Resolve the Cerebro conversation for an inbound message. Reuses the
+   * existing mapping unless it's a rolling session (DM / @mention) that has
+   * been idle past the window, in which case it rolls over to a fresh
+   * conversation. Returns `reused` so the caller can hint create-vs-resume to
+   * Claude Code (mirrors Telegram's `resume: !isFirstContact`).
+   */
+  private async resolveConversation(
+    keyInfo: SlackConversationKey,
+    ctx: SlackInboundContext,
+  ): Promise<{ conversationId: string; reused: boolean }> {
+    const { key, rotates } = keyInfo;
+    const now = Date.now();
+    const entry = this.settings.threadConversationMap[key];
+    if (entry && (!rotates || !isSessionExpired(entry.lastActivityAt, now, this.sessionIdleMs()))) {
+      entry.lastActivityAt = now;
+      await this.persistThreadConversationMap();
+      return { conversationId: entry.conversationId, reused: true };
+    }
+    const conversationId = await this.createConversation(key, ctx, now);
+    return { conversationId, reused: false };
+  }
+
+  private async createConversation(key: string, ctx: SlackInboundContext, now: number): Promise<string> {
     const id = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
     const username = (await this.resolveDisplayName(ctx.userId)) ?? ctx.userId;
-    const channelLabel = ctx.channelType === 'im' ? `DM with ${username}` : `Slack #${ctx.channel}`;
+    const isDm = ctx.channelType === 'im' || ctx.channelType === 'mpim';
+    const channelLabel = isDm ? `DM with ${username}` : `Slack #${ctx.channel}`;
     await backendRequest(this.deps.backendPort, 'POST', '/conversations', {
       id,
       title: channelLabel,
       source: 'slack',
       external_chat_id: key,
     });
-    this.settings.threadConversationMap[key] = id;
+    this.settings.threadConversationMap[key] = { conversationId: id, lastActivityAt: now };
     await this.persistThreadConversationMap();
     return id;
+  }
+
+  /**
+   * Build a `<slack_thread_context>` preamble from the thread Cerebro was
+   * mentioned in. Cerebro only *receives* messages that mention it, so without
+   * this it's blind to everyone else's replies. Returns only the messages it
+   * hasn't already incorporated (after `sinceTs`); the full thread on first
+   * contact. Empty string when there's nothing new or the fetch fails.
+   */
+  private async buildThreadContext(ctx: SlackInboundContext, sinceTs?: string): Promise<string> {
+    if (!this.api || !ctx.threadTs) return '';
+    let replies: Array<{ ts: string; user?: string; text: string }>;
+    try {
+      replies = await this.api.conversationsReplies({ channel: ctx.channel, ts: ctx.threadTs, limit: 200 });
+    } catch (err) {
+      // Missing history scope (old install not yet reinstalled) or transient
+      // error — degrade gracefully to no backfill rather than dropping the run.
+      logError('conversations.replies failed', err instanceof Error ? err.message : String(err));
+      return '';
+    }
+    const currentTs = parseFloat(ctx.ts);
+    const since = sinceTs ? parseFloat(sinceTs) : null;
+    const prior = replies.filter((m) => {
+      if (!m.text || !m.text.trim()) return false;
+      const mt = parseFloat(m.ts);
+      if (!Number.isFinite(mt) || mt >= currentTs) return false;       // only earlier than what we're answering
+      if (since !== null && mt <= since) return false;                  // delta since last backfill
+      return true;
+    });
+    if (prior.length === 0) return '';
+    const lines: string[] = [];
+    for (const m of prior) {
+      const who = m.user && m.user === this.settings.botUserId
+        ? 'Cerebro'
+        : (m.user ? (await this.resolveDisplayName(m.user)) ?? m.user : 'user');
+      const clean = stripBotMention(m.text, this.settings.botUserId).trim();
+      if (!clean) continue;
+      lines.push(`${who}: ${clean}`);
+    }
+    if (lines.length === 0) return '';
+    return [
+      '<slack_thread_context>',
+      'You were mentioned in a Slack thread. The messages below are the prior',
+      'thread history, included because you only receive messages that mention',
+      'you and so may not have seen them. Use them as context, then respond',
+      'ONLY to the new message that follows this block.',
+      '',
+      ...lines,
+      '</slack_thread_context>',
+    ].join('\n');
   }
 
   private async postUserMessageWithRecovery(conversationId: string, ctx: SlackInboundContext): Promise<string> {
@@ -1270,9 +1524,9 @@ export class SlackBridge implements SlackChannel {
     const res = await backendRequest(this.deps.backendPort, 'POST', `/conversations/${conversationId}/messages`, body);
     if (res.status !== 404) return conversationId;
     // Stale mapping → recreate.
-    const key = threadKey({ teamId: ctx.teamId, channel: ctx.channel, ts: ctx.ts, threadTs: ctx.threadTs });
+    const key = conversationKey(ctx).key;
     delete this.settings.threadConversationMap[key];
-    const fresh = await this.createConversation(key, ctx);
+    const fresh = await this.createConversation(key, ctx, Date.now());
     await backendRequest(this.deps.backendPort, 'POST', `/conversations/${fresh}/messages`, {
       ...body,
       id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
@@ -1285,6 +1539,152 @@ export class SlackBridge implements SlackChannel {
     try {
       this.webContents.send(IPC_CHANNELS.SLACK_CONVERSATION_UPDATED, { conversationId, kind });
     } catch { /* ignore */ }
+  }
+
+  // ── Voice notes / attachments ───────────────────────────────────
+
+  /**
+   * If the inbound message carries an audio attachment (a Slack voice note or
+   * a shared audio clip), download it, transcribe it via the shared STT path,
+   * and fold the transcript into `ctx.text` so the rest of `handleInbound`
+   * treats it exactly like a typed message. Mutates `ctx` in place.
+   *
+   * No-op for text-only messages. Non-audio attachments (images/docs) are not
+   * processed yet — we leave `ctx.text` untouched rather than handing Claude
+   * Code a binary path it can't read.
+   */
+  private async buildPromptFromContext(ctx: SlackInboundContext): Promise<void> {
+    if (!this.api) return;
+    const files = ctx.files;
+    if (!files || files.length === 0) return;
+
+    // Pick the first audio attachment. Slack's one-voice-note-per-message model
+    // means combining isn't needed; any caption arrives in ctx.text.
+    const audio = files.find((f) => {
+      const ext = this.fileExt(f);
+      return MediaIngestService.categoryForExt(ext) === 'audio';
+    });
+    if (!audio) return;
+
+    const mime = (audio.mimetype ?? '').toLowerCase();
+    if (mime && !ALLOWED_AUDIO_MIME.has(mime)) {
+      log(`voice note rejected: mime ${mime} not allowed`);
+      return;
+    }
+    if (audio.size !== undefined && audio.size > ATTACHMENT_MAX_BYTES) {
+      await this.postNote(ctx, '🎙️ That voice note is too large to transcribe.');
+      return;
+    }
+
+    // Warm the Whisper model before we hit /voice/stt/transcribe-file. The first
+    // voice note in a session may need to download it (~30–60s).
+    const ready = await this.ensureSTTReady(ctx.channel, ctx.threadTs);
+    if (!ready) {
+      await this.postNote(
+        ctx,
+        '🎙️ Voice transcription is unavailable right now. '
+        + 'Try typing your message, or open Settings → Voice to set it up.',
+      );
+      return;
+    }
+
+    const dest = await this.downloadSlackFile(ctx, audio);
+    if (!dest) return; // downloadSlackFile already notified the user on failure.
+
+    let resolved: ResolvedAttachment;
+    try {
+      resolved = await this.mediaIngest.ingest({ filePath: dest, source: 'slack-inbound' });
+    } catch (err) {
+      logError('media ingest failed', err instanceof Error ? err.message : String(err));
+      return;
+    }
+
+    const transcript = (resolved.inlineText ?? '').trim();
+    if (!transcript) {
+      // STT ran but produced nothing usable (silent/garbled). Never hand the raw
+      // audio path to Claude Code. If the user also typed a caption, just let
+      // that flow through (ctx.text is untouched); otherwise nudge them to type.
+      if (!(ctx.text ?? '').trim()) {
+        await this.postNote(ctx, "🎙️ Couldn't transcribe that — try typing your message.");
+      }
+      return;
+    }
+
+    // Transcript IS the message; preserve any caption the user typed alongside.
+    const caption = (ctx.text ?? '').trim();
+    ctx.text = caption ? `${transcript}\n\n${caption}` : transcript;
+    await this.postNote(ctx, `🎙️ ${this.snippet(transcript)}`);
+  }
+
+  /** Best-effort lowercase extension for a Slack file (name → filetype → mime). */
+  private fileExt(f: SlackFile): string {
+    const fromName = f.name ? path.extname(f.name).replace(/^\./, '').toLowerCase() : '';
+    if (fromName) return fromName;
+    if (f.filetype) return f.filetype.toLowerCase();
+    const mime = (f.mimetype ?? '').toLowerCase();
+    return AUDIO_MIME_TO_EXT[mime] ?? '';
+  }
+
+  /**
+   * Download a Slack file to the staging dir and schedule TTL cleanup. Returns
+   * the dest path, or null on failure (after notifying the user).
+   */
+  private async downloadSlackFile(ctx: SlackInboundContext, f: SlackFile): Promise<string | null> {
+    if (!this.api) return null;
+    const url = f.url_private_download ?? f.url_private;
+    if (!url) return null;
+
+    const ext = this.fileExt(f) || 'bin';
+    const dest = path.join(this.tempDir(), `${crypto.randomUUID()}.${ext}`);
+    try {
+      await this.api.downloadFile(url, dest);
+    } catch (err) {
+      const code = err instanceof SlackApiError ? err.code : null;
+      logError('file download failed', err instanceof Error ? err.message : String(err));
+      if (code === 'not_authed') {
+        await this.postNote(
+          ctx,
+          "🎙️ Couldn't fetch the voice note — the Slack app may need the "
+          + '`files:read` permission. Ask the Cerebro operator to reinstall the app.',
+        );
+      } else {
+        await this.postNote(ctx, "🎙️ Couldn't fetch that voice note. Try again or type your message.");
+      }
+      return null;
+    }
+
+    const timer = setTimeout(() => {
+      fs.rm(dest, { force: true }, () => { /* ignore */ });
+      this.tempFiles.delete(dest);
+    }, 30 * 60 * 1000);
+    this.tempFiles.set(dest, timer);
+    return dest;
+  }
+
+  /** Post a short, non-fatal note back to the originating channel/thread. */
+  private async postNote(ctx: SlackInboundContext, text: string): Promise<void> {
+    if (!this.api) return;
+    try {
+      await this.api.chatPostMessage({ channel: ctx.channel, thread_ts: ctx.threadTs, text });
+    } catch { /* non-fatal */ }
+  }
+
+  private snippet(s: string): string {
+    return s.length > 200 ? s.slice(0, 200) + '…' : s;
+  }
+
+  /**
+   * Ensure the Whisper STT model is loaded, posting a one-time "loading…"
+   * notice into the thread on a cold start. Returns true once
+   * /voice/stt/transcribe-file is safe to call. See `SttLoader` for the shared
+   * load/download/coalesce logic.
+   */
+  private ensureSTTReady(channel: string, threadTs?: string): Promise<boolean> {
+    return this.sttLoader.ensureReady(async () => {
+      if (this.api) {
+        await this.api.chatPostMessage({ channel, thread_ts: threadTs, text: STT_LOADING_NOTICE });
+      }
+    });
   }
 
   // ── Expert resolution ──────────────────────────────────────────
@@ -1513,12 +1913,15 @@ export class SlackBridge implements SlackChannel {
     const { channel, threadTs } = target;
     const summary = scrubTokenish(event.summary || `Step "${event.stepId}" needs approval`);
     try {
-      await this.api.chatPostMessage({
+      // Post interactive Approve/Deny buttons (mirrors Telegram). The `text`
+      // is the accessibility/notification fallback Slack requires alongside blocks.
+      const res = await this.api.chatPostMessage({
         channel,
         thread_ts: threadTs,
-        text: `:lock: *Approval pending* — I'll follow up here once the Cerebro operator approves.\n\n> ${summary}`,
+        text: `:lock: Approval pending — ${summary}`,
+        blocks: approvalBlocks(event.approvalId, summary),
       });
-      this.approvalThreadMap.set(event.approvalId, { channel, threadTs });
+      this.approvalThreadMap.set(event.approvalId, { channel, threadTs, messageTs: res.ts });
     } catch (err) {
       logError('approval announce failed:', err instanceof Error ? err.message : String(err));
     }
@@ -1531,14 +1934,19 @@ export class SlackBridge implements SlackChannel {
     const target = this.approvalThreadMap.get(event.approvalId);
     if (!target) return;
     this.approvalThreadMap.delete(event.approvalId);
+    // Edit the original approval message so the buttons disappear (can't be
+    // clicked again) and the outcome is shown inline — fires no matter which
+    // surface resolved it (Slack button, the in-chat card, or the Approvals
+    // screen), since the engine broadcasts approval_granted/denied to all.
     const text = event.type === 'approval_granted'
-      ? ':white_check_mark: Operator approved — continuing.'
-      : `:no_entry_sign: Operator denied${('reason' in event && event.reason) ? `: ${scrubTokenish(String(event.reason))}` : ''}.`;
+      ? ':white_check_mark: Approved — continuing.'
+      : `:no_entry_sign: Denied${('reason' in event && event.reason) ? `: ${scrubTokenish(String(event.reason))}` : ''}.`;
     try {
-      await this.api.chatPostMessage({
+      await this.api.chatUpdate({
         channel: target.channel,
-        thread_ts: target.threadTs,
+        ts: target.messageTs,
         text,
+        blocks: approvalResolvedBlocks(text),
       });
     } catch (err) {
       logError('approval resolve announce failed:', err instanceof Error ? err.message : String(err));
@@ -1549,13 +1957,13 @@ export class SlackBridge implements SlackChannel {
 
   private async loadSettings(): Promise<void> {
     const port = this.deps.backendPort;
-    const [storedBotToken, storedAppToken, enabled, allowChans, allowUsers, threadMap, expertMap, displayNames, defaultExpertAccess, userExpertAccess, teamName, botUserId, operatorUserId] = await Promise.all([
+    const [storedBotToken, storedAppToken, enabled, allowChans, allowUsers, threadMap, expertMap, displayNames, defaultExpertAccess, userExpertAccess, teamName, botUserId, operatorUserId, sessionIdleHours] = await Promise.all([
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.botToken),
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.appToken),
       backendGetSetting<boolean>(port, SLACK_SETTING_KEYS.enabled),
       backendGetSetting<string[]>(port, SLACK_SETTING_KEYS.allowlistChannels),
       backendGetSetting<string[]>(port, SLACK_SETTING_KEYS.allowlistUsers),
-      backendGetSetting<Record<string, string>>(port, SLACK_SETTING_KEYS.threadConversationMap),
+      backendGetSetting<Record<string, unknown>>(port, SLACK_SETTING_KEYS.threadConversationMap),
       backendGetSetting<Record<string, string>>(port, SLACK_SETTING_KEYS.threadExpertMap),
       backendGetSetting<Record<string, string>>(port, SLACK_SETTING_KEYS.userDisplayNames),
       backendGetSetting<string[] | null>(port, SLACK_SETTING_KEYS.defaultExpertAccess),
@@ -1563,6 +1971,7 @@ export class SlackBridge implements SlackChannel {
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.teamName),
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.botUserId),
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.operatorUserId),
+      backendGetSetting<number>(port, SLACK_SETTING_KEYS.sessionIdleHours),
     ]);
 
     const botToken = decryptFromStorage(storedBotToken);
@@ -1583,7 +1992,7 @@ export class SlackBridge implements SlackChannel {
       enabled: enabled ?? false,
       allowlistChannels: Array.isArray(allowChans) ? allowChans : [],
       allowlistUsers: Array.isArray(allowUsers) ? allowUsers : [],
-      threadConversationMap: threadMap ?? {},
+      threadConversationMap: migrateConversationMap(threadMap, Date.now()),
       threadExpertMap: expertMap ?? {},
       userDisplayNames: displayNames ?? {},
       defaultExpertAccess: sanitizeExpertIdList(defaultExpertAccess),
@@ -1591,6 +2000,7 @@ export class SlackBridge implements SlackChannel {
       teamName: typeof teamName === 'string' ? teamName : null,
       botUserId: typeof botUserId === 'string' ? botUserId : null,
       operatorUserId: typeof operatorUserId === 'string' && operatorUserId ? operatorUserId : null,
+      sessionIdleHours: typeof sessionIdleHours === 'number' && sessionIdleHours > 0 ? sessionIdleHours : null,
     };
   }
 
@@ -1929,7 +2339,7 @@ export class SlackBridge implements SlackChannel {
 // Embedded fallback manifest YAML (also exists as src/slack/manifest.yaml).
 const INLINE_MANIFEST = `_metadata:
   major_version: 1
-  minor_version: 1
+  minor_version: 2
 
 display_information:
   name: Cerebro
@@ -1963,6 +2373,10 @@ oauth_config:
       - users:read
       - reactions:write
       - files:write
+      - files:read
+      - channels:history
+      - groups:history
+      - mpim:history
 
 settings:
   event_subscriptions:

@@ -19,7 +19,7 @@ Reference implementations: **Telegram** (`src/telegram/`), **HubSpot** (`src/hub
 - **Inference is Claude Code only.** Don't propose routes via the Anthropic SDK / OpenAI / local models for chat — those exist as routine-step backends only.
 - **Bilingual (EN + ES) is non-negotiable.** Every user-facing string lives in `src/i18n/locales/{en,es}.ts`. Chat skills also need Spanish trigger phrases.
 - **Credentials never enter LLM context.** Bridges encrypt at rest via `src/secure-token.ts`. The chat agent triggers integration setup, but the inline card collects raw tokens through IPC — they never reach the model.
-- **Approvals gate external-facing actions.** `run-chat-action` always pauses for human approval. Routine steps that touch external services should set `requiresApproval: true`.
+- **Approvals gate external-facing actions.** `run-chat-action` pauses for human approval by default. The one exception is a user-set, per-destination "don't ask again" rule (today: a specific Slack channel) — stored in `auto_approval_rules`, managed via the `manage-auto-approvals` skill. There is no global skip. Routine steps that touch external services should set `requiresApproval: true`.
 - **Don't delete user data without asking.** Settings, conversations, routines, DB rows you didn't create yourself.
 - **For end-to-end tests, launch Cerebro yourself** with `tail -f /dev/null | npm start &`. You launch, you verify, you clean up. Kill spawned Electron + Python processes when done.
 - **Memory is auto-managed.** Don't write planning files into the repo — work from conversation context.
