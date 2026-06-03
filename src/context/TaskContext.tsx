@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { stripMentionSyntax } from '../lib/mentions';
+import { waitForBackendHealthy } from '../lib/backend-ready';
 import { generateId } from './chat-helpers';
 import { useToast } from './ToastContext';
 import { buildDeliverablePayload, type ParsedDeliverable } from '../types/ipc';
@@ -282,8 +283,21 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Wait for the backend health check to pass before the first load. On a cold
+  // boot the renderer mounts while Python is still starting; firing loadTasks()
+  // immediately gets {ok:false} and silently leaves the board empty with no
+  // retry. Gating on readiness (mirrors ProviderContext) makes tasks appear on
+  // first navigation instead of only after Ctrl+R or adding a card.
   useEffect(() => {
-    loadTasks();
+    let cancelled = false;
+    (async () => {
+      const ready = await waitForBackendHealthy(() => cancelled);
+      if (cancelled || !ready) return;
+      await loadTasks();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [loadTasks]);
 
   // Clean up all event listeners on unmount
@@ -815,6 +829,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     const recover = async () => {
       try {
+        // Same cold-boot gate as the initial load: without it, GET /tasks here
+        // returns {ok:false} on a fresh launch and recovery (liveTaskIds seeding
+        // + orphaned-instruction scan) is silently skipped.
+        const ready = await waitForBackendHealthy(() => cancelled);
+        if (cancelled || !ready) return;
         const [activeRuns, tasksNow] = await Promise.all([
           window.cerebro.agent.activeRuns(),
           window.cerebro.invoke({ method: 'GET', path: '/tasks' }),
