@@ -133,6 +133,18 @@ describe('createSendSlackFileAction', () => {
     })).rejects.toThrow(/Send Slack File: must provide either file_item_id or file_path/);
   });
 
+  it('returns sent:false for a missing local file path without uploading', async () => {
+    resolveMediaInputMock.mockRejectedValue(new Error('file_path not found on disk: /tmp/missing.pdf'));
+    const result = await action.execute({
+      params: { channel: 'C01ABCDE', file_path: '/tmp/missing.pdf' },
+      wiredInputs: {},
+      scratchpad: new RunScratchpad(),
+      context: makeContext(),
+    });
+    expect(result.data).toEqual({ sent: false, file_id: null, channel: 'C01ABCDE', error: 'file not found: /tmp/missing.pdf' });
+    expect(channel.calls).toHaveLength(0);
+  });
+
   it('returns sent:false when upload fails', async () => {
     channel.reply = { fileId: null, error: 'file_too_large' };
     const ctx = makeContext();
