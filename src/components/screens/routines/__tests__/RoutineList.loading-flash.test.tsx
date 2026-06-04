@@ -20,6 +20,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import { render, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import '../../../../i18n';
@@ -79,17 +80,21 @@ describe('RoutineList loading flash (issue #55)', () => {
     document.body.appendChild(container);
     const root = createRoot(container);
 
-    // Render OUTSIDE act() so passive effects (RoutineList's mount-time
-    // loadRoutines) do NOT flush. Reading innerHTML now captures exactly the
-    // first frame the user sees on open — before any load has been kicked off.
+    // flushSync forces the initial commit synchronously while leaving passive
+    // effects (RoutineList's mount-time loadRoutines) deferred. Inspecting the
+    // DOM now captures exactly the first frame the user sees on open — before
+    // any load has been kicked off. IS_REACT_ACT_ENVIRONMENT=false keeps React
+    // from auto-flushing those effects.
     const prevActEnv = (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT;
     (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = false;
     try {
-      root.render(
-        <RoutineProvider>
-          <RoutineList />
-        </RoutineProvider>,
-      );
+      flushSync(() => {
+        root.render(
+          <RoutineProvider>
+            <RoutineList />
+          </RoutineProvider>,
+        );
+      });
 
       const html = container.innerHTML;
       expect(html).not.toContain('No routines yet');
