@@ -30,6 +30,12 @@ remote_metadata = MetaData()
 def _build_remote_metadata() -> None:
     if remote_metadata.tables:
         return
+    # Importing models registers every synced table on ``Base.metadata``. Done
+    # here (not just at app startup) so the schema helper is self-sufficient
+    # from a fresh import — tests, scripts, and worker entry points can call
+    # ensure_remote_schema() without first importing models. See issue #51.
+    import models  # noqa: F401
+
     for tname in SYNCED_TABLES:
         src = Base.metadata.tables[tname]
         cols = [
