@@ -102,6 +102,21 @@ export function createSendSlackFileAction(deps: { getChannel: () => SlackChannel
         resolved = await resolveMediaInput(input.context.backendPort, fileItemId, filePath);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        // A missing local file is an expected failed send, not an action exception.
+        // The Slack bridge already returns {fileId:null, error:'file not found: …'}
+        // for this case (see SlackBridge.sendFileActionMessage); the resolver's
+        // existence check just fires first. Translate it back into that structured
+        // result so routines/chat actions see sent:false instead of an uncaught
+        // throw. Other resolver errors (bad/absent input) still surface as throws.
+        if (filePath && /not found on disk/.test(msg)) {
+          const missingPath = filePath.startsWith('@/') ? filePath.slice(1) : filePath;
+          const error = `file not found: ${missingPath}`;
+          input.context.log(`Slack file upload failed for ${channelId}: ${error}`);
+          return {
+            data: { sent: false, file_id: null, channel: channelId, error },
+            summary: `Slack file upload failed: ${error}`,
+          };
+        }
         throw new Error(`Send Slack File: ${msg}`);
       }
 
