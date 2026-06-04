@@ -89,7 +89,9 @@ export function createGitHubOpenPrAction(deps: {
       const head = renderTemplate(params.head ?? '', vars).trim();
       const title = renderTemplate(params.title ?? '', vars).trim();
       const body = renderTemplate(params.body ?? '', vars).trim();
-      const draftRaw = renderTemplate(String(params.draft ?? ''), vars).trim().toLowerCase();
+      const draftRaw = renderTemplate(String(params.draft ?? ''), vars)
+        .trim()
+        .toLowerCase();
       const draft = draftRaw === 'true' || draftRaw === '1' || draftRaw === 'yes';
       const parts = parseRepoFullName(repo);
       if (!parts) throw new Error(`GitHub: Open PR — invalid repo "${repo}".`);
@@ -102,7 +104,8 @@ export function createGitHubOpenPrAction(deps: {
       if (draft) reqBody.draft = true;
 
       const res = await callGitHubApi<{ number?: number; html_url?: string }>(
-        token, `/repos/${parts.owner}/${parts.repo}/pulls`,
+        token,
+        `/repos/${parts.owner}/${parts.repo}/pulls`,
         { method: 'POST', body: reqBody, signal: input.context.signal },
       );
       if (!res.ok) {

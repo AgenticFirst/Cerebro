@@ -13,5 +13,24 @@
     "plugin:import/typescript",
     "prettier"
   ],
-  "parser": "@typescript-eslint/parser"
+  "parser": "@typescript-eslint/parser",
+  "settings": {
+    "import/core-modules": ["@electron/osx-sign", "vitest/config"]
+  },
+  "rules": {
+    "no-constant-condition": ["error", { "checkLoops": false }],
+    "no-control-regex": "off",
+    "prefer-const": ["error", { "ignoreReadBeforeAssign": true }],
+    "@typescript-eslint/no-empty-function": ["error", { "allow": ["arrowFunctions"] }]
+  },
+  "overrides": [
+    {
+      "files": ["e2e/**", "**/*.test.ts", "**/*.test.tsx", "**/__tests__/**"],
+      "rules": {
+        "@typescript-eslint/no-empty-function": "off",
+        "no-empty-pattern": "off",
+        "@typescript-eslint/no-var-requires": "off"
+      }
+    }
+  ]
 }

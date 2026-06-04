@@ -31,7 +31,10 @@ function recordWithCanvas(
 
 describe('parseRepoFullName', () => {
   it('parses owner/repo', () => {
-    expect(parseRepoFullName('octocat/hello-world')).toEqual({ owner: 'octocat', repo: 'hello-world' });
+    expect(parseRepoFullName('octocat/hello-world')).toEqual({
+      owner: 'octocat',
+      repo: 'hello-world',
+    });
   });
   it('rejects extra slashes', () => {
     expect(parseRepoFullName('octocat/hello/world')).toBeNull();
@@ -82,22 +85,27 @@ describe('parseGitHubTriggerRoutine', () => {
   });
 
   it('returns null for non-github triggers', () => {
-    expect(parseGitHubTriggerRoutine(
-      recordWithCanvas('trigger_telegram_message', { chat_id: '123' }),
-    )).toBeNull();
+    expect(
+      parseGitHubTriggerRoutine(recordWithCanvas('trigger_telegram_message', { chat_id: '123' })),
+    ).toBeNull();
   });
 
   it('returns null when repo is missing', () => {
-    expect(parseGitHubTriggerRoutine(
-      recordWithCanvas('trigger_github_issue_opened', {}),
-    )).toBeNull();
+    expect(
+      parseGitHubTriggerRoutine(recordWithCanvas('trigger_github_issue_opened', {})),
+    ).toBeNull();
   });
 
   it('returns null on invalid dag_json', () => {
-    expect(parseGitHubTriggerRoutine({
-      id: 'r', name: 'r', is_enabled: true, trigger_type: 'github_issue_opened',
-      dag_json: '{not json',
-    })).toBeNull();
+    expect(
+      parseGitHubTriggerRoutine({
+        id: 'r',
+        name: 'r',
+        is_enabled: true,
+        trigger_type: 'github_issue_opened',
+        dag_json: '{not json',
+      }),
+    ).toBeNull();
   });
 });
 
@@ -127,10 +135,18 @@ describe('matchesGitHubFilter', () => {
 describe('matchRoutineTriggers', () => {
   it('returns only routines whose triggerType + repo + filter all match', () => {
     const r1 = parseGitHubTriggerRoutine(
-      recordWithCanvas('trigger_github_issue_opened', { repo: 'octocat/hello-world' }, { id: 'r1' }),
+      recordWithCanvas(
+        'trigger_github_issue_opened',
+        { repo: 'octocat/hello-world' },
+        { id: 'r1' },
+      ),
     )!;
     const r2 = parseGitHubTriggerRoutine(
-      recordWithCanvas('trigger_github_issue_opened', { repo: '*', filter_type: 'keyword', filter_value: 'crash' }, { id: 'r2' }),
+      recordWithCanvas(
+        'trigger_github_issue_opened',
+        { repo: '*', filter_type: 'keyword', filter_value: 'crash' },
+        { id: 'r2' },
+      ),
     )!;
     const r3 = parseGitHubTriggerRoutine(
       recordWithCanvas('trigger_github_pr_review_requested', { repo: '*' }, { id: 'r3' }),
@@ -153,7 +169,9 @@ describe('matchRoutineTriggers', () => {
     const matches = matchRoutineTriggers([r], {
       type: 'github_issue_opened',
       repoFullName: 'octocat/hello-world',
-      title: 't', body: '', labels: [],
+      title: 't',
+      body: '',
+      labels: [],
     });
     expect(matches).toEqual([]);
   });

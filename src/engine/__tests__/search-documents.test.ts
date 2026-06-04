@@ -48,10 +48,7 @@ const SAMPLE_CONTENTS = [
   },
 ];
 
-async function run(
-  params: Record<string, unknown>,
-  context: ActionContext = makeContext(),
-) {
+async function run(params: Record<string, unknown>, context: ActionContext = makeContext()) {
   return searchDocumentsAction.execute({
     params,
     wiredInputs: {},
@@ -191,12 +188,7 @@ describe('searchDocumentsAction', () => {
   it('SD-U12: drops malformed hits (non-object, missing path+snippet) but keeps valid ones', async () => {
     mockBackendFetch.mockResolvedValueOnce(SAMPLE_CONTENTS);
     mockSingleShot.mockResolvedValueOnce(
-      JSON.stringify([
-        'not an object',
-        {},
-        { path: '/ok.md', snippet: 'good', score: 0.8 },
-        null,
-      ]),
+      JSON.stringify(['not an object', {}, { path: '/ok.md', snippet: 'good', score: 0.8 }, null]),
     );
     const result = await run({ query: 'q', bucket_id: 'bk-1' });
     const results = result.data.results as Array<{ path: string }>;

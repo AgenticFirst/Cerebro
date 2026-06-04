@@ -30,14 +30,22 @@ function makeChannel(overrides: Partial<ChannelStub> = {}): ChannelStub {
     allowed: overrides.allowed ?? new Set(['C01ABCDE', 'D01XYZAB']),
     reply: overrides.reply ?? { messageTs: '1234.5678', channelId: 'C01ABCDE', error: null },
     connected: overrides.connected ?? true,
-    isAllowlisted(channelId: string) { return this.allowed.has(channelId); },
-    isConnected() { return this.connected; },
+    isAllowlisted(channelId: string) {
+      return this.allowed.has(channelId);
+    },
+    isConnected() {
+      return this.connected;
+    },
     async sendActionMessage(channelId, text, threadTs) {
       calls.push({ channel: channelId, text, threadTs });
       return this.reply;
     },
-    async sendFileActionMessage() { return { fileId: null, error: null }; },
-    async listChannels() { return { ok: true, channels: [] }; },
+    async sendFileActionMessage() {
+      return { fileId: null, error: null };
+    },
+    async listChannels() {
+      return { ok: true, channels: [] };
+    },
   };
   return channel;
 }
@@ -73,7 +81,9 @@ describe('createSendSlackMessageAction', () => {
       channel: 'C01ABCDE',
       error: null,
     });
-    expect(channel.calls).toEqual([{ channel: 'C01ABCDE', text: 'hello team', threadTs: undefined }]);
+    expect(channel.calls).toEqual([
+      { channel: 'C01ABCDE', text: 'hello team', threadTs: undefined },
+    ]);
   });
 
   it('forwards thread_ts to the channel', async () => {
@@ -84,8 +94,12 @@ describe('createSendSlackMessageAction', () => {
   it('renders Mustache templates from wiredInputs (thread reply pattern)', async () => {
     await runAction(
       action,
-      { channel: '{{__trigger__.channel}}', text: 'Got it', thread_ts: '{{__trigger__.thread_ts}}' },
-      { '__trigger__': { channel: 'D01XYZAB', thread_ts: '111.222' } },
+      {
+        channel: '{{__trigger__.channel}}',
+        text: 'Got it',
+        thread_ts: '{{__trigger__.thread_ts}}',
+      },
+      { __trigger__: { channel: 'D01XYZAB', thread_ts: '111.222' } },
     );
     expect(channel.calls.at(-1)).toMatchObject({
       channel: 'D01XYZAB',
@@ -96,23 +110,27 @@ describe('createSendSlackMessageAction', () => {
 
   it('throws when the bridge is not connected', async () => {
     const noChannelAction = createSendSlackMessageAction({ getChannel: () => null });
-    await expect(runAction(noChannelAction, { channel: 'C01ABCDE', text: 'hi' }))
-      .rejects.toThrow(/bridge is not enabled/i);
+    await expect(runAction(noChannelAction, { channel: 'C01ABCDE', text: 'hi' })).rejects.toThrow(
+      /bridge is not enabled/i,
+    );
   });
 
   it('throws when channel renders empty', async () => {
-    await expect(runAction(action, { channel: '', text: 'hi' }))
-      .rejects.toThrow(/channel is empty/);
+    await expect(runAction(action, { channel: '', text: 'hi' })).rejects.toThrow(
+      /channel is empty/,
+    );
   });
 
   it('throws when text renders empty', async () => {
-    await expect(runAction(action, { channel: 'C01ABCDE', text: '   ' }))
-      .rejects.toThrow(/text is empty/);
+    await expect(runAction(action, { channel: 'C01ABCDE', text: '   ' })).rejects.toThrow(
+      /text is empty/,
+    );
   });
 
   it('throws when channel is not allowlisted', async () => {
-    await expect(runAction(action, { channel: 'C999XYZ', text: 'hi' }))
-      .rejects.toThrow(/not in the Slack allowlist/);
+    await expect(runAction(action, { channel: 'C999XYZ', text: 'hi' })).rejects.toThrow(
+      /not in the Slack allowlist/,
+    );
     expect(channel.calls).toHaveLength(0);
   });
 

@@ -35,9 +35,9 @@ import { stripAnsiFull } from '../utils/ansi';
 export type LoginMode = 'oauth' | 'setup-token';
 
 export type LoginStatus =
-  | 'starting'         // PTY spawned, no URL captured yet
-  | 'awaiting-user'    // URL emitted; for oauth, waiting on browser/exit; for setup-token, waiting on submitCode()
-  | 'submitting-code'  // paste-back code written, waiting for CLI to verify
+  | 'starting' // PTY spawned, no URL captured yet
+  | 'awaiting-user' // URL emitted; for oauth, waiting on browser/exit; for setup-token, waiting on submitCode()
+  | 'submitting-code' // paste-back code written, waiting for CLI to verify
   | 'success'
   | 'failure'
   | 'cancelled';
@@ -77,7 +77,8 @@ const URL_TIMEOUT_MS = 20_000;
 const POST_SUBMIT_TIMEOUT_MS = 30_000;
 // Match the first claude.ai or console.anthropic.com URL the CLI prints.
 // Tolerates trailing whitespace / ANSI hyperlink terminators.
-const URL_RE = /https?:\/\/(?:claude\.ai|console\.anthropic\.com|auth\.anthropic\.com)\/[^\s\x07\x1b]+/i;
+const URL_RE =
+  /https?:\/\/(?:claude\.ai|console\.anthropic\.com|auth\.anthropic\.com)\/[^\s\x07\x1b]+/i;
 
 export class ClaudeCodeLoginOrchestrator extends EventEmitter {
   private active: ActiveAttempt | null = null;
@@ -91,7 +92,9 @@ export class ClaudeCodeLoginOrchestrator extends EventEmitter {
    */
   start(mode: LoginMode): Promise<LoginSnapshot> {
     if (this.active) {
-      return Promise.reject(new Error('A Claude Code login attempt is already in progress. Cancel it first.'));
+      return Promise.reject(
+        new Error('A Claude Code login attempt is already in progress. Cancel it first.'),
+      );
     }
     const info = getCachedClaudeCodeInfo();
     if (info.status !== 'available' || !info.path) {
@@ -119,7 +122,9 @@ export class ClaudeCodeLoginOrchestrator extends EventEmitter {
         env,
       });
     } catch (err) {
-      return Promise.reject(new Error(`Failed to spawn login subprocess: ${(err as Error).message}`));
+      return Promise.reject(
+        new Error(`Failed to spawn login subprocess: ${(err as Error).message}`),
+      );
     }
 
     const attempt: ActiveAttempt = {
@@ -202,7 +207,11 @@ export class ClaudeCodeLoginOrchestrator extends EventEmitter {
         if (!this.active || this.active.loginId !== a.loginId) return;
         if (a.status === 'success' || a.status === 'failure') return;
         a.reason = 'CLI did not respond after code submission.';
-        try { a.proc.kill(); } catch { /* noop */ }
+        try {
+          a.proc.kill();
+        } catch {
+          /* noop */
+        }
       }, POST_SUBMIT_TIMEOUT_MS);
     });
   }
@@ -214,7 +223,11 @@ export class ClaudeCodeLoginOrchestrator extends EventEmitter {
     if (loginId && a.loginId !== loginId) return;
     a.reason = 'Cancelled by user.';
     this.transition('cancelled');
-    try { a.proc.kill(); } catch { /* noop */ }
+    try {
+      a.proc.kill();
+    } catch {
+      /* noop */
+    }
     this.cleanup(a);
   }
 
@@ -236,7 +249,10 @@ export class ClaudeCodeLoginOrchestrator extends EventEmitter {
       const m = a.scratch.match(URL_RE);
       if (m) {
         a.url = m[0];
-        if (a.urlTimer) { clearTimeout(a.urlTimer); a.urlTimer = null; }
+        if (a.urlTimer) {
+          clearTimeout(a.urlTimer);
+          a.urlTimer = null;
+        }
         this.transition('awaiting-user');
         a.urlResolve?.(this.snapshot());
         a.urlResolve = null;
@@ -248,7 +264,10 @@ export class ClaudeCodeLoginOrchestrator extends EventEmitter {
   private async handleExit(exitCode: number, signal: number | undefined): Promise<void> {
     const a = this.active;
     if (!a) return;
-    if (a.urlTimer) { clearTimeout(a.urlTimer); a.urlTimer = null; }
+    if (a.urlTimer) {
+      clearTimeout(a.urlTimer);
+      a.urlTimer = null;
+    }
 
     if (a.status === 'cancelled' || a.status === 'failure' || a.status === 'success') {
       // Already settled — just clean up.
@@ -267,9 +286,10 @@ export class ClaudeCodeLoginOrchestrator extends EventEmitter {
         this.transition('failure');
       }
     } else {
-      a.reason = signal != null
-        ? `Login subprocess killed by signal ${signal}.`
-        : `Login subprocess exited with code ${exitCode}.`;
+      a.reason =
+        signal != null
+          ? `Login subprocess killed by signal ${signal}.`
+          : `Login subprocess exited with code ${exitCode}.`;
       this.transition('failure');
     }
 
@@ -295,7 +315,10 @@ export class ClaudeCodeLoginOrchestrator extends EventEmitter {
 
   private cleanup(a: ActiveAttempt): void {
     if (this.active !== a) return;
-    if (a.urlTimer) { clearTimeout(a.urlTimer); a.urlTimer = null; }
+    if (a.urlTimer) {
+      clearTimeout(a.urlTimer);
+      a.urlTimer = null;
+    }
     this.active = null;
   }
 

@@ -92,9 +92,7 @@ export default function ProjectFolderField({
         </button>
       )}
 
-      {error && (
-        <div className="mt-1 text-xs text-red-400">{error}</div>
-      )}
+      {error && <div className="mt-1 text-xs text-red-400">{error}</div>}
     </div>
   );
 }

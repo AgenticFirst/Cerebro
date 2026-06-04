@@ -1,6 +1,24 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, Search, Brain, Zap, Globe, CheckCircle2, XCircle, Loader2, Users, FileText, Pencil, FilePlus, Terminal, FolderSearch, Code, Clock, Square } from 'lucide-react';
+import {
+  ChevronRight,
+  Search,
+  Brain,
+  Zap,
+  Globe,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Users,
+  FileText,
+  Pencil,
+  FilePlus,
+  Terminal,
+  FolderSearch,
+  Code,
+  Clock,
+  Square,
+} from 'lucide-react';
 import clsx from 'clsx';
 import type { ToolCall } from '../../types/chat';
 
@@ -49,7 +67,8 @@ function StatusIcon({ status }: { status: ToolCall['status'] }) {
   if (status === 'running') return <Loader2 size={12} className="animate-spin text-yellow-500" />;
   if (status === 'success') return <CheckCircle2 size={12} className="text-green-500" />;
   if (status === 'error') return <XCircle size={12} className="text-red-500" />;
-  if (status === 'stopped') return <Square size={11} className="text-text-tertiary" strokeWidth={2.5} />;
+  if (status === 'stopped')
+    return <Square size={11} className="text-text-tertiary" strokeWidth={2.5} />;
   return null;
 }
 
@@ -75,21 +94,27 @@ export default function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const expertName = toolCall.delegationExpertName;
 
   // Delegation-specific header text
-  const headerText = isDelegation && expertName
-    ? toolCall.status === 'running'
-      ? `${expertName} is working...`
-      : `${expertName} responded`
-    : toolCall.description;
+  const headerText =
+    isDelegation && expertName
+      ? toolCall.status === 'running'
+        ? `${expertName} is working...`
+        : `${expertName} responded`
+      : toolCall.description;
 
   // For delegation, strip the "[Response from {name}]" prefix from output
-  const displayOutput = isDelegation && toolCall.output && expertName
-    ? toolCall.output.replace(new RegExp(`^\\[Response from ${expertName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\s*`), '')
-    : toolCall.output;
+  const displayOutput =
+    isDelegation && toolCall.output && expertName
+      ? toolCall.output.replace(
+          new RegExp(
+            `^\\[Response from ${expertName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\s*`,
+          ),
+          '',
+        )
+      : toolCall.output;
 
   // For delegation, show the task from arguments instead of raw args
-  const delegationTask = isDelegation && toolCall.arguments?.task
-    ? String(toolCall.arguments.task)
-    : null;
+  const delegationTask =
+    isDelegation && toolCall.arguments?.task ? String(toolCall.arguments.task) : null;
 
   const subagentType =
     toolCall.name === 'Agent' && typeof toolCall.arguments?.subagent_type === 'string'
@@ -181,7 +206,9 @@ export default function ToolCallCard({ toolCall }: ToolCallCardProps) {
               <Loader2 size={12} className="animate-spin" />
               {isDelegation && expertName
                 ? t('toolCall.waitingFor', { name: expertName })
-                : elapsed > 0 ? t('toolCall.runningElapsed', { seconds: elapsed }) : t('toolCall.running')}
+                : elapsed > 0
+                  ? t('toolCall.runningElapsed', { seconds: elapsed })
+                  : t('toolCall.running')}
             </div>
           )}
 

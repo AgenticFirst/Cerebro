@@ -62,11 +62,17 @@ function sanitizeTitle(raw: string): string | null {
   if (!t) return null;
 
   // Some models prefix with "Title:" or wrap in a fenced block — strip that.
-  t = t.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/i, '').trim();
-  t = t.replace(/^title\s*[:\-]\s*/i, '').trim();
+  t = t
+    .replace(/^```[a-z]*\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  t = t.replace(/^title\s*[:-]\s*/i, '').trim();
 
   // Take first non-empty line only — guards against rare paragraph outputs.
-  const firstLine = t.split('\n').map((l) => l.trim()).find((l) => l.length > 0);
+  const firstLine = t
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
   if (!firstLine) return null;
   t = firstLine;
 

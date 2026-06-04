@@ -88,16 +88,27 @@ function fetchFileItem(port: number, id: string): Promise<FileItemRow | null> {
       },
       (res) => {
         let data = '';
-        res.on('data', (c: Buffer) => { data += c.toString(); });
+        res.on('data', (c: Buffer) => {
+          data += c.toString();
+        });
         res.on('end', () => {
-          if (!res.statusCode || res.statusCode >= 400) { resolve(null); return; }
-          try { resolve(JSON.parse(data) as FileItemRow); }
-          catch { resolve(null); }
+          if (!res.statusCode || res.statusCode >= 400) {
+            resolve(null);
+            return;
+          }
+          try {
+            resolve(JSON.parse(data) as FileItemRow);
+          } catch {
+            resolve(null);
+          }
         });
       },
     );
     req.on('error', () => resolve(null));
-    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
     req.end();
   });
 }

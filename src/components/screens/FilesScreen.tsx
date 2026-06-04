@@ -70,7 +70,11 @@ export default function FilesScreen() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showCreateBucket, setShowCreateBucket] = useState(false);
   const [moveCopyMode, setMoveCopyMode] = useState<'move' | 'copy' | null>(null);
-  const [bucketContextMenu, setBucketContextMenu] = useState<{ bucket: Bucket; x: number; y: number } | null>(null);
+  const [bucketContextMenu, setBucketContextMenu] = useState<{
+    bucket: Bucket;
+    x: number;
+    y: number;
+  } | null>(null);
   const [pendingDeleteBucket, setPendingDeleteBucket] = useState<Bucket | null>(null);
   const [renameState, setRenameState] = useState<RenameState | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -108,12 +112,15 @@ export default function FilesScreen() {
     toggleSelected(id, { multi: e.metaKey || e.ctrlKey || e.shiftKey });
   };
 
-  const handleOpen = useCallback(async (item: FileItem) => {
-    setPreviewItem(item);
-    if (item.storageKind === 'managed') {
-      touchItem(item.id).catch(() => undefined);
-    }
-  }, [touchItem]);
+  const handleOpen = useCallback(
+    async (item: FileItem) => {
+      setPreviewItem(item);
+      if (item.storageKind === 'managed') {
+        touchItem(item.id).catch(() => undefined);
+      }
+    },
+    [touchItem],
+  );
 
   const handleContextMenu = (item: FileItem, e: React.MouseEvent) => {
     e.preventDefault();
@@ -144,18 +151,20 @@ export default function FilesScreen() {
     setIsDragging(false);
     const files = Array.from(e.dataTransfer?.files ?? []);
     if (files.length === 0) return;
-    const paths = files
-      .map((f) => window.cerebro.getPathForFile(f))
-      .filter((p) => !!p);
+    const paths = files.map((f) => window.cerebro.getPathForFile(f)).filter((p) => !!p);
     if (paths.length > 0) await uploadFiles(paths, targetBucketId);
   };
 
   const sortLabel = useMemo(() => {
     switch (sortKey) {
-      case 'name': return t('files.sortName');
-      case 'updated': return t('files.sortUpdated');
-      case 'opened': return t('files.sortOpened');
-      default: return t('files.sortNewest');
+      case 'name':
+        return t('files.sortName');
+      case 'updated':
+        return t('files.sortUpdated');
+      case 'opened':
+        return t('files.sortOpened');
+      default:
+        return t('files.sortNewest');
     }
   }, [sortKey, t]);
 
@@ -164,7 +173,9 @@ export default function FilesScreen() {
     setSortMenuOpen(false);
   };
 
-  useEffect(() => { refreshItems().catch(() => undefined); }, [refreshItems]);
+  useEffect(() => {
+    refreshItems().catch(() => undefined);
+  }, [refreshItems]);
 
   // Close preview if its item disappears (e.g., trashed)
   useEffect(() => {
@@ -202,117 +213,121 @@ export default function FilesScreen() {
         {!isWorkspaces && <div className="app-drag-region h-11 flex-shrink-0" />}
         {/* Header */}
         {!isWorkspaces && (
-        <div className="flex items-center justify-between gap-3 px-5 h-[60px] flex-shrink-0 border-b border-border-subtle">
-          <div className="flex items-baseline gap-3 min-w-0">
-            <h1 className="text-base font-semibold text-text-primary truncate">{headerLabel}</h1>
-            {selectedItems.length > 0 && (
-              <span className="text-[11px] text-text-tertiary">
-                {t('files.selectionCount', { count: selectedItems.length })}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {selectedItems.length > 0 && !isTrash && !isWorkspaces && (
-              <>
-                <button
-                  onClick={() => setMoveCopyMode('move')}
-                  className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer flex items-center gap-1.5"
-                >
-                  <ArrowRight size={12} /> {t('files.actionMove').replace('\u2026', '')}
-                </button>
-                <button
-                  onClick={() => setMoveCopyMode('copy')}
-                  className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer flex items-center gap-1.5"
-                >
-                  <CopyIcon size={12} /> {t('files.actionCopy').replace('\u2026', '')}
-                </button>
-                <button
-                  onClick={() => softDelete(Array.from(selectedItemIds))}
-                  className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-red-400 hover:bg-red-400/10 cursor-pointer flex items-center gap-1.5"
-                >
-                  <Trash2 size={12} /> {t('files.actionDelete')}
-                </button>
-              </>
-            )}
-            {isTrash && (
-              <button
-                onClick={emptyTrash}
-                className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-red-400 hover:bg-red-400/10 cursor-pointer flex items-center gap-1.5"
-              >
-                <Trash2 size={12} /> {t('files.actionEmptyTrash')}
-              </button>
-            )}
-            {!isWorkspaces && (
-              <>
-                <div className="relative">
+          <div className="flex items-center justify-between gap-3 px-5 h-[60px] flex-shrink-0 border-b border-border-subtle">
+            <div className="flex items-baseline gap-3 min-w-0">
+              <h1 className="text-base font-semibold text-text-primary truncate">{headerLabel}</h1>
+              {selectedItems.length > 0 && (
+                <span className="text-[11px] text-text-tertiary">
+                  {t('files.selectionCount', { count: selectedItems.length })}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {selectedItems.length > 0 && !isTrash && !isWorkspaces && (
+                <>
                   <button
-                    onClick={() => setSortMenuOpen((v) => !v)}
+                    onClick={() => setMoveCopyMode('move')}
                     className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer flex items-center gap-1.5"
                   >
-                    <ArrowUpDown size={12} /> {sortLabel}
-                  </button>
-                  {isSortMenuOpen && (
-                    <div className="absolute right-0 top-full mt-1 z-10 bg-bg-surface border border-border-subtle rounded-lg shadow-xl py-1 min-w-[160px]">
-                      {(['created', 'updated', 'name', 'opened'] as FilesSortKey[]).map((key) => (
-                        <button
-                          key={key}
-                          onClick={() => handleSortPick(key)}
-                          className={clsx(
-                            'w-full text-left px-3 py-1.5 text-[12px] cursor-pointer hover:bg-white/[0.04]',
-                            sortKey === key ? 'text-accent' : 'text-text-secondary',
-                          )}
-                        >
-                          {key === 'created' && t('files.sortNewest')}
-                          {key === 'updated' && t('files.sortUpdated')}
-                          {key === 'name' && t('files.sortName')}
-                          {key === 'opened' && t('files.sortOpened')}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-0.5 bg-bg-surface rounded-md p-0.5 border border-border-subtle">
-                  <button
-                    onClick={() => setViewMode('grid')}
-                    title={t('files.viewGrid')}
-                    className={clsx(
-                      'p-1 rounded cursor-pointer transition-colors',
-                      viewMode === 'grid' ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-primary',
-                    )}
-                  >
-                    <Grid3x3 size={12} />
+                    <ArrowRight size={12} /> {t('files.actionMove').replace('\u2026', '')}
                   </button>
                   <button
-                    onClick={() => setViewMode('list')}
-                    title={t('files.viewList')}
-                    className={clsx(
-                      'p-1 rounded cursor-pointer transition-colors',
-                      viewMode === 'list' ? 'bg-accent/15 text-accent' : 'text-text-tertiary hover:text-text-primary',
-                    )}
+                    onClick={() => setMoveCopyMode('copy')}
+                    className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer flex items-center gap-1.5"
                   >
-                    <ListIcon size={12} />
+                    <CopyIcon size={12} /> {t('files.actionCopy').replace('\u2026', '')}
                   </button>
-                </div>
-              </>
-            )}
-            {!isTrash && !isWorkspaces && (
-              <>
+                  <button
+                    onClick={() => softDelete(Array.from(selectedItemIds))}
+                    className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-red-400 hover:bg-red-400/10 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Trash2 size={12} /> {t('files.actionDelete')}
+                  </button>
+                </>
+              )}
+              {isTrash && (
                 <button
-                  onClick={() => setShowCreateBucket(true)}
-                  className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer flex items-center gap-1.5"
+                  onClick={emptyTrash}
+                  className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-red-400 hover:bg-red-400/10 cursor-pointer flex items-center gap-1.5"
                 >
-                  <Plus size={12} /> {t('files.newBucket')}
+                  <Trash2 size={12} /> {t('files.actionEmptyTrash')}
                 </button>
-                <button
-                  onClick={handlePickFiles}
-                  className="px-3 py-1.5 text-[11px] font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 cursor-pointer flex items-center gap-1.5"
-                >
-                  <Upload size={12} /> {t('files.upload')}
-                </button>
-              </>
-            )}
+              )}
+              {!isWorkspaces && (
+                <>
+                  <div className="relative">
+                    <button
+                      onClick={() => setSortMenuOpen((v) => !v)}
+                      className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer flex items-center gap-1.5"
+                    >
+                      <ArrowUpDown size={12} /> {sortLabel}
+                    </button>
+                    {isSortMenuOpen && (
+                      <div className="absolute right-0 top-full mt-1 z-10 bg-bg-surface border border-border-subtle rounded-lg shadow-xl py-1 min-w-[160px]">
+                        {(['created', 'updated', 'name', 'opened'] as FilesSortKey[]).map((key) => (
+                          <button
+                            key={key}
+                            onClick={() => handleSortPick(key)}
+                            className={clsx(
+                              'w-full text-left px-3 py-1.5 text-[12px] cursor-pointer hover:bg-white/[0.04]',
+                              sortKey === key ? 'text-accent' : 'text-text-secondary',
+                            )}
+                          >
+                            {key === 'created' && t('files.sortNewest')}
+                            {key === 'updated' && t('files.sortUpdated')}
+                            {key === 'name' && t('files.sortName')}
+                            {key === 'opened' && t('files.sortOpened')}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-0.5 bg-bg-surface rounded-md p-0.5 border border-border-subtle">
+                    <button
+                      onClick={() => setViewMode('grid')}
+                      title={t('files.viewGrid')}
+                      className={clsx(
+                        'p-1 rounded cursor-pointer transition-colors',
+                        viewMode === 'grid'
+                          ? 'bg-accent/15 text-accent'
+                          : 'text-text-tertiary hover:text-text-primary',
+                      )}
+                    >
+                      <Grid3x3 size={12} />
+                    </button>
+                    <button
+                      onClick={() => setViewMode('list')}
+                      title={t('files.viewList')}
+                      className={clsx(
+                        'p-1 rounded cursor-pointer transition-colors',
+                        viewMode === 'list'
+                          ? 'bg-accent/15 text-accent'
+                          : 'text-text-tertiary hover:text-text-primary',
+                      )}
+                    >
+                      <ListIcon size={12} />
+                    </button>
+                  </div>
+                </>
+              )}
+              {!isTrash && !isWorkspaces && (
+                <>
+                  <button
+                    onClick={() => setShowCreateBucket(true)}
+                    className="px-2.5 py-1.5 text-[11px] font-medium rounded-md text-text-secondary hover:bg-bg-hover hover:text-text-primary cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Plus size={12} /> {t('files.newBucket')}
+                  </button>
+                  <button
+                    onClick={handlePickFiles}
+                    className="px-3 py-1.5 text-[11px] font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Upload size={12} /> {t('files.upload')}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
-        </div>
         )}
 
         {/* Body */}
@@ -369,9 +384,11 @@ export default function FilesScreen() {
           <div className="absolute inset-0 z-20 bg-accent/10 border-2 border-dashed border-accent/40 flex items-center justify-center pointer-events-none">
             <div className="px-5 py-3 rounded-lg bg-bg-surface/95 border border-accent/30 text-sm text-text-primary shadow-xl">
               {t('files.dropOverlay', {
-                bucket: activeFilter.kind === 'bucket'
-                  ? buckets.find((b) => b.id === activeFilter.bucketId)?.name ?? t('files.bucketDefault')
-                  : t('files.bucketDefault'),
+                bucket:
+                  activeFilter.kind === 'bucket'
+                    ? (buckets.find((b) => b.id === activeFilter.bucketId)?.name ??
+                      t('files.bucketDefault'))
+                    : t('files.bucketDefault'),
               })}
             </div>
           </div>
@@ -386,9 +403,7 @@ export default function FilesScreen() {
       </div>
 
       {/* Right preview drawer */}
-      {previewItem && (
-        <FilePreviewDrawer item={previewItem} onClose={() => setPreviewItem(null)} />
-      )}
+      {previewItem && <FilePreviewDrawer item={previewItem} onClose={() => setPreviewItem(null)} />}
 
       {/* Item context menu */}
       {contextMenu && (
@@ -398,28 +413,44 @@ export default function FilesScreen() {
           isTrashed={isTrash}
           onClose={() => setContextMenu(null)}
           onPreview={handleOpen}
-          onOpen={(item) => window.cerebro.files.open({
-            storageKind: item.storageKind,
-            storagePath: item.storagePath,
-            taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
-          })}
-          onReveal={(item) => window.cerebro.files.reveal({
-            storageKind: item.storageKind,
-            storagePath: item.storagePath,
-            taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
-          })}
+          onOpen={(item) =>
+            window.cerebro.files.open({
+              storageKind: item.storageKind,
+              storagePath: item.storagePath,
+              taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
+            })
+          }
+          onReveal={(item) =>
+            window.cerebro.files.reveal({
+              storageKind: item.storageKind,
+              storagePath: item.storagePath,
+              taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
+            })
+          }
           onRename={(item) => setRenameState({ item, draft: item.name })}
           onMove={() => setMoveCopyMode('move')}
           onCopy={() => setMoveCopyMode('copy')}
           onStar={(item) => starItem(item.id, !item.starred)}
-          onDownload={(item) => window.cerebro.files.download({
-            storageKind: item.storageKind,
-            storagePath: item.storagePath,
-            taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
-          })}
-          onSoftDelete={() => softDelete(Array.from(selectedItemIds.size > 0 ? selectedItemIds : [contextMenu.item.id]))}
-          onRestore={() => restore(Array.from(selectedItemIds.size > 0 ? selectedItemIds : [contextMenu.item.id]))}
-          onHardDelete={() => hardDelete(Array.from(selectedItemIds.size > 0 ? selectedItemIds : [contextMenu.item.id]))}
+          onDownload={(item) =>
+            window.cerebro.files.download({
+              storageKind: item.storageKind,
+              storagePath: item.storagePath,
+              taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
+            })
+          }
+          onSoftDelete={() =>
+            softDelete(
+              Array.from(selectedItemIds.size > 0 ? selectedItemIds : [contextMenu.item.id]),
+            )
+          }
+          onRestore={() =>
+            restore(Array.from(selectedItemIds.size > 0 ? selectedItemIds : [contextMenu.item.id]))
+          }
+          onHardDelete={() =>
+            hardDelete(
+              Array.from(selectedItemIds.size > 0 ? selectedItemIds : [contextMenu.item.id]),
+            )
+          }
         />
       )}
 
@@ -500,9 +531,14 @@ export default function FilesScreen() {
 
       {renameState && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setRenameState(null)} />
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setRenameState(null)}
+          />
           <div className="relative bg-bg-surface border border-border-subtle rounded-xl shadow-2xl w-full max-w-sm mx-4 p-5 animate-fade-in">
-            <h3 className="text-sm font-medium text-text-primary mb-3">{t('files.actionRename')}</h3>
+            <h3 className="text-sm font-medium text-text-primary mb-3">
+              {t('files.actionRename')}
+            </h3>
             <input
               autoFocus
               type="text"

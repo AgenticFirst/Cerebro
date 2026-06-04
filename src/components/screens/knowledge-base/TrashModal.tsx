@@ -34,7 +34,10 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+      onClick={onClose}
+    >
       <div
         className="w-[440px] max-h-[70vh] flex flex-col rounded-xl border border-border-default bg-bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -57,7 +60,9 @@ export function TrashModal({ onClose }: { onClose: () => void }) {
           {loading ? (
             <p className="text-center text-[12px] text-text-tertiary py-8">{t('common.loading')}</p>
           ) : items.length === 0 ? (
-            <p className="text-center text-[12px] text-text-tertiary py-8">{t('knowledgeBase.trashEmpty')}</p>
+            <p className="text-center text-[12px] text-text-tertiary py-8">
+              {t('knowledgeBase.trashEmpty')}
+            </p>
           ) : (
             items.map((item) => (
               <div

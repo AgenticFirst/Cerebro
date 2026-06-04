@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Cloud, CloudOff, Loader2, Lock, RefreshCw, ShieldAlert, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  Cloud,
+  CloudOff,
+  Loader2,
+  Lock,
+  RefreshCw,
+  ShieldAlert,
+  XCircle,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { SupabaseStatus } from '../../../types/ipc';
@@ -29,13 +38,19 @@ export default function SupabaseSyncSection({ showHeader = false }: { showHeader
     return s;
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   // While connected, poll sync status so the indicator stays live.
   useEffect(() => {
     if (status?.connected) {
-      pollRef.current = setInterval(() => { void refresh(); }, 5000);
-      return () => { if (pollRef.current) clearInterval(pollRef.current); };
+      pollRef.current = setInterval(() => {
+        void refresh();
+      }, 5000);
+      return () => {
+        if (pollRef.current) clearInterval(pollRef.current);
+      };
     }
   }, [status?.connected, refresh]);
 
@@ -51,7 +66,8 @@ export default function SupabaseSyncSection({ showHeader = false }: { showHeader
     });
     if (res.ok) {
       setPhase({ kind: 'idle' });
-      setDbUrl(''); setSupabaseKey('');
+      setDbUrl('');
+      setSupabaseKey('');
       await refresh();
     } else {
       setPhase({ kind: 'err', error: res.error ?? t('supabaseSync.connectFailed') });
@@ -65,7 +81,9 @@ export default function SupabaseSyncSection({ showHeader = false }: { showHeader
 
   const handleSyncNow = useCallback(async () => {
     await window.cerebro.supabase.trigger();
-    setTimeout(() => { void refresh(); }, 600);
+    setTimeout(() => {
+      void refresh();
+    }, 600);
   }, [refresh]);
 
   const connected = !!status?.connected;
@@ -82,7 +100,9 @@ export default function SupabaseSyncSection({ showHeader = false }: { showHeader
             </div>
             <h2 className="text-lg font-medium text-text-primary">{t('supabaseSync.title')}</h2>
           </div>
-          <p className="text-sm text-text-secondary mt-3 leading-relaxed">{t('supabaseSync.description')}</p>
+          <p className="text-sm text-text-secondary mt-3 leading-relaxed">
+            {t('supabaseSync.description')}
+          </p>
         </>
       )}
 
@@ -100,7 +120,9 @@ export default function SupabaseSyncSection({ showHeader = false }: { showHeader
       )}
 
       {/* Per-device integrations note */}
-      <p className="mt-3 text-[11px] text-text-tertiary leading-relaxed">{t('supabaseSync.perDeviceNote')}</p>
+      <p className="mt-3 text-[11px] text-text-tertiary leading-relaxed">
+        {t('supabaseSync.perDeviceNote')}
+      </p>
 
       {connected ? (
         <div className="mt-5">
@@ -123,7 +145,11 @@ export default function SupabaseSyncSection({ showHeader = false }: { showHeader
             <StatusCell label={t('supabaseSync.pending')} value={String(sync?.pending ?? 0)} />
             <StatusCell
               label={t('supabaseSync.lastSynced')}
-              value={sync?.last_synced_at ? new Date(sync.last_synced_at).toLocaleTimeString() : t('supabaseSync.never')}
+              value={
+                sync?.last_synced_at
+                  ? new Date(sync.last_synced_at).toLocaleTimeString()
+                  : t('supabaseSync.never')
+              }
             />
             <StatusCell label={t('supabaseSync.bucket')} value={status?.storageBucket || '—'} />
           </div>
@@ -151,7 +177,10 @@ export default function SupabaseSyncSection({ showHeader = false }: { showHeader
             <input
               type="password"
               value={dbUrl}
-              onChange={(e) => { setDbUrl(e.target.value); setPhase({ kind: 'idle' }); }}
+              onChange={(e) => {
+                setDbUrl(e.target.value);
+                setPhase({ kind: 'idle' });
+              }}
               placeholder="postgresql+psycopg://postgres:[password]@db.xxxx.supabase.co:5432/postgres"
               className={inputCls}
               autoComplete="off"
@@ -191,7 +220,12 @@ export default function SupabaseSyncSection({ showHeader = false }: { showHeader
           </Field>
 
           <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
-            <input type="checkbox" checked={seed} onChange={(e) => setSeed(e.target.checked)} className="accent-accent" />
+            <input
+              type="checkbox"
+              checked={seed}
+              onChange={(e) => setSeed(e.target.checked)}
+              className="accent-accent"
+            />
             {t('supabaseSync.seedExisting')}
           </label>
 
@@ -212,7 +246,11 @@ export default function SupabaseSyncSection({ showHeader = false }: { showHeader
               'disabled:opacity-50 disabled:cursor-not-allowed',
             )}
           >
-            {phase.kind === 'connecting' ? <Loader2 size={14} className="animate-spin" /> : <Cloud size={14} />}
+            {phase.kind === 'connecting' ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Cloud size={14} />
+            )}
             {phase.kind === 'connecting' ? t('supabaseSync.connecting') : t('supabaseSync.connect')}
           </button>
         </div>
@@ -224,7 +262,15 @@ export default function SupabaseSyncSection({ showHeader = false }: { showHeader
 const inputCls =
   'w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50';
 
-function Field({ label, help, children }: { label: string; help: string; children: React.ReactNode }) {
+function Field({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <label className="text-xs font-medium text-text-secondary">{label}</label>
@@ -246,7 +292,11 @@ function SyncBadge({ sync, t }: { sync: SupabaseStatus['sync']; t: (k: string) =
   const v = map[status] ?? map.idle;
   return (
     <span className={clsx('inline-flex items-center gap-1 text-xs font-medium', v.cls)}>
-      {v.spin ? <Loader2 size={12} className="animate-spin" /> : <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+      {v.spin ? (
+        <Loader2 size={12} className="animate-spin" />
+      ) : (
+        <span className="w-1.5 h-1.5 rounded-full bg-current" />
+      )}
       {v.label}
     </span>
   );

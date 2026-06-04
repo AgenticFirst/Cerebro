@@ -16,12 +16,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
 
-import type {
-  IngestRequest,
-  IngestSource,
-  MediaCategory,
-  ResolvedAttachment,
-} from './types';
+import type { IngestRequest, IngestSource, MediaCategory, ResolvedAttachment } from './types';
 
 const OFFICE_EXTS = new Set(['docx', 'xlsx', 'xlsm', 'pptx']);
 const PDF_EXTS = new Set(['pdf']);
@@ -168,8 +163,7 @@ export class MediaIngestService {
         return {
           ...base,
           inlineText: transcript,
-          promptInjection:
-            `<voice_note from="${originalName}"${stt.language ? ` lang="${stt.language}"` : ''}>\n${transcript}\n</voice_note>`,
+          promptInjection: `<voice_note from="${originalName}"${stt.language ? ` lang="${stt.language}"` : ''}>\n${transcript}\n</voice_note>`,
         };
       }
       // Long transcript → write to sidecar so the prompt stays bounded.
@@ -245,9 +239,7 @@ export class MediaIngestService {
       const idx = rewritten.indexOf(tok.raw);
       if (idx === -1) continue;
       rewritten =
-        rewritten.slice(0, idx) +
-        att.promptInjection +
-        rewritten.slice(idx + tok.raw.length);
+        rewritten.slice(0, idx) + att.promptInjection + rewritten.slice(idx + tok.raw.length);
     }
     return { content: rewritten, attachments: resolved };
   }
@@ -289,8 +281,8 @@ function errorAttachment(filePath: string, error: string): ResolvedAttachment {
 }
 
 interface AtPathToken {
-  raw: string;       // exact slice including the leading "@"
-  path: string;      // absolute path on disk
+  raw: string; // exact slice including the leading "@"
+  path: string; // absolute path on disk
 }
 
 /** Find @<absolute-path> tokens in free text. Stops at whitespace or newline.
@@ -347,23 +339,31 @@ function backendPost<T>(port: number, urlPath: string, body: unknown): Promise<T
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(bodyStr).toString(),
         },
-        timeout: 30_000,   // STT can take a few seconds for long voice notes
+        timeout: 30_000, // STT can take a few seconds for long voice notes
       },
       (res) => {
         let data = '';
-        res.on('data', (c: Buffer) => { data += c.toString(); });
+        res.on('data', (c: Buffer) => {
+          data += c.toString();
+        });
         res.on('end', () => {
           if (!res.statusCode || res.statusCode >= 400) {
             resolve(null);
             return;
           }
-          try { resolve(JSON.parse(data) as T); }
-          catch { resolve(null); }
+          try {
+            resolve(JSON.parse(data) as T);
+          } catch {
+            resolve(null);
+          }
         });
       },
     );
     req.on('error', () => resolve(null));
-    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
     req.write(bodyStr);
     req.end();
   });

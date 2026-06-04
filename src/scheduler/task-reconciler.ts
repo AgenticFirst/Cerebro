@@ -53,10 +53,9 @@ export class TaskReconciler {
     this.running = true;
     try {
       const liveRunIds = this.runtime.getLiveRunIds();
-      const result = await this.post<{ reconciled: number }>(
-        '/tasks/reconcile',
-        { live_run_ids: liveRunIds },
-      );
+      const result = await this.post<{ reconciled: number }>('/tasks/reconcile', {
+        live_run_ids: liveRunIds,
+      });
       if (result && result.reconciled > 0) {
         console.log(`[TaskReconciler] reconciled ${result.reconciled} orphaned task(s)`);
       }
@@ -82,18 +81,27 @@ export class TaskReconciler {
         },
         (res) => {
           let data = '';
-          res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+          res.on('data', (chunk: Buffer) => {
+            data += chunk.toString();
+          });
           res.on('end', () => {
             if (res.statusCode !== 200) {
               resolve(null);
               return;
             }
-            try { resolve(JSON.parse(data) as T); } catch { resolve(null); }
+            try {
+              resolve(JSON.parse(data) as T);
+            } catch {
+              resolve(null);
+            }
           });
         },
       );
       req.on('error', () => resolve(null));
-      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(null);
+      });
       req.write(bodyStr);
       req.end();
     });

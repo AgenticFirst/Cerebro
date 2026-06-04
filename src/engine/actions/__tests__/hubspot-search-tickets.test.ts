@@ -12,7 +12,9 @@ import type { ActionContext, ActionInput } from '../types';
 import type { HubSpotChannel } from '../hubspot-channel';
 import { createHubSpotSearchTicketsAction } from '../hubspot-search-tickets';
 
-function buildChannel(opts: Partial<{ token: string | null; portalId: string }> = {}): HubSpotChannel {
+function buildChannel(
+  opts: Partial<{ token: string | null; portalId: string }> = {},
+): HubSpotChannel {
   return {
     getAccessToken: () => (opts.token === undefined ? 'pat-test' : opts.token),
     getPortalId: () => opts.portalId ?? '999',
@@ -37,14 +39,21 @@ function buildChannel(opts: Partial<{ token: string | null; portalId: string }> 
   };
 }
 
-function buildActionInput(params: Record<string, unknown>, wiredInputs: Record<string, unknown> = {}): ActionInput {
+function buildActionInput(
+  params: Record<string, unknown>,
+  wiredInputs: Record<string, unknown> = {},
+): ActionInput {
   const context: ActionContext = {
     runId: 'test-run',
     stepId: 'test-step',
     backendPort: 0,
     signal: new AbortController().signal,
-    log: () => { /* no-op */ },
-    emitEvent: () => { /* no-op */ },
+    log: () => {
+      /* no-op */
+    },
+    emitEvent: () => {
+      /* no-op */
+    },
   };
   return {
     params,
@@ -87,11 +96,13 @@ describe('hubspot_search_tickets', () => {
     });
 
     const action = createHubSpotSearchTicketsAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({
-      created_after: '2026-05-28',
-      created_before: '2026-05-29',
-      limit: 250, // should clamp to 100
-    }));
+    const result = await action.execute(
+      buildActionInput({
+        created_after: '2026-05-28',
+        created_before: '2026-05-29',
+        limit: 250, // should clamp to 100
+      }),
+    );
 
     // ── Request shape ──
     const [url, init] = fetchMock.mock.calls[0];
@@ -145,7 +156,9 @@ describe('hubspot_search_tickets', () => {
   });
 
   it('throws when there is no access token', async () => {
-    const action = createHubSpotSearchTicketsAction({ getChannel: () => buildChannel({ token: null }) });
+    const action = createHubSpotSearchTicketsAction({
+      getChannel: () => buildChannel({ token: null }),
+    });
     await expect(action.execute(buildActionInput({}))).rejects.toThrow(/no access token/i);
   });
 });

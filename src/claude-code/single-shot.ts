@@ -67,7 +67,11 @@ export class ClaudeCodeUnavailableError extends Error {
 
 export class ClaudeCodeNotSignedInError extends Error {
   constructor(reason?: string) {
-    super(reason ? `Cerebro lost its Claude Code session: ${reason}` : 'Cerebro lost its Claude Code session.');
+    super(
+      reason
+        ? `Cerebro lost its Claude Code session: ${reason}`
+        : 'Cerebro lost its Claude Code session.',
+    );
     this.name = 'ClaudeCodeNotSignedInError';
   }
 }
@@ -103,9 +107,12 @@ export async function singleShotClaudeCode(options: SingleShotOptions): Promise<
   }
 
   const args: string[] = [
-    '-p', options.prompt,
-    '--agent', options.agent,
-    '--output-format', 'text',
+    '-p',
+    options.prompt,
+    '--agent',
+    options.agent,
+    '--output-format',
+    'text',
   ];
 
   // Mirror plain `claude -p`: no --max-turns unless the caller explicitly
@@ -145,8 +152,12 @@ export async function singleShotClaudeCode(options: SingleShotOptions): Promise<
     let stderr = '';
     let aborted = false;
 
-    child.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
 
     const onAbort = () => {
       aborted = true;

@@ -127,22 +127,22 @@ export const IPC_CHANNELS = {
 
   // Task terminal (PTY)
   TASK_TERMINAL_RESIZE: 'task-terminal:resize',
-  TASK_TERMINAL_DATA: 'task-terminal:data',  // Global channel (Turbo pattern)
-  TASK_TERMINAL_INPUT: 'task-terminal:input',  // Renderer → main: write to PTY stdin
-  TASK_TERMINAL_READ_BUFFER: 'task-terminal:read-buffer',  // Renderer → main: load persisted buffer
-  TASK_TERMINAL_REMOVE_BUFFER: 'task-terminal:remove-buffer',  // Renderer → main: delete persisted buffer on task deletion
-  taskTerminalData: (runId: string) => `task-terminal:data:${runId}`,  // Legacy per-run
+  TASK_TERMINAL_DATA: 'task-terminal:data', // Global channel (Turbo pattern)
+  TASK_TERMINAL_INPUT: 'task-terminal:input', // Renderer → main: write to PTY stdin
+  TASK_TERMINAL_READ_BUFFER: 'task-terminal:read-buffer', // Renderer → main: load persisted buffer
+  TASK_TERMINAL_REMOVE_BUFFER: 'task-terminal:remove-buffer', // Renderer → main: delete persisted buffer on task deletion
+  taskTerminalData: (runId: string) => `task-terminal:data:${runId}`, // Legacy per-run
   // Plain shell session (Hard reset → drop into a normal terminal in the task cwd,
   // reusing the same TASK_TERMINAL_DATA/INPUT/RESIZE transport keyed by sessionKey).
   SHELL_SESSION_START: 'shell-session:start',
   SHELL_SESSION_STOP: 'shell-session:stop',
 
   // Task workspace (per-task isolated directory for agent builds)
-  TASK_WORKSPACE_CREATE: 'task-workspace:create',       // Creates dir + .claude symlink, returns path
-  TASK_WORKSPACE_PATH: 'task-workspace:path',           // Returns derived path (no creation)
+  TASK_WORKSPACE_CREATE: 'task-workspace:create', // Creates dir + .claude symlink, returns path
+  TASK_WORKSPACE_PATH: 'task-workspace:path', // Returns derived path (no creation)
   TASK_WORKSPACE_LIST_FILES: 'task-workspace:list-files',
   TASK_WORKSPACE_READ_FILE: 'task-workspace:read-file',
-  TASK_WORKSPACE_REMOVE: 'task-workspace:remove',       // Deletes workspace on task delete
+  TASK_WORKSPACE_REMOVE: 'task-workspace:remove', // Deletes workspace on task delete
 
   // Sandbox
   SANDBOX_PICK_DIRECTORY: 'sandbox:pick-directory',
@@ -349,13 +349,13 @@ export interface MessageSnapshot {
 }
 
 export const QUALITY_TIERS = ['fast', 'medium', 'slow'] as const;
-export type QualityTier = typeof QUALITY_TIERS[number];
+export type QualityTier = (typeof QUALITY_TIERS)[number];
 
 export const RESPONSE_MODELS = ['haiku', 'sonnet', 'opus'] as const;
-export type ResponseModel = typeof RESPONSE_MODELS[number];
+export type ResponseModel = (typeof RESPONSE_MODELS)[number];
 
 export const TEAM_MEMBER_STATUSES = ['running', 'completed', 'error'] as const;
-export type TeamMemberStatus = typeof TEAM_MEMBER_STATUSES[number];
+export type TeamMemberStatus = (typeof TEAM_MEMBER_STATUSES)[number];
 
 export interface AgentRunRequest {
   conversationId: string;
@@ -415,7 +415,9 @@ export interface ParsedDeliverable {
  * sync via this builder rather than open-coding the shape twice. */
 export function buildDeliverablePayload(
   deliverable: ParsedDeliverable | null | undefined,
-): { result_md: string; result_title: string | null; result_kind: ParsedDeliverable['kind'] } | Record<string, never> {
+):
+  | { result_md: string; result_title: string | null; result_kind: ParsedDeliverable['kind'] }
+  | Record<string, never> {
   if (!deliverable) return {};
   return {
     result_md: deliverable.body,
@@ -695,31 +697,31 @@ export interface TelegramAPI {
 // --- Files (managed buckets) ---
 
 export interface FilesImportArgs {
-  sourcePath: string;     // absolute path on disk
-  bucketId: string;       // destination bucket id (used as subdir)
-  fileId: string;         // pre-allocated id, becomes the on-disk basename
-  destExt: string;        // lowercased ext (no dot), preserved on disk
+  sourcePath: string; // absolute path on disk
+  bucketId: string; // destination bucket id (used as subdir)
+  fileId: string; // pre-allocated id, becomes the on-disk basename
+  destExt: string; // lowercased ext (no dot), preserved on disk
 }
 
 export interface FilesImportResult {
-  destRelPath: string;    // relative to <userData>/files
-  sha256: string;         // hex
+  destRelPath: string; // relative to <userData>/files
+  sha256: string; // hex
   sizeBytes: number;
-  mime: string | null;    // best-effort guess
+  mime: string | null; // best-effort guess
 }
 
 export interface FilesCopyArgs {
-  srcRelPath: string;     // relative to <userData>/files
+  srcRelPath: string; // relative to <userData>/files
   destBucketId: string;
   destFileId: string;
   destExt: string;
 }
 
 export interface FilesImportToTaskArgs {
-  sourcePath: string;     // absolute path on disk
-  taskId: string;         // owning task (32-hex)
-  fileId: string;         // pre-allocated id, becomes the on-disk basename
-  destExt: string;        // lowercased ext (no dot), preserved on disk
+  sourcePath: string; // absolute path on disk
+  taskId: string; // owning task (32-hex)
+  fileId: string; // pre-allocated id, becomes the on-disk basename
+  destExt: string; // lowercased ext (no dot), preserved on disk
 }
 
 export interface FilesAPI {
@@ -740,13 +742,29 @@ export interface FilesAPI {
   /** Unlink bytes for many managed files at once. Used by Empty Trash. */
   deleteManagedBatch(relPaths: string[]): Promise<void>;
   /** Build a renderer-loadable URL (cerebro-files:// for managed; cerebro-workspace:// for workspace files). */
-  previewUrl(args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }): Promise<string>;
+  previewUrl(args: {
+    storageKind: 'managed' | 'workspace';
+    storagePath: string;
+    taskId?: string | null;
+  }): Promise<string>;
   /** Reveal a managed (rel) or workspace (abs) file in Finder. */
-  reveal(args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }): Promise<void>;
+  reveal(args: {
+    storageKind: 'managed' | 'workspace';
+    storagePath: string;
+    taskId?: string | null;
+  }): Promise<void>;
   /** Open a managed (rel) or workspace (abs) file with the OS default app. */
-  open(args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }): Promise<void>;
+  open(args: {
+    storageKind: 'managed' | 'workspace';
+    storagePath: string;
+    taskId?: string | null;
+  }): Promise<void>;
   /** Copy to ~/Downloads. Returns the final dest path. */
-  download(args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }): Promise<string>;
+  download(args: {
+    storageKind: 'managed' | 'workspace';
+    storagePath: string;
+    taskId?: string | null;
+  }): Promise<string>;
   /** Read a managed file as text (2 MB cap), used by the markdown/text preview. */
   readManagedText(relPath: string): Promise<string>;
 }
@@ -792,12 +810,7 @@ export interface UpdateDownloadedEvent {
  *                  shouldn't render at all but kept here for completeness.
  *   - 'unknown'  : everything else, including IPC anomalies.
  */
-export type UpdateErrorKind =
-  | 'network'
-  | 'verify'
-  | 'apply'
-  | 'disabled'
-  | 'unknown';
+export type UpdateErrorKind = 'network' | 'verify' | 'apply' | 'disabled' | 'unknown';
 
 export interface UpdateErrorEvent {
   message: string;
@@ -811,9 +824,7 @@ export interface UpdateErrorEvent {
  * references can't leak into the IPC reply and produce
  * "reply was never sent".
  */
-export type UpdateActionResult =
-  | { ok: true }
-  | { ok: false; error: string; kind: UpdateErrorKind };
+export type UpdateActionResult = { ok: true } | { ok: false; error: string; kind: UpdateErrorKind };
 
 export interface UpdaterAPI {
   checkNow(): Promise<UpdateInfo | null>;
@@ -891,26 +902,17 @@ export interface ChatActionsAPI {
   /** Subscribe to integration-setup proposal events fired when the chat
    *  agent calls the propose-integration script. Returns an unsubscribe
    *  function. */
-  onIntegrationProposal(
-    callback: (payload: IntegrationProposalEventPayload) => void,
-  ): () => void;
+  onIntegrationProposal(callback: (payload: IntegrationProposalEventPayload) => void): () => void;
   /** Subscribe to team-run announcements emitted by Cerebro before it
    *  invokes a team via the Agent tool. Returns unsubscribe. */
-  onTeamRunAnnounced(
-    callback: (payload: TeamRunAnnouncedEventPayload) => void,
-  ): () => void;
+  onTeamRunAnnounced(callback: (payload: TeamRunAnnouncedEventPayload) => void): () => void;
   /** Subscribe to per-member status updates emitted by the team
    *  coordinator. Returns unsubscribe. */
-  onTeamMemberUpdate(
-    callback: (payload: TeamMemberUpdateEventPayload) => void,
-  ): () => void;
+  onTeamMemberUpdate(callback: (payload: TeamMemberUpdateEventPayload) => void): () => void;
   /** Generate a short conversation title from the first user message and,
    *  optionally, the first assistant response. Resolves to a sanitised title
    *  string, or null if Claude Code is unavailable or the call fails. */
-  generateTitle(args: {
-    userMessage: string;
-    assistantResponse?: string;
-  }): Promise<string | null>;
+  generateTitle(args: { userMessage: string; assistantResponse?: string }): Promise<string | null>;
   /** Force a fresh Claude Code session for a conversation (operator escape
    *  hatch). Rotates the stored session id; the next turn reseeds from
    *  history. Resolves to the new session id, or null on failure. */
@@ -1095,9 +1097,15 @@ export interface SlackAPI {
   disable(): Promise<void>;
   status(): Promise<SlackStatusResponse>;
   reload(): Promise<{ ok: boolean; error?: string }>;
-  setTokens(tokens: { botToken: string; appToken: string }): Promise<{ ok: boolean; error?: string }>;
+  setTokens(tokens: {
+    botToken: string;
+    appToken: string;
+  }): Promise<{ ok: boolean; error?: string }>;
   clearTokens(): Promise<{ ok: boolean; error?: string }>;
-  setAllowlist(args: { channels: string[]; users: string[] }): Promise<{ ok: boolean; error?: string }>;
+  setAllowlist(args: {
+    channels: string[];
+    users: string[];
+  }): Promise<{ ok: boolean; error?: string }>;
   /** Set the Slack user id who should receive Claude re-authentication
    *  DMs. Pass null to clear (falls back to the first allowlist user). */
   setOperatorUserId(userId: string | null): Promise<{ ok: boolean; error?: string }>;
@@ -1179,7 +1187,11 @@ export interface HubSpotVerifyResult {
 export interface HubSpotAPI {
   verify(token: string): Promise<HubSpotVerifyResult>;
   listPipelines(): Promise<{ ok: boolean; pipelines?: HubSpotPipelineSummary[]; error?: string }>;
-  listTicketProperties(): Promise<{ ok: boolean; properties?: HubSpotTicketPropertySummary[]; error?: string }>;
+  listTicketProperties(): Promise<{
+    ok: boolean;
+    properties?: HubSpotTicketPropertySummary[];
+    error?: string;
+  }>;
   status(): Promise<HubSpotStatusResponse>;
   setToken(token: string): Promise<{ ok: boolean; error?: string }>;
   clearToken(): Promise<{ ok: boolean; error?: string }>;
@@ -1207,14 +1219,21 @@ export interface CalendarMutationResult {
 
 export interface CalendarAPI {
   /** Run the bring-your-own OAuth flow (PKCE + loopback) for a new account. */
-  startOAuth(input: CalendarOAuthInput): Promise<{ ok: boolean; account?: CalendarAccountInfo; error?: string }>;
+  startOAuth(
+    input: CalendarOAuthInput,
+  ): Promise<{ ok: boolean; account?: CalendarAccountInfo; error?: string }>;
   /** Re-authorize an existing account using its stored client id/secret. */
-  reconnect(accountId: string): Promise<{ ok: boolean; account?: CalendarAccountInfo; error?: string }>;
+  reconnect(
+    accountId: string,
+  ): Promise<{ ok: boolean; account?: CalendarAccountInfo; error?: string }>;
   status(): Promise<CalendarStatus>;
   listAccounts(): Promise<CalendarAccountInfo[]>;
   disconnect(accountId: string): Promise<{ ok: boolean; error?: string }>;
   /** Toggle which calendars within an account appear in the unified view. */
-  setCalendars(accountId: string, selectedCalendarIds: string[]): Promise<{ ok: boolean; error?: string }>;
+  setCalendars(
+    accountId: string,
+    selectedCalendarIds: string[],
+  ): Promise<{ ok: boolean; error?: string }>;
   /** Force an immediate reconcile across all accounts (manual Refresh button). */
   syncNow(): Promise<{ ok: boolean; error?: string }>;
   createEvent(input: CalendarEventInput): Promise<CalendarMutationResult>;
@@ -1222,8 +1241,13 @@ export interface CalendarAPI {
   deleteEvent(eventId: string): Promise<{ ok: boolean; error?: string }>;
   rsvp(eventId: string, response: RsvpResponse): Promise<{ ok: boolean; error?: string }>;
   /** Parse a natural-language command bar query into a calendar action (Claude Code). */
-  parseCommand(text: string): Promise<{ ok: boolean; command?: CalendarParsedCommand; error?: string }>;
-  aiSummary(input: { range: 'day' | 'week' | 'month'; startISO: string }): Promise<{ ok: boolean; text?: string; error?: string }>;
+  parseCommand(
+    text: string,
+  ): Promise<{ ok: boolean; command?: CalendarParsedCommand; error?: string }>;
+  aiSummary(input: {
+    range: 'day' | 'week' | 'month';
+    startISO: string;
+  }): Promise<{ ok: boolean; text?: string; error?: string }>;
   /** Fires whenever a sync tick or mutation changes stored events. */
   onEventsChanged(callback: () => void): () => void;
 }

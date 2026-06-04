@@ -3,12 +3,14 @@ import { connectionsNeededForDag } from '../connection-status';
 import { validateDagParams } from '../../utils/step-validation';
 import type { DAGDefinition } from '../../engine/dag/types';
 
-function dag(steps: Array<{
-  id?: string;
-  name?: string;
-  actionType: string;
-  params?: Record<string, unknown>;
-}>): DAGDefinition {
+function dag(
+  steps: Array<{
+    id?: string;
+    name?: string;
+    actionType: string;
+    params?: Record<string, unknown>;
+  }>,
+): DAGDefinition {
   return {
     steps: steps.map((s, i) => ({
       id: s.id ?? `step-${i}`,
@@ -54,7 +56,9 @@ describe('connectionsNeededForDag', () => {
   });
 
   it('requests no connection probes for a connection-free dag', () => {
-    const needs = connectionsNeededForDag(dag([{ actionType: 'ask_ai', params: { prompt: 'hi' } }]));
+    const needs = connectionsNeededForDag(
+      dag([{ actionType: 'ask_ai', params: { prompt: 'hi' } }]),
+    );
     expect(needs).toHaveLength(0);
   });
 

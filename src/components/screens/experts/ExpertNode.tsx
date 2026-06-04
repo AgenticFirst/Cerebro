@@ -113,9 +113,7 @@ export default function ExpertNode({
           height: boxSize,
           backgroundColor: 'rgba(13, 13, 16, 0.95)',
           border: `2.5px solid ${glow.border}`,
-          boxShadow: isSelected
-            ? `${glow.shadow}, 0 0 0 3px ${glow.border}`
-            : glow.shadow,
+          boxShadow: isSelected ? `${glow.shadow}, 0 0 0 3px ${glow.border}` : glow.shadow,
         }}
       >
         {isCerebro ? (
@@ -169,11 +167,7 @@ export default function ExpertNode({
           {isCerebro ? 'Cerebro' : expert?.name}
         </span>
         {!isCerebro && expert?.isVerified && (
-          <BadgeCheck
-            size={11}
-            className="text-accent flex-shrink-0"
-            strokeWidth={2.25}
-          />
+          <BadgeCheck size={11} className="text-accent flex-shrink-0" strokeWidth={2.25} />
         )}
       </div>
 

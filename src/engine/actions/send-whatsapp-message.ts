@@ -50,7 +50,8 @@ export function createSendWhatsAppAction(deps: {
       properties: {
         phone_number: {
           type: 'string',
-          description: 'Customer phone number in E.164 format (e.g. +14155552671) or full Baileys JID. Templated — use {{...}} to insert values from upstream steps.',
+          description:
+            'Customer phone number in E.164 format (e.g. +14155552671) or full Baileys JID. Templated — use {{...}} to insert values from upstream steps.',
         },
         message: {
           type: 'string',

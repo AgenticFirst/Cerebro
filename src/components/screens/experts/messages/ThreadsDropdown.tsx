@@ -111,7 +111,10 @@ export default function ThreadsDropdown({
             >
               <MessageSquare
                 size={13}
-                className={clsx('mt-0.5 flex-shrink-0', isActive ? 'text-accent' : 'text-text-tertiary')}
+                className={clsx(
+                  'mt-0.5 flex-shrink-0',
+                  isActive ? 'text-accent' : 'text-text-tertiary',
+                )}
               />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">

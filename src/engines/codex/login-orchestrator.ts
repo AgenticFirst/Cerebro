@@ -61,9 +61,7 @@ export class CodexLoginOrchestrator extends EventEmitter {
         env,
       });
     } catch (err) {
-      return Promise.reject(
-        new Error(`Failed to spawn codex login: ${(err as Error).message}`),
-      );
+      return Promise.reject(new Error(`Failed to spawn codex login: ${(err as Error).message}`));
     }
 
     const attempt: ActiveAttempt = {

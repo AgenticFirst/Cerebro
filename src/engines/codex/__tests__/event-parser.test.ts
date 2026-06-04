@@ -52,7 +52,13 @@ describe('CodexEventParser', () => {
     const end = feed(p, [
       {
         type: 'item.completed',
-        item: { id: 'c1', type: 'command_execution', command: 'ls -la', aggregated_output: 'file.txt', exit_code: 0 },
+        item: {
+          id: 'c1',
+          type: 'command_execution',
+          command: 'ls -la',
+          aggregated_output: 'file.txt',
+          exit_code: 0,
+        },
       },
     ]);
     // item.started already opened the tool — only a tool_end should follow.
@@ -66,7 +72,13 @@ describe('CodexEventParser', () => {
     const events = feed(p, [
       {
         type: 'item.completed',
-        item: { id: 'c9', type: 'command_execution', command: 'pwd', aggregated_output: '/tmp', exit_code: 0 },
+        item: {
+          id: 'c9',
+          type: 'command_execution',
+          command: 'pwd',
+          aggregated_output: '/tmp',
+          exit_code: 0,
+        },
       },
     ]);
     expect(events.map((e) => e.type)).toEqual(['tool_start', 'tool_end']);
@@ -77,10 +89,19 @@ describe('CodexEventParser', () => {
     const events = feed(p, [
       {
         type: 'item.completed',
-        item: { id: 'c2', type: 'command_execution', command: 'false', output: 'boom', exit_code: 1 },
+        item: {
+          id: 'c2',
+          type: 'command_execution',
+          command: 'false',
+          output: 'boom',
+          exit_code: 1,
+        },
       },
     ]);
-    const end = events.find((e) => e.type === 'tool_end') as Extract<RendererAgentEvent, { type: 'tool_end' }>;
+    const end = events.find((e) => e.type === 'tool_end') as Extract<
+      RendererAgentEvent,
+      { type: 'tool_end' }
+    >;
     expect(end.isError).toBe(true);
   });
 
@@ -130,7 +151,10 @@ describe('CodexEventParser', () => {
     const events = feed(p, [
       { type: 'item.completed', item: { id: 'x1', type: 'mystery_kind', foo: 'bar' } },
     ]);
-    const start = events.find((e) => e.type === 'tool_start') as Extract<RendererAgentEvent, { type: 'tool_start' }>;
+    const start = events.find((e) => e.type === 'tool_start') as Extract<
+      RendererAgentEvent,
+      { type: 'tool_start' }
+    >;
     expect(start.toolName).toBe('mystery_kind');
   });
 

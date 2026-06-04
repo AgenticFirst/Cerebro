@@ -70,7 +70,9 @@ function startLoopback(expectedState: string): Promise<LoopbackResult> {
         if (error || !code || state !== expectedState) {
           res.writeHead(400, { 'Content-Type': 'text/html' });
           res.end(ERROR_HTML);
-          rejectCode(new Error(error ? `OAuth error: ${error}` : 'Invalid OAuth callback (state mismatch)'));
+          rejectCode(
+            new Error(error ? `OAuth error: ${error}` : 'Invalid OAuth callback (state mismatch)'),
+          );
           return;
         }
         res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -118,7 +120,10 @@ export async function runOAuthFlow(
     const code = await Promise.race([
       loopback.waitForCode,
       new Promise<never>((_, rej) => {
-        timer = setTimeout(() => rej(new Error('Authorization timed out. Please try again.')), FLOW_TIMEOUT_MS);
+        timer = setTimeout(
+          () => rej(new Error('Authorization timed out. Please try again.')),
+          FLOW_TIMEOUT_MS,
+        );
       }),
     ]);
     return await provider.exchangeCode({ client, code, pkceVerifier: verifier });

@@ -132,9 +132,7 @@ export class DAGExecutor {
       }
 
       // Execute ready steps in parallel
-      const results = await Promise.allSettled(
-        ready.map((step) => this.executeStep(step)),
-      );
+      const results = await Promise.allSettled(ready.map((step) => this.executeStep(step)));
 
       // Check for run-aborting failures
       for (let i = 0; i < results.length; i++) {
@@ -146,7 +144,9 @@ export class DAGExecutor {
           // 'fail' always aborts. 'retry' aborts after exhausting retries.
           // Only 'skip' continues (handled in executeStep by setting status to 'skipped').
           if (step.onError !== 'skip') {
-            const errorMsg = state.error || (result.status === 'rejected' ? String(result.reason) : 'Unknown error');
+            const errorMsg =
+              state.error ||
+              (result.status === 'rejected' ? String(result.reason) : 'Unknown error');
             throw new StepFailedError(step.id, errorMsg);
           }
         }
@@ -467,11 +467,7 @@ export class StepDeniedError extends StepFailedError {
   }
 }
 
-function executeWithTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  stepId: string,
-): Promise<T> {
+function executeWithTimeout<T>(promise: Promise<T>, timeoutMs: number, stepId: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`Step "${stepId}" timed out after ${timeoutMs}ms`));

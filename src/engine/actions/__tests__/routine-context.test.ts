@@ -4,7 +4,9 @@ import type { DAGDefinition, StepDefinition } from '../../dag/types';
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function step(overrides: Partial<StepDefinition> & { id: string; actionType: string }): StepDefinition {
+function step(
+  overrides: Partial<StepDefinition> & { id: string; actionType: string },
+): StepDefinition {
   return {
     id: overrides.id,
     name: overrides.name ?? `Step ${overrides.id}`,
@@ -25,10 +27,7 @@ function dag(steps: StepDefinition[]): DAGDefinition {
 
 describe('buildRoutineContext', () => {
   it('returns empty string for single-step DAG', () => {
-    const out = buildRoutineContext(
-      dag([step({ id: 'a', actionType: 'run_expert' })]),
-      'a',
-    );
+    const out = buildRoutineContext(dag([step({ id: 'a', actionType: 'run_expert' })]), 'a');
     expect(out).toBe('');
   });
 
@@ -107,7 +106,12 @@ describe('buildRoutineContext', () => {
     const out = buildRoutineContext(
       dag([
         step({ id: 'a', actionType: 'run_expert' }),
-        step({ id: 'b', name: 'Fire-and-forget', actionType: 'send_notification', dependsOn: ['a'] }),
+        step({
+          id: 'b',
+          name: 'Fire-and-forget',
+          actionType: 'send_notification',
+          dependsOn: ['a'],
+        }),
       ]),
       'a',
     );

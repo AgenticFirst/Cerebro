@@ -156,11 +156,16 @@ export default function TelegramConnectModal({ onClose, onPersisted }: TelegramC
 
   const stepIcon = useMemo(() => {
     switch (step) {
-      case 1: return <Sparkles size={20} />;
-      case 2: return <Bot size={20} />;
-      case 3: return <Users size={20} />;
-      case 4: return <CheckCircle2 size={20} />;
-      default: return <TelegramIcon size={20} />;
+      case 1:
+        return <Sparkles size={20} />;
+      case 2:
+        return <Bot size={20} />;
+      case 3:
+        return <Users size={20} />;
+      case 4:
+        return <CheckCircle2 size={20} />;
+      default:
+        return <TelegramIcon size={20} />;
     }
   }, [step]);
 
@@ -261,7 +266,11 @@ export default function TelegramConnectModal({ onClose, onPersisted }: TelegramC
                     </div>
                     <button
                       type="button"
-                      onClick={() => { setReplaceTokenMode(true); setTokenDraft(''); setVerify({ kind: 'idle' }); }}
+                      onClick={() => {
+                        setReplaceTokenMode(true);
+                        setTokenDraft('');
+                        setVerify({ kind: 'idle' });
+                      }}
                       className="text-xs font-medium text-text-tertiary hover:text-text-secondary px-2 py-1 rounded hover:bg-white/5"
                     >
                       {t('telegramSection.replaceToken')}
@@ -282,7 +291,10 @@ export default function TelegramConnectModal({ onClose, onPersisted }: TelegramC
                         <input
                           type={showToken ? 'text' : 'password'}
                           value={tokenDraft}
-                          onChange={(e) => { setTokenDraft(e.target.value); setVerify({ kind: 'idle' }); }}
+                          onChange={(e) => {
+                            setTokenDraft(e.target.value);
+                            setVerify({ kind: 'idle' });
+                          }}
                           placeholder={t('telegramSection.tokenPlaceholder')}
                           className="w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                           autoComplete="off"
@@ -301,19 +313,27 @@ export default function TelegramConnectModal({ onClose, onPersisted }: TelegramC
                       <button
                         type="button"
                         onClick={handleVerify}
-                        disabled={!draftReady || verify.kind === 'verifying' || verify.kind === 'ok'}
+                        disabled={
+                          !draftReady || verify.kind === 'verifying' || verify.kind === 'ok'
+                        }
                         className={clsx(
                           'px-3 py-2 text-sm rounded-md font-medium transition-colors',
                           'bg-accent/15 text-accent hover:bg-accent/25',
                           'disabled:opacity-50 disabled:cursor-not-allowed',
                         )}
                       >
-                        {verify.kind === 'verifying' ? t('telegramSection.verifying') : t('telegramSection.verify')}
+                        {verify.kind === 'verifying'
+                          ? t('telegramSection.verifying')
+                          : t('telegramSection.verify')}
                       </button>
                       {tokenAlreadyConfigured && (
                         <button
                           type="button"
-                          onClick={() => { setReplaceTokenMode(false); setTokenDraft(''); setVerify({ kind: 'idle' }); }}
+                          onClick={() => {
+                            setReplaceTokenMode(false);
+                            setTokenDraft('');
+                            setVerify({ kind: 'idle' });
+                          }}
                           className="px-2 py-2 text-xs text-text-tertiary hover:text-text-secondary"
                         >
                           {t('telegramSection.cancel')}
@@ -323,7 +343,9 @@ export default function TelegramConnectModal({ onClose, onPersisted }: TelegramC
                     {verify.kind === 'ok' && (
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400">
                         <CheckCircle2 size={13} />
-                        <span>{t('telegramConnect.verifiedAs', { username: verify.username })}</span>
+                        <span>
+                          {t('telegramConnect.verifiedAs', { username: verify.username })}
+                        </span>
                       </div>
                     )}
                     {verify.kind === 'err' && (
@@ -333,17 +355,22 @@ export default function TelegramConnectModal({ onClose, onPersisted }: TelegramC
                       </div>
                     )}
                   </div>
-                  {status && (usingKeychain ? (
-                    <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
-                      <Lock size={14} className="mt-0.5 flex-shrink-0" />
-                      <span className="leading-relaxed">{t('telegramSection.storageEncrypted')}</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-warning/30 bg-warning/10 text-xs text-warning-text">
-                      <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
-                      <span className="leading-relaxed">{t('telegramSection.storagePlaintextFallback')}</span>
-                    </div>
-                  ))}
+                  {status &&
+                    (usingKeychain ? (
+                      <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
+                        <Lock size={14} className="mt-0.5 flex-shrink-0" />
+                        <span className="leading-relaxed">
+                          {t('telegramSection.storageEncrypted')}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-warning/30 bg-warning/10 text-xs text-warning-text">
+                        <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
+                        <span className="leading-relaxed">
+                          {t('telegramSection.storagePlaintextFallback')}
+                        </span>
+                      </div>
+                    ))}
                 </>
               )}
             </div>
@@ -425,7 +452,9 @@ export default function TelegramConnectModal({ onClose, onPersisted }: TelegramC
                 <div className="flex items-start gap-3 px-3 py-3 rounded-md border border-amber-500/30 bg-amber-500/10">
                   <Lightbulb size={16} className="mt-0.5 flex-shrink-0 text-amber-400" />
                   <div className="text-xs leading-relaxed text-amber-100/90">
-                    <div className="font-medium mb-1 text-sm text-amber-300">{t('telegramConnect.step4DiscoveryTitle')}</div>
+                    <div className="font-medium mb-1 text-sm text-amber-300">
+                      {t('telegramConnect.step4DiscoveryTitle')}
+                    </div>
                     <div>{t('telegramConnect.step4DiscoveryBody')}</div>
                   </div>
                 </div>
@@ -436,24 +465,46 @@ export default function TelegramConnectModal({ onClose, onPersisted }: TelegramC
               )}
               <div className="space-y-2 px-3 py-3 rounded-md bg-bg-elevated border border-border-subtle text-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-text-tertiary text-xs">{t('telegramSection.botLabel')}</span>
+                  <span className="text-text-tertiary text-xs">
+                    {t('telegramSection.botLabel')}
+                  </span>
                   <span className="font-mono text-text-primary text-xs">
-                    {status?.botUsername ? `@${status.botUsername}` : (verify.kind === 'ok' ? `@${verify.username}` : '—')}
+                    {status?.botUsername
+                      ? `@${status.botUsername}`
+                      : verify.kind === 'ok'
+                        ? `@${verify.username}`
+                        : '—'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-text-tertiary text-xs">{t('telegramSection.allowlistLabel')}</span>
+                  <span className="text-text-tertiary text-xs">
+                    {t('telegramSection.allowlistLabel')}
+                  </span>
                   <span className="font-mono text-text-primary text-xs">
-                    {allowlistCount > 0 ? t('telegramConnect.allowlistCount', { count: allowlistCount }) : t('common.none')}
+                    {allowlistCount > 0
+                      ? t('telegramConnect.allowlistCount', { count: allowlistCount })
+                      : t('common.none')}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-text-tertiary text-xs">{t('telegramConnect.storageLabel')}</span>
+                  <span className="text-text-tertiary text-xs">
+                    {t('telegramConnect.storageLabel')}
+                  </span>
                   <span className="text-xs flex items-center gap-1.5">
                     {usingKeychain ? (
-                      <><Lock size={11} className="text-emerald-400" /><span className="text-emerald-400">{t('telegramConnect.storageKeychain')}</span></>
+                      <>
+                        <Lock size={11} className="text-emerald-400" />
+                        <span className="text-emerald-400">
+                          {t('telegramConnect.storageKeychain')}
+                        </span>
+                      </>
                     ) : (
-                      <><ShieldAlert size={11} className="text-warning-text" /><span className="text-warning-text">{t('telegramConnect.storagePlaintext')}</span></>
+                      <>
+                        <ShieldAlert size={11} className="text-warning-text" />
+                        <span className="text-warning-text">
+                          {t('telegramConnect.storagePlaintext')}
+                        </span>
+                      </>
                     )}
                   </span>
                 </div>
@@ -511,7 +562,11 @@ export default function TelegramConnectModal({ onClose, onPersisted }: TelegramC
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => { saveSetting(TELEGRAM_SETTING_KEYS.allowlist, []); onPersisted?.(); setStep(4); }}
+                onClick={() => {
+                  saveSetting(TELEGRAM_SETTING_KEYS.allowlist, []);
+                  onPersisted?.();
+                  setStep(4);
+                }}
                 className="px-3 py-1.5 text-xs font-medium rounded-md text-text-tertiary hover:text-text-secondary transition-colors"
               >
                 {t('telegramConnect.skip')}
@@ -533,17 +588,18 @@ export default function TelegramConnectModal({ onClose, onPersisted }: TelegramC
               disabled={enabling}
               className="px-4 py-1.5 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {enabling
-                ? (<><Loader2 size={12} className="animate-spin" /> {t('telegramConnect.enabling')}</>)
-                : (
-                  <>
-                    <CheckCircle2 size={12} />
-                    {allowlistCount === 0
-                      ? t('telegramConnect.enableDiscoveryMode')
-                      : t('telegramConnect.enableAndFinish')}
-                  </>
-                )
-              }
+              {enabling ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" /> {t('telegramConnect.enabling')}
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={12} />
+                  {allowlistCount === 0
+                    ? t('telegramConnect.enableDiscoveryMode')
+                    : t('telegramConnect.enableAndFinish')}
+                </>
+              )}
             </button>
           )}
         </div>

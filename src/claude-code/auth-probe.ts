@@ -56,7 +56,16 @@ async function runProbe(): Promise<ClaudeCodeProbeResult> {
   const result = await new Promise<ClaudeCodeProbeResult>((resolve) => {
     const child = spawn(
       binary,
-      ['-p', 'ping', '--max-turns', '1', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
+      [
+        '-p',
+        'ping',
+        '--max-turns',
+        '1',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+        '--dangerously-skip-permissions',
+      ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     let resolved = false;
@@ -66,12 +75,15 @@ async function runProbe(): Promise<ClaudeCodeProbeResult> {
       resolved = true;
       if (!child.killed) {
         child.kill('SIGTERM');
-        setTimeout(() => { if (!child.killed) child.kill('SIGKILL'); }, 1000);
+        setTimeout(() => {
+          if (!child.killed) child.kill('SIGKILL');
+        }, 1000);
       }
       resolve(v);
     };
     const timer = setTimeout(
-      () => settle({ ok: false, reason: 'Probe timed out — Claude Code may not be authenticated.' }),
+      () =>
+        settle({ ok: false, reason: 'Probe timed out — Claude Code may not be authenticated.' }),
       PROBE_TIMEOUT_MS,
     );
 

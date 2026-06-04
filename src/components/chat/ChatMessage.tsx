@@ -159,18 +159,14 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
               className="flex items-center gap-1.5 text-[11px] text-amber-300/90"
             >
               <Zap size={11} strokeWidth={2} className="flex-shrink-0" />
-              <span>
-                {t('liveActivity.escalationNotice', { model: e.model, tier: e.tier })}
-              </span>
+              <span>{t('liveActivity.escalationNotice', { model: e.model, tier: e.tier })}</span>
             </div>
           ))}
         </div>
       )}
 
       {/* Tool calls (before text content) — hidden by default, user can opt in via Settings → Appearance */}
-      {hasToolCalls && (
-        <ToolCallsGroup toolCalls={message.toolCalls!} isBusy={assistantBusy} />
-      )}
+      {hasToolCalls && <ToolCallsGroup toolCalls={message.toolCalls!} isBusy={assistantBusy} />}
 
       {/* Run log card */}
       {!isUser && message.engineRunId && (
@@ -236,10 +232,7 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
           to a terminal — the bug that produced the leaked "run claude in
           a terminal to sign in" message in Slack. */}
       {!isUser && message.errorClass === 'auth' && (
-        <ClaudeCodeLoginCard
-          conversationId={message.conversationId}
-          messageId={message.id}
-        />
+        <ClaudeCodeLoginCard conversationId={message.conversationId} messageId={message.id} />
       )}
 
       {/* Thinking indicator — only when there are no tool calls; otherwise the
@@ -250,7 +243,13 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
       {isUser && fileRefs.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {fileRefs.map((att) => (
-            <AttachmentChip key={att.id} attachment={att} source="user" conversationId={message.conversationId} messageId={message.id} />
+            <AttachmentChip
+              key={att.id}
+              attachment={att}
+              source="user"
+              conversationId={message.conversationId}
+              messageId={message.id}
+            />
           ))}
         </div>
       )}
@@ -373,9 +372,7 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
         <div className="mt-2 animate-fade-in">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/[0.06] text-accent px-2.5 py-1 text-[11px] font-medium">
             <Loader2 size={10} className="animate-spin flex-shrink-0" />
-            <span className="tracking-tight">
-              {t('toolCall.workingOnIt')}
-            </span>
+            <span className="tracking-tight">{t('toolCall.workingOnIt')}</span>
           </span>
         </div>
       )}
@@ -384,7 +381,13 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
       {!isUser && fileRefs.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-2">
           {fileRefs.map((att) => (
-            <AttachmentChip key={att.id} attachment={att} source="assistant" conversationId={message.conversationId} messageId={message.id} />
+            <AttachmentChip
+              key={att.id}
+              attachment={att}
+              source="assistant"
+              conversationId={message.conversationId}
+              messageId={message.id}
+            />
           ))}
         </div>
       )}

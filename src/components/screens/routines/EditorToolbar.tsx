@@ -24,7 +24,12 @@ import SchedulePicker from '../../ui/SchedulePicker';
 import Tooltip from '../../ui/Tooltip';
 import NotifyChannelsPopover from './NotifyChannelsPopover';
 import type { DayOfWeek } from '../../../utils/cron-helpers';
-import { cronToSchedule, scheduleToCron, describeSchedule, WEEKDAYS } from '../../../utils/cron-helpers';
+import {
+  cronToSchedule,
+  scheduleToCron,
+  describeSchedule,
+  WEEKDAYS,
+} from '../../../utils/cron-helpers';
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -32,9 +37,21 @@ const TRIGGER_OPTIONS: { value: TriggerType; labelKey: string; icon: typeof Hand
   { value: 'manual', labelKey: 'triggers.manual', icon: Hand },
   { value: 'cron', labelKey: 'triggers.scheduled', icon: Clock },
   { value: 'webhook', labelKey: 'triggers.webhook', icon: Webhook },
-  { value: 'telegram_message', labelKey: 'triggers.telegramMessage', icon: TelegramIcon as unknown as typeof Hand },
-  { value: 'github_issue_opened', labelKey: 'triggers.githubIssueOpened', icon: GitHubIcon as unknown as typeof Hand },
-  { value: 'github_pr_review_requested', labelKey: 'triggers.githubPrReviewRequested', icon: GitHubIcon as unknown as typeof Hand },
+  {
+    value: 'telegram_message',
+    labelKey: 'triggers.telegramMessage',
+    icon: TelegramIcon as unknown as typeof Hand,
+  },
+  {
+    value: 'github_issue_opened',
+    labelKey: 'triggers.githubIssueOpened',
+    icon: GitHubIcon as unknown as typeof Hand,
+  },
+  {
+    value: 'github_pr_review_requested',
+    labelKey: 'triggers.githubPrReviewRequested',
+    icon: GitHubIcon as unknown as typeof Hand,
+  },
 ];
 
 // ── Component ──────────────────────────────────────────────────
@@ -69,15 +86,13 @@ export default function EditorToolbar({
 
   // Parse existing cron expression into schedule config
   const existingSchedule = useMemo(
-    () => routine.cronExpression ? cronToSchedule(routine.cronExpression) : null,
+    () => (routine.cronExpression ? cronToSchedule(routine.cronExpression) : null),
     [routine.cronExpression],
   );
   const [scheduleDays, setScheduleDays] = useState<DayOfWeek[]>(
     existingSchedule?.days ?? [...WEEKDAYS],
   );
-  const [scheduleTime, setScheduleTime] = useState(
-    existingSchedule?.time ?? '09:00',
-  );
+  const [scheduleTime, setScheduleTime] = useState(existingSchedule?.time ?? '09:00');
 
   useEffect(() => {
     setName(routine.name);
@@ -242,11 +257,7 @@ export default function EditorToolbar({
       {/* Right: Actions */}
       <div className="flex items-center gap-2">
         <Tooltip
-          label={
-            hasNodes
-              ? t('routineTooltips.autoLayout')
-              : t('routineTooltips.autoLayoutEmpty')
-          }
+          label={hasNodes ? t('routineTooltips.autoLayout') : t('routineTooltips.autoLayoutEmpty')}
           side="bottom"
         >
           <span className="inline-flex">
@@ -282,14 +293,9 @@ export default function EditorToolbar({
           <div className="flex items-center gap-1.5">
             <Power
               size={12}
-              className={clsx(
-                routine.isEnabled ? 'text-green-400' : 'text-text-tertiary',
-              )}
+              className={clsx(routine.isEnabled ? 'text-green-400' : 'text-text-tertiary')}
             />
-            <Toggle
-              checked={routine.isEnabled}
-              onChange={() => toggleEnabled(routine)}
-            />
+            <Toggle checked={routine.isEnabled} onChange={() => toggleEnabled(routine)} />
           </div>
         </Tooltip>
 
@@ -329,9 +335,7 @@ export default function EditorToolbar({
 
         <Tooltip
           label={
-            saveStatus === 'saving'
-              ? t('routineEditor.savingInProgress')
-              : t('routineTooltips.run')
+            saveStatus === 'saving' ? t('routineEditor.savingInProgress') : t('routineTooltips.run')
           }
           side="bottom"
         >

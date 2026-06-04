@@ -69,10 +69,7 @@ export default function ExpertSkillsSection({ expertId }: ExpertSkillsSectionPro
               <SkillIcon
                 name={a.skill.icon}
                 size={12}
-                className={clsx(
-                  'flex-shrink-0',
-                  a.isActive ? 'text-accent' : 'text-text-tertiary',
-                )}
+                className={clsx('flex-shrink-0', a.isActive ? 'text-accent' : 'text-text-tertiary')}
               />
               <span
                 className={clsx(
@@ -87,10 +84,7 @@ export default function ExpertSkillsSection({ expertId }: ExpertSkillsSectionPro
                   default
                 </span>
               )}
-              <Toggle
-                checked={a.isActive}
-                onChange={() => handleToggle(a.skillId, a.isActive)}
-              />
+              <Toggle checked={a.isActive} onChange={() => handleToggle(a.skillId, a.isActive)} />
               <button
                 onClick={() => handleUnassign(a.skillId)}
                 className="p-0.5 text-text-tertiary opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all"
@@ -109,9 +103,7 @@ export default function ExpertSkillsSection({ expertId }: ExpertSkillsSectionPro
       {showAdd ? (
         <div className="mt-2 bg-bg-base rounded-lg border border-border-subtle max-h-36 overflow-y-auto scrollbar-thin">
           {availableSkills.length === 0 ? (
-            <p className="text-xs text-text-tertiary px-3 py-2.5">
-              No available skills to add.
-            </p>
+            <p className="text-xs text-text-tertiary px-3 py-2.5">No available skills to add.</p>
           ) : (
             availableSkills.map((skill) => (
               <button
@@ -120,9 +112,7 @@ export default function ExpertSkillsSection({ expertId }: ExpertSkillsSectionPro
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-bg-hover transition-colors"
               >
                 <SkillIcon name={skill.icon} size={12} className="text-accent flex-shrink-0" />
-                <span className="text-xs text-text-secondary truncate">
-                  {skill.name}
-                </span>
+                <span className="text-xs text-text-secondary truncate">{skill.name}</span>
               </button>
             ))
           )}

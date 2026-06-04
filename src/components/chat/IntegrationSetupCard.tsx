@@ -81,7 +81,9 @@ export default function IntegrationSetupCard({
           flippedToConnectedRef.current = true;
           persist({ ...proposal, status: 'connected' });
         }
-      } catch { /* status is best-effort */ }
+      } catch {
+        /* status is best-effort */
+      }
     };
     void poll();
     const id = setInterval(poll, 2000);
@@ -129,7 +131,9 @@ export default function IntegrationSetupCard({
       <div
         className={clsx(
           'animate-card-in rounded-lg border overflow-hidden',
-          isCollapsed ? 'border-border-subtle bg-bg-surface/30 opacity-70' : 'border-accent/30 bg-bg-surface/50',
+          isCollapsed
+            ? 'border-border-subtle bg-bg-surface/30 opacity-70'
+            : 'border-accent/30 bg-bg-surface/50',
         )}
       >
         {/* Header */}
@@ -209,19 +213,44 @@ export default function IntegrationSetupCard({
       {modalOpen && (
         <Suspense fallback={null}>
           {manifest.customModalId === 'telegram' && (
-            <TelegramConnectModal onClose={closeModal} onPersisted={() => { /* status poll handles it */ }} />
+            <TelegramConnectModal
+              onClose={closeModal}
+              onPersisted={() => {
+                /* status poll handles it */
+              }}
+            />
           )}
           {manifest.customModalId === 'slack' && (
-            <SlackConnectModal onClose={closeModal} onPersisted={() => { /* status poll handles it */ }} />
+            <SlackConnectModal
+              onClose={closeModal}
+              onPersisted={() => {
+                /* status poll handles it */
+              }}
+            />
           )}
           {manifest.customModalId === 'hubspot' && (
-            <HubSpotConnectModal onClose={closeModal} onPersisted={() => { /* status poll handles it */ }} />
+            <HubSpotConnectModal
+              onClose={closeModal}
+              onPersisted={() => {
+                /* status poll handles it */
+              }}
+            />
           )}
           {manifest.customModalId === 'whatsapp' && (
-            <WhatsAppConnectModal onClose={closeModal} onPersisted={() => { /* status poll handles it */ }} />
+            <WhatsAppConnectModal
+              onClose={closeModal}
+              onPersisted={() => {
+                /* status poll handles it */
+              }}
+            />
           )}
           {manifest.customModalId === 'calendar' && (
-            <CalendarConnectModal onClose={closeModal} onPersisted={() => { /* status poll handles it */ }} />
+            <CalendarConnectModal
+              onClose={closeModal}
+              onPersisted={() => {
+                /* status poll handles it */
+              }}
+            />
           )}
           {!manifest.customModalId && (
             <GenericConnectModal manifest={manifest} onClose={closeModal} />

@@ -1,6 +1,16 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, XCircle, Loader2, SkipForward, Clock, ChevronRight, ShieldCheck, ShieldX, FileText } from 'lucide-react';
+import {
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  SkipForward,
+  Clock,
+  ChevronRight,
+  ShieldCheck,
+  ShieldX,
+  FileText,
+} from 'lucide-react';
 import clsx from 'clsx';
 import type { StepRecord, EventRecord } from './types';
 import { formatDuration, formatTimestamp } from './helpers';
@@ -34,7 +44,12 @@ interface StepTimelineProps {
   onOpenLogs?: () => void;
 }
 
-export default function StepTimeline({ steps, events = [], dagJson, onOpenLogs }: StepTimelineProps) {
+export default function StepTimeline({
+  steps,
+  events = [],
+  dagJson,
+  onOpenLogs,
+}: StepTimelineProps) {
   const { t } = useTranslation();
   const sorted = useMemo(() => [...steps].sort((a, b) => a.order_index - b.order_index), [steps]);
 
@@ -132,9 +147,8 @@ function CollapsedRow({ step, index, isExpanded, onClick }: CollapsedRowProps) {
   const elapsedMs = useElapsed(step.started_at, step.status === 'running');
   const isFailed = step.status === 'failed';
 
-  const durationLabel = step.status === 'running'
-    ? formatElapsedShort(elapsedMs)
-    : formatDuration(step.duration_ms);
+  const durationLabel =
+    step.status === 'running' ? formatElapsedShort(elapsedMs) : formatDuration(step.duration_ms);
 
   return (
     <button
@@ -159,18 +173,28 @@ function CollapsedRow({ step, index, isExpanded, onClick }: CollapsedRowProps) {
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className={clsx('text-xs truncate', isFailed && 'font-medium', 'text-text-primary')}>
+          <span
+            className={clsx('text-xs truncate', isFailed && 'font-medium', 'text-text-primary')}
+          >
             {step.step_name}
           </span>
           <span className="inline-block bg-bg-elevated text-text-tertiary border border-border-subtle text-[9px] rounded px-1 py-0.5 flex-shrink-0">
             {step.action_type}
           </span>
           {step.approval_id && step.approval_status && (
-            <span className={clsx(
-              'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium flex-shrink-0',
-              step.approval_status === 'approved' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400',
-            )}>
-              {step.approval_status === 'approved' ? <ShieldCheck size={9} /> : <ShieldX size={9} />}
+            <span
+              className={clsx(
+                'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium flex-shrink-0',
+                step.approval_status === 'approved'
+                  ? 'bg-green-500/10 text-green-400'
+                  : 'bg-red-500/10 text-red-400',
+              )}
+            >
+              {step.approval_status === 'approved' ? (
+                <ShieldCheck size={9} />
+              ) : (
+                <ShieldX size={9} />
+              )}
               {step.approval_status === 'approved' ? 'Approved' : 'Denied'}
             </span>
           )}
@@ -179,9 +203,7 @@ function CollapsedRow({ step, index, isExpanded, onClick }: CollapsedRowProps) {
           </span>
         </div>
         {!isExpanded && step.error && (
-          <p className="text-[11px] text-red-400 mt-0.5 line-clamp-2">
-            {step.error}
-          </p>
+          <p className="text-[11px] text-red-400 mt-0.5 line-clamp-2">{step.error}</p>
         )}
         {!isExpanded && !step.error && step.summary && step.status !== 'failed' && (
           <p className="text-[11px] text-text-secondary mt-0.5 line-clamp-2 italic">
@@ -215,7 +237,10 @@ function ExpandedDetail({ step, allSteps, events, dagJson, onOpenLogs }: Expande
           </p>
           {onOpenLogs && (
             <button
-              onClick={(e) => { e.stopPropagation(); onOpenLogs(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenLogs();
+              }}
               className="inline-flex items-center gap-1 text-[10px] font-medium text-accent hover:text-accent-hover transition-colors"
             >
               <FileText size={10} />
@@ -236,19 +261,19 @@ function ExpandedDetail({ step, allSteps, events, dagJson, onOpenLogs }: Expande
 
       {/* Summary text from the step's output. */}
       {step.summary && (
-        <p className="text-[11px] text-text-secondary italic">
-          &ldquo;{step.summary}&rdquo;
-        </p>
+        <p className="text-[11px] text-text-secondary italic">&ldquo;{step.summary}&rdquo;</p>
       )}
 
       {/* Timestamps (compact). */}
       <div className="flex items-center gap-3 text-[10px] text-text-tertiary">
         <span>
-          {t('activity.started')}: <span className="text-text-secondary">{formatTimestamp(step.started_at, t)}</span>
+          {t('activity.started')}:{' '}
+          <span className="text-text-secondary">{formatTimestamp(step.started_at, t)}</span>
         </span>
         {step.completed_at && (
           <span>
-            {t('activity.finished')}: <span className="text-text-secondary">{formatTimestamp(step.completed_at, t)}</span>
+            {t('activity.finished')}:{' '}
+            <span className="text-text-secondary">{formatTimestamp(step.completed_at, t)}</span>
           </span>
         )}
       </div>

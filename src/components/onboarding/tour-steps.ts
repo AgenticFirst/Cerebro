@@ -122,6 +122,4 @@ export const TOUR_STEPS: TourStep[] = [
 ];
 
 /** Total number of advance‑able steps shown in the dot progress. */
-export const TOUR_VISIBLE_STEP_COUNT = TOUR_STEPS.filter(
-  (s) => s.kind === 'spotlight',
-).length;
+export const TOUR_VISIBLE_STEP_COUNT = TOUR_STEPS.filter((s) => s.kind === 'spotlight').length;

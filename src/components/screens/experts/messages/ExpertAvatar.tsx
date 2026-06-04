@@ -21,16 +21,15 @@ const DOMAIN_RING: Record<string, string> = {
 
 export default function ExpertAvatar({ expert, size = 32, className, onClick }: ExpertAvatarProps) {
   const avatar = getAvatar(expert.avatarUrl);
-  const ring = expert.domain ? DOMAIN_RING[expert.domain.toLowerCase()] ?? 'ring-accent/30' : 'ring-accent/30';
+  const ring = expert.domain
+    ? (DOMAIN_RING[expert.domain.toLowerCase()] ?? 'ring-accent/30')
+    : 'ring-accent/30';
   const iconSize = Math.round(size * 0.5);
   const badgeSize = Math.max(10, Math.round(size * 0.35));
 
   return (
     <div
-      className={clsx(
-        'relative flex-shrink-0',
-        onClick && 'cursor-pointer transition-all',
-      )}
+      className={clsx('relative flex-shrink-0', onClick && 'cursor-pointer transition-all')}
       style={{ width: size, height: size }}
       onClick={onClick}
     >

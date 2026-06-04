@@ -10,7 +10,16 @@
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, ArrowRight, CheckCircle2, Eye, EyeOff, Loader2, X, XCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Loader2,
+  X,
+  XCircle,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { GoogleCalendarIcon, OutlookIcon } from '../../icons/BrandIcons';
 import type { CalendarProviderId } from '../../../types/calendar';
@@ -55,24 +64,34 @@ export default function CalendarConnectModal({ onClose, onPersisted }: Props) {
     }
   };
 
-  const canNext = step === 1 ? Boolean(provider) : step === 2 ? clientId.trim() && clientSecret.trim() : true;
+  const canNext =
+    step === 1 ? Boolean(provider) : step === 2 ? clientId.trim() && clientSecret.trim() : true;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
       <div
         className="w-[460px] max-w-[92vw] rounded-xl border border-border-subtle bg-bg-base shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border-subtle">
-          <h2 className="flex-1 text-[15px] font-semibold text-text-primary">{t('calendar.connectModal.title')}</h2>
+          <h2 className="flex-1 text-[15px] font-semibold text-text-primary">
+            {t('calendar.connectModal.title')}
+          </h2>
           <span className="text-[11px] text-text-tertiary">{step}/3</span>
-          <button onClick={onClose} className="text-text-tertiary hover:text-text-secondary"><X size={16} /></button>
+          <button onClick={onClose} className="text-text-tertiary hover:text-text-secondary">
+            <X size={16} />
+          </button>
         </div>
 
         <div className="px-4 py-4 min-h-[220px]">
           {step === 1 && (
             <div>
-              <p className="text-[13px] text-text-secondary mb-3">{t('calendar.connectModal.chooseProvider')}</p>
+              <p className="text-[13px] text-text-secondary mb-3">
+                {t('calendar.connectModal.chooseProvider')}
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <ProviderCard
                   active={provider === 'google'}
@@ -93,7 +112,9 @@ export default function CalendarConnectModal({ onClose, onPersisted }: Props) {
           {step === 2 && (
             <div className="space-y-3">
               <p className="text-[12px] text-text-tertiary">
-                {provider === 'google' ? t('calendar.connectModal.googleHelp') : t('calendar.connectModal.outlookHelp')}
+                {provider === 'google'
+                  ? t('calendar.connectModal.googleHelp')
+                  : t('calendar.connectModal.outlookHelp')}
               </p>
               <div>
                 <label className="block text-[11px] uppercase tracking-wide text-text-tertiary mb-1">
@@ -124,7 +145,9 @@ export default function CalendarConnectModal({ onClose, onPersisted }: Props) {
                   </button>
                 </div>
               </div>
-              <p className="text-[11px] text-text-tertiary">{t('calendar.connectModal.redirectHint')}</p>
+              <p className="text-[11px] text-text-tertiary">
+                {t('calendar.connectModal.redirectHint')}
+              </p>
             </div>
           )}
 
@@ -132,7 +155,9 @@ export default function CalendarConnectModal({ onClose, onPersisted }: Props) {
             <div className="flex flex-col items-center justify-center text-center py-4">
               {auth.kind === 'idle' && (
                 <>
-                  <p className="text-[13px] text-text-secondary mb-4">{t('calendar.connectModal.authorize')}</p>
+                  <p className="text-[13px] text-text-secondary mb-4">
+                    {t('calendar.connectModal.authorize')}
+                  </p>
                   <button
                     onClick={authorize}
                     className="px-4 py-2 rounded-md text-[13px] bg-accent text-black font-medium hover:brightness-110"
@@ -150,8 +175,13 @@ export default function CalendarConnectModal({ onClose, onPersisted }: Props) {
               {auth.kind === 'ok' && (
                 <div className="flex flex-col items-center gap-2">
                   <CheckCircle2 size={28} className="text-emerald-400" />
-                  <p className="text-[13px] text-text-secondary">{t('calendar.connectModal.success', { email: auth.email })}</p>
-                  <button onClick={onClose} className="mt-2 px-3 py-1 rounded-md text-[12px] bg-accent text-black font-medium">
+                  <p className="text-[13px] text-text-secondary">
+                    {t('calendar.connectModal.success', { email: auth.email })}
+                  </p>
+                  <button
+                    onClick={onClose}
+                    className="mt-2 px-3 py-1 rounded-md text-[12px] bg-accent text-black font-medium"
+                  >
                     {t('calendar.event.save')}
                   </button>
                 </div>
@@ -159,8 +189,13 @@ export default function CalendarConnectModal({ onClose, onPersisted }: Props) {
               {auth.kind === 'err' && (
                 <div className="flex flex-col items-center gap-2">
                   <XCircle size={28} className="text-red-400" />
-                  <p className="text-[12px] text-red-400 max-w-xs">{t('calendar.connectModal.error', { error: auth.error })}</p>
-                  <button onClick={() => setAuth({ kind: 'idle' })} className="mt-2 px-3 py-1 rounded-md text-[12px] bg-bg-surface text-text-secondary hover:bg-bg-hover">
+                  <p className="text-[12px] text-red-400 max-w-xs">
+                    {t('calendar.connectModal.error', { error: auth.error })}
+                  </p>
+                  <button
+                    onClick={() => setAuth({ kind: 'idle' })}
+                    className="mt-2 px-3 py-1 rounded-md text-[12px] bg-bg-surface text-text-secondary hover:bg-bg-hover"
+                  >
                     {t('calendar.connectModal.back')}
                   </button>
                 </div>
@@ -177,7 +212,8 @@ export default function CalendarConnectModal({ onClose, onPersisted }: Props) {
               disabled={auth.kind === 'authorizing'}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] text-text-tertiary hover:text-text-secondary disabled:opacity-50"
             >
-              <ArrowLeft size={13} /> {step === 1 ? t('calendar.connectModal.cancel') : t('calendar.connectModal.back')}
+              <ArrowLeft size={13} />{' '}
+              {step === 1 ? t('calendar.connectModal.cancel') : t('calendar.connectModal.back')}
             </button>
             {step < 3 && (
               <button
@@ -195,7 +231,17 @@ export default function CalendarConnectModal({ onClose, onPersisted }: Props) {
   );
 }
 
-function ProviderCard({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+function ProviderCard({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
   return (
     <button
       onClick={onClick}

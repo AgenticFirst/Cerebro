@@ -15,9 +15,7 @@ interface AudioCaptureResult {
   error: string | null;
 }
 
-export function useAudioCapture(
-  onChunk: (chunk: ArrayBuffer) => void,
-): AudioCaptureResult {
+export function useAudioCapture(onChunk: (chunk: ArrayBuffer) => void): AudioCaptureResult {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -168,7 +168,8 @@ const en = {
   // ── Capabilities help modal ─────────────────────────────────
   capabilitiesModal: {
     title: 'What Cerebro can do',
-    subtitle: 'Ask in plain English or Spanish — Cerebro picks the right tool, asks for missing details, and pauses for your approval before running anything that touches the outside world.',
+    subtitle:
+      'Ask in plain English or Spanish — Cerebro picks the right tool, asks for missing details, and pauses for your approval before running anything that touches the outside world.',
     sections: {
       actions: 'Integration actions',
       skills: 'Skills',
@@ -180,7 +181,8 @@ const en = {
       notConnected: 'Not connected',
       setUp: 'Set up',
     },
-    emptyActions: 'No connected integrations yet. Visit Connections to wire up HubSpot, Telegram, WhatsApp, or any other supported service.',
+    emptyActions:
+      'No connected integrations yet. Visit Connections to wire up HubSpot, Telegram, WhatsApp, or any other supported service.',
     emptySkills: 'No skills installed yet.',
     emptyExperts: 'No experts yet.',
     examplesIntro: 'Try saying any of these:',
@@ -328,7 +330,8 @@ const en = {
     title: 'Tasks',
     newTask: 'New task',
     emptyTitle: 'No tasks yet',
-    emptyDescription: 'Create a task and assign it to an Expert. They\u2019ll execute it autonomously while you watch.',
+    emptyDescription:
+      'Create a task and assign it to an Expert. They\u2019ll execute it autonomously while you watch.',
     column_backlog: 'Backlog',
     column_in_progress: 'In Progress',
     column_to_review: 'To Review',
@@ -362,7 +365,8 @@ const en = {
     consolePlaceholder: 'Expert terminal output will appear here when the task is running.',
     deleteTask: 'Delete task',
     deleteTaskTitle: 'Delete this task?',
-    deleteTaskMessage: '"{{title}}" and its comments, checklist, and workspace files will be removed. This can\'t be undone.',
+    deleteTaskMessage:
+      '"{{title}}" and its comments, checklist, and workspace files will be removed. This can\'t be undone.',
     cancelTask: 'Cancel task',
     addDescription: 'Add a description\u2026',
     checklist: 'Checklist',
@@ -390,7 +394,8 @@ const en = {
     startFailed: 'Could not start the Expert. Check the task and try again.',
     moveTo: 'Move to',
     previewWaiting: 'Waiting for files',
-    previewWaitingHint: 'The preview will appear here once the Expert creates files in the workspace, or when a dev server URL is detected.',
+    previewWaitingHint:
+      'The preview will appear here once the Expert creates files in the workspace, or when a dev server URL is detected.',
     previewLive: 'Live',
     previewFiles: 'Files',
     previewVideo: 'Video',
@@ -399,7 +404,8 @@ const en = {
     previewAudio: 'Audio',
     previewRevealWorkspace: 'Open workspace folder',
     previewNoArtifact: 'No previewable file yet',
-    previewExternalHint: 'External project \u2014 preview only shows when a dev-server URL is detected',
+    previewExternalHint:
+      'External project \u2014 preview only shows when a dev-server URL is detected',
     previewBrowserHint: 'Agent wrote {{count}} files \u2014 click any file to view it here',
     previewPickFile: 'Preview this file',
     previewCode: 'Code',
@@ -459,7 +465,8 @@ const en = {
     previewResultUntitled: 'Task result',
     previewResultCopy: 'Copy result',
     previewResultCopied: 'Copied',
-    previewResultEmpty: "Waiting for the expert's delivery. In the meantime, check the **Console** to see what it's doing.",
+    previewResultEmpty:
+      "Waiting for the expert's delivery. In the meantime, check the **Console** to see what it's doing.",
     previewResultRunning: 'The expert is still working — open the **Console** to follow along.',
     previewSeeAllFiles: 'See all files →',
     filesEmpty: "The expert hasn't written any files yet.",
@@ -483,7 +490,8 @@ const en = {
     queuedWaitingBadge: 'Waiting for current run',
     queuedAlreadyPending: 'An instruction is already queued for this task.',
     queueFailedPromptTitle: 'Queued instruction',
-    queueFailedPromptMessage: 'The previous run did not finish ({{reason}}). Still send the queued instruction to {{expert}}?',
+    queueFailedPromptMessage:
+      'The previous run did not finish ({{reason}}). Still send the queued instruction to {{expert}}?',
     queueFailedSend: 'Send to {{expert}}',
     queueFailedDiscard: 'Discard',
     // Attachments
@@ -521,11 +529,13 @@ const en = {
     sourceUnfiled: 'Unfiled',
     bucketDefault: 'Default',
     emptyTitle: 'No files here yet',
-    emptyHint: 'Drag files into this window or click Upload to add files. Anything you save from chat lands in Default.',
+    emptyHint:
+      'Drag files into this window or click Upload to add files. Anything you save from chat lands in Default.',
     emptyTrash: 'Trash is empty',
     emptyTrashHint: 'Deleted files appear here for 30 days, then are removed permanently.',
     emptyWorkspacesTitle: 'No workspace files yet',
-    emptyWorkspacesHint: 'When tasks create files in their isolated workspace, save them to a bucket from the file menu.',
+    emptyWorkspacesHint:
+      'When tasks create files in their isolated workspace, save them to a bucket from the file menu.',
     workspacesPickTask: 'Pick a task to browse its workspace',
     workspacesEmptyFiles: 'No files in this workspace',
     workspacesSaveAction: 'Save to bucket\u2026',
@@ -601,8 +611,10 @@ const en = {
     notifyViaTelegram: 'via Telegram',
     notifyCount: '{{count}} via Telegram',
     notifyCount_one: '{{count}} via Telegram',
-    notifyNoAllowlist: 'Connect Telegram in Integrations first, then add user IDs to the allowlist.',
-    notifyHint: 'Pick one or more Telegram recipients. They will be DMed when this routine finishes or fails.',
+    notifyNoAllowlist:
+      'Connect Telegram in Integrations first, then add user IDs to the allowlist.',
+    notifyHint:
+      'Pick one or more Telegram recipients. They will be DMed when this routine finishes or fails.',
     notifyClear: 'Clear notifications',
     notifyChannelTelegram: 'Telegram',
   },
@@ -619,8 +631,7 @@ const en = {
     zoomOut: 'Zoom out',
     resetView: 'Reset view',
     leadExpert: 'LEAD EXPERT',
-    alwaysAvailable:
-      'Always available. Plans, delegates, learns, and gets things done.',
+    alwaysAvailable: 'Always available. Plans, delegates, learns, and gets things done.',
     capabilities: 'CAPABILITIES',
     capResponds: 'Responds directly',
     capRoutes: 'Routes to experts',
@@ -633,7 +644,8 @@ const en = {
     pinned: '{{count}} pinned',
     verified: 'Verified',
     verifiedTooltip: 'Verified by Cerebro — curated expert with proven patterns',
-    verifiedReadOnly: 'This expert is maintained by Cerebro and cannot be edited or deleted. You can still enable, disable, or pin it.',
+    verifiedReadOnly:
+      'This expert is maintained by Cerebro and cannot be edited or deleted. You can still enable, disable, or pin it.',
     nodeId: 'NODE ID',
     details: 'DETAILS',
     name: 'Name',
@@ -696,7 +708,8 @@ const en = {
     teamStrategyHeader: 'Strategy',
     teamStrategySequentialHelp: 'Members run one after another, each receives the previous output.',
     teamStrategyParallelHelp: 'Members run concurrently; the last member synthesizes their work.',
-    teamStrategyAutoHelp: 'Strategy is chosen per task based on whether members depend on each other.',
+    teamStrategyAutoHelp:
+      'Strategy is chosen per task based on whether members depend on each other.',
     teamVerifiedNote: 'Verified — maintained by Cerebro.',
     teamsDisabledTitle: 'Groups are in beta',
     teamsDisabledBody: 'Enable Expert Teams in Settings → Beta Features to use this group.',
@@ -730,8 +743,7 @@ const en = {
     descPlaceholderExpert: 'What does this expert do?',
     descPlaceholderTeam: 'What does this team handle?',
     membersSelected: '({{count}} selected)',
-    membersEmpty:
-      'Create individual experts first, then add them to a team.',
+    membersEmpty: 'Create individual experts first, then add them to a team.',
     createExpert: 'Create Expert',
     createTeam: 'Create Team',
   },
@@ -888,7 +900,8 @@ const en = {
     // Per-action field hints
     fieldSystemPrompt: 'Optional persona/instructions sent before the user prompt',
     fieldAgent: 'Which Claude Code subagent runs this step — defaults to the Cerebro generalist',
-    fieldModel: 'Which Claude model powers this step — faster models are cheaper, more capable models reason better',
+    fieldModel:
+      'Which Claude model powers this step — faster models are cheaper, more capable models reason better',
     fieldTemperature: 'Sampling randomness — 0 is deterministic, 1+ is more creative',
     fieldMaxTokens: 'Maximum tokens the model may generate',
     fieldExpertId: 'ID of the expert that should run this step',
@@ -902,11 +915,11 @@ const en = {
     fieldMaxResults: 'Maximum number of results to return',
     fieldContent: 'Text content to write or send',
     fieldMemoryType: 'Kind of memory entry to create (fact, preference, etc.)',
-    fieldBucket: "Files bucket that Claude Code will read when answering",
-    fieldMemoryScope: "Whose memory to read or write — Cerebro is global, or pick an expert",
-    fieldSaveMode: "Save the text verbatim or have Claude distill it into facts first",
-    fieldSaveTopic: "Short label for the entry header so dated files are easy to skim",
-    fieldIncludeAiAnswer: "Also return a short synthesis of the top results",
+    fieldBucket: 'Files bucket that Claude Code will read when answering',
+    fieldMemoryScope: 'Whose memory to read or write — Cerebro is global, or pick an expert',
+    fieldSaveMode: 'Save the text verbatim or have Claude distill it into facts first',
+    fieldSaveTopic: 'Short label for the entry header so dated files are easy to skim',
+    fieldIncludeAiAnswer: 'Also return a short synthesis of the top results',
     fieldHttpMethod: 'HTTP verb to use for the request',
     fieldHttpUrl: 'Full URL the request should target',
     fieldHttpHeaders: 'Custom request headers as key/value pairs',
@@ -930,7 +943,8 @@ const en = {
     fieldApprovalSummary: 'Summary shown to the approver before the routine continues',
     fieldLoopItemsField: 'Dot-path to the array you want to iterate over',
     fieldScriptTimeout: 'Abort the script if it runs longer than this many seconds',
-    fieldWebhookDescription: 'Note shown in the Activity log so you remember what this callback is for',
+    fieldWebhookDescription:
+      'Note shown in the Activity log so you remember what this callback is for',
     fieldNotifyTarget: 'Recipient or channel that receives the message',
     fieldNotifyBody: 'Body text included with the notification',
     fieldNotifyUrgency: 'Urgency level used by the notification channel',
@@ -950,7 +964,8 @@ const en = {
     fieldLabel: 'Available variables',
     helpButton: 'How do variables work?',
     title: 'How variables work',
-    introBefore: 'A variable carries a value from one step into the next. You reference it with double braces like',
+    introBefore:
+      'A variable carries a value from one step into the next. You reference it with double braces like',
     introAfter: 'and it gets replaced with the real value when the routine runs.',
     exampleLabel: 'Example',
     step1Title: 'Step 1 — Ask AI (named "Summarize email")',
@@ -962,10 +977,12 @@ const en = {
     step2BodyLabel: 'Message',
     step2BodyPrefix: 'AI said:',
     step2RuntimeLabel: 'Shown on screen',
-    exampleCaption: 'The variable name comes from the first step’s name — rename a step and Cerebro updates the chip and any templates that use it.',
+    exampleCaption:
+      'The variable name comes from the first step’s name — rename a step and Cerebro updates the chip and any templates that use it.',
     howLabel: 'How to use them',
     tip1Title: 'Connect the steps',
-    tip1Body: 'Drag a line from the earlier step into this one. Cerebro auto-wires its output so you can reference it right away.',
+    tip1Body:
+      'Drag a line from the earlier step into this one. Cerebro auto-wires its output so you can reference it right away.',
     tip2Title: 'Click a chip to insert it',
     tip2BodyBefore: 'Every variable you can use shows up as a chip above. Clicking one drops',
     tip2BodyAfter: 'into your prompt or message, so you never have to type the braces yourself.',
@@ -1101,8 +1118,7 @@ const en = {
       'Tell Cerebro in chat to stop asking for approval for a specific Slack channel, and it will appear here.',
     revoke: 'Revoke',
     noPending: 'No pending approvals',
-    noPendingDescription:
-      'When a routine step requires your sign-off, it will appear here.',
+    noPendingDescription: 'When a routine step requires your sign-off, it will appear here.',
     noHistory: 'No approval history yet',
     noHistoryDescription: 'Resolved approvals will appear here.',
     parameters: 'Parameters',
@@ -1178,15 +1194,21 @@ const en = {
       },
       hints: {
         botToken: 'Starts with xoxb-… (from Install App → Bot User OAuth Token)',
-        appToken: 'Starts with xapp-… (from Basic Information → App-Level Tokens, scope connections:write)',
+        appToken:
+          'Starts with xapp-… (from Basic Information → App-Level Tokens, scope connections:write)',
       },
       steps: {
-        copyManifest: 'Copy the Slack manifest YAML Cerebro provides — it preconfigures scopes, events, and the /cerebro slash command.',
-        createApp: 'In Slack, open api.slack.com/apps → Create New App → From an app manifest. Paste the YAML and pick your workspace.',
-        installWorkspace: 'In the new app, open Install App in the sidebar and click Install to Workspace.',
+        copyManifest:
+          'Copy the Slack manifest YAML Cerebro provides — it preconfigures scopes, events, and the /cerebro slash command.',
+        createApp:
+          'In Slack, open api.slack.com/apps → Create New App → From an app manifest. Paste the YAML and pick your workspace.',
+        installWorkspace:
+          'In the new app, open Install App in the sidebar and click Install to Workspace.',
         copyBotToken: 'On Install App, copy the Bot User OAuth Token (starts with xoxb-).',
-        generateAppToken: 'On Basic Information → App-Level Tokens, click Generate. Name it (e.g. socket), add scope connections:write, and copy the xapp- token.',
-        pasteHere: 'Paste both tokens in the next step. Cerebro verifies them via auth.test and stores them encrypted.',
+        generateAppToken:
+          'On Basic Information → App-Level Tokens, click Generate. Name it (e.g. socket), add scope connections:write, and copy the xapp- token.',
+        pasteHere:
+          'Paste both tokens in the next step. Cerebro verifies them via auth.test and stores them encrypted.',
       },
     },
     hubspot: {
@@ -1197,7 +1219,8 @@ const en = {
       steps: {
         openSettings: 'In HubSpot, open Settings → Integrations → Private Apps.',
         createPrivateApp: 'Click Create a private app and give it a name.',
-        grantScopes: 'Under Scopes, enable tickets and pipelines, plus contacts, companies, deals, and lists (read + write) so Cerebro can manage your CRM records and segments.',
+        grantScopes:
+          'Under Scopes, enable tickets and pipelines, plus contacts, companies, deals, and lists (read + write) so Cerebro can manage your CRM records and segments.',
         copyToken: 'Click Create app, then Show token and copy it.',
         pasteHere: 'Paste the token in the next step.',
       },
@@ -1245,10 +1268,13 @@ const en = {
       },
       steps: {
         openSettings: 'In GoHighLevel, open Settings → Integrations → Private Integrations.',
-        createPrivateApp: 'Create a Private Integration with the contacts and notes scopes (read + write).',
+        createPrivateApp:
+          'Create a Private Integration with the contacts and notes scopes (read + write).',
         copyApiKey: 'Copy the API key it shows after creation — it starts with pit-….',
-        copyLocationId: 'Grab the location id from the GHL URL of the sub-account you want to sync.',
-        pasteHere: 'Paste both values in the next step. Cerebro verifies them by hitting the GHL contacts API.',
+        copyLocationId:
+          'Grab the location id from the GHL URL of the sub-account you want to sync.',
+        pasteHere:
+          'Paste both values in the next step. Cerebro verifies them by hitting the GHL contacts API.',
       },
     },
     github: {
@@ -1263,7 +1289,8 @@ const en = {
       steps: {
         openSettings: 'In GitHub, open Settings → Developer settings → Personal access tokens.',
         createPersonalAccessToken: 'Generate a new token (classic or fine-grained).',
-        grantScopes: 'Grant the repo scope (or fine-grained Issues, Pull Requests, Contents read+write on the repos you want Cerebro to touch).',
+        grantScopes:
+          'Grant the repo scope (or fine-grained Issues, Pull Requests, Contents read+write on the repos you want Cerebro to touch).',
         copyToken: 'Copy the token — GitHub only shows it once.',
         pasteHere: 'Paste it in the next step. Cerebro verifies it by calling /user.',
       },
@@ -1289,8 +1316,7 @@ const en = {
     error: 'Error',
     version: 'Version',
     path: 'Path',
-    notFoundMessage:
-      'Cerebro could not find this CLI on your system.',
+    notFoundMessage: 'Cerebro could not find this CLI on your system.',
     notFoundError: '({{error}})',
     installGuide: 'Install it from',
     installGuideLink: 'the official setup guide',
@@ -1316,7 +1342,8 @@ const en = {
     github: 'GitHub',
     githubDesc: 'Manage issues, pull requests, and code reviews from chat and routines.',
     supabase: 'Supabase',
-    supabaseDesc: 'Sync your chats, knowledge base, experts, and tasks across devices with your own Supabase project.',
+    supabaseDesc:
+      'Sync your chats, knowledge base, experts, and tasks across devices with your own Supabase project.',
   },
 
   // ── Supabase backend sync (multi-device) ────────────────────
@@ -1324,19 +1351,24 @@ const en = {
     title: 'Supabase Sync',
     description:
       'Connect your own Supabase project to keep Cerebro in sync across every device. Your chats, knowledge base, experts, routines, and tasks stay mirrored to a database you own. Cerebro keeps working offline and catches up the moment you reconnect.',
-    storageEncrypted: 'Your connection string is encrypted at rest with your operating system keychain.',
+    storageEncrypted:
+      'Your connection string is encrypted at rest with your operating system keychain.',
     storagePlaintextFallback:
       'OS keychain unavailable — your connection string is stored with a fallback that is not OS-encrypted. Anyone with access to this device could read it.',
     perDeviceNote:
       'Connected apps (Telegram, HubSpot, GitHub, …) stay on this device for security and are reconnected per machine. Everything else syncs.',
     dbUrlLabel: 'Postgres connection string',
-    dbUrlHelp: 'Supabase → Project Settings → Database → Connection string (URI). Use the postgresql+psycopg:// prefix.',
+    dbUrlHelp:
+      'Supabase → Project Settings → Database → Connection string (URI). Use the postgresql+psycopg:// prefix.',
     projectUrlLabel: 'Project URL',
-    projectUrlHelp: 'Supabase → Project Settings → API → Project URL. Used for syncing file attachments to Storage.',
+    projectUrlHelp:
+      'Supabase → Project Settings → API → Project URL. Used for syncing file attachments to Storage.',
     keyLabel: 'Service role key',
-    keyHelp: 'Supabase → Project Settings → API → service_role key. Encrypted at rest; only used to upload file blobs to Storage.',
+    keyHelp:
+      'Supabase → Project Settings → API → service_role key. Encrypted at rest; only used to upload file blobs to Storage.',
     bucketLabel: 'Storage bucket',
-    bucketHelp: 'Name of the Storage bucket for synced file attachments. Created automatically if missing.',
+    bucketHelp:
+      'Name of the Storage bucket for synced file attachments. Created automatically if missing.',
     seedExisting: 'Push my existing local data to this project now',
     connect: 'Connect',
     connecting: 'Connecting…',
@@ -1358,13 +1390,15 @@ const en = {
   // ── GoHighLevel section ─────────────────────────────────────
   ghlSection: {
     apiKeyLabel: 'API Key',
-    apiKeyHelp: 'Your GoHighLevel Private Integration API key. Found in Settings → Integrations → API Keys.',
+    apiKeyHelp:
+      'Your GoHighLevel Private Integration API key. Found in Settings → Integrations → API Keys.',
     apiKeyPlaceholder: 'ey…',
     showKey: 'Show API key',
     hideKey: 'Hide API key',
     replaceKey: 'Replace key',
     locationIdLabel: 'Location ID',
-    locationIdHelp: 'The sub-account (location) ID to sync contacts into. Found in your GHL location URL.',
+    locationIdHelp:
+      'The sub-account (location) ID to sync contacts into. Found in your GHL location URL.',
     locationIdPlaceholder: 'abc123…',
     testConnection: 'Test connection',
     disconnect: 'Disconnect',
@@ -1380,7 +1414,8 @@ const en = {
       'Drive GitHub from chat ("review PR #42", "open an issue") and trigger routines on inbound events (new issue, review requested). Cerebro polls watched repos every minute — no public webhook URL required.',
     tokenLabel: 'Personal access token',
     tokenPlaceholder: 'ghp_… or github_pat_…',
-    tokenHelp: 'Token is encrypted at rest. Required scopes: repo (classic) or Issues + Pull Requests + Contents (fine-grained).',
+    tokenHelp:
+      'Token is encrypted at rest. Required scopes: repo (classic) or Issues + Pull Requests + Contents (fine-grained).',
     verify: 'Verify',
     verifying: 'Verifying…',
     verified: 'Verified',
@@ -1416,8 +1451,7 @@ const en = {
   // ── Channels section ────────────────────────────────────────
   channelsSection: {
     title: 'Channels',
-    description:
-      'Connect messaging platforms to interact with Cerebro remotely.',
+    description: 'Connect messaging platforms to interact with Cerebro remotely.',
     telegram: 'Telegram',
     telegramDesc: 'Message Cerebro via Telegram bot',
     telegramDescConnected: 'Connected as @{{username}}',
@@ -1518,7 +1552,7 @@ const en = {
 
     step2Title: 'Install to your workspace',
     step2Body:
-      'In your new app, go to Install App in the left sidebar and click Install to Workspace. Slack will ask you to approve the requested scopes. After approval you\'ll see a Bot User OAuth Token starting with xoxb-.',
+      "In your new app, go to Install App in the left sidebar and click Install to Workspace. Slack will ask you to approve the requested scopes. After approval you'll see a Bot User OAuth Token starting with xoxb-.",
 
     step3Title: 'Paste your bot token',
     step3Body:
@@ -1536,11 +1570,12 @@ const en = {
     step5Title: 'Verify & enable',
     step5Body:
       'Cerebro will call auth.test with your bot token and open a quick connection with your app token to verify Socket Mode works.',
-    step5VerifyFailed: 'Could not verify the tokens. Double-check that the manifest installed cleanly and both tokens were copied without trailing spaces.',
+    step5VerifyFailed:
+      'Could not verify the tokens. Double-check that the manifest installed cleanly and both tokens were copied without trailing spaces.',
     verify: 'Verify',
     verifying: 'Verifying…',
 
-    step6Title: 'You\'re ready',
+    step6Title: "You're ready",
     step6Body:
       'The bridge is online. DM Cerebro, mention @Cerebro in any channel, or type /cerebro help to see the menu. You can change any setting later from the Slack card.',
     setAllowlistLater: 'Set up the allowlist later from the Slack card.',
@@ -1595,17 +1630,18 @@ const en = {
     expertAccessExample:
       'Example: by default your team only sees the Sales Coach. Then add your admin as an exception with full access, and your interns as exceptions limited to a single expert. Everyone else follows the default.',
     expertAccessDefaultTitle: 'Default access',
-    expertAccessDefaultHelp: 'Applies to everyone in Slack who isn\'t listed as an exception below.',
+    expertAccessDefaultHelp: "Applies to everyone in Slack who isn't listed as an exception below.",
     expertAccessDefaultAll: 'All experts',
     expertAccessDefaultAllHint: 'Anyone in Slack can use any expert. (Current behaviour.)',
     expertAccessDefaultCustom: 'Only the experts I pick',
-    expertAccessDefaultCustomHint: 'Curate the baseline. Pick once — it applies to your whole team.',
-    expertAccessDefaultCustomEmpty: 'Pick at least one expert below, or no one will have access to anything.',
+    expertAccessDefaultCustomHint:
+      'Curate the baseline. Pick once — it applies to your whole team.',
+    expertAccessDefaultCustomEmpty:
+      'Pick at least one expert below, or no one will have access to anything.',
     expertAccessExceptionsTitle: 'Exceptions',
     expertAccessExceptionsHelp:
       'People who get different access from the default — admins who need everything, contractors who should be limited, etc.',
-    expertAccessNoExceptions:
-      'No exceptions yet. Everyone in Slack follows the default above.',
+    expertAccessNoExceptions: 'No exceptions yet. Everyone in Slack follows the default above.',
     expertAccessAddException: 'Add exception',
     expertAccessModeAll: 'Full access',
     expertAccessModeCustom: 'Only specific experts',
@@ -1634,7 +1670,8 @@ const en = {
     verifying: 'Verifying...',
     verified: 'Verified',
     allowlistLabel: 'Allowed user IDs',
-    allowlistHelp: 'Only these Telegram user IDs can chat with the bot. Separate multiple IDs with commas.',
+    allowlistHelp:
+      'Only these Telegram user IDs can chat with the bot. Separate multiple IDs with commas.',
     operatorChatIdLabel: 'Operator chat ID',
     operatorChatIdHelp:
       'Telegram chat ID that receives the Claude sign-in link when the bundled CLI loses authentication. Leave blank to use the first allowlisted user.',
@@ -1642,7 +1679,8 @@ const en = {
       'Enable the bridge below — even with no IDs it runs in discovery mode. Send any message to your bot from Telegram and it will reply with your numeric ID, which you can paste above.',
     allowlistPlaceholder: '123456789, 987654321',
     forwardAllLabel: 'Forward all approvals to Telegram',
-    forwardAllHelp: 'Off by default: only approvals for runs started from Telegram are sent. Turn this on if you also want desktop-initiated approvals on your phone.',
+    forwardAllHelp:
+      'Off by default: only approvals for runs started from Telegram are sent. Turn this on if you also want desktop-initiated approvals on your phone.',
     enableLabel: 'Enable bridge',
     enableDisabledHint: 'Verify the token to enable the bridge.',
     discoveryModeHint:
@@ -1693,8 +1731,7 @@ const en = {
     importFailed: 'Import failed',
     fetchingSkill: 'Fetching skill...',
     import: 'Import',
-    importSuccess:
-      'Imported successfully. Review the details below and save.',
+    importSuccess: 'Imported successfully. Review the details below and save.',
     supportedFormats: 'SUPPORTED FORMATS',
     formatNpx: 'npx command',
     formatGithubShort: 'GitHub shorthand',
@@ -1707,8 +1744,7 @@ const en = {
     categoryLabel: 'CATEGORY',
     iconLabel: 'ICON',
     descriptionLabel: 'DESCRIPTION',
-    descriptionPlaceholder:
-      'One sentence explaining what this skill teaches an expert to do.',
+    descriptionPlaceholder: 'One sentence explaining what this skill teaches an expert to do.',
     instructionsLabel: 'INSTRUCTIONS',
     markdownSupported: 'Markdown supported',
     instructionsPlaceholder:
@@ -1774,7 +1810,8 @@ const en = {
     },
     preview: {
       title: 'Restore from backup?',
-      stats: '{{conversations}} conversations · {{tasks}} tasks · {{experts}} experts · {{size}} of files',
+      stats:
+        '{{conversations}} conversations · {{tasks}} tasks · {{experts}} experts · {{size}} of files',
       created: 'Created {{when}}',
       version: 'Cerebro version: {{version}}',
       warning:
@@ -1801,7 +1838,8 @@ const en = {
     exportFailed: 'Backup failed: {{detail}}',
     inspectFailed: 'Could not read backup: {{detail}}',
     applyFailed: 'Restore failed: {{detail}}',
-    applyDidNotRelaunch: 'Restore staged but the app did not restart. Please quit and reopen Cerebro.',
+    applyDidNotRelaunch:
+      'Restore staged but the app did not restart. Please quit and reopen Cerebro.',
     undoFailed: 'Undo failed: {{detail}}',
   },
 
@@ -1815,7 +1853,8 @@ const en = {
       "These features aren't fully polished yet. Expect rough edges. Share feedback or report issues using the links below \u2014 it helps us ship them properly.",
     discordLink: 'Join our Discord',
     githubLink: 'Report an issue on GitHub',
-    emptyState: 'No beta features right now — check back here when we\u2019re testing something new.',
+    emptyState:
+      'No beta features right now — check back here when we\u2019re testing something new.',
     teams: {
       label: 'Expert Teams',
       description:
@@ -1847,7 +1886,8 @@ const en = {
     languageDesc:
       'Choose the language for the Cerebro interface. AI responses will also adapt to your selected language.',
     takeTourTitle: 'Take the tour again',
-    takeTourDesc: 'Replay the welcome tour anytime — a 90-second guided walkthrough of every screen.',
+    takeTourDesc:
+      'Replay the welcome tour anytime — a 90-second guided walkthrough of every screen.',
     takeTourCta: 'Start tour',
   },
 
@@ -1865,8 +1905,7 @@ const en = {
     selectFile: 'Select a file or create a new one.',
     selectAgent: 'Select an agent to view its memory.',
     lastUpdated: 'Last updated: {{time}}',
-    editorPlaceholder:
-      'Write markdown the agent should read on every turn...',
+    editorPlaceholder: 'Write markdown the agent should read on every turn...',
   },
 
   // ── Sandbox section ─────────────────────────────────────────
@@ -1876,8 +1915,7 @@ const en = {
       "Restrict what Cerebro's agents can read and write on your Mac. The sandbox is a macOS Seatbelt profile wrapped around the Claude Code subprocess \u2014 denied operations fail with a permission error instead of touching your files.",
     enableSandbox: 'Enable sandbox',
     macOsOnly: 'macOS only (v1)',
-    activeDesc:
-      'Agents can only touch the workspace and linked projects.',
+    activeDesc: 'Agents can only touch the workspace and linked projects.',
     inactiveDesc: 'Agents have unrestricted access to your files.',
     disableSandbox: 'Disable sandbox',
     disableConfirmTitle: 'Disable sandbox?',
@@ -1903,10 +1941,8 @@ const en = {
     promoteToReadWrite: 'Promote to Read-Write',
     revertToReadOnly: 'Revert to Read-Only',
     unlinkProject: 'Unlink project',
-    confirmWriteTitle:
-      'Allow Cerebro to write into this directory?',
-    confirmWriteDesc:
-      'Agents will be able to create, modify, and delete files under {{path}}.',
+    confirmWriteTitle: 'Allow Cerebro to write into this directory?',
+    confirmWriteDesc: 'Agents will be able to create, modify, and delete files under {{path}}.',
     yesAllowWrites: 'Yes, allow writes',
     alwaysBlocked: 'Always blocked',
     blockedDescription:
@@ -1925,8 +1961,7 @@ const en = {
       'Timeline of all runs \u2014 see logs, outputs, timestamps, and drill into any execution.',
     approvals:
       'Review and approve or deny pending actions that require your sign-off before executing.',
-    marketplace:
-      'Browse and install expert packs, action packs, and routine templates.',
+    marketplace: 'Browse and install expert packs, action packs, and routine templates.',
   },
 
   // ── Voice / call ────────────────────────────────────────────
@@ -2000,8 +2035,7 @@ const en = {
       "Session stored under Cerebro's user-data directory (OS-level file permissions).",
 
     pairDevice: 'Pair a WhatsApp device',
-    pairHint:
-      'Opens a QR code. Scan it from WhatsApp → Settings → Linked devices → Link a device.',
+    pairHint: 'Opens a QR code. Scan it from WhatsApp → Settings → Linked devices → Link a device.',
 
     scanToPair: 'Scan to pair',
     scanInstructions:
@@ -2042,13 +2076,11 @@ const en = {
     step1Body:
       'Cerebro pairs with the WhatsApp Business app as a linked device — the same way WhatsApp Web works. You can put it on a dedicated business phone number and have Cerebro answer inbound customer messages automatically.',
     step1ChoiceYesTitle: 'Yes, I already have it',
-    step1ChoiceYesDesc:
-      "I've installed WhatsApp Business and signed up with a dedicated number.",
+    step1ChoiceYesDesc: "I've installed WhatsApp Business and signed up with a dedicated number.",
     step1ChoiceNoTitle: 'Not yet — show me how',
     step1ChoiceNoDesc: 'Walk me through creating a WhatsApp Business account first.',
     step1AlreadyPairedTitle: 'Already paired',
-    step1AlreadyPairedDesc:
-      'Skip the setup and jump to the allowed-callers list.',
+    step1AlreadyPairedDesc: 'Skip the setup and jump to the allowed-callers list.',
 
     // Step 2a — Create a WhatsApp Business account (chosen "Not yet")
     step2NoTitle: 'Create a WhatsApp Business account',
@@ -2059,7 +2091,7 @@ const en = {
       "Use a number you aren't using for personal WhatsApp — a secondary SIM, an eSIM, or a virtual number. WhatsApp won't let the same number be signed in to both WhatsApp and WhatsApp Business.",
     step2NoItem2Title: 'Install WhatsApp Business',
     step2NoItem2Body:
-      "Download \"WhatsApp Business\" from the App Store (iPhone) or Google Play (Android). It's a separate app — not regular WhatsApp.",
+      'Download "WhatsApp Business" from the App Store (iPhone) or Google Play (Android). It\'s a separate app — not regular WhatsApp.',
     step2NoItem3Title: 'Sign up with your business number',
     step2NoItem3Body:
       'Open the app, accept the terms, enter your dedicated number, and type in the 6-digit SMS code it texts you.',
@@ -2079,7 +2111,7 @@ const en = {
     // Step 2b — Before we scan (chosen "Yes")
     step2YesTitle: 'Before we scan',
     step2YesBody:
-      "Cerebro will pair as a linked device inside your WhatsApp Business app. Your phone needs to be unlocked and online for the first link — after that, Cerebro keeps its own session even if your phone goes offline briefly.",
+      'Cerebro will pair as a linked device inside your WhatsApp Business app. Your phone needs to be unlocked and online for the first link — after that, Cerebro keeps its own session even if your phone goes offline briefly.',
     step2YesTipTitle: 'Use a dedicated business number',
     step2YesTipBody:
       "WhatsApp may rate-limit or ban accounts it detects as automated. The risk is much lower on a dedicated Business number you aren't using for personal chats. Don't pair your personal number here.",
@@ -2169,12 +2201,10 @@ const en = {
     // Connection labels + statuses (reused inside the dialog)
     waLabel: 'WhatsApp Business',
     waConnected: 'Connected as {{phone}}',
-    waNotConnected:
-      'Not paired — open the Integrations screen to pair a device.',
+    waNotConnected: 'Not paired — open the Integrations screen to pair a device.',
     hsLabel: 'HubSpot CRM',
     hsConnected: 'Connected to portal {{portal}}',
-    hsNotConnected:
-      'Not connected — paste a Private App token in the Integrations screen.',
+    hsNotConnected: 'Not connected — paste a Private App token in the Integrations screen.',
     tgLabel: 'Telegram',
     tgConnected: 'Connected as @{{username}}',
     tgNotConnected: 'Not connected.',
@@ -2194,12 +2224,11 @@ const en = {
     description:
       'Create, edit, list, and delete tickets, contacts, companies, deals, and lists in HubSpot from chat or a routine.',
     keychainEncrypted: 'Access token is encrypted in your OS keychain.',
-    keychainFallback:
-      'No OS keychain available — token stored with fallback encoding.',
+    keychainFallback: 'No OS keychain available — token stored with fallback encoding.',
     tokenLabel: 'Private App access token',
     // Renders with <Trans> so the bold "Connect" word can be emphasized.
     tokenHelp:
-      'Create a Private App under HubSpot\'s Legacy Apps section with the <code>tickets</code> scope plus read + write on <code>contacts</code>, <code>companies</code>, <code>deals</code>, and <code>lists</code>, then paste the generated token below. (Click <bold>Connect</bold> in the card header for a guided tour.)',
+      "Create a Private App under HubSpot's Legacy Apps section with the <code>tickets</code> scope plus read + write on <code>contacts</code>, <code>companies</code>, <code>deals</code>, and <code>lists</code>, then paste the generated token below. (Click <bold>Connect</bold> in the card header for a guided tour.)",
     tokenPlaceholder: 'pat-na1-...',
     verify: 'Verify',
     verifying: 'Verifying…',
@@ -2212,13 +2241,12 @@ const en = {
     replaceToken: 'Replace token',
     disconnect: 'Disconnect',
     defaultsLabel: 'Default ticket pipeline + stage',
-    defaultsHelp:
-      'New tickets created by routines land here unless a step overrides them.',
+    defaultsHelp: 'New tickets created by routines land here unless a step overrides them.',
     loadingPipelines: 'Loading pipelines…',
     pipelinePlaceholder: '— Pipeline —',
     stagePlaceholder: '— Stage —',
     customFieldsHelp:
-      'Optional: map your portal\'s custom ticket properties so chat and routines can set a follow-up user and a due date by name. Leave blank to disable each.',
+      "Optional: map your portal's custom ticket properties so chat and routines can set a follow-up user and a due date by name. Leave blank to disable each.",
     followUpPropertyLabel: 'Follow-up user property',
     dueDatePropertyLabel: 'Due date property',
     propertyNone: '— None —',
@@ -2267,36 +2295,27 @@ const en = {
     walk3Hint:
       'Pick "Private" — the right card. (Ignore the "won\'t get future updates" warning; Private Apps are still the supported per-portal integration mechanism.)',
     walk4Caption: 'Basic info — name your app.',
-    walk4Hint:
-      'Pick anything memorable, e.g. "Cerebro". Then click the "Scopes" tab at the top.',
+    walk4Hint: 'Pick anything memorable, e.g. "Cerebro". Then click the "Scopes" tab at the top.',
     walk5Caption: 'Scopes — pick what Cerebro can do.',
     walk5Hint:
       'Click "Add new scope", then search for and tick the scopes listed below this walkthrough. Click Update, then "Create app" in the top-right.',
     walk6Caption: 'HubSpot confirms.',
     walk6Hint: 'Click "Continue creating".',
     walk7Caption: 'Done — your access token is on the Auth tab.',
-    walk7Hint:
-      'Click "Show token", then "Copy". Paste it into the next step of this tour.',
+    walk7Hint: 'Click "Show token", then "Copy". Paste it into the next step of this tour.',
 
     // Required scopes descriptions (the slug names themselves stay in English)
-    scopeReasonTickets:
-      'Read your ticket pipelines and open new support tickets from a routine.',
+    scopeReasonTickets: 'Read your ticket pipelines and open new support tickets from a routine.',
     scopeReasonContactsRead:
       'Look up an existing customer by email or phone before creating a ticket.',
-    scopeReasonContactsWrite:
-      "Create or update the customer's contact record.",
+    scopeReasonContactsWrite: "Create or update the customer's contact record.",
     scopeReasonCompaniesRead:
       'List and read companies, and tell which company a ticket or contact belongs to.',
-    scopeReasonCompaniesWrite:
-      'Create, edit, and delete companies from chat or a routine.',
-    scopeReasonDealsRead:
-      'List and read deals across your pipelines.',
-    scopeReasonDealsWrite:
-      'Create, edit, and delete deals from chat or a routine.',
-    scopeReasonListsRead:
-      'List and read your lists (segments).',
-    scopeReasonListsWrite:
-      'Create, rename, and delete lists, and add or remove records from them.',
+    scopeReasonCompaniesWrite: 'Create, edit, and delete companies from chat or a routine.',
+    scopeReasonDealsRead: 'List and read deals across your pipelines.',
+    scopeReasonDealsWrite: 'Create, edit, and delete deals from chat or a routine.',
+    scopeReasonListsRead: 'List and read your lists (segments).',
+    scopeReasonListsWrite: 'Create, rename, and delete lists, and add or remove records from them.',
     scopeReasonOwnersRead:
       'Resolve a ticket owner or follow-up user given by name or email to the right HubSpot user.',
 
@@ -2316,8 +2335,7 @@ const en = {
     step3VerifiedPortal: 'Verified — portal {{portalId}}',
     step3PortalHidden: '(hidden)',
     step3CouldNotStoreToken: 'Could not store token',
-    step3WillEncrypt:
-      'Once saved, the token is encrypted in your OS keychain.',
+    step3WillEncrypt: 'Once saved, the token is encrypted in your OS keychain.',
     step3NoKeychain:
       'No OS keychain available — Cerebro will store the token with fallback encoding.',
     step3UnknownError: 'Unknown error',
@@ -2529,7 +2547,8 @@ const en = {
     askAiSearchingWeb: 'Searching the web…',
     askAiError: 'Something went wrong. Please try again.',
     askAiEmptyTitle: 'Ask about this page',
-    askAiEmptySubtitle: 'Ask a question — the assistant answers from this page and searches the web when it helps.',
+    askAiEmptySubtitle:
+      'Ask a question — the assistant answers from this page and searches the web when it helps.',
     emptyTreeTitle: 'No pages yet',
     emptyTreeSubtitle: 'Create your first page to start building your knowledge base.',
     emptyStateTitle: 'Select a page',
@@ -2542,7 +2561,8 @@ const en = {
     deletePermanently: 'Delete permanently',
     trashEmpty: 'Trash is empty',
     confirmDeleteTitle: 'Delete page?',
-    confirmDeleteMessage: 'This page and all of its subpages will be permanently deleted. This cannot be undone.',
+    confirmDeleteMessage:
+      'This page and all of its subpages will be permanently deleted. This cannot be undone.',
     confirmDelete: 'Delete',
     cancel: 'Cancel',
   },
@@ -2653,7 +2673,7 @@ const en = {
       run: 'Run',
     },
     ai: {
-      weekSummary: "What does my week look like?",
+      weekSummary: 'What does my week look like?',
       daySummary: 'Summarize my day',
       thinking: 'Looking at your calendar…',
       error: "Couldn't summarize your calendar.",
@@ -2681,9 +2701,11 @@ const en = {
       cancel: 'Cancel',
       success: 'Connected {{email}}',
       error: "Couldn't connect: {{error}}",
-      redirectHint: 'Add http://127.0.0.1 to your app\'s allowed redirect URIs.',
-      googleHelp: 'Create an OAuth client (Desktop app) in Google Cloud Console with the Calendar API enabled.',
-      outlookHelp: 'Register an app in the Azure portal with Calendars.ReadWrite and a mobile/desktop redirect.',
+      redirectHint: "Add http://127.0.0.1 to your app's allowed redirect URIs.",
+      googleHelp:
+        'Create an OAuth client (Desktop app) in Google Cloud Console with the Calendar API enabled.',
+      outlookHelp:
+        'Register an app in the Azure portal with Calendars.ReadWrite and a mobile/desktop redirect.',
     },
   },
 } as const;

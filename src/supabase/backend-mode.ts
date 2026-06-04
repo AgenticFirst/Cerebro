@@ -13,11 +13,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { backend, decryptFromStorage, encryptForStorage } from '../secure-token';
-import type {
-  SupabaseConnection,
-  SupabaseModeFile,
-  SupabaseStorageBackend,
-} from './types';
+import type { SupabaseConnection, SupabaseModeFile, SupabaseStorageBackend } from './types';
 
 function modeFilePath(): string {
   return path.join(app.getPath('userData'), 'cerebro-backend-mode.json');

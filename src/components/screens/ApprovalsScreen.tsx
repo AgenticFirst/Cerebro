@@ -126,7 +126,9 @@ export default function ApprovalsScreen() {
             <ShieldCheck size={18} className="text-accent" />
           </div>
           <div>
-            <h1 className="text-[18px] font-semibold text-text-primary leading-tight">{t('approvals.title')}</h1>
+            <h1 className="text-[18px] font-semibold text-text-primary leading-tight">
+              {t('approvals.title')}
+            </h1>
             <p className="text-[12px] text-text-secondary mt-0.5">{t('approvals.subtitle')}</p>
           </div>
         </div>
@@ -145,7 +147,9 @@ export default function ApprovalsScreen() {
               )}
             >
               {tab === 'pending'
-                ? (pendingApprovals.length > 0 ? t('approvals.pendingTabCount', { count: pendingApprovals.length }) : t('approvals.pendingTab'))
+                ? pendingApprovals.length > 0
+                  ? t('approvals.pendingTabCount', { count: pendingApprovals.length })
+                  : t('approvals.pendingTab')
                 : tab === 'history'
                   ? t('approvals.historyTab')
                   : t('approvals.autoTab')}
@@ -162,7 +166,9 @@ export default function ApprovalsScreen() {
               <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/[0.03] mb-4">
                 <ShieldCheck size={24} className="text-text-tertiary" />
               </div>
-              <h2 className="text-[15px] font-medium text-text-secondary mb-1">{t('approvals.noPending')}</h2>
+              <h2 className="text-[15px] font-medium text-text-secondary mb-1">
+                {t('approvals.noPending')}
+              </h2>
               <p className="text-[12px] text-text-secondary max-w-xs">
                 {t('approvals.noPendingDescription')}
               </p>
@@ -190,7 +196,9 @@ export default function ApprovalsScreen() {
               <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/[0.03] mb-4">
                 <ShieldCheck size={24} className="text-text-tertiary" />
               </div>
-              <h2 className="text-[15px] font-medium text-text-secondary mb-1">{t('approvals.noHistory')}</h2>
+              <h2 className="text-[15px] font-medium text-text-secondary mb-1">
+                {t('approvals.noHistory')}
+              </h2>
               <p className="text-[12px] text-text-tertiary max-w-xs">
                 {t('approvals.noHistoryDescription')}
               </p>
@@ -198,64 +206,60 @@ export default function ApprovalsScreen() {
           ) : (
             <div className="space-y-3 max-w-2xl">
               {history.map((approval) => (
-                <ApprovalCard
-                  key={approval.id}
-                  approval={approval}
-                  variant="history"
-                />
+                <ApprovalCard key={approval.id} approval={approval} variant="history" />
               ))}
             </div>
           )
+        ) : isLoadingAuto ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 size={20} className="animate-spin text-text-tertiary" />
+          </div>
+        ) : autoRules.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center py-16">
+            <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/[0.03] mb-4">
+              <ShieldOff size={24} className="text-text-tertiary" />
+            </div>
+            <h2 className="text-[15px] font-medium text-text-secondary mb-1">
+              {t('approvals.noAuto')}
+            </h2>
+            <p className="text-[12px] text-text-tertiary max-w-xs">
+              {t('approvals.noAutoDescription')}
+            </p>
+          </div>
         ) : (
-          isLoadingAuto ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 size={20} className="animate-spin text-text-tertiary" />
-            </div>
-          ) : autoRules.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center py-16">
-              <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/[0.03] mb-4">
-                <ShieldOff size={24} className="text-text-tertiary" />
-              </div>
-              <h2 className="text-[15px] font-medium text-text-secondary mb-1">{t('approvals.noAuto')}</h2>
-              <p className="text-[12px] text-text-tertiary max-w-xs">
-                {t('approvals.noAutoDescription')}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3 max-w-2xl">
-              <p className="text-[12px] text-text-tertiary mb-1">{t('approvals.autoSubtitle')}</p>
-              {autoRules.map((rule) => (
-                <div
-                  key={rule.id}
-                  className="flex items-center gap-3 rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3"
-                >
-                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent/10 flex-shrink-0">
-                    <Hash size={15} className="text-accent" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium text-text-primary truncate">
-                      {rule.target_label || rule.target_key}
-                    </p>
-                    <p className="text-[11px] text-text-tertiary truncate">
-                      {actionTypeLabel(rule.action_type)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => revokeAutoRule(rule.id)}
-                    disabled={revokingId === rule.id}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-text-secondary hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
-                  >
-                    {revokingId === rule.id ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    {t('approvals.revoke')}
-                  </button>
+          <div className="space-y-3 max-w-2xl">
+            <p className="text-[12px] text-text-tertiary mb-1">{t('approvals.autoSubtitle')}</p>
+            {autoRules.map((rule) => (
+              <div
+                key={rule.id}
+                className="flex items-center gap-3 rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3"
+              >
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent/10 flex-shrink-0">
+                  <Hash size={15} className="text-accent" />
                 </div>
-              ))}
-            </div>
-          )
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-medium text-text-primary truncate">
+                    {rule.target_label || rule.target_key}
+                  </p>
+                  <p className="text-[11px] text-text-tertiary truncate">
+                    {actionTypeLabel(rule.action_type)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => revokeAutoRule(rule.id)}
+                  disabled={revokingId === rule.id}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-text-secondary hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                >
+                  {revokingId === rule.id ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={13} />
+                  )}
+                  {t('approvals.revoke')}
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

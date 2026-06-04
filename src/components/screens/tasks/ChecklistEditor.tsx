@@ -10,7 +10,8 @@ interface ChecklistEditorProps {
 
 export default function ChecklistEditor({ task }: ChecklistEditorProps) {
   const { t } = useTranslation();
-  const { addChecklistItem, updateChecklistItem, deleteChecklistItem, promoteChecklistItem } = useTasks();
+  const { addChecklistItem, updateChecklistItem, deleteChecklistItem, promoteChecklistItem } =
+    useTasks();
 
   const [newItemText, setNewItemText] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -125,18 +126,14 @@ export default function ChecklistEditor({ task }: ChecklistEditorProps) {
                   onClick={() => !isPromoted && handleEditStart(item.id, item.body)}
                   className={clsx(
                     'flex-1 text-sm cursor-pointer',
-                    item.is_done
-                      ? 'line-through text-text-tertiary'
-                      : 'text-text-primary',
+                    item.is_done ? 'line-through text-text-tertiary' : 'text-text-primary',
                   )}
                 >
                   {item.body}
                 </span>
               )}
 
-              {isPromoted && (
-                <Link size={12} className="text-accent flex-shrink-0" />
-              )}
+              {isPromoted && <Link size={12} className="text-accent flex-shrink-0" />}
 
               {!isPromoted && (
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">

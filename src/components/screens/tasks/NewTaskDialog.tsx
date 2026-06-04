@@ -111,9 +111,7 @@ export default function NewTaskDialog({ open, onClose }: NewTaskDialogProps) {
       <div className="bg-bg-elevated border border-border-subtle rounded-xl max-w-lg w-full mx-4 p-6 animate-fade-in">
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-medium text-text-primary">
-            {t('tasks.newTask')}
-          </h3>
+          <h3 className="text-base font-medium text-text-primary">{t('tasks.newTask')}</h3>
           <button
             onClick={onClose}
             aria-label={t('common.close')}
@@ -179,9 +177,7 @@ export default function NewTaskDialog({ open, onClose }: NewTaskDialogProps) {
                 ))}
               </select>
               {autoAssignedRef.current && expertId && (
-                <p className="mt-1 text-[10px] text-accent">
-                  {t('tasks.autoAssignedFromMention')}
-                </p>
+                <p className="mt-1 text-[10px] text-accent">{t('tasks.autoAssignedFromMention')}</p>
               )}
             </div>
 

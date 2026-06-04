@@ -55,7 +55,7 @@ describe('ActionRegistry', () => {
     registry.register(makeFakeAction('gamma'));
     const listed = registry.list();
     expect(listed).toHaveLength(3);
-    expect(listed.map(a => a.type).sort()).toEqual(['alpha', 'beta', 'gamma']);
+    expect(listed.map((a) => a.type).sort()).toEqual(['alpha', 'beta', 'gamma']);
   });
 });
 

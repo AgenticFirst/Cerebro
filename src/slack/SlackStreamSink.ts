@@ -26,9 +26,9 @@ import { SlackApi, scrubTokenish } from './api';
 import { chunkSlackText } from './helpers';
 import { markdownToMrkdwn } from './mrkdwn';
 
-const EDIT_DEBOUNCE_MS = 1_500;       // 1.5s minimum between edits
-const EDIT_CHUNK_CHARS = 600;         // or 600 chars of new visible text
-const MAX_MESSAGE_CHARS = 3500;       // chunk threshold; Slack `text` allows up to 40k
+const EDIT_DEBOUNCE_MS = 1_500; // 1.5s minimum between edits
+const EDIT_CHUNK_CHARS = 600; // or 600 chars of new visible text
+const MAX_MESSAGE_CHARS = 3500; // chunk threshold; Slack `text` allows up to 40k
 
 interface SinkDeps {
   api: SlackApi;
@@ -109,7 +109,8 @@ export class SlackStreamSink implements AgentEventSink {
     }
 
     if (event.type === 'error' && 'error' in event) {
-      const errorClass = ('errorClass' in event ? (event as { errorClass?: string }).errorClass : undefined);
+      const errorClass =
+        'errorClass' in event ? (event as { errorClass?: string }).errorClass : undefined;
       void this.finalizeWithError(event.error, errorClass);
       return;
     }
@@ -189,9 +190,8 @@ export class SlackStreamSink implements AgentEventSink {
     // MAX_MESSAGE_CHARS in the placeholder during streaming — the chunk-out
     // happens in finalize(). This keeps streaming UX simple.
     const rendered = markdownToMrkdwn(slice);
-    const visible = rendered.length > MAX_MESSAGE_CHARS
-      ? rendered.slice(0, MAX_MESSAGE_CHARS)
-      : rendered;
+    const visible =
+      rendered.length > MAX_MESSAGE_CHARS ? rendered.slice(0, MAX_MESSAGE_CHARS) : rendered;
 
     try {
       await this.deps.api.chatUpdate({
@@ -212,18 +212,24 @@ export class SlackStreamSink implements AgentEventSink {
 
   private async finalize(): Promise<void> {
     if (this.destroyed) return;
-    if (this.editTimer) { clearTimeout(this.editTimer); this.editTimer = null; }
+    if (this.editTimer) {
+      clearTimeout(this.editTimer);
+      this.editTimer = null;
+    }
 
     // If the placeholder is still being posted, let it finish before we
     // decide whether to delete it. Otherwise we can orphan the placeholder
     // above a freshly-posted final answer.
     if (this.placeholderPromise) {
-      try { await this.placeholderPromise; } catch { /* ignore — handled in ensurePlaceholder */ }
+      try {
+        await this.placeholderPromise;
+      } catch {
+        /* ignore — handled in ensurePlaceholder */
+      }
     }
 
-    const finalText = (this.accumulated.trim().length === 0)
-      ? '_(empty response)_'
-      : this.accumulated;
+    const finalText =
+      this.accumulated.trim().length === 0 ? '_(empty response)_' : this.accumulated;
     // Convert to Slack mrkdwn before chunking — link/header rewrites change
     // length and we want chunk boundaries to land on the actual sent text.
     const renderedFinal = markdownToMrkdwn(finalText);
@@ -267,10 +273,17 @@ export class SlackStreamSink implements AgentEventSink {
 
   private async finalizeWithError(error: string, errorClass?: string): Promise<void> {
     if (this.destroyed) return;
-    if (this.editTimer) { clearTimeout(this.editTimer); this.editTimer = null; }
+    if (this.editTimer) {
+      clearTimeout(this.editTimer);
+      this.editTimer = null;
+    }
 
     if (this.placeholderPromise) {
-      try { await this.placeholderPromise; } catch { /* ignore */ }
+      try {
+        await this.placeholderPromise;
+      } catch {
+        /* ignore */
+      }
     }
 
     await this.deletePlaceholderIfAny();
@@ -285,7 +298,9 @@ export class SlackStreamSink implements AgentEventSink {
       if (this.deps.onAuthFailure) {
         try {
           handled = await this.deps.onAuthFailure();
-        } catch { /* fall through to default post */ }
+        } catch {
+          /* fall through to default post */
+        }
       }
       if (handled) {
         const brief = "I'm reconnecting to Claude — operator notified. Try again in a moment.";
@@ -295,7 +310,9 @@ export class SlackStreamSink implements AgentEventSink {
             thread_ts: this.deps.threadTs,
             text: brief,
           });
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         this.teardown();
         this.deps.onDone(this.accumulated, error);
         return;
@@ -311,7 +328,9 @@ export class SlackStreamSink implements AgentEventSink {
         thread_ts: this.deps.threadTs,
         text,
       });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     this.teardown();
     this.deps.onDone(this.accumulated, error);
@@ -340,6 +359,9 @@ export class SlackStreamSink implements AgentEventSink {
 
   private teardown(): void {
     this.destroyed = true;
-    if (this.editTimer) { clearTimeout(this.editTimer); this.editTimer = null; }
+    if (this.editTimer) {
+      clearTimeout(this.editTimer);
+      this.editTimer = null;
+    }
   }
 }

@@ -97,7 +97,13 @@ export function EmojiPicker({
   );
 }
 
-function EmojiButton({ entry, onSelect }: { entry: EmojiEntry; onSelect: (emoji: string) => void }) {
+function EmojiButton({
+  entry,
+  onSelect,
+}: {
+  entry: EmojiEntry;
+  onSelect: (emoji: string) => void;
+}) {
   return (
     <button
       onClick={() => onSelect(entry.emoji)}

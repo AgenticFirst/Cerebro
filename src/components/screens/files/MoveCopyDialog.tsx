@@ -14,7 +14,9 @@ interface MoveCopyDialogProps {
 export default function MoveCopyDialog({ mode, count, onClose, onConfirm }: MoveCopyDialogProps) {
   const { t } = useTranslation();
   const { buckets } = useFiles();
-  const [selectedId, setSelectedId] = useState<string | null>(buckets.find((b) => b.isDefault)?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    buckets.find((b) => b.isDefault)?.id ?? null,
+  );
   const [busy, setBusy] = useState(false);
 
   const titleKey = mode === 'move' ? 'files.moveDialogTitle' : 'files.copyDialogTitle';
@@ -47,9 +49,7 @@ export default function MoveCopyDialog({ mode, count, onClose, onConfirm }: Move
           >
             <X size={14} />
           </button>
-          <h3 className="text-sm font-medium text-text-primary mb-1">
-            {t(titleKey, { count })}
-          </h3>
+          <h3 className="text-sm font-medium text-text-primary mb-1">{t(titleKey, { count })}</h3>
           <p className="text-xs text-text-tertiary">{t('files.pickBucket')}</p>
         </div>
         <div className="max-h-72 overflow-y-auto px-3 pb-3 space-y-px">
@@ -63,12 +63,16 @@ export default function MoveCopyDialog({ mode, count, onClose, onConfirm }: Move
                 onClick={() => setSelectedId(bucket.id)}
                 className={clsx(
                   'w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors cursor-pointer',
-                  isSel ? 'bg-accent/10 text-text-primary' : 'hover:bg-white/[0.03] text-text-secondary',
+                  isSel
+                    ? 'bg-accent/10 text-text-primary'
+                    : 'hover:bg-white/[0.03] text-text-secondary',
                 )}
               >
                 <Icon size={14} className={isSel ? 'text-accent' : 'text-text-tertiary'} />
                 <span className="text-[13px] flex-1 truncate">{label}</span>
-                <span className="text-[10px] tabular-nums text-text-tertiary">{bucket.fileCount}</span>
+                <span className="text-[10px] tabular-nums text-text-tertiary">
+                  {bucket.fileCount}
+                </span>
               </button>
             );
           })}
@@ -85,7 +89,9 @@ export default function MoveCopyDialog({ mode, count, onClose, onConfirm }: Move
             disabled={!selectedId || busy}
             className="px-4 py-1.5 rounded-md text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {mode === 'move' ? t('files.actionMove').replace('\u2026', '') : t('files.actionCopy').replace('\u2026', '')}
+            {mode === 'move'
+              ? t('files.actionMove').replace('\u2026', '')
+              : t('files.actionCopy').replace('\u2026', '')}
           </button>
         </div>
       </div>

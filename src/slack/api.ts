@@ -12,7 +12,12 @@
 import { createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { WebClient, type ChatPostMessageArguments, type ChatUpdateArguments, type ChatDeleteArguments } from '@slack/web-api';
+import {
+  WebClient,
+  type ChatPostMessageArguments,
+  type ChatUpdateArguments,
+  type ChatDeleteArguments,
+} from '@slack/web-api';
 
 /** Block Kit array shape accepted by chat.postMessage / chat.update. */
 export type SlackBlocks = NonNullable<ChatPostMessageArguments['blocks']>;
@@ -21,8 +26,7 @@ export type SlackBlocks = NonNullable<ChatPostMessageArguments['blocks']>;
 export function scrubTokenish(s: string): string {
   if (!s) return s;
   // xoxb-…, xoxa-…, xoxp-…, xoxs-…, xapp-…
-  return s.replace(/xox[abps]-[A-Za-z0-9-]{8,}/g, '***')
-    .replace(/xapp-[A-Za-z0-9-]{8,}/g, '***');
+  return s.replace(/xox[abps]-[A-Za-z0-9-]{8,}/g, '***').replace(/xapp-[A-Za-z0-9-]{8,}/g, '***');
 }
 
 export class SlackApiError extends Error {
@@ -147,7 +151,9 @@ export class SlackApi {
    * users Slack invents for apps, deleted accounts, and the Slackbot user.
    * Paginates up to ~2000 members so large workspaces stay responsive.
    */
-  async usersList(): Promise<Array<{ id: string; name: string; email?: string; avatarUrl?: string }>> {
+  async usersList(): Promise<
+    Array<{ id: string; name: string; email?: string; avatarUrl?: string }>
+  > {
     try {
       const out: Array<{ id: string; name: string; email?: string; avatarUrl?: string }> = [];
       let cursor: string | undefined;
@@ -174,11 +180,11 @@ export class SlackApi {
           if (m.is_bot || m.is_app_user || m.is_workflow_bot) continue;
           if (m.id === 'USLACKBOT') continue;
           const name =
-            m.profile?.display_name?.trim()
-            || m.profile?.real_name?.trim()
-            || m.real_name?.trim()
-            || m.name?.trim()
-            || m.id;
+            m.profile?.display_name?.trim() ||
+            m.profile?.real_name?.trim() ||
+            m.real_name?.trim() ||
+            m.name?.trim() ||
+            m.id;
           out.push({
             id: m.id,
             name,
@@ -280,7 +286,8 @@ export class SlackApi {
         ts: args.ts,
         limit: args.limit ?? 200,
       });
-      const messages = (res as { messages?: Array<{ ts?: string; user?: string; text?: string }> }).messages;
+      const messages = (res as { messages?: Array<{ ts?: string; user?: string; text?: string }> })
+        .messages;
       if (!Array.isArray(messages)) return [];
       return messages.map((m) => ({
         ts: String(m.ts ?? ''),
@@ -354,14 +361,22 @@ export class SlackApi {
     const contentType = res.headers.get('content-type') ?? '';
     if (contentType.toLowerCase().startsWith('text/html')) {
       // Stale url_private → login page. Bot likely lacks files:read or the URL expired.
-      throw new SlackApiError('files.download', 'not_authed', 'download returned an HTML login page (missing files:read or expired URL)');
+      throw new SlackApiError(
+        'files.download',
+        'not_authed',
+        'download returned an HTML login page (missing files:read or expired URL)',
+      );
     }
     // Node's fetch returns a Web ReadableStream — convert to a Node Readable for pipeline.
-    const nodeStream = Readable.fromWeb(res.body as unknown as import('node:stream/web').ReadableStream);
+    const nodeStream = Readable.fromWeb(
+      res.body as unknown as import('node:stream/web').ReadableStream,
+    );
     await pipeline(nodeStream, createWriteStream(destPath));
   }
 
-  async conversationsList(types: string = 'public_channel,private_channel'): Promise<SlackChannelSummary[]> {
+  async conversationsList(
+    types = 'public_channel,private_channel',
+  ): Promise<SlackChannelSummary[]> {
     try {
       const out: SlackChannelSummary[] = [];
       let cursor: string | undefined;
@@ -432,7 +447,11 @@ export class SlackApi {
     }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new SlackApiError('respond', null, `slash respond failed (${res.status}): ${scrubTokenish(text)}`);
+      throw new SlackApiError(
+        'respond',
+        null,
+        `slash respond failed (${res.status}): ${scrubTokenish(text)}`,
+      );
     }
   }
 

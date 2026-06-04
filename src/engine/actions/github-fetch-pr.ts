@@ -10,7 +10,13 @@
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { renderTemplate } from './utils/template';
 import type { GitHubChannel } from './github-channel';
-import { callGitHubApi, parseRepoFullName, GITHUB_API_BASE, GITHUB_API_VERSION, GITHUB_USER_AGENT } from '../../github/api';
+import {
+  callGitHubApi,
+  parseRepoFullName,
+  GITHUB_API_BASE,
+  GITHUB_API_VERSION,
+  GITHUB_USER_AGENT,
+} from '../../github/api';
 
 interface FetchPrParams {
   repo: string;
@@ -90,18 +96,25 @@ export function createGitHubFetchPrAction(deps: {
       const vars = input.wiredInputs ?? {};
 
       const repo = renderTemplate(params.repo ?? '', vars).trim();
-      const number = Number.parseInt(renderTemplate(String(params.pr_number ?? ''), vars).trim(), 10);
-      const diffRaw = renderTemplate(String(params.include_diff ?? 'true'), vars).trim().toLowerCase();
+      const number = Number.parseInt(
+        renderTemplate(String(params.pr_number ?? ''), vars).trim(),
+        10,
+      );
+      const diffRaw = renderTemplate(String(params.include_diff ?? 'true'), vars)
+        .trim()
+        .toLowerCase();
       const includeDiff = diffRaw !== 'false' && diffRaw !== '0' && diffRaw !== 'no';
       const capRaw = renderTemplate(String(params.max_diff_bytes ?? DEFAULT_DIFF_CAP), vars).trim();
       const cap = Number.parseInt(capRaw, 10);
       const maxBytes = Number.isFinite(cap) && cap > 0 ? cap : DEFAULT_DIFF_CAP;
       const parts = parseRepoFullName(repo);
       if (!parts) throw new Error(`GitHub: Fetch PR — invalid repo "${repo}".`);
-      if (!Number.isFinite(number) || number <= 0) throw new Error('GitHub: Fetch PR — pr_number is invalid.');
+      if (!Number.isFinite(number) || number <= 0)
+        throw new Error('GitHub: Fetch PR — pr_number is invalid.');
 
       const prRes = await callGitHubApi<PrDto>(
-        token, `/repos/${parts.owner}/${parts.repo}/pulls/${number}`,
+        token,
+        `/repos/${parts.owner}/${parts.repo}/pulls/${number}`,
         { signal: input.context.signal },
       );
       if (!prRes.ok || !prRes.data) {
@@ -152,7 +165,11 @@ export function createGitHubFetchPrAction(deps: {
 }
 
 async function fetchDiff(
-  token: string, owner: string, repo: string, number: number, signal: AbortSignal,
+  token: string,
+  owner: string,
+  repo: string,
+  number: number,
+  signal: AbortSignal,
 ): Promise<string | null> {
   const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls/${number}`;
   try {
@@ -174,10 +191,21 @@ async function fetchDiff(
 
 function emptyPrPayload(error: string | null): Record<string, unknown> {
   return {
-    ok: false, error,
-    pr_number: null, title: '', body: '', author_login: '',
-    head_ref: '', base_ref: '', head_sha: '', html_url: '',
-    draft: false, changed_files: 0, additions: 0, deletions: 0,
-    diff: '', diff_truncated: false,
+    ok: false,
+    error,
+    pr_number: null,
+    title: '',
+    body: '',
+    author_login: '',
+    head_ref: '',
+    base_ref: '',
+    head_sha: '',
+    html_url: '',
+    draft: false,
+    changed_files: 0,
+    additions: 0,
+    deletions: 0,
+    diff: '',
+    diff_truncated: false,
   };
 }

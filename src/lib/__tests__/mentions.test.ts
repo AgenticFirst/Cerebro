@@ -9,7 +9,7 @@ import {
 import type { Expert } from '../../context/ExpertContext';
 
 // mentions.ts only reads `id` and `name`; the rest of Expert is irrelevant here.
-const makeExpert = (id: string, name: string): Expert => ({ id, name } as Expert);
+const makeExpert = (id: string, name: string): Expert => ({ id, name }) as Expert;
 
 describe('formatMentionToken', () => {
   it('produces the canonical @[Name](expert:id) form', () => {
@@ -85,7 +85,7 @@ describe('resolveMentions — order and coverage', () => {
     const bob = makeExpert('id-bob', 'Bob');
     const body = 'First @Bob then @[Ada](expert:id-ada) finally.';
     const result = resolveMentions(body, [ada, bob]);
-    expect(result.map(m => m.expertId)).toEqual(['id-bob', 'id-ada']);
+    expect(result.map((m) => m.expertId)).toEqual(['id-bob', 'id-ada']);
   });
 
   it('does not double-match text already covered by a formal token', () => {

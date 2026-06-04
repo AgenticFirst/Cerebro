@@ -11,7 +11,13 @@ interface CheckboxProps {
 }
 
 /** Branded checkbox (neural theme) — replaces native <input type="checkbox">. */
-export default function Checkbox({ checked, onChange, label, disabled = false, className }: CheckboxProps) {
+export default function Checkbox({
+  checked,
+  onChange,
+  label,
+  disabled = false,
+  className,
+}: CheckboxProps) {
   return (
     <label
       className={clsx(

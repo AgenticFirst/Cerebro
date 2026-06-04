@@ -104,11 +104,12 @@ function toExpert(api: ApiExpert): Expert {
     policies: api.policies,
     requiredConnections: api.required_connections,
     recommendedRoutines: api.recommended_routines,
-    teamMembers: api.team_members?.map((m) => ({
-      expertId: m.expert_id,
-      role: m.role,
-      order: m.order,
-    })) ?? null,
+    teamMembers:
+      api.team_members?.map((m) => ({
+        expertId: m.expert_id,
+        role: m.role,
+        order: m.order,
+      })) ?? null,
     strategy: api.strategy,
     coordinatorPrompt: api.coordinator_prompt,
     avatarUrl: api.avatar_url,
@@ -200,15 +201,9 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
     return id;
   }, [pendingDetailExpertId]);
 
-  const activeCount = useMemo(
-    () => experts.filter((e) => e.isEnabled).length,
-    [experts],
-  );
+  const activeCount = useMemo(() => experts.filter((e) => e.isEnabled).length, [experts]);
 
-  const pinnedCount = useMemo(
-    () => experts.filter((e) => e.isPinned).length,
-    [experts],
-  );
+  const pinnedCount = useMemo(() => experts.filter((e) => e.isPinned).length, [experts]);
 
   const loadExperts = useCallback(async () => {
     setIsLoading(true);
@@ -229,50 +224,44 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const createExpert = useCallback(
-    async (input: CreateExpertInput): Promise<Expert | null> => {
-      try {
-        const res: BackendResponse<ApiExpert> = await window.cerebro.invoke({
-          method: 'POST',
-          path: '/experts',
-          body: toApiBody(input),
-        });
-        if (res.ok) {
-          const expert = toExpert(res.data);
-          setAllExperts((prev) => [...prev, expert]);
-          setTotal((prev) => prev + 1);
-          // Materialize as a Claude Code subagent file (fire-and-forget)
-          window.cerebro.installer.syncExpert(expert.id).catch(console.error);
-          return expert;
-        }
-      } catch (e) {
-        console.error('Failed to create expert:', e);
+  const createExpert = useCallback(async (input: CreateExpertInput): Promise<Expert | null> => {
+    try {
+      const res: BackendResponse<ApiExpert> = await window.cerebro.invoke({
+        method: 'POST',
+        path: '/experts',
+        body: toApiBody(input),
+      });
+      if (res.ok) {
+        const expert = toExpert(res.data);
+        setAllExperts((prev) => [...prev, expert]);
+        setTotal((prev) => prev + 1);
+        // Materialize as a Claude Code subagent file (fire-and-forget)
+        window.cerebro.installer.syncExpert(expert.id).catch(console.error);
+        return expert;
       }
-      return null;
-    },
-    [],
-  );
+    } catch (e) {
+      console.error('Failed to create expert:', e);
+    }
+    return null;
+  }, []);
 
-  const updateExpert = useCallback(
-    async (id: string, fields: Partial<ApiExpert>) => {
-      try {
-        const res: BackendResponse<ApiExpert> = await window.cerebro.invoke({
-          method: 'PATCH',
-          path: `/experts/${id}`,
-          body: fields,
-        });
-        if (res.ok) {
-          const updated = toExpert(res.data);
-          setAllExperts((prev) => prev.map((e) => (e.id === id ? updated : e)));
-          // Re-materialize the agent file (handles renames + system prompt edits)
-          window.cerebro.installer.syncExpert(updated.id).catch(console.error);
-        }
-      } catch (e) {
-        console.error('Failed to update expert:', e);
+  const updateExpert = useCallback(async (id: string, fields: Partial<ApiExpert>) => {
+    try {
+      const res: BackendResponse<ApiExpert> = await window.cerebro.invoke({
+        method: 'PATCH',
+        path: `/experts/${id}`,
+        body: fields,
+      });
+      if (res.ok) {
+        const updated = toExpert(res.data);
+        setAllExperts((prev) => prev.map((e) => (e.id === id ? updated : e)));
+        // Re-materialize the agent file (handles renames + system prompt edits)
+        window.cerebro.installer.syncExpert(updated.id).catch(console.error);
       }
-    },
-    [],
-  );
+    } catch (e) {
+      console.error('Failed to update expert:', e);
+    }
+  }, []);
 
   const deleteExpert = useCallback(async (id: string) => {
     try {

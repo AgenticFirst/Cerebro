@@ -76,7 +76,9 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
     return {
       data: {
         found: true,
-        ticket_id: String((input.params as Record<string, unknown>).ticket_id ?? '') || syntheticId('dryrun-ticket-'),
+        ticket_id:
+          String((input.params as Record<string, unknown>).ticket_id ?? '') ||
+          syntheticId('dryrun-ticket-'),
         subject: '[dry-run] ticket',
         content: null,
         pipeline: null,
@@ -93,10 +95,21 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
         due_date: null,
         ticket_url: null,
         contacts: [
-          { contact_id: contactId, email: 'dry@example.com', firstname: '[dry-run]', lastname: '[dry-run]' },
+          {
+            contact_id: contactId,
+            email: 'dry@example.com',
+            firstname: '[dry-run]',
+            lastname: '[dry-run]',
+          },
         ],
         companies: [
-          { company_id: syntheticId('dryrun-company-'), name: '[dry-run] Co', domain: 'example.com', source: 'contact', via_contact_id: contactId },
+          {
+            company_id: syntheticId('dryrun-company-'),
+            name: '[dry-run] Co',
+            domain: 'example.com',
+            source: 'contact',
+            via_contact_id: contactId,
+          },
         ],
         error: null,
       },
@@ -105,7 +118,9 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
   },
   hubspot_update_ticket: (input) => ({
     data: {
-      ticket_id: String((input.params as Record<string, unknown>).ticket_id ?? '') || syntheticId('dryrun-ticket-'),
+      ticket_id:
+        String((input.params as Record<string, unknown>).ticket_id ?? '') ||
+        syntheticId('dryrun-ticket-'),
       updated: true,
       updated_fields: [],
       ticket_url: null,
@@ -174,7 +189,12 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
   hubspot_list_lists: () => ({
     data: {
       lists: [
-        { list_id: syntheticId('dryrun-list-'), name: '[dry-run] list', processing_type: 'MANUAL', size: 0 },
+        {
+          list_id: syntheticId('dryrun-list-'),
+          name: '[dry-run] list',
+          processing_type: 'MANUAL',
+          size: 0,
+        },
       ],
       count: 1,
       error: null,
@@ -191,7 +211,9 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
   }),
   hubspot_update_list: (input) => ({
     data: {
-      list_id: String((input.params as Record<string, unknown>).list_id ?? '') || syntheticId('dryrun-list-'),
+      list_id:
+        String((input.params as Record<string, unknown>).list_id ?? '') ||
+        syntheticId('dryrun-list-'),
       updated: true,
       error: null,
     },
@@ -199,7 +221,9 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
   }),
   hubspot_delete_list: (input) => ({
     data: {
-      list_id: String((input.params as Record<string, unknown>).list_id ?? '') || syntheticId('dryrun-list-'),
+      list_id:
+        String((input.params as Record<string, unknown>).list_id ?? '') ||
+        syntheticId('dryrun-list-'),
       deleted: true,
       error: null,
     },
@@ -303,11 +327,17 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
   // LLM-shaped actions. Returning a non-empty string lets `extract`/`classify`
   // downstreams that wire on `result` still receive a populated value.
   ask_ai: () => ({
-    data: { response: '[dry-run] simulated LLM response', result: '[dry-run] simulated LLM response' },
+    data: {
+      response: '[dry-run] simulated LLM response',
+      result: '[dry-run] simulated LLM response',
+    },
     summary: '[dry-run] Would ask the model',
   }),
   model_call: () => ({
-    data: { response: '[dry-run] simulated LLM response', result: '[dry-run] simulated LLM response' },
+    data: {
+      response: '[dry-run] simulated LLM response',
+      result: '[dry-run] simulated LLM response',
+    },
     summary: '[dry-run] Would ask the model',
   }),
   classify: () => ({
@@ -323,11 +353,17 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
     summary: '[dry-run] Would summarize input',
   }),
   run_expert: () => ({
-    data: { response: '[dry-run] simulated expert response', result: '[dry-run] simulated expert response' },
+    data: {
+      response: '[dry-run] simulated expert response',
+      result: '[dry-run] simulated expert response',
+    },
     summary: '[dry-run] Would invoke an expert',
   }),
   expert_step: () => ({
-    data: { response: '[dry-run] simulated expert response', result: '[dry-run] simulated expert response' },
+    data: {
+      response: '[dry-run] simulated expert response',
+      result: '[dry-run] simulated expert response',
+    },
     summary: '[dry-run] Would invoke an expert',
   }),
 
@@ -538,7 +574,7 @@ function validateRequiredParams(
       if (!rendered) {
         throw new Error(
           `Required field "${field}" is empty after template rendering. ` +
-          `Check that upstream steps actually produce the variables you reference.`,
+            `Check that upstream steps actually produce the variables you reference.`,
         );
       }
     }

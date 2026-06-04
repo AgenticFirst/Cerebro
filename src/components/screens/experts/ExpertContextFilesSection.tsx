@@ -102,7 +102,9 @@ export default function ExpertContextFilesSection({ expertId, isLocked = false }
           });
         }
         // 4) Re-materialize the expert's <slug>.md so the parsed text shows up.
-        await window.cerebro.installer.syncExpert(expertId).catch(() => {/* best-effort */});
+        await window.cerebro.installer.syncExpert(expertId).catch(() => {
+          /* best-effort */
+        });
         await refresh();
       } finally {
         setUploading(false);
@@ -119,7 +121,9 @@ export default function ExpertContextFilesSection({ expertId, isLocked = false }
       path: `/experts/${expertId}/context-files/${cf.id}`,
       body: { kind: next },
     });
-    await window.cerebro.installer.syncExpert(expertId).catch(() => {/* best-effort */});
+    await window.cerebro.installer.syncExpert(expertId).catch(() => {
+      /* best-effort */
+    });
     await refresh();
   };
 
@@ -128,7 +132,9 @@ export default function ExpertContextFilesSection({ expertId, isLocked = false }
       method: 'DELETE',
       path: `/experts/${expertId}/context-files/${cf.id}`,
     });
-    await window.cerebro.installer.syncExpert(expertId).catch(() => {/* best-effort */});
+    await window.cerebro.installer.syncExpert(expertId).catch(() => {
+      /* best-effort */
+    });
     await refresh();
   };
 

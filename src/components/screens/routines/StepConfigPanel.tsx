@@ -1,22 +1,24 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { X, Shield, Info, HelpCircle, AlertCircle, Plus, ChevronDown, Search, Check } from 'lucide-react';
+import {
+  X,
+  Shield,
+  Info,
+  HelpCircle,
+  AlertCircle,
+  Plus,
+  ChevronDown,
+  Search,
+  Check,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Node } from '@xyflow/react';
 import type { RoutineStepData } from '../../../utils/dag-flow-mapping';
 import { ACTION_META, resolveActionType } from '../../../utils/step-defaults';
-import {
-  getAllOutputs,
-  sanitizeVarName,
-  uniqueVarName,
-} from '../../../utils/action-outputs';
+import { getAllOutputs, sanitizeVarName, uniqueVarName } from '../../../utils/action-outputs';
 import { useExperts } from '../../../context/ExpertContext';
 import { useFiles } from '../../../context/FilesContext';
-import {
-  CLAUDE_MODELS,
-  DEFAULT_CLAUDE_MODEL,
-  findClaudeModel,
-} from '../../../utils/claude-models';
+import { CLAUDE_MODELS, DEFAULT_CLAUDE_MODEL, findClaudeModel } from '../../../utils/claude-models';
 import Toggle from '../../ui/Toggle';
 import Tooltip from '../../ui/Tooltip';
 import VariablesHelpModal from './VariablesHelpModal';
@@ -143,8 +145,8 @@ function VariableChips({
   if (mappings.length === 0) {
     return (
       <p className="text-[11px] text-text-tertiary leading-relaxed">
-        Nothing connected yet. Drag a line from another step into this one and
-        its output will appear here as a chip you can click to insert.
+        Nothing connected yet. Drag a line from another step into this one and its output will
+        appear here as a chip you can click to insert.
       </p>
     );
   }
@@ -157,11 +159,8 @@ function VariableChips({
         {mappings.map((m, i) => {
           const token = `{{${m.targetField}}}`;
           const source = stepsById.get(m.sourceStepId);
-          const outputs = source
-            ? getAllOutputs(resolveActionType(source.actionType))
-            : [];
-          const fieldLabel =
-            outputs.find((o) => o.field === m.sourceField)?.label ?? m.sourceField;
+          const outputs = source ? getAllOutputs(resolveActionType(source.actionType)) : [];
+          const fieldLabel = outputs.find((o) => o.field === m.sourceField)?.label ?? m.sourceField;
           const tip = source
             ? `${source.name} → ${fieldLabel}`
             : `From ${m.sourceStepId}.${m.sourceField}`;
@@ -288,20 +287,12 @@ function FieldError({ text }: { text: string }) {
  * as a labeled "custom" entry so the step config doesn't silently flip to
  * the default and lose what the user configured.
  */
-function ModelPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (id: string) => void;
-}) {
+function ModelPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
   const known = findClaudeModel(value);
   const selected = known?.id ?? (value ? '__custom__' : DEFAULT_CLAUDE_MODEL);
   const description =
     known?.description ??
-    (value
-      ? 'Custom model — not in the built-in list.'
-      : 'Balanced speed and quality');
+    (value ? 'Custom model — not in the built-in list.' : 'Balanced speed and quality');
   return (
     <div>
       <FieldLabel text="Model" hint="fieldModel" />
@@ -318,9 +309,7 @@ function ModelPicker({
             {m.name} — {m.description}
           </option>
         ))}
-        {!known && value && (
-          <option value="__custom__">{value} (custom)</option>
-        )}
+        {!known && value && <option value="__custom__">{value} (custom)</option>}
       </select>
       <p className="mt-1 text-[11px] text-text-tertiary">{description}</p>
     </div>
@@ -339,9 +328,7 @@ function AskAiParams({ params, onChange, step, sourceSteps, onAddMapping }: PWit
   // makes typing resilient. We still propagate every change upward so
   // the node preview + autosave pick it up after the debounce fires.
   const [prompt, setPrompt] = useState((params.prompt as string) ?? '');
-  const [systemPrompt, setSystemPrompt] = useState(
-    (params.system_prompt as string) ?? '',
-  );
+  const [systemPrompt, setSystemPrompt] = useState((params.system_prompt as string) ?? '');
   // `paramsRef` lets the keyword chip inserter read the latest `params`
   // without re-creating `insertAtCursor` every render (which would pull
   // a stale closure through the `onFocus` ref).
@@ -399,19 +386,24 @@ function AskAiParams({ params, onChange, step, sourceSteps, onAddMapping }: PWit
           ref={promptRef}
           value={prompt}
           onChange={(e) => handlePromptChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'prompt'; }}
+          onFocus={() => {
+            lastFocused.current = 'prompt';
+          }}
           onBlur={() => setPromptTouched(true)}
           rows={5}
           placeholder="e.g. Summarize the email below in two sentences."
           aria-invalid={showPromptError}
-          className={clsx(textareaCls, showPromptError && 'border-red-500/60 focus:border-red-500/60')}
+          className={clsx(
+            textareaCls,
+            showPromptError && 'border-red-500/60 focus:border-red-500/60',
+          )}
         />
         {showPromptError ? (
           <FieldError text="Required — the step will fail without a prompt." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Write the instruction in plain English. If you&rsquo;ve connected
-            another step, click its chip below to pull its output in.
+            Write the instruction in plain English. If you&rsquo;ve connected another step, click
+            its chip below to pull its output in.
           </p>
         )}
       </div>
@@ -429,14 +421,16 @@ function AskAiParams({ params, onChange, step, sourceSteps, onAddMapping }: PWit
           ref={systemRef}
           value={systemPrompt}
           onChange={(e) => handleSystemChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'system'; }}
+          onFocus={() => {
+            lastFocused.current = 'system';
+          }}
           rows={3}
           placeholder="e.g. You are a terse analyst. Reply with bullet points only."
           className={textareaCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Sets the AI&rsquo;s role or tone. Leave empty to use the subagent&rsquo;s
-          default behavior.
+          Sets the AI&rsquo;s role or tone. Leave empty to use the subagent&rsquo;s default
+          behavior.
         </p>
       </div>
 
@@ -451,13 +445,15 @@ function AskAiParams({ params, onChange, step, sourceSteps, onAddMapping }: PWit
           className={selectCls}
         >
           {subagentChoices.map((c) => (
-            <option key={c.slug} value={c.slug}>{c.label}</option>
+            <option key={c.slug} value={c.slug}>
+              {c.label}
+            </option>
           ))}
           {isCustom && <option value="__custom__">{agent} (custom)</option>}
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Which Claude Code subagent runs this step. &ldquo;Cerebro&rdquo; is the
-          default generalist; pick an expert to use its own system prompt and tools.
+          Which Claude Code subagent runs this step. &ldquo;Cerebro&rdquo; is the default
+          generalist; pick an expert to use its own system prompt and tools.
         </p>
       </div>
 
@@ -571,9 +567,7 @@ function ExpertPicker({
     return (
       <>
         <span className="text-text-primary">{c.name}</span>
-        {tags.length > 0 && (
-          <span className="text-text-tertiary"> — {tags.join(' · ')}</span>
-        )}
+        {tags.length > 0 && <span className="text-text-tertiary"> — {tags.join(' · ')}</span>}
       </>
     );
   };
@@ -592,13 +586,11 @@ function ExpertPicker({
         )}
       >
         <span className={clsx('truncate', !selected && 'text-text-tertiary')}>
-          {selected ? (
-            renderLabel(selected)
-          ) : choices.length === 0 ? (
-            'No experts yet — create one on the Experts screen'
-          ) : (
-            'Pick an expert…'
-          )}
+          {selected
+            ? renderLabel(selected)
+            : choices.length === 0
+              ? 'No experts yet — create one on the Experts screen'
+              : 'Pick an expert…'}
         </span>
         <ChevronDown
           size={14}
@@ -652,10 +644,7 @@ function ExpertPicker({
                   >
                     <Check
                       size={12}
-                      className={clsx(
-                        'flex-shrink-0',
-                        isSel ? 'text-accent' : 'text-transparent',
-                      )}
+                      className={clsx('flex-shrink-0', isSel ? 'text-accent' : 'text-transparent')}
                     />
                     <span className="truncate">{renderLabel(c)}</span>
                   </button>
@@ -677,9 +666,7 @@ function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: 
   // { task, context, expert_id, max_turns } keys; read them as fallbacks so
   // saved configs don't appear blank after the param rename, but only write
   // the new canonical keys back (matches what the engine action reads).
-  const [prompt, setPrompt] = useState(
-    (params.prompt as string) ?? (params.task as string) ?? '',
-  );
+  const [prompt, setPrompt] = useState((params.prompt as string) ?? (params.task as string) ?? '');
   const [additionalContext, setAdditionalContext] = useState(
     (params.additionalContext as string) ?? (params.context as string) ?? '',
   );
@@ -716,8 +703,7 @@ function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: 
     });
   };
 
-  const expertId =
-    (params.expertId as string) ?? (params.expert_id as string) ?? '';
+  const expertId = (params.expertId as string) ?? (params.expert_id as string) ?? '';
   // Show every expert the context surfaces (ExpertContext already hides
   // teams when the feature flag is off) so users never stare at an empty
   // dropdown. Disabled experts stay visible with a tag — the user may be
@@ -731,8 +717,7 @@ function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: 
   }));
   const expertPresent = expertChoices.some((c) => c.id === expertId);
 
-  const maxTurns =
-    (params.maxTurns as number) ?? (params.max_turns as number) ?? 10;
+  const maxTurns = (params.maxTurns as number) ?? (params.max_turns as number) ?? 10;
 
   const [promptTouched, setPromptTouched] = useState(false);
   const promptEmpty = prompt.trim().length === 0;
@@ -762,9 +747,7 @@ function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: 
               : expertChoices
           }
           invalid={showExpertError}
-          onChange={(id) =>
-            onChange({ ...paramsRef.current, expertId: id })
-          }
+          onChange={(id) => onChange({ ...paramsRef.current, expertId: id })}
           onBlur={() => setExpertTouched(true)}
         />
         {showExpertError ? (
@@ -798,8 +781,8 @@ function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: 
           <FieldError text="Required — the expert needs a task description." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Describe the task in plain English. If you&rsquo;ve connected
-            another step, click its chip below to pull its output in.
+            Describe the task in plain English. If you&rsquo;ve connected another step, click its
+            chip below to pull its output in.
           </p>
         )}
       </div>
@@ -825,8 +808,8 @@ function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: 
           className={textareaCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Background prepended to the task. Good for tone, constraints, or
-          reference material the expert should keep in mind.
+          Background prepended to the task. Good for tone, constraints, or reference material the
+          expert should keep in mind.
         </p>
       </div>
 
@@ -846,8 +829,8 @@ function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: 
           className={inputCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          How many reasoning + tool-use rounds the expert gets before stopping.
-          Higher is more thorough but slower and more expensive.
+          How many reasoning + tool-use rounds the expert gets before stopping. Higher is more
+          thorough but slower and more expensive.
         </p>
       </div>
 
@@ -897,8 +880,7 @@ function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: P
 
   // Categories are persisted on params — no local state. Edits here aren't
   // free-text typing so the debounce-eats-keystrokes risk doesn't apply.
-  const rawCategories =
-    (params.categories as Array<Partial<CategoryItem>> | undefined) ?? [];
+  const rawCategories = (params.categories as Array<Partial<CategoryItem>> | undefined) ?? [];
   const categories: CategoryItem[] = rawCategories.map((c, i) => ({
     id: c.id ?? `cat-${i}`,
     label: c.label ?? '',
@@ -914,10 +896,7 @@ function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: P
   };
 
   const addCategory = () => {
-    writeCategories([
-      ...categories,
-      { id: crypto.randomUUID(), label: '', description: '' },
-    ]);
+    writeCategories([...categories, { id: crypto.randomUUID(), label: '', description: '' }]);
   };
 
   const removeCategory = (index: number) => {
@@ -940,16 +919,14 @@ function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: P
   const [categoriesTouched, setCategoriesTouched] = useState(false);
   const hasAnyCategory = categories.length > 0;
   const hasBlankLabel = categories.some((c) => c.label.trim().length === 0);
-  const showCategoriesError =
-    categoriesTouched && (!hasAnyCategory || hasBlankLabel);
+  const showCategoriesError = categoriesTouched && (!hasAnyCategory || hasBlankLabel);
 
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Sorts text into one of the categories you define. The AI reads the
-          input, picks the best fit, and returns the category label along with
-          a confidence rating and short reasoning.
+          Sorts text into one of the categories you define. The AI reads the input, picks the best
+          fit, and returns the category label along with a confidence rating and short reasoning.
         </p>
       </div>
 
@@ -972,8 +949,8 @@ function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: P
           <FieldError text="Required — the step needs some text to classify." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            The text the AI will classify. Usually a short instruction plus the
-            content from a connected step — click a chip below to insert it.
+            The text the AI will classify. Usually a short instruction plus the content from a
+            connected step — click a chip below to insert it.
           </p>
         )}
       </div>
@@ -1010,8 +987,7 @@ function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: P
         ) : (
           <div className="space-y-2">
             {categories.map((cat, i) => {
-              const labelMissing =
-                categoriesTouched && cat.label.trim().length === 0;
+              const labelMissing = categoriesTouched && cat.label.trim().length === 0;
               return (
                 <div
                   key={cat.id}
@@ -1047,9 +1023,7 @@ function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: P
                       <X size={12} />
                     </button>
                   </div>
-                  {labelMissing && (
-                    <FieldError text="Each category needs a name." />
-                  )}
+                  {labelMissing && <FieldError text="Each category needs a name." />}
                 </div>
               );
             })}
@@ -1067,9 +1041,8 @@ function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: P
         ) : (
           categories.length > 0 && (
             <p className="mt-1 text-[11px] text-text-tertiary">
-              The AI must pick exactly one. Clear, non-overlapping names work
-              best. Descriptions are optional but sharpen the choice when two
-              categories are close.
+              The AI must pick exactly one. Clear, non-overlapping names work best. Descriptions are
+              optional but sharpen the choice when two categories are close.
             </p>
           )
         )}
@@ -1086,13 +1059,15 @@ function ClassifyParams({ params, onChange, step, sourceSteps, onAddMapping }: P
           className={selectCls}
         >
           {subagentChoices.map((c) => (
-            <option key={c.slug} value={c.slug}>{c.label}</option>
+            <option key={c.slug} value={c.slug}>
+              {c.label}
+            </option>
           ))}
           {isCustom && <option value="__custom__">{agent} (custom)</option>}
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Which Claude Code subagent does the classification. &ldquo;Cerebro&rdquo;
-          is the default; switch to an expert to use its own system prompt.
+          Which Claude Code subagent does the classification. &ldquo;Cerebro&rdquo; is the default;
+          switch to an expert to use its own system prompt.
         </p>
       </div>
 
@@ -1147,8 +1122,7 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
     });
   };
 
-  const rawSchema =
-    (params.schema as Array<Partial<SchemaField>> | undefined) ?? [];
+  const rawSchema = (params.schema as Array<Partial<SchemaField>> | undefined) ?? [];
   const schema: SchemaField[] = rawSchema.map((f, i) => ({
     id: f.id ?? `field-${i}`,
     name: f.name ?? '',
@@ -1156,8 +1130,7 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
     description: f.description ?? '',
   }));
 
-  const writeSchema = (next: SchemaField[]) =>
-    onChange({ ...paramsRef.current, schema: next });
+  const writeSchema = (next: SchemaField[]) => onChange({ ...paramsRef.current, schema: next });
 
   const updateField = (index: number, field: 'name' | 'type' | 'description', value: string) => {
     const updated = schema.map((f, i) => (i === index ? { ...f, [field]: value } : f));
@@ -1197,9 +1170,8 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Pulls structured fields out of messy text. You describe what to find;
-          the AI returns a tidy object with each field filled in (or null when
-          the text doesn&rsquo;t mention it).
+          Pulls structured fields out of messy text. You describe what to find; the AI returns a
+          tidy object with each field filled in (or null when the text doesn&rsquo;t mention it).
         </p>
       </div>
 
@@ -1222,8 +1194,8 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
           <FieldError text="Required — the step needs some text to pull fields from." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            The text to read. Usually a short instruction plus content from a
-            connected step — click a chip below to insert it.
+            The text to read. Usually a short instruction plus content from a connected step — click
+            a chip below to insert it.
           </p>
         )}
       </div>
@@ -1260,8 +1232,7 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
         ) : (
           <div className="space-y-2">
             {schema.map((field, i) => {
-              const nameMissing =
-                schemaTouched && field.name.trim().length === 0;
+              const nameMissing = schemaTouched && field.name.trim().length === 0;
               return (
                 <div
                   key={field.id}
@@ -1288,7 +1259,9 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
                           className={clsx(selectCls, 'w-28 flex-shrink-0')}
                         >
                           {SCHEMA_FIELD_TYPES.map((t) => (
-                            <option key={t.value} value={t.value}>{t.label}</option>
+                            <option key={t.value} value={t.value}>
+                              {t.label}
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -1309,9 +1282,7 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
                       <X size={12} />
                     </button>
                   </div>
-                  {nameMissing && (
-                    <FieldError text="Each field needs a name." />
-                  )}
+                  {nameMissing && <FieldError text="Each field needs a name." />}
                 </div>
               );
             })}
@@ -1329,8 +1300,8 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
         ) : (
           schema.length > 0 && (
             <p className="mt-1 text-[11px] text-text-tertiary">
-              Use short snake_case names (e.g. <code>due_date</code>). Fields
-              the AI can&rsquo;t find come back as <code>null</code>.
+              Use short snake_case names (e.g. <code>due_date</code>). Fields the AI can&rsquo;t
+              find come back as <code>null</code>.
             </p>
           )
         )}
@@ -1347,13 +1318,15 @@ function ExtractParams({ params, onChange, step, sourceSteps, onAddMapping }: PW
           className={selectCls}
         >
           {subagentChoices.map((c) => (
-            <option key={c.slug} value={c.slug}>{c.label}</option>
+            <option key={c.slug} value={c.slug}>
+              {c.label}
+            </option>
           ))}
           {isCustom && <option value="__custom__">{agent} (custom)</option>}
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Which Claude Code subagent does the extraction. &ldquo;Cerebro&rdquo;
-          is the default; switch to an expert to use its own system prompt.
+          Which Claude Code subagent does the extraction. &ldquo;Cerebro&rdquo; is the default;
+          switch to an expert to use its own system prompt.
         </p>
       </div>
 
@@ -1412,8 +1385,8 @@ function SummarizeParams({ params, onChange, step, sourceSteps }: PWithStep) {
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Shortens text from a connected step. Pick which variable to read and
-          how long the summary should be.
+          Shortens text from a connected step. Pick which variable to read and how long the summary
+          should be.
         </p>
       </div>
 
@@ -1422,8 +1395,8 @@ function SummarizeParams({ params, onChange, step, sourceSteps }: PWithStep) {
         {!hasMappings ? (
           <div className="rounded-lg border border-dashed border-border-subtle bg-bg-base/40 px-3 py-3 text-center">
             <p className="text-[11px] text-text-tertiary">
-              Connect another step into this one first. Its output will appear
-              here as a variable you can pick.
+              Connect another step into this one first. Its output will appear here as a variable
+              you can pick.
             </p>
           </div>
         ) : (
@@ -1440,15 +1413,14 @@ function SummarizeParams({ params, onChange, step, sourceSteps }: PWithStep) {
             <option value="">Pick a source…</option>
             {mappings.map((m) => {
               const source = stepsById.get(m.sourceStepId);
-              const outputs = source
-                ? getAllOutputs(resolveActionType(source.actionType))
-                : [];
+              const outputs = source ? getAllOutputs(resolveActionType(source.actionType)) : [];
               const fieldLabel =
                 outputs.find((o) => o.field === m.sourceField)?.label ?? m.sourceField;
               const suffix = source ? ` — from ${source.name} · ${fieldLabel}` : '';
               return (
                 <option key={m.targetField} value={m.targetField}>
-                  {m.targetField}{suffix}
+                  {m.targetField}
+                  {suffix}
                 </option>
               );
             })}
@@ -1458,8 +1430,8 @@ function SummarizeParams({ params, onChange, step, sourceSteps }: PWithStep) {
           <FieldError text="Required — pick which variable to summarize." />
         ) : hasMappings ? (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Variables come from steps connected into this one. Each is the
-            output field that upstream step produced.
+            Variables come from steps connected into this one. Each is the output field that
+            upstream step produced.
           </p>
         ) : null}
       </div>
@@ -1499,8 +1471,7 @@ function SummarizeParams({ params, onChange, step, sourceSteps }: PWithStep) {
           className={inputCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Nudges the AI to emphasize certain aspects. Leave empty for a
-          balanced overall summary.
+          Nudges the AI to emphasize certain aspects. Leave empty for a balanced overall summary.
         </p>
       </div>
 
@@ -1515,13 +1486,15 @@ function SummarizeParams({ params, onChange, step, sourceSteps }: PWithStep) {
           className={selectCls}
         >
           {subagentChoices.map((c) => (
-            <option key={c.slug} value={c.slug}>{c.label}</option>
+            <option key={c.slug} value={c.slug}>
+              {c.label}
+            </option>
           ))}
           {isCustom && <option value="__custom__">{agent} (custom)</option>}
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Which Claude Code subagent writes the summary. &ldquo;Cerebro&rdquo;
-          is the default; switch to an expert to use its own system prompt.
+          Which Claude Code subagent writes the summary. &ldquo;Cerebro&rdquo; is the default;
+          switch to an expert to use its own system prompt.
         </p>
       </div>
 
@@ -1580,10 +1553,9 @@ function SearchMemoryParams({ params, onChange, step, sourceSteps, onAddMapping 
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Looks up notes saved in an expert&rsquo;s memory. Pick &ldquo;Cerebro&rdquo;
-          to search the global notebook, or an expert to search just their own
-          notes. Claude Code reads the markdown files and returns relevant
-          matches.
+          Looks up notes saved in an expert&rsquo;s memory. Pick &ldquo;Cerebro&rdquo; to search the
+          global notebook, or an expert to search just their own notes. Claude Code reads the
+          markdown files and returns relevant matches.
         </p>
       </div>
 
@@ -1597,14 +1569,16 @@ function SearchMemoryParams({ params, onChange, step, sourceSteps, onAddMapping 
           rows={3}
           placeholder="e.g. What did I learn about our pricing tests?"
           aria-invalid={showQueryError}
-          className={clsx(textareaCls, showQueryError && 'border-red-500/60 focus:border-red-500/60')}
+          className={clsx(
+            textareaCls,
+            showQueryError && 'border-red-500/60 focus:border-red-500/60',
+          )}
         />
         {showQueryError ? (
           <FieldError text="Required — enter what you want to recall." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Plain English works best. Use chips below to weave in output from a
-            connected step.
+            Plain English works best. Use chips below to weave in output from a connected step.
           </p>
         )}
       </div>
@@ -1627,13 +1601,15 @@ function SearchMemoryParams({ params, onChange, step, sourceSteps, onAddMapping 
           className={selectCls}
         >
           {subagentChoices.map((c) => (
-            <option key={c.slug} value={c.slug}>{c.label}</option>
+            <option key={c.slug} value={c.slug}>
+              {c.label}
+            </option>
           ))}
           {isCustom && <option value="__custom__">{agent} (custom)</option>}
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          &ldquo;Cerebro&rdquo; searches your shared global notes. Pick an expert
-          to search only their own notebook.
+          &ldquo;Cerebro&rdquo; searches your shared global notes. Pick an expert to search only
+          their own notebook.
         </p>
       </div>
 
@@ -1701,9 +1677,8 @@ function SearchWebParams({ params, onChange, step, sourceSteps, onAddMapping }: 
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Searches the web using Claude Code&rsquo;s built-in tools. Returns a
-          list of titles, URLs, and snippets — optionally with a 1-3 sentence
-          synthesized answer.
+          Searches the web using Claude Code&rsquo;s built-in tools. Returns a list of titles, URLs,
+          and snippets — optionally with a 1-3 sentence synthesized answer.
         </p>
       </div>
 
@@ -1717,14 +1692,17 @@ function SearchWebParams({ params, onChange, step, sourceSteps, onAddMapping }: 
           rows={3}
           placeholder="e.g. Latest CPI release for Q1 2026"
           aria-invalid={showQueryError}
-          className={clsx(textareaCls, showQueryError && 'border-red-500/60 focus:border-red-500/60')}
+          className={clsx(
+            textareaCls,
+            showQueryError && 'border-red-500/60 focus:border-red-500/60',
+          )}
         />
         {showQueryError ? (
           <FieldError text="Required — web search needs a query." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Write the search exactly how you&rsquo;d type it into Google. Click
-            a variable chip below to splice in an upstream step&rsquo;s output.
+            Write the search exactly how you&rsquo;d type it into Google. Click a variable chip
+            below to splice in an upstream step&rsquo;s output.
           </p>
         )}
       </div>
@@ -1752,8 +1730,8 @@ function SearchWebParams({ params, onChange, step, sourceSteps, onAddMapping }: 
           className={inputCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          How many links to bring back. Keep this small — downstream steps
-          usually only need the top few.
+          How many links to bring back. Keep this small — downstream steps usually only need the top
+          few.
         </p>
       </div>
 
@@ -1771,8 +1749,7 @@ function SearchWebParams({ params, onChange, step, sourceSteps, onAddMapping }: 
           />
         </div>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          When on, Claude also returns a short synthesis of the top results
-          alongside the raw list.
+          When on, Claude also returns a short synthesis of the top results alongside the raw list.
         </p>
       </div>
 
@@ -1826,9 +1803,9 @@ function SearchDocumentsParams({ params, onChange, step, sourceSteps, onAddMappi
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Asks Claude Code to answer your query using files from a Files bucket.
-          Upload documents to a bucket on the Files screen, then pick it here —
-          Claude reads the files directly, no vector setup required.
+          Asks Claude Code to answer your query using files from a Files bucket. Upload documents to
+          a bucket on the Files screen, then pick it here — Claude reads the files directly, no
+          vector setup required.
         </p>
       </div>
 
@@ -1842,14 +1819,17 @@ function SearchDocumentsParams({ params, onChange, step, sourceSteps, onAddMappi
           rows={3}
           placeholder="e.g. Summarize the termination clause across all contracts."
           aria-invalid={showQueryError}
-          className={clsx(textareaCls, showQueryError && 'border-red-500/60 focus:border-red-500/60')}
+          className={clsx(
+            textareaCls,
+            showQueryError && 'border-red-500/60 focus:border-red-500/60',
+          )}
         />
         {showQueryError ? (
           <FieldError text="Required — describe what to pull from the documents." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Describe the question or the passage you want. Chips below let you
-            drop in output from an upstream step.
+            Describe the question or the passage you want. Chips below let you drop in output from
+            an upstream step.
           </p>
         )}
       </div>
@@ -1866,8 +1846,8 @@ function SearchDocumentsParams({ params, onChange, step, sourceSteps, onAddMappi
         {!hasBuckets ? (
           <div className="rounded-lg border border-dashed border-border-subtle bg-bg-base/40 px-3 py-3 text-center">
             <p className="text-[11px] text-text-tertiary">
-              No buckets yet. Head to the Files screen, create a bucket, and
-              upload the documents you want searched.
+              No buckets yet. Head to the Files screen, create a bucket, and upload the documents
+              you want searched.
             </p>
           </div>
         ) : (
@@ -1883,7 +1863,9 @@ function SearchDocumentsParams({ params, onChange, step, sourceSteps, onAddMappi
           >
             <option value="">Pick a bucket…</option>
             {buckets.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
             ))}
           </select>
         )}
@@ -1891,8 +1873,7 @@ function SearchDocumentsParams({ params, onChange, step, sourceSteps, onAddMappi
           <FieldError text="Required — choose which bucket to search." />
         ) : hasBuckets ? (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            One bucket per step. Use separate Search Documents nodes to span
-            multiple buckets.
+            One bucket per step. Use separate Search Documents nodes to span multiple buckets.
           </p>
         ) : null}
       </div>
@@ -1982,9 +1963,9 @@ function SaveToMemoryParams({ params, onChange, step, sourceSteps, onAddMapping 
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Appends an entry to an auto-dated markdown file in an expert&rsquo;s
-          memory. Pick &ldquo;Cerebro&rdquo; for shared global notes, or an
-          expert to write into their own notebook.
+          Appends an entry to an auto-dated markdown file in an expert&rsquo;s memory. Pick
+          &ldquo;Cerebro&rdquo; for shared global notes, or an expert to write into their own
+          notebook.
         </p>
       </div>
 
@@ -1998,14 +1979,17 @@ function SaveToMemoryParams({ params, onChange, step, sourceSteps, onAddMapping 
           rows={4}
           placeholder="e.g. {{ask_ai.response}} — or type the note yourself."
           aria-invalid={showContentError}
-          className={clsx(textareaCls, showContentError && 'border-red-500/60 focus:border-red-500/60')}
+          className={clsx(
+            textareaCls,
+            showContentError && 'border-red-500/60 focus:border-red-500/60',
+          )}
         />
         {showContentError ? (
           <FieldError text="Required — nothing to save without content." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Most often you&rsquo;ll click a chip below to reference an upstream
-            step&rsquo;s output. Plain text works too.
+            Most often you&rsquo;ll click a chip below to reference an upstream step&rsquo;s output.
+            Plain text works too.
           </p>
         )}
       </div>
@@ -2042,9 +2026,8 @@ function SaveToMemoryParams({ params, onChange, step, sourceSteps, onAddMapping 
           })}
         </div>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          &ldquo;Distill first&rdquo; runs Claude to convert the content into a
-          bulleted fact list before saving — useful when the source is a long
-          passage.
+          &ldquo;Distill first&rdquo; runs Claude to convert the content into a bulleted fact list
+          before saving — useful when the source is a long passage.
         </p>
       </div>
 
@@ -2072,13 +2055,15 @@ function SaveToMemoryParams({ params, onChange, step, sourceSteps, onAddMapping 
           className={selectCls}
         >
           {subagentChoices.map((c) => (
-            <option key={c.slug} value={c.slug}>{c.label}</option>
+            <option key={c.slug} value={c.slug}>
+              {c.label}
+            </option>
           ))}
           {isCustom && <option value="__custom__">{agent} (custom)</option>}
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Writes into <code className="text-text-secondary">routines/&lt;today&gt;.md</code>
-          {' '}under that agent&rsquo;s memory directory.
+          Writes into <code className="text-text-secondary">routines/&lt;today&gt;.md</code> under
+          that agent&rsquo;s memory directory.
         </p>
       </div>
 
@@ -2143,7 +2128,9 @@ function HttpRequestParams({ params, onChange, step, sourceSteps, onAddMapping }
   const urlRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const headerRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const lastFocused = useRef<{ kind: 'url' | 'body' | 'header'; headerKey?: string }>({ kind: 'url' });
+  const lastFocused = useRef<{ kind: 'url' | 'body' | 'header'; headerKey?: string }>({
+    kind: 'url',
+  });
 
   const headers = (params.headers as { key: string; value: string }[]) ?? [];
   const method = ((params.method as string) ?? 'GET').toUpperCase();
@@ -2229,8 +2216,8 @@ function HttpRequestParams({ params, onChange, step, sourceSteps, onAddMapping }
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5 text-[11px] text-text-secondary leading-relaxed">
         Call any REST API. Method, URL, headers, and body support{' '}
-        <span className="font-mono text-accent">{'{{variables}}'}</span> from
-        connected steps. Private/internal addresses are blocked for safety.
+        <span className="font-mono text-accent">{'{{variables}}'}</span> from connected steps.
+        Private/internal addresses are blocked for safety.
       </div>
 
       <div className="flex gap-2">
@@ -2254,7 +2241,9 @@ function HttpRequestParams({ params, onChange, step, sourceSteps, onAddMapping }
             ref={urlRef}
             value={url}
             onChange={(e) => handleUrlChange(e.target.value)}
-            onFocus={() => { lastFocused.current = { kind: 'url' }; }}
+            onFocus={() => {
+              lastFocused.current = { kind: 'url' };
+            }}
             onBlur={() => setUrlTouched(true)}
             placeholder="https://api.example.com/users/{{previous.id}}"
             aria-invalid={showUrlError}
@@ -2266,8 +2255,8 @@ function HttpRequestParams({ params, onChange, step, sourceSteps, onAddMapping }
         <FieldError text="Required — the request needs a URL." />
       ) : (
         <p className="-mt-3 text-[11px] text-text-tertiary">
-          Full URL the request should target. Click a variable chip below to
-          drop it into the URL or body.
+          Full URL the request should target. Click a variable chip below to drop it into the URL or
+          body.
         </p>
       )}
 
@@ -2290,7 +2279,9 @@ function HttpRequestParams({ params, onChange, step, sourceSteps, onAddMapping }
                 }}
                 value={h.key ?? ''}
                 onChange={(e) => updateHeader(i, 'key', e.target.value)}
-                onFocus={() => { lastFocused.current = { kind: 'header', headerKey: `key:${i}` }; }}
+                onFocus={() => {
+                  lastFocused.current = { kind: 'header', headerKey: `key:${i}` };
+                }}
                 placeholder="Header name (e.g. Authorization)"
                 className={`${inputCls} flex-1`}
               />
@@ -2301,7 +2292,9 @@ function HttpRequestParams({ params, onChange, step, sourceSteps, onAddMapping }
                 }}
                 value={h.value ?? ''}
                 onChange={(e) => updateHeader(i, 'value', e.target.value)}
-                onFocus={() => { lastFocused.current = { kind: 'header', headerKey: `value:${i}` }; }}
+                onFocus={() => {
+                  lastFocused.current = { kind: 'header', headerKey: `value:${i}` };
+                }}
                 placeholder="Value (variables allowed)"
                 className={`${inputCls} flex-1`}
               />
@@ -2324,8 +2317,8 @@ function HttpRequestParams({ params, onChange, step, sourceSteps, onAddMapping }
           + Add header
         </button>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Both name and value accept variables. Content-Type is set to JSON
-          automatically when a body is present on non-GET requests.
+          Both name and value accept variables. Content-Type is set to JSON automatically when a
+          body is present on non-GET requests.
         </p>
       </div>
 
@@ -2336,7 +2329,9 @@ function HttpRequestParams({ params, onChange, step, sourceSteps, onAddMapping }
             ref={bodyRef}
             value={body}
             onChange={(e) => handleBodyChange(e.target.value)}
-            onFocus={() => { lastFocused.current = { kind: 'body' }; }}
+            onFocus={() => {
+              lastFocused.current = { kind: 'body' };
+            }}
             rows={4}
             placeholder='{"user_id": "{{previous.id}}"}'
             className={`${textareaCls} font-mono`}
@@ -2386,9 +2381,12 @@ function HttpRequestParams({ params, onChange, step, sourceSteps, onAddMapping }
       <div>
         <FieldLabel text="Timeout (seconds)" hint="fieldTimeoutSeconds" />
         <input
-          type="number" min={1}
+          type="number"
+          min={1}
           value={(params.timeout as number) ?? 30}
-          onChange={(e) => onChange({ ...paramsRef.current, timeout: parseInt(e.target.value) || 30 })}
+          onChange={(e) =>
+            onChange({ ...paramsRef.current, timeout: parseInt(e.target.value) || 30 })
+          }
           className={inputCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
@@ -2448,9 +2446,8 @@ function RunCommandParams({ params, onChange, step, sourceSteps, onAddMapping }:
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5 text-[11px] text-text-secondary leading-relaxed">
-        Runs a shell command in the background. Only a curated list is allowed
-        — no arbitrary binaries, no shell injection. Arguments and working
-        directory support{' '}
+        Runs a shell command in the background. Only a curated list is allowed — no arbitrary
+        binaries, no shell injection. Arguments and working directory support{' '}
         <span className="font-mono text-accent">{'{{variables}}'}</span>.
       </div>
 
@@ -2465,11 +2462,16 @@ function RunCommandParams({ params, onChange, step, sourceSteps, onAddMapping }:
           }}
           onBlur={() => setCommandTouched(true)}
           aria-invalid={showCommandError}
-          className={clsx(selectCls, showCommandError && 'border-red-500/60 focus:border-red-500/60')}
+          className={clsx(
+            selectCls,
+            showCommandError && 'border-red-500/60 focus:border-red-500/60',
+          )}
         >
           <option value="">Pick a command…</option>
           {ALLOWED_RUN_COMMANDS.map((c) => (
-            <option key={c} value={c}>{c}</option>
+            <option key={c} value={c}>
+              {c}
+            </option>
           ))}
           {isCustomCommand && <option value="__custom__">{command} (not allowed)</option>}
         </select>
@@ -2495,15 +2497,16 @@ function RunCommandParams({ params, onChange, step, sourceSteps, onAddMapping }:
           ref={argsRef}
           value={args}
           onChange={(e) => handleArgsChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'args'; }}
+          onFocus={() => {
+            lastFocused.current = 'args';
+          }}
           rows={2}
-          placeholder='e.g. status --short   •   clone {{prev.repo_url}} /tmp/out'
+          placeholder="e.g. status --short   •   clone {{prev.repo_url}} /tmp/out"
           className={`${textareaCls} font-mono`}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Space-separated. Use <span className="font-mono">"quotes"</span> for
-          arguments that contain spaces. Variables from connected steps
-          expand before running.
+          Space-separated. Use <span className="font-mono">"quotes"</span> for arguments that
+          contain spaces. Variables from connected steps expand before running.
         </p>
       </div>
 
@@ -2520,22 +2523,26 @@ function RunCommandParams({ params, onChange, step, sourceSteps, onAddMapping }:
           ref={workingDirRef}
           value={workingDir}
           onChange={(e) => handleWorkingDirChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'workingDir'; }}
+          onFocus={() => {
+            lastFocused.current = 'workingDir';
+          }}
           placeholder="/Users/me/projects/my-repo"
           className={inputCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Absolute path the command runs from. Leave blank to use Cerebro&rsquo;s
-          working directory.
+          Absolute path the command runs from. Leave blank to use Cerebro&rsquo;s working directory.
         </p>
       </div>
 
       <div>
         <FieldLabel text="Timeout (seconds)" hint="fieldTimeoutSeconds" />
         <input
-          type="number" min={1}
+          type="number"
+          min={1}
           value={(params.timeout as number) ?? 300}
-          onChange={(e) => onChange({ ...paramsRef.current, timeout: parseInt(e.target.value) || 300 })}
+          onChange={(e) =>
+            onChange({ ...paramsRef.current, timeout: parseInt(e.target.value) || 300 })
+          }
           className={inputCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
@@ -2591,9 +2598,9 @@ function ClaudeCodeParams({ params, onChange, step, sourceSteps, onAddMapping }:
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5 text-[11px] text-text-secondary leading-relaxed">
-        Spawns the Claude Code CLI as a subprocess. Pick the mode to restrict
-        what it can touch, then write the instruction in plain English.
-        Variables from connected steps expand inside the prompt.
+        Spawns the Claude Code CLI as a subprocess. Pick the mode to restrict what it can touch,
+        then write the instruction in plain English. Variables from connected steps expand inside
+        the prompt.
       </div>
 
       <div>
@@ -2604,7 +2611,9 @@ function ClaudeCodeParams({ params, onChange, step, sourceSteps, onAddMapping }:
           className={selectCls}
         >
           {Object.entries(CLAUDE_MODE_META).map(([value, meta]) => (
-            <option key={value} value={value}>{meta.label}</option>
+            <option key={value} value={value}>
+              {meta.label}
+            </option>
           ))}
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">{modeMeta.description}</p>
@@ -2616,19 +2625,24 @@ function ClaudeCodeParams({ params, onChange, step, sourceSteps, onAddMapping }:
           ref={promptRef}
           value={prompt}
           onChange={(e) => handlePromptChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'prompt'; }}
+          onFocus={() => {
+            lastFocused.current = 'prompt';
+          }}
           onBlur={() => setPromptTouched(true)}
           rows={5}
           placeholder="e.g. Add a unit test for the parseArgs helper in utils/cli.ts."
           aria-invalid={showPromptError}
-          className={clsx(textareaCls, showPromptError && 'border-red-500/60 focus:border-red-500/60')}
+          className={clsx(
+            textareaCls,
+            showPromptError && 'border-red-500/60 focus:border-red-500/60',
+          )}
         />
         {showPromptError ? (
           <FieldError text="Required — the step will fail without a prompt." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Describe the task in plain English. Click a variable chip below to
-            pull connected step outputs into the prompt.
+            Describe the task in plain English. Click a variable chip below to pull connected step
+            outputs into the prompt.
           </p>
         )}
       </div>
@@ -2646,13 +2660,15 @@ function ClaudeCodeParams({ params, onChange, step, sourceSteps, onAddMapping }:
           ref={workingDirRef}
           value={workingDir}
           onChange={(e) => handleWorkingDirChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'workingDir'; }}
+          onFocus={() => {
+            lastFocused.current = 'workingDir';
+          }}
           placeholder="/Users/me/projects/my-repo"
           className={inputCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          The directory Claude Code operates in. Leave blank to use Cerebro&rsquo;s
-          working directory.
+          The directory Claude Code operates in. Leave blank to use Cerebro&rsquo;s working
+          directory.
         </p>
       </div>
 
@@ -2660,9 +2676,12 @@ function ClaudeCodeParams({ params, onChange, step, sourceSteps, onAddMapping }:
         <div className="flex-1">
           <FieldLabel text="Max turns" hint="fieldMaxTurns" />
           <input
-            type="number" min={1}
+            type="number"
+            min={1}
             value={(params.max_turns as number) ?? 50}
-            onChange={(e) => onChange({ ...paramsRef.current, max_turns: parseInt(e.target.value) || 50 })}
+            onChange={(e) =>
+              onChange({ ...paramsRef.current, max_turns: parseInt(e.target.value) || 50 })
+            }
             className={inputCls}
           />
           <p className="mt-1 text-[11px] text-text-tertiary">
@@ -2672,9 +2691,12 @@ function ClaudeCodeParams({ params, onChange, step, sourceSteps, onAddMapping }:
         <div className="flex-1">
           <FieldLabel text="Timeout (s)" hint="fieldTimeoutSeconds" />
           <input
-            type="number" min={1}
+            type="number"
+            min={1}
             value={(params.timeout as number) ?? 600}
-            onChange={(e) => onChange({ ...paramsRef.current, timeout: parseInt(e.target.value) || 600 })}
+            onChange={(e) =>
+              onChange({ ...paramsRef.current, timeout: parseInt(e.target.value) || 600 })
+            }
             className={inputCls}
           />
           <p className="mt-1 text-[11px] text-text-tertiary">
@@ -2699,9 +2721,7 @@ const CONDITION_OPERATOR_OPTIONS: { value: string; label: string; needsValue: bo
 ];
 
 function operatorMeta(op: string) {
-  return (
-    CONDITION_OPERATOR_OPTIONS.find((o) => o.value === op) ?? CONDITION_OPERATOR_OPTIONS[0]
-  );
+  return CONDITION_OPERATOR_OPTIONS.find((o) => o.value === op) ?? CONDITION_OPERATOR_OPTIONS[0];
 }
 
 function ConditionParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
@@ -2753,9 +2773,8 @@ function ConditionParams({ params, onChange, step, sourceSteps, onAddMapping }: 
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Splits the routine into a true / false branch. Connect two downstream
-          steps and set one to run when true and the other when false — the
-          other branch is automatically skipped.
+          Splits the routine into a true / false branch. Connect two downstream steps and set one to
+          run when true and the other when false — the other branch is automatically skipped.
         </p>
       </div>
 
@@ -2765,7 +2784,9 @@ function ConditionParams({ params, onChange, step, sourceSteps, onAddMapping }: 
           ref={fieldRef}
           value={field}
           onChange={(e) => handleFieldChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'field'; }}
+          onFocus={() => {
+            lastFocused.current = 'field';
+          }}
           onBlur={() => setFieldTouched(true)}
           placeholder="e.g. classify_category.category"
           aria-invalid={showFieldError}
@@ -2797,7 +2818,9 @@ function ConditionParams({ params, onChange, step, sourceSteps, onAddMapping }: 
           className={selectCls}
         >
           {CONDITION_OPERATOR_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
           ))}
         </select>
       </div>
@@ -2811,7 +2834,9 @@ function ConditionParams({ params, onChange, step, sourceSteps, onAddMapping }: 
           <input
             value={value}
             onChange={(e) => handleValueChange(e.target.value)}
-            onFocus={() => { lastFocused.current = 'value'; }}
+            onFocus={() => {
+              lastFocused.current = 'value';
+            }}
             placeholder={
               operator === 'matches_regex'
                 ? 'e.g. ^urgent|critical$'
@@ -2833,10 +2858,9 @@ function ConditionParams({ params, onChange, step, sourceSteps, onAddMapping }: 
 
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-tertiary">
-          <span className="text-text-secondary">Tip:</span>{' '}
-          on the canvas, right-click the edge leaving this step to set whether
-          it runs on the <span className="text-accent">true</span> or{' '}
-          <span className="text-accent">false</span> branch.
+          <span className="text-text-secondary">Tip:</span> on the canvas, right-click the edge
+          leaving this step to set whether it runs on the <span className="text-accent">true</span>{' '}
+          or <span className="text-accent">false</span> branch.
         </p>
       </div>
     </div>
@@ -2890,9 +2914,8 @@ function LoopParams({ params, onChange, step, sourceSteps, onAddMapping }: PWith
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Extracts an array from an upstream step and passes it to the next
-          step. Use this when a downstream step can already handle a list
-          (e.g. Send Notification per item coming soon).
+          Extracts an array from an upstream step and passes it to the next step. Use this when a
+          downstream step can already handle a list (e.g. Send Notification per item coming soon).
         </p>
       </div>
 
@@ -2912,9 +2935,8 @@ function LoopParams({ params, onChange, step, sourceSteps, onAddMapping }: PWith
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
             Dot-path to the array (no&nbsp;
-            <code className="text-text-secondary">{'{{ }}'}</code>&nbsp;wrapping).
-            If the field isn&rsquo;t an array at runtime, the step fails with a
-            clear error.
+            <code className="text-text-secondary">{'{{ }}'}</code>&nbsp;wrapping). If the field
+            isn&rsquo;t an array at runtime, the step fails with a clear error.
           </p>
         )}
       </div>
@@ -2939,8 +2961,8 @@ function LoopParams({ params, onChange, step, sourceSteps, onAddMapping }: PWith
           <FieldError text="Letters, digits, and underscore only; must start with a letter or underscore." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Name future iteration steps will use to reference the current item.
-            Stick to letters, digits, and underscores.
+            Name future iteration steps will use to reference the current item. Stick to letters,
+            digits, and underscores.
           </p>
         )}
       </div>
@@ -2948,7 +2970,11 @@ function LoopParams({ params, onChange, step, sourceSteps, onAddMapping }: PWith
   );
 }
 
-const DELAY_UNIT_OPTIONS: { value: 'seconds' | 'minutes' | 'hours'; label: string; toSeconds: number }[] = [
+const DELAY_UNIT_OPTIONS: {
+  value: 'seconds' | 'minutes' | 'hours';
+  label: string;
+  toSeconds: number;
+}[] = [
   { value: 'seconds', label: 'Seconds', toSeconds: 1 },
   { value: 'minutes', label: 'Minutes', toSeconds: 60 },
   { value: 'hours', label: 'Hours', toSeconds: 3600 },
@@ -2975,15 +3001,15 @@ function DelayParams({ params, onChange }: P) {
   const unitMeta = DELAY_UNIT_OPTIONS.find((u) => u.value === unit) ?? DELAY_UNIT_OPTIONS[0];
   const totalSeconds = duration * unitMeta.toSeconds;
 
-  const durationInvalid = !Number.isFinite(params.duration as number) || (params.duration as number) <= 0;
+  const durationInvalid =
+    !Number.isFinite(params.duration as number) || (params.duration as number) <= 0;
 
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Pauses the routine for a fixed amount of time before continuing.
-          Useful for rate-limiting, staggered follow-ups, or giving an external
-          system time to catch up.
+          Pauses the routine for a fixed amount of time before continuing. Useful for rate-limiting,
+          staggered follow-ups, or giving an external system time to catch up.
         </p>
       </div>
 
@@ -3001,7 +3027,10 @@ function DelayParams({ params, onChange }: P) {
               })
             }
             aria-invalid={durationInvalid}
-            className={clsx(inputCls, durationInvalid && 'border-red-500/60 focus:border-red-500/60')}
+            className={clsx(
+              inputCls,
+              durationInvalid && 'border-red-500/60 focus:border-red-500/60',
+            )}
           />
         </div>
         <div className="flex-1">
@@ -3012,7 +3041,9 @@ function DelayParams({ params, onChange }: P) {
             className={selectCls}
           >
             {DELAY_UNIT_OPTIONS.map((u) => (
-              <option key={u.value} value={u.value}>{u.label}</option>
+              <option key={u.value} value={u.value}>
+                {u.label}
+              </option>
             ))}
           </select>
         </div>
@@ -3046,9 +3077,8 @@ function ApprovalGateParams({ params, onChange }: P) {
     <div className="space-y-4">
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-amber-300">
-          Execution pauses here until you approve or deny the run on the
-          Approvals screen. Denied runs end with an &ldquo;Approval
-          denied&rdquo; error — nothing downstream runs.
+          Execution pauses here until you approve or deny the run on the Approvals screen. Denied
+          runs end with an &ldquo;Approval denied&rdquo; error — nothing downstream runs.
         </p>
       </div>
 
@@ -3067,8 +3097,8 @@ function ApprovalGateParams({ params, onChange }: P) {
           <FieldError text="Required — give the reviewer enough context to decide." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            This text appears at the top of the approval request. Keep it
-            scannable — the reviewer decides in seconds.
+            This text appears at the top of the approval request. Keep it scannable — the reviewer
+            decides in seconds.
           </p>
         )}
       </div>
@@ -3098,9 +3128,8 @@ function WaitForWebhookParams({ params, onChange }: P) {
     <div className="space-y-4">
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
-          Registers a temporary callback URL and pauses until an HTTP request
-          arrives. Useful for waiting on a third-party webhook, a human
-          clicking a link, or a long-running external job.
+          Registers a temporary callback URL and pauses until an HTTP request arrives. Useful for
+          waiting on a third-party webhook, a human clicking a link, or a long-running external job.
         </p>
       </div>
 
@@ -3113,8 +3142,8 @@ function WaitForWebhookParams({ params, onChange }: P) {
           className={inputCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Included in the generated callback URL so you can recognize it in
-          logs. Leave blank for an auto-generated path.
+          Included in the generated callback URL so you can recognize it in logs. Leave blank for an
+          auto-generated path.
         </p>
       </div>
 
@@ -3132,13 +3161,17 @@ function WaitForWebhookParams({ params, onChange }: P) {
               })
             }
             aria-invalid={timeoutInvalid}
-            className={clsx(inputCls, 'flex-1', timeoutInvalid && 'border-red-500/60 focus:border-red-500/60')}
+            className={clsx(
+              inputCls,
+              'flex-1',
+              timeoutInvalid && 'border-red-500/60 focus:border-red-500/60',
+            )}
           />
           <span className="text-[11px] text-text-tertiary">seconds</span>
         </div>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Step fails with a timeout error if no callback arrives in this
-          window. Default is one hour.
+          Step fails with a timeout error if no callback arrives in this window. Default is one
+          hour.
         </p>
       </div>
 
@@ -3152,8 +3185,7 @@ function WaitForWebhookParams({ params, onChange }: P) {
           className={textareaCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Shows up in the Activity log so you can recognize this step at a
-          glance.
+          Shows up in the Activity log so you can recognize this step at a glance.
         </p>
       </div>
     </div>
@@ -3193,10 +3225,10 @@ function RunScriptParams({ params, onChange }: P) {
       <div className="rounded-lg border border-border-subtle bg-bg-base/40 px-3 py-2.5">
         <p className="text-[11px] leading-relaxed text-text-secondary">
           Runs a short Python or JavaScript snippet. Read upstream data from{' '}
-          <code className="text-text-secondary">input</code> and write results
-          to <code className="text-text-secondary">output</code> (JS) or{' '}
-          <code className="text-text-secondary">stdout</code> as JSON
-          (Python). Downstream steps receive whatever you emit.
+          <code className="text-text-secondary">input</code> and write results to{' '}
+          <code className="text-text-secondary">output</code> (JS) or{' '}
+          <code className="text-text-secondary">stdout</code> as JSON (Python). Downstream steps
+          receive whatever you emit.
         </p>
       </div>
 
@@ -3267,7 +3299,11 @@ function RunScriptParams({ params, onChange }: P) {
               })
             }
             aria-invalid={timeoutInvalid}
-            className={clsx(inputCls, 'flex-1', timeoutInvalid && 'border-red-500/60 focus:border-red-500/60')}
+            className={clsx(
+              inputCls,
+              'flex-1',
+              timeoutInvalid && 'border-red-500/60 focus:border-red-500/60',
+            )}
           />
           <span className="text-[11px] text-text-tertiary">seconds</span>
         </div>
@@ -3362,7 +3398,9 @@ function NotificationParams({ params, onChange, step, sourceSteps, onAddMapping 
           ref={titleRef}
           value={title}
           onChange={(e) => handleTitleChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'title'; }}
+          onFocus={() => {
+            lastFocused.current = 'title';
+          }}
           onBlur={() => setTitleTouched(true)}
           placeholder="e.g. Daily brief is ready"
           aria-invalid={showTitleError}
@@ -3383,14 +3421,16 @@ function NotificationParams({ params, onChange, step, sourceSteps, onAddMapping 
           ref={bodyRef}
           value={body}
           onChange={(e) => handleBodyChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'body'; }}
+          onFocus={() => {
+            lastFocused.current = 'body';
+          }}
           rows={4}
           placeholder="e.g. Here's what the AI found."
           className={textareaCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Longer text shown under the headline. If you&rsquo;ve connected
-          another step, click its chip below to insert its output.
+          Longer text shown under the headline. If you&rsquo;ve connected another step, click its
+          chip below to insert its output.
         </p>
       </div>
 
@@ -3412,9 +3452,8 @@ function NotificationParams({ params, onChange, step, sourceSteps, onAddMapping 
           <option value="critical">Critical — sticky / alert style</option>
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">
-          Critical notifications stay on screen until dismissed on platforms
-          that support it (Linux). On macOS and Windows, both show as
-          standard banners.
+          Critical notifications stay on screen until dismissed on platforms that support it
+          (Linux). On macOS and Windows, both show as standard banners.
         </p>
       </div>
     </div>
@@ -3473,7 +3512,9 @@ function SendTelegramParams({ params, onChange, step, sourceSteps, onAddMapping 
           ref={chatRef}
           value={chatId}
           onChange={(e) => handleChatChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'chat_id'; }}
+          onFocus={() => {
+            lastFocused.current = 'chat_id';
+          }}
           onBlur={() => setChatTouched(true)}
           placeholder="123456789  or  {{chat_id}}"
           aria-invalid={showChatError}
@@ -3483,8 +3524,8 @@ function SendTelegramParams({ params, onChange, step, sourceSteps, onAddMapping 
           <FieldError text="Required — must be in the bot's allowlist." />
         ) : (
           <p className="mt-1 text-[11px] text-text-tertiary">
-            Numeric Telegram chat id. Use <code>{'{{chat_id}}'}</code> when replying to the trigger sender.
-            Must be in the bot's allowlist.
+            Numeric Telegram chat id. Use <code>{'{{chat_id}}'}</code> when replying to the trigger
+            sender. Must be in the bot's allowlist.
           </p>
         )}
       </div>
@@ -3495,12 +3536,17 @@ function SendTelegramParams({ params, onChange, step, sourceSteps, onAddMapping 
           ref={messageRef}
           value={message}
           onChange={(e) => handleMessageChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'message'; }}
+          onFocus={() => {
+            lastFocused.current = 'message';
+          }}
           onBlur={() => setMessageTouched(true)}
           rows={4}
           placeholder="Hello {{sender_username}}! Standup at 10am."
           aria-invalid={showMessageError}
-          className={clsx(textareaCls, showMessageError && 'border-red-500/60 focus:border-red-500/60')}
+          className={clsx(
+            textareaCls,
+            showMessageError && 'border-red-500/60 focus:border-red-500/60',
+          )}
         />
         {showMessageError ? (
           <FieldError text="Required — empty messages aren't sent." />
@@ -3526,7 +3572,9 @@ function SendTelegramParams({ params, onChange, step, sourceSteps, onAddMapping 
           className={selectCls}
         >
           <option value="none">Plain text</option>
-          <option value="HTML">HTML — &lt;b&gt;bold&lt;/b&gt;, &lt;i&gt;italic&lt;/i&gt;, &lt;a&gt;</option>
+          <option value="HTML">
+            HTML — &lt;b&gt;bold&lt;/b&gt;, &lt;i&gt;italic&lt;/i&gt;, &lt;a&gt;
+          </option>
           <option value="MarkdownV2">MarkdownV2 — *bold*, _italic_, [link](url)</option>
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">
@@ -3581,12 +3629,15 @@ function SendWhatsAppParams({ params, onChange, step, sourceSteps, onAddMapping 
           ref={phoneRef}
           value={phone}
           onChange={(e) => handlePhoneChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'phone_number'; }}
+          onFocus={() => {
+            lastFocused.current = 'phone_number';
+          }}
           placeholder="+14155552671  or  {{__trigger__.phone_number}}"
           className={inputCls}
         />
         <p className="mt-1 text-[11px] text-text-tertiary">
-          E.164-formatted customer phone. Use <code>{'{{__trigger__.phone_number}}'}</code> to reply to whoever messaged the routine. Must be in the WhatsApp allowlist.
+          E.164-formatted customer phone. Use <code>{'{{__trigger__.phone_number}}'}</code> to reply
+          to whoever messaged the routine. Must be in the WhatsApp allowlist.
         </p>
       </div>
 
@@ -3596,7 +3647,9 @@ function SendWhatsAppParams({ params, onChange, step, sourceSteps, onAddMapping 
           ref={messageRef}
           value={message}
           onChange={(e) => handleMessageChange(e.target.value)}
-          onFocus={() => { lastFocused.current = 'message'; }}
+          onFocus={() => {
+            lastFocused.current = 'message';
+          }}
           rows={4}
           placeholder="Hi {{customer_name}}! Ticket #{{ticket_id}} is open."
           className={textareaCls}
@@ -3616,7 +3669,13 @@ function SendWhatsAppParams({ params, onChange, step, sourceSteps, onAddMapping 
   );
 }
 
-function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+function HubSpotCreateTicketParams({
+  params,
+  onChange,
+  step,
+  sourceSteps,
+  onAddMapping,
+}: PWithStep) {
   const paramsRef = useRef(params);
   paramsRef.current = params;
 
@@ -3637,11 +3696,26 @@ function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddM
 
   const set = (patch: Record<string, unknown>) => onChange({ ...paramsRef.current, ...patch });
 
-  const handleSubject = (v: string) => { setSubject(v); set({ subject: v }); };
-  const handleContent = (v: string) => { setContent(v); set({ content: v }); };
-  const handlePipeline = (v: string) => { setPipeline(v); set({ pipeline: v }); };
-  const handleStage = (v: string) => { setStage(v); set({ stage: v }); };
-  const handleContactId = (v: string) => { setContactId(v); set({ contact_id: v }); };
+  const handleSubject = (v: string) => {
+    setSubject(v);
+    set({ subject: v });
+  };
+  const handleContent = (v: string) => {
+    setContent(v);
+    set({ content: v });
+  };
+  const handlePipeline = (v: string) => {
+    setPipeline(v);
+    set({ pipeline: v });
+  };
+  const handleStage = (v: string) => {
+    setStage(v);
+    set({ stage: v });
+  };
+  const handleContactId = (v: string) => {
+    setContactId(v);
+    set({ contact_id: v });
+  };
 
   const insertAtCursor = (token: string) => {
     const el = contentRef.current;
@@ -3650,7 +3724,11 @@ function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddM
     const end = el.selectionEnd ?? content.length;
     const next = content.slice(0, start) + token + content.slice(end);
     handleContent(next);
-    requestAnimationFrame(() => { el.focus(); const pos = start + token.length; el.setSelectionRange(pos, pos); });
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
   };
 
   return (
@@ -3678,17 +3756,31 @@ function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddM
       <div className="grid grid-cols-2 gap-3">
         <div>
           <FieldLabel text="Pipeline id (optional)" />
-          <input value={pipeline} onChange={(e) => handlePipeline(e.target.value)} placeholder="uses default" className={inputCls} />
+          <input
+            value={pipeline}
+            onChange={(e) => handlePipeline(e.target.value)}
+            placeholder="uses default"
+            className={inputCls}
+          />
         </div>
         <div>
           <FieldLabel text="Stage id (optional)" />
-          <input value={stage} onChange={(e) => handleStage(e.target.value)} placeholder="uses default" className={inputCls} />
+          <input
+            value={stage}
+            onChange={(e) => handleStage(e.target.value)}
+            placeholder="uses default"
+            className={inputCls}
+          />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <FieldLabel text="Priority" />
-          <select value={priority} onChange={(e) => set({ priority: e.target.value })} className={selectCls}>
+          <select
+            value={priority}
+            onChange={(e) => set({ priority: e.target.value })}
+            className={selectCls}
+          >
             <option value="">—</option>
             <option value="LOW">LOW</option>
             <option value="MEDIUM">MEDIUM</option>
@@ -3697,11 +3789,17 @@ function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddM
         </div>
         <div>
           <FieldLabel text="Contact id (optional)" />
-          <input value={contactId} onChange={(e) => handleContactId(e.target.value)} placeholder="{{upsert_contact.contact_id}}" className={inputCls} />
+          <input
+            value={contactId}
+            onChange={(e) => handleContactId(e.target.value)}
+            placeholder="{{upsert_contact.contact_id}}"
+            className={inputCls}
+          />
         </div>
       </div>
       <p className="text-[11px] text-text-tertiary">
-        Pipeline + stage ids fall back to the defaults you set on the HubSpot integration card when left blank.
+        Pipeline + stage ids fall back to the defaults you set on the HubSpot integration card when
+        left blank.
       </p>
       <AvailableVariablesSection
         step={step}
@@ -3713,7 +3811,13 @@ function HubSpotCreateTicketParams({ params, onChange, step, sourceSteps, onAddM
   );
 }
 
-function HubSpotUpsertContactParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+function HubSpotUpsertContactParams({
+  params,
+  onChange,
+  step,
+  sourceSteps,
+  onAddMapping,
+}: PWithStep) {
   const paramsRef = useRef(params);
   paramsRef.current = params;
 
@@ -3726,44 +3830,86 @@ function HubSpotUpsertContactParams({ params, onChange, step, sourceSteps, onAdd
 
   const set = (patch: Record<string, unknown>) => onChange({ ...paramsRef.current, ...patch });
 
-  const handleEmail = (v: string) => { setEmail(v); set({ email: v }); };
-  const handlePhone = (v: string) => { setPhone(v); set({ phone: v }); };
-  const handleFirstname = (v: string) => { setFirstname(v); set({ firstname: v }); };
-  const handleLastname = (v: string) => { setLastname(v); set({ lastname: v }); };
-  const handleLifecyclestage = (v: string) => { setLifecyclestage(v); set({ lifecyclestage: v }); };
+  const handleEmail = (v: string) => {
+    setEmail(v);
+    set({ email: v });
+  };
+  const handlePhone = (v: string) => {
+    setPhone(v);
+    set({ phone: v });
+  };
+  const handleFirstname = (v: string) => {
+    setFirstname(v);
+    set({ firstname: v });
+  };
+  const handleLastname = (v: string) => {
+    setLastname(v);
+    set({ lastname: v });
+  };
+  const handleLifecyclestage = (v: string) => {
+    setLifecyclestage(v);
+    set({ lifecyclestage: v });
+  };
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div>
           <FieldLabel text="Email" />
-          <input value={email} onChange={(e) => handleEmail(e.target.value)} placeholder="{{extract_fields.customer_email}}" className={inputCls} />
+          <input
+            value={email}
+            onChange={(e) => handleEmail(e.target.value)}
+            placeholder="{{extract_fields.customer_email}}"
+            className={inputCls}
+          />
         </div>
         <div>
           <FieldLabel text="Phone" />
-          <input value={phone} onChange={(e) => handlePhone(e.target.value)} placeholder="{{__trigger__.phone_number}}" className={inputCls} />
+          <input
+            value={phone}
+            onChange={(e) => handlePhone(e.target.value)}
+            placeholder="{{__trigger__.phone_number}}"
+            className={inputCls}
+          />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <FieldLabel text="First name" />
-          <input value={firstname} onChange={(e) => handleFirstname(e.target.value)} placeholder="{{customer_name}}" className={inputCls} />
+          <input
+            value={firstname}
+            onChange={(e) => handleFirstname(e.target.value)}
+            placeholder="{{customer_name}}"
+            className={inputCls}
+          />
         </div>
         <div>
           <FieldLabel text="Last name" />
-          <input value={lastname} onChange={(e) => handleLastname(e.target.value)} className={inputCls} />
+          <input
+            value={lastname}
+            onChange={(e) => handleLastname(e.target.value)}
+            className={inputCls}
+          />
         </div>
       </div>
       <div>
         <FieldLabel text="Lifecycle stage" />
-        <input value={lifecyclestage} onChange={(e) => handleLifecyclestage(e.target.value)} placeholder="customer" className={inputCls} />
+        <input
+          value={lifecyclestage}
+          onChange={(e) => handleLifecyclestage(e.target.value)}
+          placeholder="customer"
+          className={inputCls}
+        />
       </div>
       <p className="text-[11px] text-text-tertiary">
-        At least one of email or phone is required. The action searches by that value and updates if a match exists, creates otherwise.
+        At least one of email or phone is required. The action searches by that value and updates if
+        a match exists, creates otherwise.
       </p>
       <AvailableVariablesSection
         step={step}
-        onInsert={() => { /* nothing focused */ }}
+        onInsert={() => {
+          /* nothing focused */
+        }}
         sourceSteps={sourceSteps}
         onAddMapping={onAddMapping}
       />
@@ -3774,9 +3920,7 @@ function HubSpotUpsertContactParams({ params, onChange, step, sourceSteps, onAdd
 function StubParams({ name }: { name: string }) {
   return (
     <div className="rounded-lg bg-bg-base border border-border-subtle p-3">
-      <p className="text-xs text-text-tertiary text-center">
-        {name} configuration coming soon.
-      </p>
+      <p className="text-xs text-text-tertiary text-center">{name} configuration coming soon.</p>
     </div>
   );
 }
@@ -3804,40 +3948,199 @@ function ParamForm({
 
   switch (resolved) {
     // AI
-    case 'ask_ai': return <AskAiParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'run_expert': return <RunExpertParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'classify': return <ClassifyParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'extract': return <ExtractParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'summarize': return <SummarizeParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} />;
+    case 'ask_ai':
+      return (
+        <AskAiParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'run_expert':
+      return (
+        <RunExpertParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'classify':
+      return (
+        <ClassifyParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'extract':
+      return (
+        <ExtractParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'summarize':
+      return (
+        <SummarizeParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+        />
+      );
 
     // Knowledge
-    case 'search_memory': return <SearchMemoryParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'search_web': return <SearchWebParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'search_documents': return <SearchDocumentsParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'save_to_memory': return <SaveToMemoryParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'search_memory':
+      return (
+        <SearchMemoryParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'search_web':
+      return (
+        <SearchWebParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'search_documents':
+      return (
+        <SearchDocumentsParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'save_to_memory':
+      return (
+        <SaveToMemoryParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
 
     // Integrations
-    case 'http_request': return <HttpRequestParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'run_command': return <RunCommandParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'run_claude_code': return <ClaudeCodeParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'http_request':
+      return (
+        <HttpRequestParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'run_command':
+      return (
+        <RunCommandParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'run_claude_code':
+      return (
+        <ClaudeCodeParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
 
     // Logic
-    case 'wait_for_webhook': return <WaitForWebhookParams params={params} onChange={onChange} />;
-    case 'run_script': return <RunScriptParams params={params} onChange={onChange} />;
-    case 'condition': return <ConditionParams params={params} onChange={onChange} />;
-    case 'loop': return <LoopParams params={params} onChange={onChange} />;
-    case 'delay': return <DelayParams params={params} onChange={onChange} />;
-    case 'approval_gate': return <ApprovalGateParams params={params} onChange={onChange} />;
+    case 'wait_for_webhook':
+      return <WaitForWebhookParams params={params} onChange={onChange} />;
+    case 'run_script':
+      return <RunScriptParams params={params} onChange={onChange} />;
+    case 'condition':
+      return <ConditionParams params={params} onChange={onChange} />;
+    case 'loop':
+      return <LoopParams params={params} onChange={onChange} />;
+    case 'delay':
+      return <DelayParams params={params} onChange={onChange} />;
+    case 'approval_gate':
+      return <ApprovalGateParams params={params} onChange={onChange} />;
 
     // Output
-    case 'send_message': return <SendMessageParams params={params} onChange={onChange} />;
-    case 'send_notification': return <NotificationParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'send_telegram_message': return <SendTelegramParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'send_whatsapp_message': return <SendWhatsAppParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'send_message':
+      return <SendMessageParams params={params} onChange={onChange} />;
+    case 'send_notification':
+      return (
+        <NotificationParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'send_telegram_message':
+      return (
+        <SendTelegramParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'send_whatsapp_message':
+      return (
+        <SendWhatsAppParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
 
     // CRM
-    case 'hubspot_create_ticket': return <HubSpotCreateTicketParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
-    case 'hubspot_upsert_contact': return <HubSpotUpsertContactParams params={params} onChange={onChange} step={step} sourceSteps={sourceSteps} onAddMapping={onAddMapping} />;
+    case 'hubspot_create_ticket':
+      return (
+        <HubSpotCreateTicketParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'hubspot_upsert_contact':
+      return (
+        <HubSpotUpsertContactParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
 
     default:
       return <StubParams name={ACTION_META[actionType]?.name ?? actionType} />;
@@ -3853,7 +4156,12 @@ interface StepConfigPanelProps {
   onClose: () => void;
 }
 
-export default function StepConfigPanel({ node, allNodes, onUpdate, onClose }: StepConfigPanelProps) {
+export default function StepConfigPanel({
+  node,
+  allNodes,
+  onUpdate,
+  onClose,
+}: StepConfigPanelProps) {
   const { t } = useTranslation();
   const d = node.data as RoutineStepData;
   const resolved = resolveActionType(d.actionType);
@@ -3880,9 +4188,7 @@ export default function StepConfigPanel({ node, allNodes, onUpdate, onClose }: S
       const existing = d.inputMappings ?? [];
       if (
         existing.some(
-          (m) =>
-            m.sourceStepId === mapping.sourceStepId &&
-            m.sourceField === mapping.sourceField,
+          (m) => m.sourceStepId === mapping.sourceStepId && m.sourceField === mapping.sourceField,
         )
       ) {
         return;
@@ -3918,7 +4224,9 @@ export default function StepConfigPanel({ node, allNodes, onUpdate, onClose }: S
     [node.id, onUpdate],
   );
   useEffect(() => {
-    return () => { if (paramsTimerRef.current) clearTimeout(paramsTimerRef.current); };
+    return () => {
+      if (paramsTimerRef.current) clearTimeout(paramsTimerRef.current);
+    };
   }, []);
 
   return (
@@ -4012,9 +4320,13 @@ export default function StepConfigPanel({ node, allNodes, onUpdate, onClose }: S
                 <div>
                   <FieldLabel text="Max Retries" hint="fieldMaxRetries" />
                   <input
-                    type="number" min={1} max={10}
+                    type="number"
+                    min={1}
+                    max={10}
                     value={d.maxRetries ?? 1}
-                    onChange={(e) => onUpdate(node.id, { maxRetries: parseInt(e.target.value) || 1 })}
+                    onChange={(e) =>
+                      onUpdate(node.id, { maxRetries: parseInt(e.target.value) || 1 })
+                    }
                     className={inputCls}
                   />
                 </div>
@@ -4023,7 +4335,9 @@ export default function StepConfigPanel({ node, allNodes, onUpdate, onClose }: S
               <div>
                 <FieldLabel text="Timeout (ms)" hint="fieldTimeoutMs" />
                 <input
-                  type="number" min={1000} step={1000}
+                  type="number"
+                  min={1000}
+                  step={1000}
                   value={d.timeoutMs ?? ''}
                   onChange={(e) =>
                     onUpdate(node.id, {

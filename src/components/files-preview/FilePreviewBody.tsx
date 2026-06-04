@@ -88,7 +88,9 @@ export default function FilePreviewBody({
   }
 
   if (kind === 'pdf' && previewUrl) {
-    return <iframe src={previewUrl} className="flex-1 w-full bg-bg-surface border-0" title={name} />;
+    return (
+      <iframe src={previewUrl} className="flex-1 w-full bg-bg-surface border-0" title={name} />
+    );
   }
 
   if (kind === 'text' && textContent !== null) {

@@ -8,8 +8,21 @@ import {
   positionAtPointer,
 } from '../components/screens/knowledge-base/tree-dnd';
 
-function node(id: string, sortOrder: number, parentId: string | null, children: KbTreeNode[] = []): KbTreeNode {
-  return { id, parentId, title: id, icon: null, sortOrder, hasChildren: children.length > 0, children };
+function node(
+  id: string,
+  sortOrder: number,
+  parentId: string | null,
+  children: KbTreeNode[] = [],
+): KbTreeNode {
+  return {
+    id,
+    parentId,
+    title: id,
+    icon: null,
+    sortOrder,
+    hasChildren: children.length > 0,
+    children,
+  };
 }
 
 //   a (1)
@@ -17,10 +30,7 @@ function node(id: string, sortOrder: number, parentId: string | null, children: 
 //     a2 (2)
 //   b (2)
 function makeTree(): KbTreeNode[] {
-  return [
-    node('a', 1, null, [node('a1', 1, 'a'), node('a2', 2, 'a')]),
-    node('b', 2, null),
-  ];
+  return [node('a', 1, null, [node('a1', 1, 'a'), node('a2', 2, 'a')]), node('b', 2, null)];
 }
 
 describe('tree-dnd helpers', () => {

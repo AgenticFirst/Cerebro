@@ -66,10 +66,13 @@ export default function CommentThread({
     [comments],
   );
 
-  const handleDiscardQueued = useCallback(async (commentId: string) => {
-    await discardQueuedInstruction(taskId, commentId);
-    await refresh();
-  }, [taskId, discardQueuedInstruction, refresh]);
+  const handleDiscardQueued = useCallback(
+    async (commentId: string) => {
+      await discardQueuedInstruction(taskId, commentId);
+      await refresh();
+    },
+    [taskId, discardQueuedInstruction, refresh],
+  );
 
   if (isLoading && comments.length === 0) {
     return (
@@ -82,9 +85,7 @@ export default function CommentThread({
   return (
     <div className="space-y-4">
       {visibleComments.length === 0 && !isLoading && (
-        <p className="text-xs text-text-tertiary text-center py-4">
-          {t('tasks.drawerNoComments')}
-        </p>
+        <p className="text-xs text-text-tertiary text-center py-4">{t('tasks.drawerNoComments')}</p>
       )}
 
       {visibleComments.map((comment) => {
@@ -94,7 +95,9 @@ export default function CommentThread({
               <Info size={12} className="text-text-tertiary mt-0.5 flex-shrink-0" />
               <div>
                 <p className="text-xs text-text-tertiary italic">{comment.body_md}</p>
-                <span className="text-[10px] text-text-tertiary/60">{formatTime(comment.created_at)}</span>
+                <span className="text-[10px] text-text-tertiary/60">
+                  {formatTime(comment.created_at)}
+                </span>
               </div>
             </div>
           );
@@ -149,9 +152,7 @@ export default function CommentThread({
               )}
             </div>
             <div className="text-sm text-text-primary whitespace-pre-wrap prose prose-invert prose-sm max-w-none prose-p:my-0">
-              <ReactMarkdown components={mentionMarkdownComponents}>
-                {normalized}
-              </ReactMarkdown>
+              <ReactMarkdown components={mentionMarkdownComponents}>{normalized}</ReactMarkdown>
             </div>
           </div>
         );

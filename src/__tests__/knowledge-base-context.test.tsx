@@ -1,10 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import {
-  KnowledgeBaseProvider,
-  useKnowledgeBase,
-} from '../context/KnowledgeBaseContext';
+import { KnowledgeBaseProvider, useKnowledgeBase } from '../context/KnowledgeBaseContext';
 
 /* Mock the IPC bridge the context calls. Each test sets `invoke`'s behaviour. */
 const invoke = vi.fn();
@@ -36,7 +33,15 @@ describe('KnowledgeBaseContext', () => {
             sort_order: 1,
             has_children: true,
             children: [
-              { id: 'p2', parent_id: 'p1', title: 'Child', icon: null, sort_order: 1, has_children: false, children: [] },
+              {
+                id: 'p2',
+                parent_id: 'p1',
+                title: 'Child',
+                icon: null,
+                sort_order: 1,
+                has_children: false,
+                children: [],
+              },
             ],
           },
         ],
@@ -56,7 +61,19 @@ describe('KnowledgeBaseContext', () => {
 
   it('createPage POSTs with parent_id and opens the new page', async () => {
     invoke
-      .mockResolvedValueOnce(ok({ id: 'new1', parent_id: 'p1', title: '', icon: null, cover_url: null, content_json: null, content_markdown: null, sort_order: 2, is_archived: false }))
+      .mockResolvedValueOnce(
+        ok({
+          id: 'new1',
+          parent_id: 'p1',
+          title: '',
+          icon: null,
+          cover_url: null,
+          content_json: null,
+          content_markdown: null,
+          sort_order: 2,
+          is_archived: false,
+        }),
+      )
       .mockResolvedValueOnce(ok({ pages: [] })); // loadTree refetch
 
     const { result } = renderHook(() => useKnowledgeBase(), { wrapper });
@@ -78,7 +95,15 @@ describe('KnowledgeBaseContext', () => {
     invoke.mockResolvedValueOnce(
       ok({
         pages: [
-          { id: 'p1', parent_id: null, title: 'Old', icon: null, sort_order: 1, has_children: false, children: [] },
+          {
+            id: 'p1',
+            parent_id: null,
+            title: 'Old',
+            icon: null,
+            sort_order: 1,
+            has_children: false,
+            children: [],
+          },
         ],
       }),
     );
@@ -117,7 +142,13 @@ describe('KnowledgeBaseContext', () => {
     invoke.mockResolvedValueOnce(
       ok({
         results: [
-          { id: 'p1', parent_id: null, title: 'Onboarding', icon: '📘', snippet: 'a \x01match\x02 here' },
+          {
+            id: 'p1',
+            parent_id: null,
+            title: 'Onboarding',
+            icon: '📘',
+            snippet: 'a \x01match\x02 here',
+          },
         ],
       }),
     );
@@ -131,7 +162,13 @@ describe('KnowledgeBaseContext', () => {
       path: '/knowledge/search?q=onboard',
     });
     expect(hits).toEqual([
-      { id: 'p1', parentId: null, title: 'Onboarding', icon: '📘', snippet: 'a \x01match\x02 here' },
+      {
+        id: 'p1',
+        parentId: null,
+        title: 'Onboarding',
+        icon: '📘',
+        snippet: 'a \x01match\x02 here',
+      },
     ]);
   });
 
@@ -147,7 +184,19 @@ describe('KnowledgeBaseContext', () => {
 
   it('archivePage clears the active page and reloads the tree', async () => {
     // open p1 first
-    invoke.mockResolvedValueOnce(ok({ id: 'p1', parent_id: null, title: 'X', icon: null, cover_url: null, content_json: null, content_markdown: null, sort_order: 1, is_archived: false }));
+    invoke.mockResolvedValueOnce(
+      ok({
+        id: 'p1',
+        parent_id: null,
+        title: 'X',
+        icon: null,
+        cover_url: null,
+        content_json: null,
+        content_markdown: null,
+        sort_order: 1,
+        is_archived: false,
+      }),
+    );
     const { result } = renderHook(() => useKnowledgeBase(), { wrapper });
     await act(async () => {
       await result.current.openPage('p1');

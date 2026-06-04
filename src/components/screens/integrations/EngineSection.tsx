@@ -22,8 +22,12 @@ export default function EngineSection() {
 
       {/* Active-engine picker */}
       <div className="mt-6">
-        <div className="text-sm font-medium text-text-primary">{t('engineSection.activeEngine')}</div>
-        <div className="text-xs text-text-secondary mb-2">{t('engineSection.activeEngineDesc')}</div>
+        <div className="text-sm font-medium text-text-primary">
+          {t('engineSection.activeEngine')}
+        </div>
+        <div className="text-xs text-text-secondary mb-2">
+          {t('engineSection.activeEngineDesc')}
+        </div>
         <div className="flex gap-2">
           <EngineRadio
             label={t('engineSection.claudeCode')}
@@ -180,7 +184,9 @@ function EngineCard({
             <p className="mb-2">
               {t('engineSection.notFoundMessage')}{' '}
               {info.error && (
-                <span className="text-red-400">{t('engineSection.notFoundError', { error: info.error })}</span>
+                <span className="text-red-400">
+                  {t('engineSection.notFoundError', { error: info.error })}
+                </span>
               )}
             </p>
             {engineId === 'claude-code' ? (

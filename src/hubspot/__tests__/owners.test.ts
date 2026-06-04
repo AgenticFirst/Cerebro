@@ -10,7 +10,9 @@ import { resolveOwner, ownerDisplayNames, clearOwnersCache } from '../owners';
 
 const TOKEN = 'pat-test-token';
 
-interface MockCall { url: string; }
+interface MockCall {
+  url: string;
+}
 const calls: MockCall[] = [];
 type Responder = () => { status: number; json: unknown };
 let responders: Responder[] = [];
@@ -30,24 +32,37 @@ function mockFetch(): void {
   });
 }
 
-function queue(...rs: Responder[]): void { responders.push(...rs); }
+function queue(...rs: Responder[]): void {
+  responders.push(...rs);
+}
 
 const OWNERS = [
   { id: '101', email: 'maria@example.com', firstName: 'María', lastName: 'López' },
   { id: '102', email: 'juan@example.com', firstName: 'Juan', lastName: 'Pérez' },
   { id: '103', email: 'juan.other@example.com', firstName: 'Juan', lastName: 'Gómez' },
 ];
-const ownersPage = (results: unknown[], after?: string): Responder =>
+const ownersPage =
+  (results: unknown[], after?: string): Responder =>
   () => ({ status: 200, json: { results, ...(after ? { paging: { next: { after } } } : {}) } });
 
-beforeEach(() => { mockFetch(); clearOwnersCache(); });
-afterEach(() => { vi.unstubAllGlobals(); });
+beforeEach(() => {
+  mockFetch();
+  clearOwnersCache();
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('resolveOwner', () => {
   it('resolves by exact email (case-insensitive)', async () => {
     queue(ownersPage(OWNERS));
     const res = await resolveOwner(TOKEN, 'MARIA@example.com');
-    expect(res).toMatchObject({ ownerId: '101', matchedBy: 'email', ambiguous: false, error: null });
+    expect(res).toMatchObject({
+      ownerId: '101',
+      matchedBy: 'email',
+      ambiguous: false,
+      error: null,
+    });
     expect(calls[0].url).toContain('/crm/v3/owners');
   });
 
@@ -102,10 +117,7 @@ describe('resolveOwner', () => {
   });
 
   it('follows pagination across pages', async () => {
-    queue(
-      ownersPage([OWNERS[0]], 'CURSOR'),
-      ownersPage([OWNERS[1], OWNERS[2]]),
-    );
+    queue(ownersPage([OWNERS[0]], 'CURSOR'), ownersPage([OWNERS[1], OWNERS[2]]));
     const res = await resolveOwner(TOKEN, 'juan.other@example.com');
     expect(res.ownerId).toBe('103');
     expect(calls).toHaveLength(2);

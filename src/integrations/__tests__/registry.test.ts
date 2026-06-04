@@ -12,7 +12,10 @@ describe('integration registry', () => {
 
   it('only registers ids that are also known to the main process', () => {
     for (const manifest of listIntegrations()) {
-      expect(isKnownIntegrationId(manifest.id), `${manifest.id} missing from KNOWN_INTEGRATION_IDS`).toBe(true);
+      expect(
+        isKnownIntegrationId(manifest.id),
+        `${manifest.id} missing from KNOWN_INTEGRATION_IDS`,
+      ).toBe(true);
     }
   });
 
@@ -51,7 +54,9 @@ describe('integration registry', () => {
     const allowed = new Set(['telegram', 'slack', 'hubspot', 'whatsapp', 'calendar']);
     for (const manifest of listIntegrations()) {
       if (manifest.customModalId) {
-        expect(allowed.has(manifest.customModalId), `${manifest.id}: unknown customModalId`).toBe(true);
+        expect(allowed.has(manifest.customModalId), `${manifest.id}: unknown customModalId`).toBe(
+          true,
+        );
       }
     }
   });

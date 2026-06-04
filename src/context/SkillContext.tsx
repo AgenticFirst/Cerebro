@@ -1,10 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import type { BackendResponse } from '../types/ipc';
 import type { Skill, SkillCategory, SkillSource, ExpertSkillAssignment } from '../types/skills';
 
@@ -119,26 +113,23 @@ export function SkillProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const createSkill = useCallback(
-    async (body: Record<string, unknown>): Promise<Skill | null> => {
-      try {
-        const res: BackendResponse<ApiSkill> = await window.cerebro.invoke({
-          method: 'POST',
-          path: '/skills',
-          body,
-        });
-        if (res.ok) {
-          const skill = toSkill(res.data);
-          setSkills((prev) => [...prev, skill]);
-          return skill;
-        }
-      } catch (e) {
-        console.error('Failed to create skill:', e);
+  const createSkill = useCallback(async (body: Record<string, unknown>): Promise<Skill | null> => {
+    try {
+      const res: BackendResponse<ApiSkill> = await window.cerebro.invoke({
+        method: 'POST',
+        path: '/skills',
+        body,
+      });
+      if (res.ok) {
+        const skill = toSkill(res.data);
+        setSkills((prev) => [...prev, skill]);
+        return skill;
       }
-      return null;
-    },
-    [],
-  );
+    } catch (e) {
+      console.error('Failed to create skill:', e);
+    }
+    return null;
+  }, []);
 
   const updateSkill = useCallback(
     async (id: string, fields: Record<string, unknown>): Promise<Skill | null> => {
@@ -175,22 +166,17 @@ export function SkillProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const importSkill = useCallback(
-    async (input: string): Promise<ImportedSkillData> => {
-      const res: BackendResponse<ImportedSkillData> = await window.cerebro.invoke({
-        method: 'POST',
-        path: '/skills/import',
-        body: { input },
-      });
-      if (!res.ok) {
-        throw new Error(
-          (res.data as unknown as { detail?: string })?.detail ?? 'Import failed',
-        );
-      }
-      return res.data;
-    },
-    [],
-  );
+  const importSkill = useCallback(async (input: string): Promise<ImportedSkillData> => {
+    const res: BackendResponse<ImportedSkillData> = await window.cerebro.invoke({
+      method: 'POST',
+      path: '/skills/import',
+      body: { input },
+    });
+    if (!res.ok) {
+      throw new Error((res.data as unknown as { detail?: string })?.detail ?? 'Import failed');
+    }
+    return res.data;
+  }, []);
 
   const getExpertSkills = useCallback(
     async (expertId: string): Promise<ExpertSkillAssignment[]> => {
@@ -233,36 +219,30 @@ export function SkillProvider({ children }: { children: ReactNode }) {
   const syncExpert = (expertId: string) =>
     window.cerebro.installer.syncExpert(expertId).catch(console.error);
 
-  const assignSkill = useCallback(
-    async (expertId: string, skillId: string) => {
-      try {
-        const res = await window.cerebro.invoke({
-          method: 'POST',
-          path: `/experts/${expertId}/skills`,
-          body: { skill_id: skillId },
-        });
-        if (res.ok) syncExpert(expertId);
-      } catch (e) {
-        console.error('Failed to assign skill:', e);
-      }
-    },
-    [],
-  );
+  const assignSkill = useCallback(async (expertId: string, skillId: string) => {
+    try {
+      const res = await window.cerebro.invoke({
+        method: 'POST',
+        path: `/experts/${expertId}/skills`,
+        body: { skill_id: skillId },
+      });
+      if (res.ok) syncExpert(expertId);
+    } catch (e) {
+      console.error('Failed to assign skill:', e);
+    }
+  }, []);
 
-  const unassignSkill = useCallback(
-    async (expertId: string, skillId: string) => {
-      try {
-        const res = await window.cerebro.invoke({
-          method: 'DELETE',
-          path: `/experts/${expertId}/skills/${skillId}`,
-        });
-        if (res.ok || res.status === 204) syncExpert(expertId);
-      } catch (e) {
-        console.error('Failed to unassign skill:', e);
-      }
-    },
-    [],
-  );
+  const unassignSkill = useCallback(async (expertId: string, skillId: string) => {
+    try {
+      const res = await window.cerebro.invoke({
+        method: 'DELETE',
+        path: `/experts/${expertId}/skills/${skillId}`,
+      });
+      if (res.ok || res.status === 204) syncExpert(expertId);
+    } catch (e) {
+      console.error('Failed to unassign skill:', e);
+    }
+  }, []);
 
   const toggleSkillActive = useCallback(
     async (expertId: string, skillId: string, isActive: boolean) => {

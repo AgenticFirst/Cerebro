@@ -56,9 +56,12 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
     flashTimerRef.current = setTimeout(() => setSavedFlash(false), 1_500);
   }, [allowlistRaw]);
 
-  useEffect(() => () => {
-    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    },
+    [],
+  );
 
   const usingKeychain = status?.credsBackend === 'os-keychain';
   const state = status?.state ?? 'off';
@@ -102,12 +105,11 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
         <StatePill state={state} />
         {status?.phoneNumber && (
           <span className="text-text-secondary">
-            {status.phoneNumber}{status.pushName ? ` · ${status.pushName}` : ''}
+            {status.phoneNumber}
+            {status.pushName ? ` · ${status.pushName}` : ''}
           </span>
         )}
-        {status?.lastError && (
-          <span className="text-red-400 break-all">{status.lastError}</span>
-        )}
+        {status?.lastError && <span className="text-red-400 break-all">{status.lastError}</span>}
       </div>
 
       {/* Pairing flow */}
@@ -130,7 +132,9 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
 
       {state === 'pairing' && (
         <div className="mt-4 rounded-lg border border-border-subtle bg-bg-surface p-4">
-          <div className="text-sm text-text-primary font-medium mb-2">{t('whatsappSection.scanToPair')}</div>
+          <div className="text-sm text-text-primary font-medium mb-2">
+            {t('whatsappSection.scanToPair')}
+          </div>
           {status?.qr ? (
             <>
               <img
@@ -173,7 +177,9 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
 
       {/* Allowlist */}
       <div className="mt-6">
-        <label className="text-xs font-medium text-text-secondary">{t('whatsappSection.allowlistLabel')}</label>
+        <label className="text-xs font-medium text-text-secondary">
+          {t('whatsappSection.allowlistLabel')}
+        </label>
         <input
           type="text"
           value={allowlistRaw}
@@ -183,10 +189,7 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
           spellCheck={false}
         />
         <p className="mt-1.5 text-[11px] text-text-tertiary leading-relaxed">
-          <Trans
-            i18nKey="whatsappSection.allowlistHelp"
-            components={{ code: <code /> }}
-          />
+          <Trans i18nKey="whatsappSection.allowlistHelp" components={{ code: <code /> }} />
         </p>
         <div className="mt-2 flex items-center justify-end gap-3">
           {savedFlash && (
@@ -211,29 +214,46 @@ function StatePill({ state }: { state: WhatsAppStatusResponse['state'] }) {
   const { t } = useTranslation();
   const className = (() => {
     switch (state) {
-      case 'off': return 'text-text-tertiary border-border-subtle bg-bg-elevated';
+      case 'off':
+        return 'text-text-tertiary border-border-subtle bg-bg-elevated';
       case 'pairing':
       case 'connecting':
         return 'text-amber-400 border-amber-500/30 bg-amber-500/10';
-      case 'connected': return 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10';
-      case 'error': return 'text-red-400 border-red-500/30 bg-red-500/10';
+      case 'connected':
+        return 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10';
+      case 'error':
+        return 'text-red-400 border-red-500/30 bg-red-500/10';
     }
   })();
   const label = (() => {
     switch (state) {
-      case 'off': return t('whatsappSection.statePillOff');
-      case 'pairing': return t('whatsappSection.statePillPairing');
-      case 'connecting': return t('whatsappSection.statePillConnecting');
-      case 'connected': return t('whatsappSection.statePillConnected');
-      case 'error': return t('whatsappSection.statePillError');
+      case 'off':
+        return t('whatsappSection.statePillOff');
+      case 'pairing':
+        return t('whatsappSection.statePillPairing');
+      case 'connecting':
+        return t('whatsappSection.statePillConnecting');
+      case 'connected':
+        return t('whatsappSection.statePillConnected');
+      case 'error':
+        return t('whatsappSection.statePillError');
     }
   })();
   const spinning = state === 'pairing' || state === 'connecting';
   return (
-    <span className={clsx('text-[10px] font-medium px-2 py-1 rounded-full border flex items-center gap-1.5', className)}>
-      {spinning
-        ? <Loader2 size={11} className="animate-spin" />
-        : state === 'connected' ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+    <span
+      className={clsx(
+        'text-[10px] font-medium px-2 py-1 rounded-full border flex items-center gap-1.5',
+        className,
+      )}
+    >
+      {spinning ? (
+        <Loader2 size={11} className="animate-spin" />
+      ) : state === 'connected' ? (
+        <CheckCircle2 size={11} />
+      ) : (
+        <XCircle size={11} />
+      )}
       {label}
     </span>
   );

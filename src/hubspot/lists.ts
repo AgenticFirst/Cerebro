@@ -42,7 +42,10 @@ interface RawList {
 function normalizeList(raw: RawList | undefined | null): HubSpotList | null {
   if (!raw || raw.listId === undefined || raw.listId === null) return null;
   const sizeStr = raw.additionalProperties?.hs_list_size;
-  const size = sizeStr !== undefined && sizeStr !== '' && !Number.isNaN(Number(sizeStr)) ? Number(sizeStr) : null;
+  const size =
+    sizeStr !== undefined && sizeStr !== '' && !Number.isNaN(Number(sizeStr))
+      ? Number(sizeStr)
+      : null;
   return {
     listId: String(raw.listId),
     name: raw.name ?? '',
@@ -67,13 +70,19 @@ export async function listLists(
   const body: Record<string, unknown> = { count, offset: 0 };
   if (opts.query) body.query = opts.query;
 
-  const res = await callHubSpotApi<{ lists?: RawList[]; total?: number }>(token, '/crm/v3/lists/search', {
-    method: 'POST',
-    body,
-    signal: opts.signal,
-  });
+  const res = await callHubSpotApi<{ lists?: RawList[]; total?: number }>(
+    token,
+    '/crm/v3/lists/search',
+    {
+      method: 'POST',
+      body,
+      signal: opts.signal,
+    },
+  );
   if (!res.ok) return { lists: [], total: 0, error: res.error };
-  const lists = (res.data?.lists ?? []).map(normalizeList).filter((l): l is HubSpotList => l !== null);
+  const lists = (res.data?.lists ?? [])
+    .map(normalizeList)
+    .filter((l): l is HubSpotList => l !== null);
   return { lists, total: res.data?.total ?? lists.length, error: null };
 }
 
@@ -83,7 +92,11 @@ export interface GetListResult {
 }
 
 /** Fetch a single list by id. */
-export async function getList(token: string, listId: string, signal?: AbortSignal): Promise<GetListResult> {
+export async function getList(
+  token: string,
+  listId: string,
+  signal?: AbortSignal,
+): Promise<GetListResult> {
   const res = await callHubSpotApi<{ list?: RawList }>(
     token,
     `/crm/v3/lists/${encodeURIComponent(listId)}`,
@@ -140,7 +153,11 @@ export async function renameList(
 }
 
 /** Archive (delete) a list. The records themselves are not deleted. */
-export async function deleteList(token: string, listId: string, signal?: AbortSignal): Promise<ListMutationResult> {
+export async function deleteList(
+  token: string,
+  listId: string,
+  signal?: AbortSignal,
+): Promise<ListMutationResult> {
   const res = await callHubSpotApi(token, `/crm/v3/lists/${encodeURIComponent(listId)}`, {
     method: 'DELETE',
     signal,

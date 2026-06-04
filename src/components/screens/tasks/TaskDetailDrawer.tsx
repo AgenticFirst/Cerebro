@@ -1,8 +1,23 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Maximize2, Minimize2, Trash2, Play, StopCircle, RotateCcw, Copy, Terminal } from 'lucide-react';
+import {
+  X,
+  Maximize2,
+  Minimize2,
+  Trash2,
+  Play,
+  StopCircle,
+  RotateCcw,
+  Copy,
+  Terminal,
+} from 'lucide-react';
 import clsx from 'clsx';
-import { useTasks, type Task, type TaskColumn, type TaskPriority } from '../../../context/TaskContext';
+import {
+  useTasks,
+  type Task,
+  type TaskColumn,
+  type TaskPriority,
+} from '../../../context/TaskContext';
 import { useExperts } from '../../../context/ExpertContext';
 import TaskDescriptionEditor from './TaskDescriptionEditor';
 import TaskAttachmentsSection from './TaskAttachmentsSection';
@@ -50,7 +65,8 @@ interface TaskDetailDrawerProps {
 
 export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProps) {
   const { t } = useTranslation();
-  const { tasks, updateTask, moveTask, deleteTask, startTask, cancelTask, getActiveRunId } = useTasks();
+  const { tasks, updateTask, moveTask, deleteTask, startTask, cancelTask, getActiveRunId } =
+    useTasks();
   const { experts } = useExperts();
 
   const tagSuggestions = useMemo(() => {
@@ -103,15 +119,23 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
         fileFpRef.current = fp;
         setFileCount(flattenFiles(tree).length);
       } catch {
-        if (!cancelled) { setFileCount(0); fileFpRef.current = ''; }
+        if (!cancelled) {
+          setFileCount(0);
+          fileFpRef.current = '';
+        }
       }
     };
     poll();
     if (task.column === 'in_progress') {
       const id = setInterval(poll, 5000);
-      return () => { cancelled = true; clearInterval(id); };
+      return () => {
+        cancelled = true;
+        clearInterval(id);
+      };
     }
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [task?.id, task?.project_path, task?.column]);
 
   useEffect(() => {
@@ -121,9 +145,8 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     //  - everything else → Detalles
     // Running tasks stay on Detalles too; the live-session badge above the
     // tabs offers a one-click jump to the console.
-    const initial: Tab = task.column === 'to_review' || task.column === 'completed'
-      ? 'preview'
-      : 'details';
+    const initial: Tab =
+      task.column === 'to_review' || task.column === 'completed' ? 'preview' : 'details';
     setActiveTab(initial);
     setIsFullWidth(false);
     setIsEditingTitle(false);
@@ -136,13 +159,17 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   useEffect(() => {
     if (showHardReset || !hardResetShellKey) return;
     const key = hardResetShellKey;
-    window.cerebro.taskTerminal.stopShellSession(key).catch(() => { /* noop */ });
+    window.cerebro.taskTerminal.stopShellSession(key).catch(() => {
+      /* noop */
+    });
     setHardResetShellKey(null);
   }, [showHardReset, hardResetShellKey]);
   useEffect(() => {
     return () => {
       if (hardResetShellKey) {
-        window.cerebro.taskTerminal.stopShellSession(hardResetShellKey).catch(() => { /* noop */ });
+        window.cerebro.taskTerminal.stopShellSession(hardResetShellKey).catch(() => {
+          /* noop */
+        });
       }
     };
   }, [hardResetShellKey]);
@@ -227,7 +254,11 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
 
   const cancelIfRunning = useCallback(async () => {
     if (task?.column === 'in_progress') {
-      try { await cancelTask(task.id); } catch { /* noop */ }
+      try {
+        await cancelTask(task.id);
+      } catch {
+        /* noop */
+      }
     }
   }, [task, cancelTask]);
 
@@ -306,7 +337,8 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
 
   if (!task) return null;
 
-  const isStartableColumn = task.column === 'backlog' || task.column === 'to_review' || task.column === 'error';
+  const isStartableColumn =
+    task.column === 'backlog' || task.column === 'to_review' || task.column === 'error';
   const hasExpert = !!task.expert_id;
   const canStart = isStartableColumn && hasExpert;
   const isRunning = task.column === 'in_progress';
@@ -317,13 +349,16 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   // runId during the brief window between agent.run() and the backend's
   // run_started echo that sets task.run_id.
   const consoleRunId = task.run_id ?? getActiveRunId(task.id);
-  const deliverable = task.result_md && task.result_kind
-    ? { body: task.result_md, title: task.result_title ?? '', kind: task.result_kind }
-    : null;
+  const deliverable =
+    task.result_md && task.result_kind
+      ? { body: task.result_md, title: task.result_title ?? '', kind: task.result_kind }
+      : null;
   const startLabel =
-    task.column === 'to_review' ? t('tasks.rerunTask')
-    : task.column === 'error' ? t('tasks.retryTask')
-    : t('tasks.startTask');
+    task.column === 'to_review'
+      ? t('tasks.rerunTask')
+      : task.column === 'error'
+        ? t('tasks.retryTask')
+        : t('tasks.startTask');
 
   // Shared between compact and focus modes
   const consolePanel = (
@@ -374,7 +409,10 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
                 <code className="text-xs text-emerald-400 font-mono">
                   claude --resume {task.run_id}
                 </code>
-                <Copy size={12} className="text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+                <Copy
+                  size={12}
+                  className="text-zinc-500 group-hover:text-zinc-300 transition-colors"
+                />
                 {copiedResumeCmd && (
                   <span className="text-[10px] text-emerald-400 font-medium">Copied</span>
                 )}
@@ -394,7 +432,11 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
   const tabs: { key: Tab; label: string }[] = [
     { key: 'details', label: t('tasks.tabDetails') },
     { key: 'preview', label: t('tasks.tabPreview') },
-    { key: 'files', label: fileCount > 0 ? t('tasks.tabFilesWithCount', { count: fileCount }) : t('tasks.tabFiles') },
+    {
+      key: 'files',
+      label:
+        fileCount > 0 ? t('tasks.tabFilesWithCount', { count: fileCount }) : t('tasks.tabFiles'),
+    },
     { key: 'console', label: t('tasks.tabConsole') },
     { key: 'activity', label: t('tasks.tabActivity') },
   ];
@@ -438,7 +480,11 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
               'flex-shrink-0 px-2 py-0.5 text-[11px] font-medium rounded-full border-none outline-none cursor-pointer appearance-none pr-5',
               COLUMN_COLORS[task.column],
             )}
-            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center' }}
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 4px center',
+            }}
           >
             {COLUMNS.map((col) => (
               <option key={col} value={col}>
@@ -587,7 +633,9 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
       )}
 
       <div className="flex items-start gap-2 px-5 py-2 border-b border-border-subtle">
-        <span className="text-text-tertiary text-xs pt-1.5 flex-shrink-0">{t('tasks.drawerTags')}</span>
+        <span className="text-text-tertiary text-xs pt-1.5 flex-shrink-0">
+          {t('tasks.drawerTags')}
+        </span>
         <div className="flex-1 min-w-0">
           <TagChipInput
             tags={task.tags ?? []}
@@ -615,11 +663,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
         <span className="block text-xs font-medium text-text-secondary uppercase tracking-wide mb-3">
           {t('tasks.commentsLabel')}
         </span>
-        <CommentThread
-          taskId={task.id}
-          currentExpertId={task.expert_id}
-          filterSystem
-        />
+        <CommentThread taskId={task.id} currentExpertId={task.expert_id} filterSystem />
       </div>
     </div>
   );
@@ -633,9 +677,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
 
   // Focus-mode left panel mirrors the compact Details content.
   const focusLeftPanel = (
-    <div className="flex flex-col min-h-0 overflow-y-auto">
-      {detailsContent}
-    </div>
+    <div className="flex flex-col min-h-0 overflow-y-auto">{detailsContent}</div>
   );
 
   return (
@@ -682,7 +724,11 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
               {tabs.map((tab) => {
                 // Preview/Files/Console tabs only show once the task has been
                 // run at least once — there's nothing to put in them before that.
-                if ((tab.key === 'console' || tab.key === 'preview' || tab.key === 'files') && !hasRun) return null;
+                if (
+                  (tab.key === 'console' || tab.key === 'preview' || tab.key === 'files') &&
+                  !hasRun
+                )
+                  return null;
                 return (
                   <button
                     key={tab.key}
@@ -702,11 +748,7 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
 
             <div className="flex-1 min-h-0 flex flex-col">
               {activeTab === 'details' && detailsContent}
-              {activeTab === 'console' && (
-                <div className="flex-1 min-h-0">
-                  {consolePanel}
-                </div>
-              )}
+              {activeTab === 'console' && <div className="flex-1 min-h-0">{consolePanel}</div>}
               {activeTab === 'preview' && (
                 <div className="flex-1 min-h-0">
                   <LivePreview

@@ -107,9 +107,7 @@ export default function TooltipCard({
       <div className="border-t border-border-subtle px-4 py-3 flex items-center justify-between">
         {confirmingSkip ? (
           <div className="flex items-center justify-between gap-2 w-full">
-            <span className="text-[11px] text-text-secondary">
-              {t('onboarding.skipConfirm')}
-            </span>
+            <span className="text-[11px] text-text-secondary">{t('onboarding.skipConfirm')}</span>
             <div className="flex gap-1.5">
               <button
                 onClick={() => setConfirmingSkip(false)}

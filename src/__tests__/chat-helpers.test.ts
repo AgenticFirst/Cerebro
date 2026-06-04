@@ -64,9 +64,7 @@ describe('buildAgentErrorContent', () => {
   });
 
   it('keeps partial text above the error for ordinary failures', () => {
-    expect(buildAgentErrorContent('hello', 'boom', 'unknown')).toBe(
-      'hello\n\n---\n_Error: boom_',
-    );
+    expect(buildAgentErrorContent('hello', 'boom', 'unknown')).toBe('hello\n\n---\n_Error: boom_');
   });
 
   it('never writes the raw auth error into the body (the recovery card replaces it)', () => {
@@ -283,21 +281,15 @@ describe('isUntitledConversationTitle', () => {
 
 describe('isSameLocalDay', () => {
   it('treats two times on the same local date as equal', () => {
-    expect(
-      isSameLocalDay(
-        new Date('2026-04-20T00:05:00'),
-        new Date('2026-04-20T23:55:00'),
-      ),
-    ).toBe(true);
+    expect(isSameLocalDay(new Date('2026-04-20T00:05:00'), new Date('2026-04-20T23:55:00'))).toBe(
+      true,
+    );
   });
 
   it('treats different local dates as distinct', () => {
-    expect(
-      isSameLocalDay(
-        new Date('2026-04-20T23:59:00'),
-        new Date('2026-04-21T00:01:00'),
-      ),
-    ).toBe(false);
+    expect(isSameLocalDay(new Date('2026-04-20T23:59:00'), new Date('2026-04-21T00:01:00'))).toBe(
+      false,
+    );
   });
 });
 
@@ -321,20 +313,14 @@ describe('resolveNewChatTarget', () => {
   });
 
   it('reuses the empty chat from today without creating a new one', () => {
-    const plan = resolveNewChatTarget(
-      [makeConv({ id: 'today-empty', createdAt: today(10) })],
-      now,
-    );
+    const plan = resolveNewChatTarget([makeConv({ id: 'today-empty', createdAt: today(10) })], now);
     expect(plan.reuseId).toBe('today-empty');
     expect(plan.createNew).toBe(false);
     expect(plan.purgeIds).toEqual([]);
   });
 
   it('purges a week-old empty chat and creates a fresh one (the reported bug)', () => {
-    const plan = resolveNewChatTarget(
-      [makeConv({ id: 'stale', createdAt: lastWeek })],
-      now,
-    );
+    const plan = resolveNewChatTarget([makeConv({ id: 'stale', createdAt: lastWeek })], now);
     expect(plan.reuseId).toBe(null);
     expect(plan.createNew).toBe(true);
     expect(plan.purgeIds).toEqual(['stale']);

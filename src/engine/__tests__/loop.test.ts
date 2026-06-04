@@ -147,8 +147,6 @@ describe('loopAction', () => {
   });
 
   it('outputSchema declares items and count as required', () => {
-    expect(loopAction.outputSchema.required).toEqual(
-      expect.arrayContaining(['items', 'count']),
-    );
+    expect(loopAction.outputSchema.required).toEqual(expect.arrayContaining(['items', 'count']));
   });
 });

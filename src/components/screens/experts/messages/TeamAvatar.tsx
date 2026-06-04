@@ -44,10 +44,10 @@ export default function TeamAvatar({
   onClick,
 }: TeamAvatarProps) {
   const ring = team.domain
-    ? DOMAIN_RING[team.domain.toLowerCase()] ?? 'ring-accent/30'
+    ? (DOMAIN_RING[team.domain.toLowerCase()] ?? 'ring-accent/30')
     : 'ring-accent/30';
   const bg = team.domain
-    ? DOMAIN_BG[team.domain.toLowerCase()] ?? 'bg-bg-elevated'
+    ? (DOMAIN_BG[team.domain.toLowerCase()] ?? 'bg-bg-elevated')
     : 'bg-bg-elevated';
 
   const visible = members.slice(0, 3);

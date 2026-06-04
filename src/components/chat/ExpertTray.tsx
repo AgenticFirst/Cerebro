@@ -64,7 +64,9 @@ export default function ExpertTray() {
           <div
             className={clsx(
               'w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold',
-              activeExpertId === expert.id ? 'bg-accent text-bg-base' : 'bg-bg-hover text-text-secondary',
+              activeExpertId === expert.id
+                ? 'bg-accent text-bg-base'
+                : 'bg-bg-hover text-text-secondary',
             )}
           >
             {expert.name[0]?.toUpperCase()}

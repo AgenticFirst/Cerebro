@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText, FileCode, FileImage, File as FileIcon } from 'lucide-react';
+import {
+  ChevronRight,
+  ChevronDown,
+  Folder,
+  FolderOpen,
+  FileText,
+  FileCode,
+  FileImage,
+  File as FileIcon,
+} from 'lucide-react';
 import clsx from 'clsx';
 import type { WorkspaceFileNode } from '../../../types/ipc';
 
@@ -12,7 +21,32 @@ interface FileTreeProps {
 function iconForFile(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico'].includes(ext)) return FileImage;
-  if (['tsx', 'ts', 'jsx', 'js', 'mjs', 'cjs', 'py', 'go', 'rs', 'rb', 'java', 'c', 'cpp', 'h', 'css', 'scss', 'json', 'yaml', 'yml', 'toml', 'sh'].includes(ext)) return FileCode;
+  if (
+    [
+      'tsx',
+      'ts',
+      'jsx',
+      'js',
+      'mjs',
+      'cjs',
+      'py',
+      'go',
+      'rs',
+      'rb',
+      'java',
+      'c',
+      'cpp',
+      'h',
+      'css',
+      'scss',
+      'json',
+      'yaml',
+      'yml',
+      'toml',
+      'sh',
+    ].includes(ext)
+  )
+    return FileCode;
   if (['md', 'txt', 'html'].includes(ext)) return FileText;
   return FileIcon;
 }
@@ -72,7 +106,10 @@ function TreeNode({
       )}
       style={{ paddingLeft: `${8 + depth * 12 + 16}px` }}
     >
-      <Icon size={13} className={clsx('flex-shrink-0', isSelected ? 'text-accent' : 'text-text-tertiary')} />
+      <Icon
+        size={13}
+        className={clsx('flex-shrink-0', isSelected ? 'text-accent' : 'text-text-tertiary')}
+      />
       <span className="text-xs truncate">{node.name}</span>
     </button>
   );

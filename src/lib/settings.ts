@@ -23,5 +23,7 @@ export function saveSetting(key: string, value: unknown): Promise<void> {
       body: { value: JSON.stringify(value) },
     })
     .then(() => undefined)
-    .catch((err) => { console.error(err); });
+    .catch((err) => {
+      console.error(err);
+    });
 }

@@ -40,11 +40,23 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
   // Calendars the user can create into: the built-in Local one + each connected
   // provider calendar. Defaults to a connected primary if any, else Local.
   const targetOptions = useMemo(() => {
-    const opts = [{ key: `${LOCAL_CALENDAR_ACCOUNT_ID}:${LOCAL_CALENDAR_ID}`, accountId: LOCAL_CALENDAR_ACCOUNT_ID, calendarId: LOCAL_CALENDAR_ID, label: 'Local' }];
+    const opts = [
+      {
+        key: `${LOCAL_CALENDAR_ACCOUNT_ID}:${LOCAL_CALENDAR_ID}`,
+        accountId: LOCAL_CALENDAR_ACCOUNT_ID,
+        calendarId: LOCAL_CALENDAR_ID,
+        label: 'Local',
+      },
+    ];
     for (const a of accounts) {
       for (const c of a.calendars ?? []) {
         if (c.selected === false) continue;
-        opts.push({ key: `${a.id}:${c.id}`, accountId: a.id, calendarId: c.id, label: `${c.name} · ${a.email}` });
+        opts.push({
+          key: `${a.id}:${c.id}`,
+          accountId: a.id,
+          calendarId: c.id,
+          label: `${c.name} · ${a.email}`,
+        });
       }
     }
     return opts;
@@ -53,7 +65,9 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
   const defaultTargetKey = useMemo(() => {
     const connected = accounts.find((a) => a.status === 'connected');
     if (connected) {
-      const cal = connected.calendars?.find((c) => c.id === connected.primary_calendar_id) ?? connected.calendars?.[0];
+      const cal =
+        connected.calendars?.find((c) => c.id === connected.primary_calendar_id) ??
+        connected.calendars?.[0];
       if (cal) return `${connected.id}:${cal.id}`;
     }
     return `${LOCAL_CALENDAR_ACCOUNT_ID}:${LOCAL_CALENDAR_ID}`;
@@ -61,10 +75,12 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
 
   const [targetKey, setTargetKey] = useState(defaultTargetKey);
 
-  const defaultStart = event?.start_utc ? new Date(event.start_utc) : initialStart ?? roundedNow();
+  const defaultStart = event?.start_utc
+    ? new Date(event.start_utc)
+    : (initialStart ?? roundedNow());
   const defaultEnd = event?.end_utc
     ? new Date(event.end_utc)
-    : initialEnd ?? new Date(defaultStart.getTime() + 60 * 60_000);
+    : (initialEnd ?? new Date(defaultStart.getTime() + 60 * 60_000));
 
   const [title, setTitle] = useState(event?.title ?? '');
   const [start, setStart] = useState<Date>(defaultStart);
@@ -72,9 +88,13 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
   const [allDay, setAllDay] = useState(event?.all_day ?? false);
   const [location, setLocation] = useState(event?.location ?? '');
   const [description, setDescription] = useState(event?.description ?? '');
-  const [attendees, setAttendees] = useState((event?.attendees ?? []).map((a) => a.email).join(', '));
+  const [attendees, setAttendees] = useState(
+    (event?.attendees ?? []).map((a) => a.email).join(', '),
+  );
   const [busy, setBusy] = useState(event ? event.transparency !== 'transparent' : true);
-  const [visibility, setVisibility] = useState<CalendarEventInput['visibility']>(event?.visibility ?? 'default');
+  const [visibility, setVisibility] = useState<CalendarEventInput['visibility']>(
+    event?.visibility ?? 'default',
+  );
   const [conference, setConference] = useState(false);
   const [color, setColor] = useState(event?.color ?? EVENT_COLORS[0].hex);
   const [saving, setSaving] = useState(false);
@@ -85,7 +105,11 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
   const targetIsProvider = useMemo(() => {
     const target = targetOptions.find((o) => o.key === targetKey);
     const acc = accounts.find((a) => a.id === target?.accountId);
-    return Boolean(acc && acc.status === 'connected' && (acc.provider === 'google' || acc.provider === 'outlook'));
+    return Boolean(
+      acc &&
+      acc.status === 'connected' &&
+      (acc.provider === 'google' || acc.provider === 'outlook'),
+    );
   }, [targetKey, targetOptions, accounts]);
 
   const submit = async () => {
@@ -108,16 +132,17 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
       description: description.trim() || undefined,
       // Guests/conferencing are provider-only.
       attendees: targetIsProvider
-        ? attendees.split(',').map((s) => s.trim()).filter(Boolean)
+        ? attendees
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
         : [],
       busy,
       visibility,
       color,
       conference: event ? undefined : targetIsProvider && conference,
     };
-    const res = event
-      ? await updateEvent(event.id, input)
-      : await createEvent(input);
+    const res = event ? await updateEvent(event.id, input) : await createEvent(input);
     setSaving(false);
     if (res.ok) {
       onClose();
@@ -127,7 +152,10 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
       <div
         className="w-[480px] max-w-[92vw] rounded-xl border border-border-subtle bg-bg-base shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -159,7 +187,9 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
                 className="w-full bg-bg-surface border border-border-subtle rounded-md px-2 py-1.5 text-[13px] text-text-primary outline-none focus:border-accent"
               >
                 {targetOptions.map((o) => (
-                  <option key={o.key} value={o.key}>{o.label}</option>
+                  <option key={o.key} value={o.key}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
             </Field>
@@ -197,7 +227,10 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
           </Field>
 
           {targetIsProvider ? (
-            <Field label={t('calendar.event.attendeesLabel')} hint={t('calendar.event.attendeesHint')}>
+            <Field
+              label={t('calendar.event.attendeesLabel')}
+              hint={t('calendar.event.attendeesHint')}
+            >
               <input
                 value={attendees}
                 onChange={(e) => setAttendees(e.target.value)}
@@ -255,14 +288,21 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
           </div>
 
           {!event && targetIsProvider && (
-            <Checkbox checked={conference} onChange={setConference} label={t('calendar.event.conferenceLabel')} />
+            <Checkbox
+              checked={conference}
+              onChange={setConference}
+              label={t('calendar.event.conferenceLabel')}
+            />
           )}
 
           {err && <p className="text-[12px] text-red-400">{err}</p>}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border-subtle px-4 py-2.5">
-          <button onClick={onClose} className="px-3 py-1 rounded-md text-[12px] text-text-tertiary hover:text-text-secondary">
+          <button
+            onClick={onClose}
+            className="px-3 py-1 rounded-md text-[12px] text-text-tertiary hover:text-text-secondary"
+          >
             {t('calendar.event.cancel')}
           </button>
           <button
@@ -278,10 +318,20 @@ export default function EventEditModal({ event, initialStart, initialEnd, onClos
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <label className="block text-[11px] uppercase tracking-wide text-text-tertiary mb-1">{label}</label>
+      <label className="block text-[11px] uppercase tracking-wide text-text-tertiary mb-1">
+        {label}
+      </label>
       {children}
       {hint && <p className="text-[10px] text-text-tertiary mt-0.5">{hint}</p>}
     </div>

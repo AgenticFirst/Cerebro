@@ -18,7 +18,9 @@ interface SendSlackFileParams {
   thread_ts?: string;
 }
 
-export function createSendSlackFileAction(deps: { getChannel: () => SlackChannel | null }): ActionDefinition {
+export function createSendSlackFileAction(deps: {
+  getChannel: () => SlackChannel | null;
+}): ActionDefinition {
   return {
     type: 'send_slack_file',
     name: 'Send Slack File',
@@ -48,7 +50,10 @@ export function createSendSlackFileAction(deps: { getChannel: () => SlackChannel
       type: 'object',
       properties: {
         channel: { type: 'string', description: 'Slack channel id (C…/G…) or DM channel id (D…).' },
-        file_item_id: { type: 'string', description: 'Preferred: id of a registered FileItem on disk.' },
+        file_item_id: {
+          type: 'string',
+          description: 'Preferred: id of a registered FileItem on disk.',
+        },
         file_path: {
           type: 'string',
           description: 'Escape hatch: absolute path to a file on disk Cerebro just created.',
@@ -125,7 +130,9 @@ export function createSendSlackFileAction(deps: { getChannel: () => SlackChannel
         : resolved.fileName;
 
       const { fileId, error } = await channel.sendFileActionMessage(channelId, resolved.absPath, {
-        comment, fileName, threadTs,
+        comment,
+        fileName,
+        threadTs,
       });
 
       if (error) {

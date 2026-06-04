@@ -41,7 +41,9 @@ function ModelCard({ model }: { model: VoiceCatalogModel }) {
         <div className="flex flex-col items-end gap-2 min-w-[160px]">
           <div className="flex items-center gap-2 text-xs text-text-secondary">
             <RefreshCw size={12} className="animate-spin text-accent" />
-            <span>{formatMB(downloaded)} / {formatMB(total)} ({pct}%)</span>
+            <span>
+              {formatMB(downloaded)} / {formatMB(total)} ({pct}%)
+            </span>
           </div>
           <div className="w-full h-1 rounded-full bg-white/[0.06] overflow-hidden">
             <div
@@ -115,9 +117,7 @@ function ModelCard({ model }: { model: VoiceCatalogModel }) {
               {model.type === 'stt' ? 'Speech → Text' : 'Text → Speech'}
             </span>
           </div>
-          <p className="text-xs text-text-secondary mt-0.5 leading-relaxed">
-            {model.description}
-          </p>
+          <p className="text-xs text-text-secondary mt-0.5 leading-relaxed">{model.description}</p>
           {model.error && model.download_state === 'failed' && (
             <p className="text-xs text-red-400/80 mt-1.5 truncate" title={model.error}>
               {model.error}
@@ -143,9 +143,9 @@ export default function VoiceSection() {
     <div>
       <h2 className="text-base font-semibold text-text-primary mb-1">Voice</h2>
       <p className="text-xs text-text-secondary mb-5">
-        Voice models run fully on-device — no audio leaves your machine. Download
-        each model once; total install size is roughly 480&nbsp;MB. Once both
-        models are installed the call button appears on expert profiles.
+        Voice models run fully on-device — no audio leaves your machine. Download each model once;
+        total install size is roughly 480&nbsp;MB. Once both models are installed the call button
+        appears on expert profiles.
       </p>
 
       {!catalog && catalogLoading ? (

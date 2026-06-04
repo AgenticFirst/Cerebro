@@ -45,7 +45,11 @@ export default function StepLiveActivity({ step, events, limit = 12 }: StepLiveA
       .slice(-limit)
       .map<Row>((evt) => {
         let payload: Record<string, unknown> = {};
-        try { payload = JSON.parse(evt.payload_json); } catch { /* empty */ }
+        try {
+          payload = JSON.parse(evt.payload_json);
+        } catch {
+          /* empty */
+        }
 
         switch (evt.event_type) {
           case 'step_log':
@@ -53,16 +57,21 @@ export default function StepLiveActivity({ step, events, limit = 12 }: StepLiveA
               id: evt.id,
               ts: evt.timestamp,
               text: String(payload.message ?? payload.log ?? ''),
-              tone: String(payload.message ?? '').toLowerCase().includes('[stderr]') ? 'stderr' : 'normal',
+              tone: String(payload.message ?? '')
+                .toLowerCase()
+                .includes('[stderr]')
+                ? 'stderr'
+                : 'normal',
             };
           case 'agent_idle_warning': {
             const ms = Number(payload.elapsedMs ?? 0);
             // Progressive copy: 45s → "still thinking", 2m → "tough one", 5m+ → "almost there".
-            const key = ms >= 300_000
-              ? 'liveActivity.idleWarningVeryLong'
-              : ms >= 120_000
-                ? 'liveActivity.idleWarningLong'
-                : 'liveActivity.idleWarning';
+            const key =
+              ms >= 300_000
+                ? 'liveActivity.idleWarningVeryLong'
+                : ms >= 120_000
+                  ? 'liveActivity.idleWarningLong'
+                  : 'liveActivity.idleWarning';
             return {
               id: evt.id,
               ts: evt.timestamp,
@@ -82,18 +91,35 @@ export default function StepLiveActivity({ step, events, limit = 12 }: StepLiveA
             };
           }
           case 'subprocess_stderr':
-            return { id: evt.id, ts: evt.timestamp, text: `[stderr] ${payload.line ?? ''}`, tone: 'stderr' };
+            return {
+              id: evt.id,
+              ts: evt.timestamp,
+              text: `[stderr] ${payload.line ?? ''}`,
+              tone: 'stderr',
+            };
           case 'action_tool_start':
-            return { id: evt.id, ts: evt.timestamp, text: t('liveActivity.toolStart', { tool: payload.toolName ?? 'tool' }), tone: 'tool' };
+            return {
+              id: evt.id,
+              ts: evt.timestamp,
+              text: t('liveActivity.toolStart', { tool: payload.toolName ?? 'tool' }),
+              tone: 'tool',
+            };
           case 'action_tool_end':
             return {
               id: evt.id,
               ts: evt.timestamp,
-              text: t('liveActivity.toolEnd', { tool: payload.toolName ?? 'tool' }) + (payload.isError ? ' (error)' : ''),
+              text:
+                t('liveActivity.toolEnd', { tool: payload.toolName ?? 'tool' }) +
+                (payload.isError ? ' (error)' : ''),
               tone: payload.isError ? 'warn' : 'tool',
             };
           case 'action_text_delta':
-            return { id: evt.id, ts: evt.timestamp, text: t('liveActivity.textDelta'), tone: 'normal' };
+            return {
+              id: evt.id,
+              ts: evt.timestamp,
+              text: t('liveActivity.textDelta'),
+              tone: 'normal',
+            };
           default:
             return { id: evt.id, ts: evt.timestamp, text: evt.event_type, tone: 'normal' };
         }
@@ -106,8 +132,8 @@ export default function StepLiveActivity({ step, events, limit = 12 }: StepLiveA
   // re-checks live.
   useElapsed(lastTs, step.status === 'running');
   const lastTsMs = lastTs ? parseServerTimestamp(lastTs) : NaN;
-  const isHung = step.status === 'running' && !Number.isNaN(lastTsMs) &&
-    Date.now() - lastTsMs > 30_000;
+  const isHung =
+    step.status === 'running' && !Number.isNaN(lastTsMs) && Date.now() - lastTsMs > 30_000;
 
   if (rows.length === 0 && step.status !== 'running') {
     return null;
@@ -120,9 +146,7 @@ export default function StepLiveActivity({ step, events, limit = 12 }: StepLiveA
           {t('liveActivity.title')}
         </h5>
         {rows.length > 0 && (
-          <span className="text-[10px] text-text-tertiary tabular-nums">
-            {rows.length}
-          </span>
+          <span className="text-[10px] text-text-tertiary tabular-nums">{rows.length}</span>
         )}
       </div>
 
@@ -133,13 +157,15 @@ export default function StepLiveActivity({ step, events, limit = 12 }: StepLiveA
               <span className="text-[10px] font-mono tabular-nums text-text-tertiary flex-shrink-0">
                 {formatEventTime(row.ts)}
               </span>
-              <span className={clsx(
-                'text-[11px] leading-relaxed break-words',
-                row.tone === 'warn' && 'text-amber-300',
-                row.tone === 'stderr' && 'text-orange-300/80 font-mono text-[10px]',
-                row.tone === 'tool' && 'text-cyan-400',
-                row.tone === 'normal' && 'text-text-secondary',
-              )}>
+              <span
+                className={clsx(
+                  'text-[11px] leading-relaxed break-words',
+                  row.tone === 'warn' && 'text-amber-300',
+                  row.tone === 'stderr' && 'text-orange-300/80 font-mono text-[10px]',
+                  row.tone === 'tool' && 'text-cyan-400',
+                  row.tone === 'normal' && 'text-text-secondary',
+                )}
+              >
                 {row.text}
               </span>
             </div>

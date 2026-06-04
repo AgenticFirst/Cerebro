@@ -32,17 +32,16 @@ function makeStep(overrides: Partial<StepDefinition> & { id: string }): StepDefi
 describe('validator: cycle detection', () => {
   it('detects a cycle and reports path', () => {
     const dag: DAGDefinition = {
-      steps: [
-        makeStep({ id: 'A', dependsOn: ['B'] }),
-        makeStep({ id: 'B', dependsOn: ['A'] }),
-      ],
+      steps: [makeStep({ id: 'A', dependsOn: ['B'] }), makeStep({ id: 'B', dependsOn: ['A'] })],
     };
 
     expect(() => validateDAG(dag, makeRegistry())).toThrow(DAGValidationError);
     try {
       validateDAG(dag, makeRegistry());
     } catch (err) {
-      expect((err as DAGValidationError).details.some((d) => d.includes('Cycle detected'))).toBe(true);
+      expect((err as DAGValidationError).details.some((d) => d.includes('Cycle detected'))).toBe(
+        true,
+      );
     }
   });
 
@@ -72,9 +71,11 @@ describe('validator: action type existence', () => {
     try {
       validateDAG(dag, makeRegistry());
     } catch (err) {
-      expect((err as DAGValidationError).details.some((d) =>
-        d.includes('unknown action type "nonexistent_action"'),
-      )).toBe(true);
+      expect(
+        (err as DAGValidationError).details.some((d) =>
+          d.includes('unknown action type "nonexistent_action"'),
+        ),
+      ).toBe(true);
     }
   });
 });
@@ -98,9 +99,11 @@ describe('validator: input mapping validity', () => {
     try {
       validateDAG(dag, makeRegistry());
     } catch (err) {
-      expect((err as DAGValidationError).details.some((d) =>
-        d.includes('non-existent step "nonexistent"'),
-      )).toBe(true);
+      expect(
+        (err as DAGValidationError).details.some((d) =>
+          d.includes('non-existent step "nonexistent"'),
+        ),
+      ).toBe(true);
     }
   });
 
@@ -112,9 +115,7 @@ describe('validator: input mapping validity', () => {
         makeStep({
           id: 'C',
           dependsOn: ['A'],
-          inputMappings: [
-            { sourceStepId: 'B', sourceField: 'result', targetField: 'data' },
-          ],
+          inputMappings: [{ sourceStepId: 'B', sourceField: 'result', targetField: 'data' }],
         }),
       ],
     };
@@ -123,9 +124,9 @@ describe('validator: input mapping validity', () => {
     try {
       validateDAG(dag, makeRegistry());
     } catch (err) {
-      expect((err as DAGValidationError).details.some((d) =>
-        d.includes('not in its dependency chain'),
-      )).toBe(true);
+      expect(
+        (err as DAGValidationError).details.some((d) => d.includes('not in its dependency chain')),
+      ).toBe(true);
     }
   });
 
@@ -137,9 +138,7 @@ describe('validator: input mapping validity', () => {
         makeStep({
           id: 'C',
           dependsOn: ['B'],
-          inputMappings: [
-            { sourceStepId: 'A', sourceField: 'result', targetField: 'upstream' },
-          ],
+          inputMappings: [{ sourceStepId: 'A', sourceField: 'result', targetField: 'upstream' }],
         }),
       ],
     };

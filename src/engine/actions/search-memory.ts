@@ -24,7 +24,11 @@ interface MemoryHit {
 }
 
 function extractJsonArray(text: string): MemoryHit[] | null {
-  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+  const trimmed = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```$/, '')
+    .trim();
   const start = trimmed.indexOf('[');
   const end = trimmed.lastIndexOf(']');
   if (start === -1 || end === -1 || end < start) return null;
@@ -106,11 +110,7 @@ export const searchMemoryAction: ActionDefinition = {
     });
 
     const parsed = extractJsonArray(raw);
-    const results =
-      parsed ??
-      (raw.trim()
-        ? [{ content: raw.trim(), source: null, score: 0 }]
-        : []);
+    const results = parsed ?? (raw.trim() ? [{ content: raw.trim(), source: null, score: 0 }] : []);
 
     const capped = results.slice(0, maxResults);
     context.log(`Search memory (${agent}) → ${capped.length} result(s)`);

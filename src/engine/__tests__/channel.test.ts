@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  channelAction,
-  registerChannelSender,
-  unregisterChannelSender,
-} from '../actions/channel';
+import { channelAction, registerChannelSender, unregisterChannelSender } from '../actions/channel';
 import { RunScratchpad } from '../scratchpad';
 import type { ActionContext, ActionInput } from '../actions/types';
 

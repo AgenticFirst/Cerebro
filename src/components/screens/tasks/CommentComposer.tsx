@@ -57,7 +57,17 @@ export default function CommentComposer({
         setIsSending(false);
       }
     },
-    [taskId, text, isSending, hasPendingQueuedInstruction, addComment, sendInstruction, onCommentAdded, assignableExperts, currentExpertId],
+    [
+      taskId,
+      text,
+      isSending,
+      hasPendingQueuedInstruction,
+      addComment,
+      sendInstruction,
+      onCommentAdded,
+      assignableExperts,
+      currentExpertId,
+    ],
   );
 
   return (
@@ -75,9 +85,7 @@ export default function CommentComposer({
         )}
       />
       {hasPendingQueuedInstruction && (
-        <p className="text-[11px] text-amber-400/80 italic">
-          {t('tasks.queuedAlreadyPending')}
-        </p>
+        <p className="text-[11px] text-amber-400/80 italic">{t('tasks.queuedAlreadyPending')}</p>
       )}
       <div className="flex items-center gap-2 justify-end">
         <button

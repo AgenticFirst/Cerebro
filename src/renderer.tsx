@@ -1,4 +1,3 @@
-import './i18n';
 import i18n from './i18n';
 import { createRoot } from 'react-dom/client';
 import App from './App';
@@ -15,9 +14,7 @@ if (savedLang && savedLang !== 'en') {
 const savedTheme = localStorage.getItem('cerebro_ui_theme');
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 const resolvedTheme =
-  savedTheme === 'light' || savedTheme === 'dark'
-    ? savedTheme
-    : prefersDark ? 'dark' : 'light';
+  savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : prefersDark ? 'dark' : 'light';
 document.documentElement.classList.add(resolvedTheme);
 
 const root = createRoot(document.getElementById('root'));

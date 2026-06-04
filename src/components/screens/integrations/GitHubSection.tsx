@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Eye, EyeOff, Loader2, Lock, RefreshCw, ShieldAlert, Trash2, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  RefreshCw,
+  ShieldAlert,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { GitHubIcon } from '../../icons/BrandIcons';
@@ -39,7 +49,9 @@ export default function GitHubSection({ showHeader = false }: GitHubSectionProps
     if (res.ok && res.repos) setAccessibleRepos(res.repos);
   }, []);
 
-  useEffect(() => { void refreshStatus(); }, [refreshStatus]);
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
 
   // Live status updates from the bridge poller.
   useEffect(() => {
@@ -94,17 +106,23 @@ export default function GitHubSection({ showHeader = false }: GitHubSectionProps
     }
   }, [addRepoDraft, status?.watchedRepos, refreshStatus]);
 
-  const handleAddPicked = useCallback(async (fullName: string) => {
-    const next = Array.from(new Set([...(status?.watchedRepos ?? []), fullName])).sort();
-    const res = await window.cerebro.github.setWatchedRepos(next);
-    if (res.ok) await refreshStatus();
-  }, [status?.watchedRepos, refreshStatus]);
+  const handleAddPicked = useCallback(
+    async (fullName: string) => {
+      const next = Array.from(new Set([...(status?.watchedRepos ?? []), fullName])).sort();
+      const res = await window.cerebro.github.setWatchedRepos(next);
+      if (res.ok) await refreshStatus();
+    },
+    [status?.watchedRepos, refreshStatus],
+  );
 
-  const handleRemoveRepo = useCallback(async (fullName: string) => {
-    const next = (status?.watchedRepos ?? []).filter((r) => r !== fullName);
-    const res = await window.cerebro.github.setWatchedRepos(next);
-    if (res.ok) await refreshStatus();
-  }, [status?.watchedRepos, refreshStatus]);
+  const handleRemoveRepo = useCallback(
+    async (fullName: string) => {
+      const next = (status?.watchedRepos ?? []).filter((r) => r !== fullName);
+      const res = await window.cerebro.github.setWatchedRepos(next);
+      if (res.ok) await refreshStatus();
+    },
+    [status?.watchedRepos, refreshStatus],
+  );
 
   const tokenConfigured = Boolean(status?.hasToken);
   const showTokenInput = !tokenConfigured || editingToken;
@@ -129,8 +147,8 @@ export default function GitHubSection({ showHeader = false }: GitHubSectionProps
         </>
       )}
 
-      {status && (
-        usingKeychain ? (
+      {status &&
+        (usingKeychain ? (
           <div className="mt-4 flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
             <Lock size={14} className="mt-0.5 flex-shrink-0" />
             <span className="leading-relaxed">{t('githubSection.storageEncrypted')}</span>
@@ -140,13 +158,16 @@ export default function GitHubSection({ showHeader = false }: GitHubSectionProps
             <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
             <span className="leading-relaxed">{t('githubSection.storagePlaintextFallback')}</span>
           </div>
-        )
-      )}
+        ))}
 
       {/* Token row */}
       <div className="mt-6">
-        <label className="text-xs font-medium text-text-secondary">{t('githubSection.tokenLabel')}</label>
-        <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">{t('githubSection.tokenHelp')}</p>
+        <label className="text-xs font-medium text-text-secondary">
+          {t('githubSection.tokenLabel')}
+        </label>
+        <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
+          {t('githubSection.tokenHelp')}
+        </p>
 
         {showTokenInput ? (
           <>
@@ -155,7 +176,10 @@ export default function GitHubSection({ showHeader = false }: GitHubSectionProps
                 <input
                   type={showToken ? 'text' : 'password'}
                   value={tokenDraft}
-                  onChange={(e) => { setTokenDraft(e.target.value); setVerify({ kind: 'idle' }); }}
+                  onChange={(e) => {
+                    setTokenDraft(e.target.value);
+                    setVerify({ kind: 'idle' });
+                  }}
                   placeholder={t('githubSection.tokenPlaceholder')}
                   className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                   autoComplete="off"
@@ -179,7 +203,9 @@ export default function GitHubSection({ showHeader = false }: GitHubSectionProps
                   'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
               >
-                {verify.kind === 'verifying' ? t('githubSection.verifying') : t('githubSection.verify')}
+                {verify.kind === 'verifying'
+                  ? t('githubSection.verifying')
+                  : t('githubSection.verify')}
               </button>
               {verify.kind === 'ok' && (
                 <button
@@ -225,7 +251,10 @@ export default function GitHubSection({ showHeader = false }: GitHubSectionProps
             </div>
             <button
               type="button"
-              onClick={() => { setEditingToken(true); setVerify({ kind: 'idle' }); }}
+              onClick={() => {
+                setEditingToken(true);
+                setVerify({ kind: 'idle' });
+              }}
               className="px-3 py-2 text-sm rounded-md font-medium bg-accent/15 text-accent hover:bg-accent/25"
             >
               {t('githubSection.replaceToken')}
@@ -244,8 +273,12 @@ export default function GitHubSection({ showHeader = false }: GitHubSectionProps
       {/* Watched repos */}
       {tokenConfigured && (
         <div className="mt-6">
-          <label className="text-xs font-medium text-text-secondary">{t('githubSection.watchedReposLabel')}</label>
-          <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">{t('githubSection.watchedReposHelp')}</p>
+          <label className="text-xs font-medium text-text-secondary">
+            {t('githubSection.watchedReposLabel')}
+          </label>
+          <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
+            {t('githubSection.watchedReposHelp')}
+          </p>
 
           <div className="mt-3 flex flex-wrap gap-1.5">
             {watched.length === 0 && (
@@ -292,13 +325,19 @@ export default function GitHubSection({ showHeader = false }: GitHubSectionProps
               className="px-2 py-1.5 text-text-tertiary hover:text-text-secondary"
               aria-label={t('githubSection.refreshRepoList')}
             >
-              {reposLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {reposLoading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RefreshCw size={14} />
+              )}
             </button>
           </div>
 
           {pickable.length > 0 && (
             <div className="mt-3">
-              <p className="text-[10px] uppercase tracking-wider text-text-tertiary mb-1.5">{t('githubSection.pickFromList')}</p>
+              <p className="text-[10px] uppercase tracking-wider text-text-tertiary mb-1.5">
+                {t('githubSection.pickFromList')}
+              </p>
               <div className="flex flex-wrap gap-1.5">
                 {pickable.map((r) => (
                   <button
@@ -320,18 +359,28 @@ export default function GitHubSection({ showHeader = false }: GitHubSectionProps
       {status && tokenConfigured && (
         <div className="mt-6 grid grid-cols-3 gap-3 text-xs">
           <StatusCell
-            label={watched.length > 0 ? t('githubSection.statusRunning') : t('githubSection.statusStopped')}
+            label={
+              watched.length > 0
+                ? t('githubSection.statusRunning')
+                : t('githubSection.statusStopped')
+            }
             value={watched.length > 0 ? `${watched.length} repo(s)` : '—'}
           />
           <StatusCell
             label={t('githubSection.lastPoll')}
-            value={status.lastPollAt ? new Date(status.lastPollAt).toLocaleTimeString() : t('githubSection.never')}
+            value={
+              status.lastPollAt
+                ? new Date(status.lastPollAt).toLocaleTimeString()
+                : t('githubSection.never')
+            }
           />
           <StatusCell
             label={t('githubSection.rateLimit')}
-            value={status.rateLimitRemaining !== null
-              ? t('githubSection.rateLimitRemaining', { remaining: status.rateLimitRemaining })
-              : '—'}
+            value={
+              status.rateLimitRemaining !== null
+                ? t('githubSection.rateLimitRemaining', { remaining: status.rateLimitRemaining })
+                : '—'
+            }
           />
           {status.lastError && (
             <div className="col-span-3 flex items-start gap-1.5 text-red-400">

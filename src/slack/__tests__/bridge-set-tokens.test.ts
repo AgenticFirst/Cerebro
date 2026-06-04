@@ -88,7 +88,8 @@ describe('SlackBridge.setTokens', () => {
     expect(stopSpy).not.toHaveBeenCalled();
     expect(startSpy).not.toHaveBeenCalled();
     // The running bridge keeps its original live tokens until re-enable.
-    const settings = (bridge as unknown as { settings: { botToken: string; appToken: string } }).settings;
+    const settings = (bridge as unknown as { settings: { botToken: string; appToken: string } })
+      .settings;
     expect(settings.botToken).toBe('old-bot');
     expect(settings.appToken).toBe('old-app');
   });
@@ -110,7 +111,8 @@ describe('SlackBridge.setTokens', () => {
     expect(result).toEqual({ ok: true });
     expect(stopSpy).not.toHaveBeenCalled();
     expect(startSpy).not.toHaveBeenCalled();
-    const settings = (bridge as unknown as { settings: { botToken: string; appToken: string } }).settings;
+    const settings = (bridge as unknown as { settings: { botToken: string; appToken: string } })
+      .settings;
     expect(settings.botToken).toBe('new-bot');
     expect(settings.appToken).toBe('new-app');
   });

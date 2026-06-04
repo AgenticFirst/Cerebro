@@ -123,7 +123,13 @@ describe('expert_step action', () => {
       { type: 'run_start', runId: 'agent-run-abc123' },
       { type: 'turn_start', turn: 1 },
       { type: 'tool_start', toolCallId: 'tc1', toolName: 'web_search', args: {} },
-      { type: 'tool_end', toolCallId: 'tc1', toolName: 'web_search', result: 'results', isError: false },
+      {
+        type: 'tool_end',
+        toolCallId: 'tc1',
+        toolName: 'web_search',
+        result: 'results',
+        isError: false,
+      },
       { type: 'text_delta', delta: 'The answer is 42' },
       { type: 'done', runId: 'agent-run-abc123', messageContent: 'The answer is 42' },
     ]);
@@ -169,9 +175,7 @@ describe('expert_step action', () => {
     const textEvents = emitEvent.mock.calls
       .map(([e]: [ExecutionEvent]) => e)
       .filter((e) => e.type === 'action_text_delta');
-    expect(textEvents).toEqual([
-      { type: 'action_text_delta', stepId: 'step-1', delta: 'hello' },
-    ]);
+    expect(textEvents).toEqual([{ type: 'action_text_delta', stepId: 'step-1', delta: 'hello' }]);
   });
 
   it('translates agent tool_start/tool_end to engine events', async () => {
@@ -270,7 +274,13 @@ describe('expert_step action', () => {
       { type: 'tool_start', toolCallId: 'tc2', toolName: 'web_search', args: {} },
       { type: 'tool_end', toolCallId: 'tc2', toolName: 'web_search', result: '', isError: false },
       { type: 'tool_start', toolCallId: 'tc3', toolName: 'memory_recall', args: {} },
-      { type: 'tool_end', toolCallId: 'tc3', toolName: 'memory_recall', result: '', isError: false },
+      {
+        type: 'tool_end',
+        toolCallId: 'tc3',
+        toolName: 'memory_recall',
+        result: '',
+        isError: false,
+      },
       { type: 'done', runId: 'agent-run-abc123', messageContent: 'done' },
     ]);
 

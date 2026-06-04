@@ -63,7 +63,13 @@ describe('expandEventsForWindow', () => {
 
   it('excludes cancelled events', () => {
     const out = expandEventsForWindow(
-      [ev({ status: 'cancelled', start_utc: '2026-06-03T09:00:00Z', end_utc: '2026-06-03T09:30:00Z' })],
+      [
+        ev({
+          status: 'cancelled',
+          start_utc: '2026-06-03T09:00:00Z',
+          end_utc: '2026-06-03T09:30:00Z',
+        }),
+      ],
       WIN_START,
       WIN_END,
     );

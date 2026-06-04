@@ -101,7 +101,11 @@ export function KnowledgeAiProvider({ children }: { children: ReactNode }) {
     (page: KbPage) => {
       setIsOpen(true);
       setIsCollapsed(false);
-      const next: AnchorPage = { id: page.id, title: page.title, contentMarkdown: page.contentMarkdown ?? '' };
+      const next: AnchorPage = {
+        id: page.id,
+        title: page.title,
+        contentMarkdown: page.contentMarkdown ?? '',
+      };
       // Don't disrupt an in-flight run; just reveal it. Re-anchor only when idle
       // and the user opened the panel on a different page than it's bound to.
       if (runIdRef.current) return;
@@ -162,7 +166,10 @@ export function KnowledgeAiProvider({ children }: { children: ReactNode }) {
     const tid: string = resolved;
 
     const history = messages;
-    setMessages((prev) => [...prev, { id: `local-${Date.now()}`, threadId: tid, role: 'user', content: question }]);
+    setMessages((prev) => [
+      ...prev,
+      { id: `local-${Date.now()}`, threadId: tid, role: 'user', content: question },
+    ]);
     void appendMessage(tid, 'user', question);
 
     // Pull the freshest persisted content (in-editor autosave may be ahead of
@@ -218,7 +225,12 @@ export function KnowledgeAiProvider({ children }: { children: ReactNode }) {
           const detail = event.error?.trim() || t('knowledgeBase.askAiError');
           setMessages((prev) => [
             ...prev,
-            { id: `local-e-${Date.now()}`, threadId: tid, role: 'assistant', content: `⚠️ ${detail}` },
+            {
+              id: `local-e-${Date.now()}`,
+              threadId: tid,
+              role: 'assistant',
+              content: `⚠️ ${detail}`,
+            },
           ]);
           break;
         }
@@ -238,7 +250,20 @@ export function KnowledgeAiProvider({ children }: { children: ReactNode }) {
     } catch {
       finalize('');
     }
-  }, [input, anchor, isRunning, threadId, messages, model, tier, i18n.language, t, loadTree, openPage, activePageId]);
+  }, [
+    input,
+    anchor,
+    isRunning,
+    threadId,
+    messages,
+    model,
+    tier,
+    i18n.language,
+    t,
+    loadTree,
+    openPage,
+    activePageId,
+  ]);
 
   const value = useMemo<KnowledgeAiContextValue>(
     () => ({
@@ -261,7 +286,25 @@ export function KnowledgeAiProvider({ children }: { children: ReactNode }) {
       removeThread,
       send,
     }),
-    [isOpen, isCollapsed, anchor, threads, threadId, messages, input, streaming, isRunning, openForPage, close, collapse, expand, openThread, startNewThread, removeThread, send],
+    [
+      isOpen,
+      isCollapsed,
+      anchor,
+      threads,
+      threadId,
+      messages,
+      input,
+      streaming,
+      isRunning,
+      openForPage,
+      close,
+      collapse,
+      expand,
+      openThread,
+      startNewThread,
+      removeThread,
+      send,
+    ],
   );
 
   return <KnowledgeAiContext.Provider value={value}>{children}</KnowledgeAiContext.Provider>;

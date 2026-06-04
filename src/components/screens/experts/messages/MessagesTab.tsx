@@ -22,8 +22,7 @@ export default function MessagesTab() {
     const enabledExperts = experts.filter((e) => e.isEnabled && e.type === 'expert');
     const pinnedTeam = enabledTeams.find((e) => e.isPinned);
     const pinnedExpert = enabledExperts.find((e) => e.isPinned);
-    const first =
-      pinnedTeam ?? pinnedExpert ?? enabledExperts[0] ?? enabledTeams[0];
+    const first = pinnedTeam ?? pinnedExpert ?? enabledExperts[0] ?? enabledTeams[0];
     if (first) setSelectedExpertId(first.id);
   }, [experts, selectedExpertId]);
 
@@ -53,10 +52,7 @@ export default function MessagesTab() {
         selectedExpertId={selectedExpertId}
         onSelectExpert={setSelectedExpertId}
       />
-      <ExpertThreadView
-        expert={selectedExpert}
-        onOpenProfile={(id) => setProfileExpertId(id)}
-      />
+      <ExpertThreadView expert={selectedExpert} onOpenProfile={(id) => setProfileExpertId(id)} />
       {profileExpert && (
         <ExpertProfileDrawer
           key={profileExpert.id}

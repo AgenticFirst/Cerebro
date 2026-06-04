@@ -12,7 +12,13 @@ interface FileListProps {
   onContextMenu: (item: FileItem, e: React.MouseEvent) => void;
 }
 
-export default function FileList({ items, selectedItemIds, onSelect, onOpen, onContextMenu }: FileListProps) {
+export default function FileList({
+  items,
+  selectedItemIds,
+  onSelect,
+  onOpen,
+  onContextMenu,
+}: FileListProps) {
   const { t } = useTranslation();
   return (
     <div className="px-4 py-2">
@@ -39,7 +45,9 @@ export default function FileList({ items, selectedItemIds, onSelect, onOpen, onC
               )}
             >
               <span className="flex items-center gap-2 min-w-0">
-                {item.starred && <Star size={11} className="text-amber-400 flex-shrink-0" fill="currentColor" />}
+                {item.starred && (
+                  <Star size={11} className="text-amber-400 flex-shrink-0" fill="currentColor" />
+                )}
                 <span className="text-[12px] truncate">{item.name}</span>
                 <span className="text-[10px] uppercase font-mono text-text-tertiary flex-shrink-0">
                   {item.ext}
@@ -48,8 +56,12 @@ export default function FileList({ items, selectedItemIds, onSelect, onOpen, onC
               <span className="text-[11px] text-text-tertiary text-right tabular-nums">
                 {formatBytes(item.sizeBytes)}
               </span>
-              <span className="text-[11px] text-text-tertiary">{formatRelative(item.createdAt)}</span>
-              <span className="text-[11px] text-text-tertiary">{formatRelative(item.updatedAt)}</span>
+              <span className="text-[11px] text-text-tertiary">
+                {formatRelative(item.createdAt)}
+              </span>
+              <span className="text-[11px] text-text-tertiary">
+                {formatRelative(item.updatedAt)}
+              </span>
             </button>
           );
         })}

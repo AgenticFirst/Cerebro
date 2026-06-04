@@ -85,7 +85,10 @@ function makeBridge(api: { chatPostMessage: ReturnType<typeof vi.fn> }) {
 describe('SlackBridge app_mention threading', () => {
   it('replies to a top-level mention inside the mention thread', async () => {
     const api = {
-      chatPostMessage: vi.fn(async (args: { channel: string }) => ({ ts: '2.000', channel: args.channel })),
+      chatPostMessage: vi.fn(async (args: { channel: string }) => ({
+        ts: '2.000',
+        channel: args.channel,
+      })),
     };
     const bridge = makeBridge(api);
 
@@ -112,7 +115,10 @@ describe('SlackBridge app_mention threading', () => {
 
   it('keeps an in-thread mention threaded under the original root', async () => {
     const api = {
-      chatPostMessage: vi.fn(async (args: { channel: string }) => ({ ts: '2.000', channel: args.channel })),
+      chatPostMessage: vi.fn(async (args: { channel: string }) => ({
+        ts: '2.000',
+        channel: args.channel,
+      })),
     };
     const bridge = makeBridge(api);
 

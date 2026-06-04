@@ -10,7 +10,12 @@ import type { CalendarOccurrence } from '../../../calendar/recurrence';
 import { expandEventsForWindow } from '../../../calendar/recurrence';
 import type { CalendarAccountInfo, CalendarEventDTO } from '../../../types/calendar';
 import EventBlock from './EventBlock';
-import { startOfDay, fmtTime, buildColorByAccount, colorForEvent } from '../../../calendar/cal-utils';
+import {
+  startOfDay,
+  fmtTime,
+  buildColorByAccount,
+  colorForEvent,
+} from '../../../calendar/cal-utils';
 
 const HOUR_PX = 48;
 const DAY_MS = 86_400_000;
@@ -99,7 +104,13 @@ function placeDay(occ: CalendarOccurrence[], dayStartMs: number): PlacedOccurren
   return placed;
 }
 
-export default function CalendarTimeGrid({ days, events, accounts, onSelectEvent, onCreateAt }: Props) {
+export default function CalendarTimeGrid({
+  days,
+  events,
+  accounts,
+  onSelectEvent,
+  onCreateAt,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const colorByAccount = useMemo(() => buildColorByAccount(accounts), [accounts]);
 
@@ -154,7 +165,11 @@ export default function CalendarTimeGrid({ days, events, accounts, onSelectEvent
     if (!d) return;
     const cur = yToSnappedMin(e.clientY, d.el);
     d.curMin = cur;
-    setSelection({ dayIndex: d.dayIndex, aMin: Math.min(d.startMin, cur), bMin: Math.max(d.startMin, cur) });
+    setSelection({
+      dayIndex: d.dayIndex,
+      aMin: Math.min(d.startMin, cur),
+      bMin: Math.max(d.startMin, cur),
+    });
   }, []);
 
   const handlePointerUp = useCallback(() => {
@@ -170,7 +185,10 @@ export default function CalendarTimeGrid({ days, events, accounts, onSelectEvent
     // A click (or a too-small drag) becomes a tidy default-length event.
     if (b - a < SNAP_MIN) b = Math.min(24 * 60, a + DEFAULT_DURATION_MIN);
     // Keep it within the day.
-    if (b > 24 * 60) { b = 24 * 60; a = Math.max(0, b - DEFAULT_DURATION_MIN); }
+    if (b > 24 * 60) {
+      b = 24 * 60;
+      a = Math.max(0, b - DEFAULT_DURATION_MIN);
+    }
     onCreateRef.current(new Date(d.dayStartMs + a * 60_000), new Date(d.dayStartMs + b * 60_000));
   }, [handlePointerMove]);
 
@@ -191,10 +209,13 @@ export default function CalendarTimeGrid({ days, events, accounts, onSelectEvent
     [handlePointerMove, handlePointerUp],
   );
 
-  useEffect(() => () => {
-    window.removeEventListener('pointermove', handlePointerMove);
-    window.removeEventListener('pointerup', handlePointerUp);
-  }, [handlePointerMove, handlePointerUp]);
+  useEffect(
+    () => () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    },
+    [handlePointerMove, handlePointerUp],
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -228,11 +249,16 @@ export default function CalendarTimeGrid({ days, events, accounts, onSelectEvent
             const dayEnd = dayStart + DAY_MS;
             const items = allDay.filter((o) => o.startMs < dayEnd && o.endMs > dayStart);
             return (
-              <div key={d.toISOString()} className="flex-1 px-1 py-1 space-y-1 border-l border-border-subtle/50">
+              <div
+                key={d.toISOString()}
+                className="flex-1 px-1 py-1 space-y-1 border-l border-border-subtle/50"
+              >
                 {items.map((o) => (
                   <button
                     key={o.key}
-                    onClick={(e) => onSelectEvent(o, (e.currentTarget as HTMLElement).getBoundingClientRect())}
+                    onClick={(e) =>
+                      onSelectEvent(o, (e.currentTarget as HTMLElement).getBoundingClientRect())
+                    }
                     className="block w-full truncate text-left text-[11px] px-1.5 py-0.5 rounded"
                     style={{ background: `${colorForEvent(o.event, colorByAccount)}33` }}
                   >
@@ -283,9 +309,7 @@ export default function CalendarTimeGrid({ days, events, accounts, onSelectEvent
                 ))}
 
                 {/* Live drag selection */}
-                {sel && (
-                  <DragSelection dayStartMs={dayStartMs} aMin={sel.aMin} bMin={sel.bMin} />
-                )}
+                {sel && <DragSelection dayStartMs={dayStartMs} aMin={sel.aMin} bMin={sel.bMin} />}
 
                 {placed.map((o) => (
                   <EventBlock
@@ -321,7 +345,15 @@ export default function CalendarTimeGrid({ days, events, accounts, onSelectEvent
 }
 
 /** The translucent block painted while dragging a new time range. */
-function DragSelection({ dayStartMs, aMin, bMin }: { dayStartMs: number; aMin: number; bMin: number }) {
+function DragSelection({
+  dayStartMs,
+  aMin,
+  bMin,
+}: {
+  dayStartMs: number;
+  aMin: number;
+  bMin: number;
+}) {
   const top = aMin * PX_PER_MIN;
   const dur = bMin - aMin;
   const height = Math.max(3, dur * PX_PER_MIN);

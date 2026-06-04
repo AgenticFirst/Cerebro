@@ -7,27 +7,49 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { SlackStreamSink } from '../SlackStreamSink';
 import type { SlackApi } from '../api';
 
-interface PostedMessage { ts: string; text: string; threadTs?: string }
-interface UpdatedMessage { ts: string; text: string }
-interface DeletedMessage { ts: string; channel: string }
+interface PostedMessage {
+  ts: string;
+  text: string;
+  threadTs?: string;
+}
+interface UpdatedMessage {
+  ts: string;
+  text: string;
+}
+interface DeletedMessage {
+  ts: string;
+  channel: string;
+}
 
-function makeStubApi(opts: {
-  failPost?: boolean;
-  failUpdate?: boolean;
-  failDelete?: boolean | string;
-} = {}) {
+function makeStubApi(
+  opts: {
+    failPost?: boolean;
+    failUpdate?: boolean;
+    failDelete?: boolean | string;
+  } = {},
+) {
   const posted: PostedMessage[] = [];
   const updated: UpdatedMessage[] = [];
   const deleted: DeletedMessage[] = [];
   let counter = 0;
   const stub: Partial<SlackApi> = {
-    chatPostMessage: vi.fn(async ({ channel, text, thread_ts }: { channel: string; text: string; thread_ts?: string }) => {
-      if (opts.failPost) throw new Error('boom');
-      counter++;
-      const ts = `${counter}.000`;
-      posted.push({ ts, text, threadTs: thread_ts });
-      return { ts, channel };
-    }),
+    chatPostMessage: vi.fn(
+      async ({
+        channel,
+        text,
+        thread_ts,
+      }: {
+        channel: string;
+        text: string;
+        thread_ts?: string;
+      }) => {
+        if (opts.failPost) throw new Error('boom');
+        counter++;
+        const ts = `${counter}.000`;
+        posted.push({ ts, text, threadTs: thread_ts });
+        return { ts, channel };
+      },
+    ),
     chatUpdate: vi.fn(async ({ ts, text }: { ts: string; text: string }) => {
       if (opts.failUpdate) throw new Error('boom');
       updated.push({ ts, text });
@@ -44,8 +66,12 @@ function makeStubApi(opts: {
 }
 
 describe('SlackStreamSink', () => {
-  beforeEach(() => { vi.useFakeTimers(); });
-  afterEach(() => { vi.useRealTimers(); });
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it('posts a placeholder on construction', async () => {
     const { api, posted } = makeStubApi();
@@ -54,7 +80,9 @@ describe('SlackStreamSink', () => {
       api,
       channel: 'C1',
       threadTs: '1.000',
-      onDone: () => { done = true; },
+      onDone: () => {
+        done = true;
+      },
     });
     // Allow the microtask that fires the placeholder send to resolve.
     await vi.advanceTimersByTimeAsync(0);
@@ -74,7 +102,9 @@ describe('SlackStreamSink', () => {
       api,
       channel: 'C1',
       threadTs: '1.000',
-      onDone: (text) => { finalText = text; },
+      onDone: (text) => {
+        finalText = text;
+      },
     });
     await vi.advanceTimersByTimeAsync(0);
     sink.send('engine:any-event', { type: 'text_delta', delta: 'Hello' });
@@ -106,7 +136,9 @@ describe('SlackStreamSink', () => {
       api,
       channel: 'C1',
       threadTs: '1.000',
-      onDone: (_t, err) => { errSeen = err; },
+      onDone: (_t, err) => {
+        errSeen = err;
+      },
     });
     await vi.advanceTimersByTimeAsync(0);
     sink.send('engine:any-event', { type: 'error', runId: 'r1', error: 'spawn failed' });
@@ -126,7 +158,9 @@ describe('SlackStreamSink', () => {
       api,
       channel: 'C1',
       threadTs: '1.000',
-      onDone: (t) => { finalText = t; },
+      onDone: (t) => {
+        finalText = t;
+      },
     });
     await vi.advanceTimersByTimeAsync(0);
     sink.send('engine:any-event', { type: 'done', runId: 'r1', messageContent: 'reply' });
@@ -144,7 +178,9 @@ describe('SlackStreamSink', () => {
       api,
       channel: 'C1',
       threadTs: '1.000',
-      onDone: (t) => { finalText = t; },
+      onDone: (t) => {
+        finalText = t;
+      },
     });
     await vi.advanceTimersByTimeAsync(0);
     sink.send('engine:any-event', { type: 'done', runId: 'r1', messageContent: 'final answer' });
@@ -188,7 +224,9 @@ describe('SlackStreamSink', () => {
       api,
       channel: 'C1',
       threadTs: '1.000',
-      onDone: (t) => { finalText = t; },
+      onDone: (t) => {
+        finalText = t;
+      },
     });
     await vi.advanceTimersByTimeAsync(0);
     const md = '## Hola\n**negrita** y [enlace](https://x.test)';

@@ -54,9 +54,7 @@ export default function WelcomeView({ onSend }: WelcomeViewProps) {
         <h1 className="text-3xl font-light text-text-primary text-center mb-3">
           {t('chat.welcomeTitle')}
         </h1>
-        <p className="text-sm text-text-secondary text-center mb-8">
-          {t('chat.welcomeSubtitle')}
-        </p>
+        <p className="text-sm text-text-secondary text-center mb-8">{t('chat.welcomeSubtitle')}</p>
         <ChatInput ref={chatInputRef} onSend={onSend} />
 
         <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -79,9 +77,7 @@ export default function WelcomeView({ onSend }: WelcomeViewProps) {
           })}
         </div>
 
-        <p className="mt-5 text-[11px] text-text-tertiary text-center">
-          {t('chat.welcomeHint')}
-        </p>
+        <p className="mt-5 text-[11px] text-text-tertiary text-center">{t('chat.welcomeHint')}</p>
       </div>
 
       {helpOpen && <CapabilitiesModal onClose={() => setHelpOpen(false)} />}

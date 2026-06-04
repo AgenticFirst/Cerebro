@@ -11,11 +11,22 @@ describe('generateProfile — toolchain write paths', () => {
       // Pretend every toolchain dir is present so the test asserts on the
       // generator's intent, not the host machine's incidental layout.
       const s = p.toString();
-      if (s.includes('Library/Python') || s.includes('/.npm') || s.includes('/.cargo') ||
-          s.includes('homebrew') || s.includes('/.cache') || s.includes('/.config') ||
-          s.includes('/.pyenv') || s.includes('/.rustup') || s.includes('/go') ||
-          s.includes('/.deno') || s.includes('/.bun') || s.includes('/.nvm') ||
-          s.includes('/.yarn') || s.includes('/.local/share')) {
+      if (
+        s.includes('Library/Python') ||
+        s.includes('/.npm') ||
+        s.includes('/.cargo') ||
+        s.includes('homebrew') ||
+        s.includes('/.cache') ||
+        s.includes('/.config') ||
+        s.includes('/.pyenv') ||
+        s.includes('/.rustup') ||
+        s.includes('/go') ||
+        s.includes('/.deno') ||
+        s.includes('/.bun') ||
+        s.includes('/.nvm') ||
+        s.includes('/.yarn') ||
+        s.includes('/.local/share')
+      ) {
         return true;
       }
       return realExistsSync(p);
@@ -64,6 +75,8 @@ describe('generateProfile — toolchain write paths', () => {
     });
     const home = os.homedir();
     // .ssh is denied; .config is allowed (and .config doesn't shadow .ssh).
-    expect(profile).toContain(`(deny file-read*\n  (subpath "${home}/.ssh")\n  (subpath "${home}/.gnupg")\n)`);
+    expect(profile).toContain(
+      `(deny file-read*\n  (subpath "${home}/.ssh")\n  (subpath "${home}/.gnupg")\n)`,
+    );
   });
 });

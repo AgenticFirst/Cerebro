@@ -41,11 +41,13 @@ vi.mock('../claude-code/detector', () => ({
 }));
 
 vi.mock('../sandbox/wrap-spawn', () => ({
-  wrapClaudeSpawn: vi.fn(({ claudeBinary, claudeArgs }: { claudeBinary: string; claudeArgs: string[] }) => ({
-    binary: claudeBinary,
-    args: claudeArgs,
-    sandboxed: false,
-  })),
+  wrapClaudeSpawn: vi.fn(
+    ({ claudeBinary, claudeArgs }: { claudeBinary: string; claudeArgs: string[] }) => ({
+      binary: claudeBinary,
+      args: claudeArgs,
+      sandboxed: false,
+    }),
+  ),
 }));
 
 import { TaskPtyRunner, type TaskPtyRunOptions } from './TaskPtyRunner';
@@ -199,8 +201,12 @@ describe('TaskPtyRunner — event emission', () => {
 
   /** After start(), grab the callbacks node-pty registered */
   function getCallbacks() {
-    const dataCallback = mockPtyProcess.onData.mock.calls[0]?.[0] as ((data: string) => void) | undefined;
-    const exitCallback = mockPtyProcess.onExit.mock.calls[0]?.[0] as ((info: { exitCode: number; signal?: number }) => void) | undefined;
+    const dataCallback = mockPtyProcess.onData.mock.calls[0]?.[0] as
+      | ((data: string) => void)
+      | undefined;
+    const exitCallback = mockPtyProcess.onExit.mock.calls[0]?.[0] as
+      | ((info: { exitCode: number; signal?: number }) => void)
+      | undefined;
     return { dataCallback: dataCallback!, exitCallback: exitCallback! };
   }
 

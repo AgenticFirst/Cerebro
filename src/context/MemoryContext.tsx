@@ -1,16 +1,6 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import type { BackendResponse } from '../types/ipc';
-import type {
-  AgentMemoryDir,
-  AgentMemoryFile,
-  AgentMemoryFileContent,
-} from '../types/memory';
+import type { AgentMemoryDir, AgentMemoryFile, AgentMemoryFileContent } from '../types/memory';
 
 interface MemoryContextValue {
   directories: AgentMemoryDir[];

@@ -79,9 +79,7 @@ function StickyNoteNodeComponent({ data, selected, id }: NodeProps) {
           />
         ) : (
           <p className="text-xs text-text-secondary whitespace-pre-wrap min-h-[60px]">
-            {text || (
-              <span className="text-text-tertiary italic">Double-click to edit...</span>
-            )}
+            {text || <span className="text-text-tertiary italic">Double-click to edit...</span>}
           </p>
         )}
       </div>

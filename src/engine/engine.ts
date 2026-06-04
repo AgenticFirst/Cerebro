@@ -10,7 +10,7 @@ import http from 'node:http';
 import type EventEmitter from 'node:events';
 import type { WebContents } from 'electron';
 import type { AgentRuntime } from '../agents/runtime';
-import type { EngineRunRequest } from './dag/types';
+import type { EngineRunRequest, StepDefinition, DAGDefinition } from './dag/types';
 import type { EngineActiveRunInfo } from '../types/ipc';
 import type { AutoApprovalRule } from '../types/approvals';
 import type { StepPersistenceUpdate } from './dag/executor';
@@ -95,7 +95,6 @@ import { RunEventEmitter, ENGINE_EVENT, type EngineEventContext } from './events
 import { validateDAG } from './dag/validator';
 import { DAGExecutor, StepFailedError, StepDeniedError } from './dag/executor';
 import type { ExecutionEvent } from './events/types';
-import type { StepDefinition, DAGDefinition } from './dag/types';
 import type { ActionDefinition, ChatActionAvailability } from './actions/types';
 import { wrapForDryRun } from './dry-run-stubs';
 
@@ -223,7 +222,9 @@ export class ExecutionEngine {
     const emitter = new RunEventEmitter(
       webContents,
       runId,
-      (event) => { eventBuffer.push(event); },
+      (event) => {
+        eventBuffer.push(event);
+      },
       this.sharedBus,
       { routineId: request.routineId, conversationId: request.conversationId },
     );
@@ -261,8 +262,7 @@ export class ExecutionEngine {
       trigger: request.triggerSource ?? 'manual',
       dag_json: JSON.stringify(request.dag),
       total_steps: request.dag.steps.length,
-    })
-      .then(() => this.backendRequest('POST', `/engine/runs/${runId}/steps`, stepBodies));
+    }).then(() => this.backendRequest('POST', `/engine/runs/${runId}/steps`, stepBodies));
     runPersisted.catch(console.error);
 
     // Emit run_started
@@ -286,7 +286,9 @@ export class ExecutionEngine {
       if (update.status === 'completed') completedStepCount++;
       // Chain after run+step POSTs so PATCH can never 404 due to race.
       const patch = runPersisted
-        .then(() => this.backendRequest('PATCH', `/engine/runs/${runId}/steps/${stepRecordId}`, update))
+        .then(() =>
+          this.backendRequest('PATCH', `/engine/runs/${runId}/steps/${stepRecordId}`, update),
+        )
         .catch(console.error);
       stepPatchPromises.push(patch);
     };
@@ -298,89 +300,89 @@ export class ExecutionEngine {
     const onApprovalRequired = request.dryRun
       ? () => Promise.resolve(true)
       : async (step: StepDefinition): Promise<boolean> => {
-        const approvalId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
+          const approvalId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
 
-        // Prefer the user-authored summary (configured on the Approval Gate
-        // step) over the generic fallback — routine authors rely on it to
-        // explain *what* the reviewer is being asked to approve.
-        const authoredSummary =
-          typeof step.params?.summary === 'string' ? step.params.summary.trim() : '';
-        const approvalSummary =
-          authoredSummary || `Step "${step.name}" requires your approval before execution.`;
+          // Prefer the user-authored summary (configured on the Approval Gate
+          // step) over the generic fallback — routine authors rely on it to
+          // explain *what* the reviewer is being asked to approve.
+          const authoredSummary =
+            typeof step.params?.summary === 'string' ? step.params.summary.trim() : '';
+          const approvalSummary =
+            authoredSummary || `Step "${step.name}" requires your approval before execution.`;
 
-        const stepRecordId = stepRecordIdMap.get(step.id);
+          const stepRecordId = stepRecordIdMap.get(step.id);
 
-        // Persist (and commit) the approval BEFORE announcing it, chained after
-        // the run+step records so it can't 404 ("Run record not found"). The
-        // renderer refreshes its pending list the instant it sees
-        // approval_requested; awaiting the write here guarantees that refresh's
-        // GET sees the committed row instead of racing ahead of the insert —
-        // otherwise the badge stays at 0 until the Approvals screen remounts.
-        await runPersisted
-          .then(() => this.backendRequest('POST', '/engine/approvals', {
-            id: approvalId,
-            run_id: runId,
-            step_id: step.id,
-            step_name: step.name,
-            summary: approvalSummary,
-            payload_json: JSON.stringify(step.params),
-          }))
-          .catch(console.error);
-
-        // Link the approval to the step record and pause the run. These don't
-        // gate the announce, so leave them fire-and-forget — but still chain
-        // after runPersisted for the same 404-safety as onStepUpdate.
-        if (stepRecordId) {
-          runPersisted
-            .then(() => this.backendRequest('PATCH', `/engine/runs/${runId}/steps/${stepRecordId}`, {
-              approval_id: approvalId,
-              approval_status: 'pending',
-            }))
+          // Persist (and commit) the approval BEFORE announcing it, chained after
+          // the run+step records so it can't 404 ("Run record not found"). The
+          // renderer refreshes its pending list the instant it sees
+          // approval_requested; awaiting the write here guarantees that refresh's
+          // GET sees the committed row instead of racing ahead of the insert —
+          // otherwise the badge stays at 0 until the Approvals screen remounts.
+          await runPersisted
+            .then(() =>
+              this.backendRequest('POST', '/engine/approvals', {
+                id: approvalId,
+                run_id: runId,
+                step_id: step.id,
+                step_name: step.name,
+                summary: approvalSummary,
+                payload_json: JSON.stringify(step.params),
+              }),
+            )
             .catch(console.error);
-        }
-        runPersisted
-          .then(() => this.backendRequest('PATCH', `/engine/runs/${runId}`, {
-            status: 'paused',
-          }))
-          .catch(console.error);
 
-        return new Promise<boolean>((resolvePromise) => {
-          // Emit approval_requested event (the approval row is now durable).
-          emitter.emit({
-            type: 'approval_requested',
-            runId,
-            stepId: step.id,
-            approvalId,
-            summary: approvalSummary,
-            payload: step.params,
-            timestamp: new Date().toISOString(),
-          });
+          // Link the approval to the step record and pause the run. These don't
+          // gate the announce, so leave them fire-and-forget — but still chain
+          // after runPersisted for the same 404-safety as onStepUpdate.
+          if (stepRecordId) {
+            runPersisted
+              .then(() =>
+                this.backendRequest('PATCH', `/engine/runs/${runId}/steps/${stepRecordId}`, {
+                  approval_id: approvalId,
+                  approval_status: 'pending',
+                }),
+              )
+              .catch(console.error);
+          }
+          runPersisted
+            .then(() =>
+              this.backendRequest('PATCH', `/engine/runs/${runId}`, {
+                status: 'paused',
+              }),
+            )
+            .catch(console.error);
 
-          // Store pending approval for later resolution
-          this.pendingApprovals.set(approvalId, {
-            runId,
-            stepId: step.id,
-            stepRecordId,
-            resolve: resolvePromise,
+          return new Promise<boolean>((resolvePromise) => {
+            // Emit approval_requested event (the approval row is now durable).
+            emitter.emit({
+              type: 'approval_requested',
+              runId,
+              stepId: step.id,
+              approvalId,
+              summary: approvalSummary,
+              payload: step.params,
+              timestamp: new Date().toISOString(),
+            });
+
+            // Store pending approval for later resolution
+            this.pendingApprovals.set(approvalId, {
+              runId,
+              stepId: step.id,
+              stepRecordId,
+              resolve: resolvePromise,
+            });
           });
-        });
-      };
+        };
 
     // Create executor
-    const executor = new DAGExecutor(
-      request.dag,
-      registry,
-      scratchpad,
-      emitter,
-      {
-        runId,
-        backendPort: this.backendPort,
-        signal: abortController.signal,
-        onStepUpdate,
-        onApprovalRequired,
-        triggerPayload: request.triggerPayload,
-      },
-    );
+    const executor = new DAGExecutor(request.dag, registry, scratchpad, emitter, {
+      runId,
+      backendPort: this.backendPort,
+      signal: abortController.signal,
+      onStepUpdate,
+      onApprovalRequired,
+      triggerPayload: request.triggerPayload,
+    });
 
     // Execute asynchronously (non-blocking)
     const startTime = Date.now();
@@ -450,12 +452,17 @@ export class ExecutionEngine {
           const events = buffer.map((event, i) => ({
             seq: i,
             event_type: event.type,
-            step_id: 'stepId' in event ? (event as Record<string, unknown>).stepId as string : null,
+            step_id:
+              'stepId' in event ? ((event as Record<string, unknown>).stepId as string) : null,
             payload_json: JSON.stringify(event),
-            timestamp: 'timestamp' in event ? (event as Record<string, unknown>).timestamp as string : new Date().toISOString(),
+            timestamp:
+              'timestamp' in event
+                ? ((event as Record<string, unknown>).timestamp as string)
+                : new Date().toISOString(),
           }));
-          this.backendRequest('POST', `/engine/runs/${runId}/events`, { events })
-            .catch(console.error);
+          this.backendRequest('POST', `/engine/runs/${runId}/events`, { events }).catch(
+            console.error,
+          );
         }
 
         scratchpad.clear();
@@ -743,9 +750,7 @@ export class ExecutionEngine {
         }
       };
 
-      const finish = (
-        result: Awaited<ReturnType<ExecutionEngine['runChatAction']>>,
-      ) => {
+      const finish = (result: Awaited<ReturnType<ExecutionEngine['runChatAction']>>) => {
         if (resolved) return;
         resolved = true;
         cleanup();
@@ -772,7 +777,12 @@ export class ExecutionEngine {
               });
             })
             .catch(() => {
-              finish({ status: 'succeeded', runId: event.runId, approvalId, summary: 'Action completed.' });
+              finish({
+                status: 'succeeded',
+                runId: event.runId,
+                approvalId,
+                summary: 'Action completed.',
+              });
             });
           return;
         }

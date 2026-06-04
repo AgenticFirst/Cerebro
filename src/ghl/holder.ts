@@ -15,7 +15,11 @@ import {
   decryptFromStorage,
   backend as secureTokenBackend,
 } from '../secure-token';
-import { backendGetSetting, backendJsonRequest, backendPutSetting } from '../shared/backend-settings';
+import {
+  backendGetSetting,
+  backendJsonRequest,
+  backendPutSetting,
+} from '../shared/backend-settings';
 import { GHL_SETTING_KEYS } from './types';
 import { callGHLApi } from './api';
 import type { GHLStatusResponse, GHLVerifyResult } from '../types/ipc';
@@ -30,8 +34,12 @@ export class GHLHolder {
 
   constructor(private deps: HolderDeps) {}
 
-  getApiKey(): string | null { return this.apiKey; }
-  getLocationId(): string | null { return this.locationId; }
+  getApiKey(): string | null {
+    return this.apiKey;
+  }
+  getLocationId(): string | null {
+    return this.locationId;
+  }
   isConnected(): boolean {
     return Boolean(this.apiKey && this.locationId);
   }
@@ -56,11 +64,9 @@ export class GHLHolder {
     const trimmedLoc = locationId?.trim?.() ?? '';
     if (!trimmedKey) return { ok: false, error: 'Empty API key' };
     if (!trimmedLoc) return { ok: false, error: 'Empty location id' };
-    const res = await callGHLApi<{ contacts?: unknown[] }>(
-      trimmedKey,
-      '/contacts/search',
-      { query: { locationId: trimmedLoc, query: 'cerebro-verify-probe' } },
-    );
+    const res = await callGHLApi<{ contacts?: unknown[] }>(trimmedKey, '/contacts/search', {
+      query: { locationId: trimmedLoc, query: 'cerebro-verify-probe' },
+    });
     if (!res.ok) return { ok: false, error: res.error ?? 'Verification failed' };
     return { ok: true, locationId: trimmedLoc };
   }

@@ -36,7 +36,7 @@ export interface RoutineStepData extends Record<string, unknown> {
 }
 
 export interface TriggerNodeData {
-  triggerType: string;   // trigger_schedule | trigger_manual | trigger_webhook
+  triggerType: string; // trigger_schedule | trigger_manual | trigger_webhook
   config: Record<string, unknown>;
   position?: { x: number; y: number };
 }
@@ -133,9 +133,7 @@ export function dagToFlow(dag: CanvasDefinition): {
     const stepIds = new Set(dag.steps.map((s) => s.id));
     for (const step of dag.steps) {
       step.dependsOn = step.dependsOn.filter((id) => stepIds.has(id));
-      step.inputMappings = (step.inputMappings ?? []).filter((m) =>
-        stepIds.has(m.sourceStepId),
-      );
+      step.inputMappings = (step.inputMappings ?? []).filter((m) => stepIds.has(m.sourceStepId));
     }
 
     // Backfill auto-wire mappings for routines saved before onConnect
@@ -238,10 +236,7 @@ export function dagToFlow(dag: CanvasDefinition): {
   }));
 
   // Auto-layout step nodes + trigger node (annotations keep their positions)
-  const layoutNodes = autoLayoutNodes(
-    triggerNode ? [triggerNode, ...nodes] : nodes,
-    edges,
-  );
+  const layoutNodes = autoLayoutNodes(triggerNode ? [triggerNode, ...nodes] : nodes, edges);
 
   return {
     nodes: layoutNodes.filter((n) => n.type !== 'triggerNode'),
@@ -267,9 +262,7 @@ export function flowToDag(
   // sourced at the trigger (or any future meta-node) are visual-only and must
   // not leak into the DAG — the trigger's relationship is encoded in
   // CanvasDefinition.trigger + each step's empty dependsOn (root == triggered).
-  const stepEdges = edges.filter(
-    (e) => stepNodeIds.has(e.source) && stepNodeIds.has(e.target),
-  );
+  const stepEdges = edges.filter((e) => stepNodeIds.has(e.source) && stepNodeIds.has(e.target));
 
   // Build a map of target node → list of source node ids
   const incomingMap = new Map<string, string[]>();

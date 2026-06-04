@@ -24,10 +24,7 @@ function makeContext(overrides: Partial<ActionContext> = {}): ActionContext {
   } as ActionContext;
 }
 
-async function run(
-  params: Record<string, unknown>,
-  context: ActionContext = makeContext(),
-) {
+async function run(params: Record<string, unknown>, context: ActionContext = makeContext()) {
   return searchMemoryAction.execute({
     params,
     wiredInputs: {},
@@ -49,7 +46,11 @@ describe('searchMemoryAction', () => {
       ]),
     );
     const result = await run({ query: 'coffee' });
-    const results = result.data.results as Array<{ content: string; source: string; score: number }>;
+    const results = result.data.results as Array<{
+      content: string;
+      source: string;
+      score: number;
+    }>;
     expect(results).toHaveLength(2);
     expect(results[0]).toEqual({ content: 'First match', source: 'notes/a.md', score: 0.9 });
     expect(results[1]).toEqual({ content: 'Second match', source: 'notes/b.md', score: 0.7 });
@@ -67,11 +68,19 @@ describe('searchMemoryAction', () => {
   });
 
   it('SM-U3: falls back to a single plain-text row when Claude does not return JSON', async () => {
-    mockSingleShot.mockResolvedValueOnce('I could not find anything structured but here is what I know.');
+    mockSingleShot.mockResolvedValueOnce(
+      'I could not find anything structured but here is what I know.',
+    );
     const result = await run({ query: 'x' });
-    const results = result.data.results as Array<{ content: string; source: string | null; score: number }>;
+    const results = result.data.results as Array<{
+      content: string;
+      source: string | null;
+      score: number;
+    }>;
     expect(results).toHaveLength(1);
-    expect(results[0].content).toBe('I could not find anything structured but here is what I know.');
+    expect(results[0].content).toBe(
+      'I could not find anything structured but here is what I know.',
+    );
     expect(results[0].source).toBeNull();
     expect(results[0].score).toBe(0);
   });
@@ -98,9 +107,7 @@ describe('searchMemoryAction', () => {
   it("SM-U6: defaults agent to 'cerebro' when no agent param is supplied", async () => {
     mockSingleShot.mockResolvedValueOnce('[]');
     await run({ query: 'hello' });
-    expect(mockSingleShot).toHaveBeenCalledWith(
-      expect.objectContaining({ agent: 'cerebro' }),
-    );
+    expect(mockSingleShot).toHaveBeenCalledWith(expect.objectContaining({ agent: 'cerebro' }));
   });
 
   it('SM-U7: forwards a specific expert agent slug when provided', async () => {

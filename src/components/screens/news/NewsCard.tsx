@@ -52,7 +52,12 @@ export default function NewsCard({ article, index, isSelected, onClick }: NewsCa
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
           />
         ) : (
-          <div className={clsx('w-full h-full bg-gradient-to-br flex items-center justify-center', gradientFor(article.sourceName))}>
+          <div
+            className={clsx(
+              'w-full h-full bg-gradient-to-br flex items-center justify-center',
+              gradientFor(article.sourceName),
+            )}
+          >
             <span className="text-2xl font-semibold text-text-primary/70">
               {article.sourceName.charAt(0)}
             </span>

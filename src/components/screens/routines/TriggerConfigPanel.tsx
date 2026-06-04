@@ -74,7 +74,9 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
             <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-2">
               Schedule
               <Tooltip label={t('routineTooltips.triggerCronHint')}>
-                <span className="cursor-help"><Info size={10} /></span>
+                <span className="cursor-help">
+                  <Info size={10} />
+                </span>
               </Tooltip>
             </label>
             <SchedulePicker
@@ -108,7 +110,9 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
               <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
                 Path
                 <Tooltip label={t('routineTooltips.triggerWebhookUrl')}>
-                  <span className="cursor-help"><Info size={10} /></span>
+                  <span className="cursor-help">
+                    <Info size={10} />
+                  </span>
                 </Tooltip>
               </label>
               <input
@@ -123,7 +127,9 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
               <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-1.5">
                 Secret (optional)
                 <Tooltip label={t('routineTooltips.triggerWebhookSecret')}>
-                  <span className="cursor-help"><Info size={10} /></span>
+                  <span className="cursor-help">
+                    <Info size={10} />
+                  </span>
                 </Tooltip>
               </label>
               <input
@@ -141,7 +147,8 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
         {triggerType === 'trigger_app_event' && (
           <div className="bg-bg-hover/50 rounded-lg p-3">
             <p className="text-xs text-text-tertiary">
-              App Event triggers are coming soon. Configure your app integrations in Connections first.
+              App Event triggers are coming soon. Configure your app integrations in Connections
+              first.
             </p>
           </div>
         )}
@@ -161,7 +168,8 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
                 className="w-full h-8 px-3 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
               />
               <p className="mt-1 text-[10px] text-text-tertiary">
-                Customer phone number in E.164 format, or <code>*</code> to match any number in the WhatsApp allowlist.
+                Customer phone number in E.164 format, or <code>*</code> to match any number in the
+                WhatsApp allowlist.
               </p>
             </div>
             <div>
@@ -200,8 +208,10 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
               </div>
             )}
             <p className="text-[10px] text-text-tertiary">
-              Available variables in steps: <code>{'{{__trigger__.phone_number}}'}</code>, <code>{'{{__trigger__.message_text}}'}</code>,
-              <code>{'{{__trigger__.customer_display_name}}'}</code>, <code>{'{{__trigger__.conversation_history}}'}</code>.
+              Available variables in steps: <code>{'{{__trigger__.phone_number}}'}</code>,{' '}
+              <code>{'{{__trigger__.message_text}}'}</code>,
+              <code>{'{{__trigger__.customer_display_name}}'}</code>,{' '}
+              <code>{'{{__trigger__.conversation_history}}'}</code>.
             </p>
           </>
         )}
@@ -221,7 +231,8 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
                 className="w-full h-8 px-3 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
               />
               <p className="mt-1 text-[10px] text-text-tertiary">
-                Numeric Telegram chat id, or <code>*</code> to match any chat in the bot's allowlist.
+                Numeric Telegram chat id, or <code>*</code> to match any chat in the bot's
+                allowlist.
               </p>
             </div>
             <div>
@@ -259,15 +270,17 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
                 />
                 <p className="mt-1 text-[10px] text-text-tertiary">
                   Matching messages are consumed by this routine — the AI agent will not also reply.
-                  Available variables in steps: <code>{'{{chat_id}}'}</code>, <code>{'{{message_text}}'}</code>,
-                  <code>{'{{sender_username}}'}</code>, <code>{'{{sender_id}}'}</code>.
+                  Available variables in steps: <code>{'{{chat_id}}'}</code>,{' '}
+                  <code>{'{{message_text}}'}</code>,<code>{'{{sender_username}}'}</code>,{' '}
+                  <code>{'{{sender_id}}'}</code>.
                 </p>
               </div>
             )}
             {((config.filter_type as string) ?? 'none') === 'none' && (
               <p className="text-[10px] text-text-tertiary">
-                Available variables in steps: <code>{'{{chat_id}}'}</code>, <code>{'{{message_text}}'}</code>,
-                <code>{'{{sender_username}}'}</code>, <code>{'{{sender_id}}'}</code>.
+                Available variables in steps: <code>{'{{chat_id}}'}</code>,{' '}
+                <code>{'{{message_text}}'}</code>,<code>{'{{sender_username}}'}</code>,{' '}
+                <code>{'{{sender_id}}'}</code>.
               </p>
             )}
           </>
@@ -289,7 +302,8 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
                 className="w-full h-8 px-3 text-xs bg-bg-base border border-border-subtle rounded-md text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 font-mono"
               />
               <p className="mt-1 text-[10px] text-text-tertiary">
-                "owner/repo" must be in the watched-repo list (Integrations → GitHub). Use <code>*</code> to match any watched repo.
+                "owner/repo" must be in the watched-repo list (Integrations → GitHub). Use{' '}
+                <code>*</code> to match any watched repo.
               </p>
             </div>
             <div>
@@ -328,11 +342,21 @@ export default function TriggerConfigPanel({ node, onUpdate, onClose }: TriggerC
               </div>
             )}
             <p className="text-[10px] text-text-tertiary">
-              Available in steps: <code>{'{{__trigger__.repo_full_name}}'}</code>, <code>{'{{__trigger__.title}}'}</code>,
-              <code>{'{{__trigger__.body}}'}</code>, <code>{'{{__trigger__.author_login}}'}</code>, <code>{'{{__trigger__.html_url}}'}</code>,
-              {triggerType === 'trigger_github_issue_opened'
-                ? <> <code>{'{{__trigger__.issue_number}}'}</code>.</>
-                : <> <code>{'{{__trigger__.pr_number}}'}</code>.</>}
+              Available in steps: <code>{'{{__trigger__.repo_full_name}}'}</code>,{' '}
+              <code>{'{{__trigger__.title}}'}</code>,<code>{'{{__trigger__.body}}'}</code>,{' '}
+              <code>{'{{__trigger__.author_login}}'}</code>,{' '}
+              <code>{'{{__trigger__.html_url}}'}</code>,
+              {triggerType === 'trigger_github_issue_opened' ? (
+                <>
+                  {' '}
+                  <code>{'{{__trigger__.issue_number}}'}</code>.
+                </>
+              ) : (
+                <>
+                  {' '}
+                  <code>{'{{__trigger__.pr_number}}'}</code>.
+                </>
+              )}
             </p>
           </>
         )}

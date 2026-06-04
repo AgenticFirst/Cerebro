@@ -35,16 +35,24 @@ async function transform(
 
 describe('transformer: format', () => {
   it('interpolates nested dot-path keys', async () => {
-    const result = await transform('format', { data: { user: { name: 'Eve' } } }, {
-      template: 'Welcome {{user.name}}',
-    });
+    const result = await transform(
+      'format',
+      { data: { user: { name: 'Eve' } } },
+      {
+        template: 'Welcome {{user.name}}',
+      },
+    );
     expect(result).toBe('Welcome Eve');
   });
 
   it('replaces missing keys with empty string (not undefined)', async () => {
-    const result = await transform('format', { data: {} }, {
-      template: 'Value: {{missing}}',
-    });
+    const result = await transform(
+      'format',
+      { data: {} },
+      {
+        template: 'Value: {{missing}}',
+      },
+    );
     expect(result).toBe('Value: ');
   });
 });
@@ -65,7 +73,12 @@ describe('transformer: extract', () => {
   });
 
   it('handles consecutive array indices (matrix[1][0])', async () => {
-    const data = { matrix: [[1, 2], [3, 4]] };
+    const data = {
+      matrix: [
+        [1, 2],
+        [3, 4],
+      ],
+    };
     const result = await transform('extract', { data }, { path: 'matrix[1][0]' });
     expect(result).toBe(3);
   });
@@ -102,7 +115,11 @@ describe('transformer: filter', () => {
       { score: 0.3, priority: 1 },
       { score: 0.9, priority: 2 },
     ];
-    const result = await transform('filter', { items }, { predicate: 'score > 0.5 and priority == 1' });
+    const result = await transform(
+      'filter',
+      { items },
+      { predicate: 'score > 0.5 and priority == 1' },
+    );
     expect(result).toEqual([{ score: 0.8, priority: 1 }]);
   });
 
@@ -117,10 +134,7 @@ describe('transformer: filter', () => {
 
 describe('transformer: merge', () => {
   it('shallow merge replaces nested objects entirely', async () => {
-    const sources = [
-      { config: { a: 1, b: 2 } },
-      { config: { a: 99 } },
-    ];
+    const sources = [{ config: { a: 1, b: 2 } }, { config: { a: 99 } }];
     const result = await transform('merge', { sources }, { mergeStrategy: 'shallow' });
     expect(result).toEqual({ config: { a: 99 } });
   });
@@ -147,8 +161,8 @@ describe('transformer: merge', () => {
 
 describe('transformer: errors', () => {
   it('throws on unknown operation', async () => {
-    await expect(
-      transform('bogus' as string, {}),
-    ).rejects.toThrow('Unknown transformer operation: bogus');
+    await expect(transform('bogus' as string, {})).rejects.toThrow(
+      'Unknown transformer operation: bogus',
+    );
   });
 });

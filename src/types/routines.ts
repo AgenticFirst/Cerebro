@@ -107,9 +107,11 @@ export function toApiBody(input: CreateRoutineInput): Record<string, unknown> {
   if (input.cronExpression !== undefined) body.cron_expression = input.cronExpression;
   if (input.defaultRunnerId !== undefined) body.default_runner_id = input.defaultRunnerId;
   if (input.approvalGates !== undefined) body.approval_gates = input.approvalGates;
-  if (input.requiredConnections !== undefined) body.required_connections = input.requiredConnections;
+  if (input.requiredConnections !== undefined)
+    body.required_connections = input.requiredConnections;
   if (input.notifyChannels !== undefined) body.notify_channels = input.notifyChannels;
   if (input.source !== undefined) body.source = input.source;
-  if (input.sourceConversationId !== undefined) body.source_conversation_id = input.sourceConversationId;
+  if (input.sourceConversationId !== undefined)
+    body.source_conversation_id = input.sourceConversationId;
   return body;
 }

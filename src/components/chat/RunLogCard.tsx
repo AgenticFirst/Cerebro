@@ -1,14 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  ChevronRight,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  SkipForward,
-  Clock,
-  X,
-} from 'lucide-react';
+import { ChevronRight, CheckCircle2, XCircle, Loader2, SkipForward, Clock, X } from 'lucide-react';
 import clsx from 'clsx';
 import type { ExecutionEvent } from '../../engine/events/types';
 import { loadSetting } from '../../lib/settings';
@@ -102,7 +94,9 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
     const anchor = scrollAnchorRef.current;
     if (!anchor) return;
     const observer = new IntersectionObserver(
-      ([entry]) => { isNearBottomRef.current = entry.isIntersecting; },
+      ([entry]) => {
+        isNearBottomRef.current = entry.isIntersecting;
+      },
       { threshold: 0 },
     );
     observer.observe(anchor);
@@ -166,17 +160,24 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
                 for (const evt of eventsRes.data) {
                   if (evt.event_type !== 'step_log') continue;
                   try {
-                    const payload = JSON.parse(evt.payload_json) as { stepId: string; message: string };
+                    const payload = JSON.parse(evt.payload_json) as {
+                      stepId: string;
+                      message: string;
+                    };
                     const list = logsByStep.get(payload.stepId) ?? [];
                     list.push(payload.message);
                     logsByStep.set(payload.stepId, list);
-                  } catch { /* skip malformed */ }
+                  } catch {
+                    /* skip malformed */
+                  }
                 }
                 for (const step of hydratedSteps) {
                   step.logs = logsByStep.get(step.id) ?? [];
                 }
               }
-            } catch { /* events endpoint may not exist yet */ }
+            } catch {
+              /* events endpoint may not exist yet */
+            }
           }
 
           setSteps(hydratedSteps);
@@ -185,7 +186,9 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
         // If the fetch fails, leave in running state — live events will populate
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [engineRunId]);
 
   // Process a single execution event — shared by live listener and replay.
@@ -198,14 +201,19 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
       case 'step_queued':
         setSteps((prev) => {
           if (prev.some((s) => s.id === event.stepId)) return prev;
-          return [...prev, { id: event.stepId, name: event.stepName, status: 'queued' as const, logs: [] }];
+          return [
+            ...prev,
+            { id: event.stepId, name: event.stepName, status: 'queued' as const, logs: [] },
+          ];
         });
         break;
 
       case 'step_started':
         setSteps((prev) =>
           prev.map((s) =>
-            s.id === event.stepId ? { ...s, status: 'running' as const, actionType: event.actionType } : s,
+            s.id === event.stepId
+              ? { ...s, status: 'running' as const, actionType: event.actionType }
+              : s,
           ),
         );
         break;
@@ -214,7 +222,12 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
         setSteps((prev) =>
           prev.map((s) =>
             s.id === event.stepId
-              ? { ...s, status: 'completed' as const, summary: event.summary, durationMs: event.durationMs }
+              ? {
+                  ...s,
+                  status: 'completed' as const,
+                  summary: event.summary,
+                  durationMs: event.durationMs,
+                }
               : s,
           ),
         );
@@ -230,9 +243,7 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
 
       case 'step_skipped':
         setSteps((prev) =>
-          prev.map((s) =>
-            s.id === event.stepId ? { ...s, status: 'skipped' as const } : s,
-          ),
+          prev.map((s) => (s.id === event.stepId ? { ...s, status: 'skipped' as const } : s)),
         );
         break;
 
@@ -241,7 +252,10 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
           prev.map((s) => {
             if (s.id !== event.stepId) return s;
             const updated = [...s.logs, event.message];
-            return { ...s, logs: updated.length > MAX_STEP_LOGS ? updated.slice(-MAX_STEP_LOGS) : updated };
+            return {
+              ...s,
+              logs: updated.length > MAX_STEP_LOGS ? updated.slice(-MAX_STEP_LOGS) : updated,
+            };
           }),
         );
         break;
@@ -270,14 +284,17 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
     //    The engine keeps an in-memory buffer for each run (active + 60s after completion).
     //    step_queued handler deduplicates, and state setters are idempotent, so replaying
     //    events we already received via the live listener is harmless.
-    window.cerebro.engine.getEvents(engineRunId).then((events) => {
-      for (const event of events) {
-        processEvent(event);
-      }
-    }).catch(() => {
-      // Buffer may not be available (e.g. engine not initialized) — that's fine,
-      // the historical load fallback or live events will populate the card.
-    });
+    window.cerebro.engine
+      .getEvents(engineRunId)
+      .then((events) => {
+        for (const event of events) {
+          processEvent(event);
+        }
+      })
+      .catch(() => {
+        // Buffer may not be available (e.g. engine not initialized) — that's fine,
+        // the historical load fallback or live events will populate the card.
+      });
 
     return unsub;
   }, [engineRunId, processEvent]);
@@ -310,7 +327,12 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
         role="button"
         tabIndex={0}
         onClick={() => setIsExpanded(!isExpanded)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsExpanded(!isExpanded); } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsExpanded(!isExpanded);
+          }
+        }}
         className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-bg-hover/50 transition-colors duration-150 cursor-pointer"
       >
         <RunStatusIcon status={runStatus} />
@@ -368,16 +390,17 @@ export default function RunLogCard({ engineRunId, isPreview }: RunLogCardProps) 
                   {step.summary && (
                     <p className="text-[10px] text-text-tertiary truncate mt-0.5">{step.summary}</p>
                   )}
-                  {step.error && (
-                    <p className="text-[10px] text-red-400 mt-0.5">{step.error}</p>
-                  )}
+                  {step.error && <p className="text-[10px] text-red-400 mt-0.5">{step.error}</p>}
                 </div>
               </div>
               {/* Step logs */}
               {step.logs.length > 0 && (
                 <div className="ml-5 mt-1 border-l-2 border-border-subtle pl-2 space-y-0.5">
                   {step.logs.map((log, li) => (
-                    <p key={li} className="text-[10px] font-mono text-text-tertiary leading-relaxed">
+                    <p
+                      key={li}
+                      className="text-[10px] font-mono text-text-tertiary leading-relaxed"
+                    >
                       {log}
                     </p>
                   ))}

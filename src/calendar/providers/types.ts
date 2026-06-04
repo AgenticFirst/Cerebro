@@ -84,8 +84,17 @@ export interface CalendarProvider {
   readonly id: CalendarProviderId;
 
   // ── OAuth ──
-  buildAuthUrl(opts: { client: OAuthClient; pkceChallenge: string; state: string; loginHint?: string }): string;
-  exchangeCode(opts: { client: OAuthClient; code: string; pkceVerifier: string }): Promise<TokenSet>;
+  buildAuthUrl(opts: {
+    client: OAuthClient;
+    pkceChallenge: string;
+    state: string;
+    loginHint?: string;
+  }): string;
+  exchangeCode(opts: {
+    client: OAuthClient;
+    code: string;
+    pkceVerifier: string;
+  }): Promise<TokenSet>;
   refresh(opts: { client: OAuthClient; refreshToken: string }): Promise<TokenSet>;
   getUserInfo(accessToken: string): Promise<{ email: string; name?: string }>;
 
@@ -102,14 +111,22 @@ export interface CalendarProvider {
   }): Promise<PullResult>;
 
   // ── Two-way push ──
-  createEvent(opts: { accessToken: string; calendarId: string; event: ProviderEventWrite }): Promise<WriteResult>;
+  createEvent(opts: {
+    accessToken: string;
+    calendarId: string;
+    event: ProviderEventWrite;
+  }): Promise<WriteResult>;
   updateEvent(opts: {
     accessToken: string;
     calendarId: string;
     providerEventId: string;
     event: ProviderEventWrite;
   }): Promise<WriteResult>;
-  deleteEvent(opts: { accessToken: string; calendarId: string; providerEventId: string }): Promise<void>;
+  deleteEvent(opts: {
+    accessToken: string;
+    calendarId: string;
+    providerEventId: string;
+  }): Promise<void>;
   setRsvp(opts: {
     accessToken: string;
     calendarId: string;

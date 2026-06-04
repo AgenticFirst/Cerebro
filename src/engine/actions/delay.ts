@@ -15,9 +15,12 @@ interface DelayParams {
 
 function toMs(duration: number, unit: string): number {
   switch (unit) {
-    case 'minutes': return duration * 60_000;
-    case 'hours': return duration * 3_600_000;
-    default: return duration * 1_000;
+    case 'minutes':
+      return duration * 60_000;
+    case 'hours':
+      return duration * 3_600_000;
+    default:
+      return duration * 1_000;
   }
 }
 

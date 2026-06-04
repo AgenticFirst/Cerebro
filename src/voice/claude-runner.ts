@@ -52,14 +52,20 @@ export class VoiceClaudeRunner extends EventEmitter {
     const prompt = buildVoicePrompt(userMessage, history);
 
     const args: string[] = [
-      '-p', prompt,
-      '--output-format', 'stream-json',
+      '-p',
+      prompt,
+      '--output-format',
+      'stream-json',
       '--verbose',
-      '--max-turns', '1',
-      '--model', model,
+      '--max-turns',
+      '1',
+      '--model',
+      model,
       '--dangerously-skip-permissions',
-      '--system-prompt', systemPrompt,
-      '--disallowedTools', 'Read,Write,Edit,Glob,Grep,Bash,WebFetch,WebSearch,Agent',
+      '--system-prompt',
+      systemPrompt,
+      '--disallowedTools',
+      'Read,Write,Edit,Glob,Grep,Bash,WebFetch,WebSearch,Agent',
     ];
 
     // Inherit process.env but strip CLAUDECODE to avoid nested session error
@@ -121,7 +127,9 @@ export class VoiceClaudeRunner extends EventEmitter {
         }
         this.emit('error', detail);
       } else {
-        console.log(`[Voice:runner] Done in ${Date.now() - t0}ms, ${this.accumulatedText.length} chars`);
+        console.log(
+          `[Voice:runner] Done in ${Date.now() - t0}ms, ${this.accumulatedText.length} chars`,
+        );
         this.emit('done', this.accumulatedText);
       }
     });
@@ -213,9 +221,7 @@ function buildVoicePrompt(
     return userMessage;
   }
 
-  const historyXml = history
-    .map((msg) => `<${msg.role}>${msg.content}</${msg.role}>`)
-    .join('\n');
+  const historyXml = history.map((msg) => `<${msg.role}>${msg.content}</${msg.role}>`).join('\n');
 
   return `<conversation_history>\n${historyXml}\n</conversation_history>\n\n${userMessage}`;
 }

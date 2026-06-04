@@ -67,13 +67,9 @@ export default function DepartmentCard({
 
   const subtitleParts: string[] = [];
   if (team.domain) {
-    subtitleParts.push(
-      team.domain.charAt(0).toUpperCase() + team.domain.slice(1),
-    );
+    subtitleParts.push(team.domain.charAt(0).toUpperCase() + team.domain.slice(1));
   }
-  subtitleParts.push(
-    memberCount === 1 ? '1 member' : `${memberCount} members`,
-  );
+  subtitleParts.push(memberCount === 1 ? '1 member' : `${memberCount} members`);
 
   return (
     <div
@@ -85,10 +81,7 @@ export default function DepartmentCard({
         !team.isEnabled && 'opacity-60',
       )}
     >
-      <div
-        className="absolute left-0 top-0 bottom-0 w-[3px]"
-        style={{ backgroundColor: accent }}
-      />
+      <div className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: accent }} />
 
       <button
         type="button"
@@ -121,22 +114,13 @@ export default function DepartmentCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span
-              className="text-sm font-semibold text-text-primary truncate"
-              title={team.name}
-            >
+            <span className="text-sm font-semibold text-text-primary truncate" title={team.name}>
               {team.name}
             </span>
             {team.isVerified && (
-              <BadgeCheck
-                size={13}
-                className="text-accent flex-shrink-0"
-                strokeWidth={2.25}
-              />
+              <BadgeCheck size={13} className="text-accent flex-shrink-0" strokeWidth={2.25} />
             )}
-            {team.isPinned && (
-              <Pin size={11} className="text-accent flex-shrink-0" />
-            )}
+            {team.isPinned && <Pin size={11} className="text-accent flex-shrink-0" />}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <div
@@ -174,9 +158,7 @@ export default function DepartmentCard({
                         {a.emoji}
                       </span>
                     ) : (
-                      <span className="text-[9px] text-text-tertiary">
-                        {m.name.slice(0, 1)}
-                      </span>
+                      <span className="text-[9px] text-text-tertiary">{m.name.slice(0, 1)}</span>
                     )}
                   </div>
                 );
@@ -209,8 +191,8 @@ export default function DepartmentCard({
         </button>
       </button>
 
-      {expanded && (
-        memberCount === 0 ? (
+      {expanded &&
+        (memberCount === 0 ? (
           <div className="px-3.5 pb-3 -mt-1 text-[11px] text-text-tertiary italic">
             No members yet.
           </div>
@@ -239,8 +221,7 @@ export default function DepartmentCard({
               </button>
             )}
           </div>
-        )
-      )}
+        ))}
     </div>
   );
 }

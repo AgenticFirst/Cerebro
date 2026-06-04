@@ -144,20 +144,23 @@ export default function ChannelsSection() {
               ? t('channelsSection.slackDescConnected', { teamName: slStatus.teamName })
               : t('channelsSection.slackDesc')
           }
-          status={slStatus?.running ? (
-            <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              {t('slackSection.enabled')}
-            </span>
-          ) : (slStatus?.hasBotToken && slStatus?.hasAppToken) ? (
-            <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-border-subtle bg-bg-elevated text-text-tertiary">
-              {t('channelsSection.statusConfigured')}
-            </span>
-          ) : null}
+          status={
+            slStatus?.running ? (
+              <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                {t('slackSection.enabled')}
+              </span>
+            ) : slStatus?.hasBotToken && slStatus?.hasAppToken ? (
+              <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-border-subtle bg-bg-elevated text-text-tertiary">
+                {t('channelsSection.statusConfigured')}
+              </span>
+            ) : null
+          }
           primaryAction={{
-            label: (slStatus?.hasBotToken && slStatus?.hasAppToken)
-              ? t('channelsSection.setupTour')
-              : t('channelsSection.connect'),
+            label:
+              slStatus?.hasBotToken && slStatus?.hasAppToken
+                ? t('channelsSection.setupTour')
+                : t('channelsSection.connect'),
             onClick: () => setShowSlackConnectModal(true),
           }}
         >
@@ -174,20 +177,23 @@ export default function ChannelsSection() {
               ? t('channelsSection.whatsappDescConnected', { phone: waStatus.phoneNumber })
               : t('channelsSection.whatsappDesc')
           }
-          status={waStatus?.state === 'connected' ? (
-            <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              {t('whatsappSection.statePillConnected')}
-            </span>
-          ) : waStatus?.state === 'pairing' ? (
-            <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400">
-              {t('whatsappSection.statePillPairing')}
-            </span>
-          ) : null}
+          status={
+            waStatus?.state === 'connected' ? (
+              <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                {t('whatsappSection.statePillConnected')}
+              </span>
+            ) : waStatus?.state === 'pairing' ? (
+              <span className="text-[10px] font-medium px-2 py-1 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                {t('whatsappSection.statePillPairing')}
+              </span>
+            ) : null
+          }
           primaryAction={{
-            label: waStatus?.state === 'connected'
-              ? t('channelsSection.setupTour')
-              : t('channelsSection.connect'),
+            label:
+              waStatus?.state === 'connected'
+                ? t('channelsSection.setupTour')
+                : t('channelsSection.connect'),
             onClick: () => setShowWaConnectModal(true),
           }}
         >
@@ -214,15 +220,29 @@ export default function ChannelsSection() {
 
       {showConnectModal && (
         <TelegramConnectModal
-          onClose={() => { setShowConnectModal(false); setReloadKey((k) => k + 1); void refreshStatus(); }}
-          onPersisted={() => { setReloadKey((k) => k + 1); void refreshStatus(); }}
+          onClose={() => {
+            setShowConnectModal(false);
+            setReloadKey((k) => k + 1);
+            void refreshStatus();
+          }}
+          onPersisted={() => {
+            setReloadKey((k) => k + 1);
+            void refreshStatus();
+          }}
         />
       )}
 
       {showSlackConnectModal && (
         <SlackConnectModal
-          onClose={() => { setShowSlackConnectModal(false); setSlReloadKey((k) => k + 1); void refreshSlackStatus(); }}
-          onPersisted={() => { setSlReloadKey((k) => k + 1); void refreshSlackStatus(); }}
+          onClose={() => {
+            setShowSlackConnectModal(false);
+            setSlReloadKey((k) => k + 1);
+            void refreshSlackStatus();
+          }}
+          onPersisted={() => {
+            setSlReloadKey((k) => k + 1);
+            void refreshSlackStatus();
+          }}
         />
       )}
 

@@ -1,11 +1,6 @@
 import { useMemo } from 'react';
 import clsx from 'clsx';
-import {
-  type DayOfWeek,
-  ALL_DAYS,
-  WEEKDAYS,
-  describeSchedule,
-} from '../../utils/cron-helpers';
+import { type DayOfWeek, ALL_DAYS, WEEKDAYS, describeSchedule } from '../../utils/cron-helpers';
 
 const DAY_LABELS: { key: DayOfWeek; short: string }[] = [
   { key: 'mon', short: 'Mo' },
@@ -42,13 +37,11 @@ export default function SchedulePicker({
     }
   };
 
-  const isWeekdays =
-    WEEKDAYS.every((d) => safeDays.includes(d)) && safeDays.length === 5;
+  const isWeekdays = WEEKDAYS.every((d) => safeDays.includes(d)) && safeDays.length === 5;
   const isEveryDay = safeDays.length === 7;
 
   const tzAbbr = useMemo(() => {
-    const parts = Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
-      .formatToParts(new Date());
+    const parts = Intl.DateTimeFormat('en-US', { timeZoneName: 'short' }).formatToParts(new Date());
     return parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
   }, []);
 
@@ -112,9 +105,7 @@ export default function SchedulePicker({
 
       {/* Time picker */}
       <div>
-        <label className="block text-xs font-medium text-text-secondary mb-1">
-          Time
-        </label>
+        <label className="block text-xs font-medium text-text-secondary mb-1">Time</label>
         <input
           type="time"
           value={time}
@@ -124,9 +115,7 @@ export default function SchedulePicker({
       </div>
 
       {/* Preview */}
-      <p className="text-xs text-text-secondary">
-        {preview}
-      </p>
+      <p className="text-xs text-text-secondary">{preview}</p>
     </div>
   );
 }

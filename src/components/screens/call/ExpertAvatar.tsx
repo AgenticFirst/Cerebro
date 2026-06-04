@@ -24,7 +24,14 @@ interface ExpertAvatarProps {
   isVerified?: boolean;
 }
 
-export default function ExpertAvatar({ domain, name, sessionState, avatarUrl, analyser, isVerified }: ExpertAvatarProps) {
+export default function ExpertAvatar({
+  domain,
+  name,
+  sessionState,
+  avatarUrl,
+  analyser,
+  isVerified,
+}: ExpertAvatarProps) {
   const color = (domain && DOMAIN_COLORS[domain.toLowerCase()]) || DEFAULT_COLOR;
   const avatar = getAvatar(avatarUrl);
   const pulseRef = useRef<HTMLDivElement>(null);

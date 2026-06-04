@@ -31,7 +31,15 @@ interface SidebarRowProps {
   trailing?: React.ReactNode;
 }
 
-function SidebarRow({ active, icon, label, count, onClick, onContextMenu, trailing }: SidebarRowProps) {
+function SidebarRow({
+  active,
+  icon,
+  label,
+  count,
+  onClick,
+  onContextMenu,
+  trailing,
+}: SidebarRowProps) {
   return (
     <button
       onClick={onClick}
@@ -77,12 +85,13 @@ export default function FilesSidebar({ onCreateBucket, onBucketContextMenu }: Fi
   const [hoveredBucketId, setHoveredBucketId] = useState<string | null>(null);
 
   const sortedBuckets = useMemo(
-    () => [...buckets].sort((a, b) => {
-      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
-      if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-      return a.name.localeCompare(b.name);
-    }),
+    () =>
+      [...buckets].sort((a, b) => {
+        if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return a.name.localeCompare(b.name);
+      }),
     [buckets],
   );
 
@@ -106,7 +115,7 @@ export default function FilesSidebar({ onCreateBucket, onBucketContextMenu }: Fi
 
       <SectionHeader
         label={t('files.sectionBuckets')}
-        action={(
+        action={
           <button
             onClick={onCreateBucket}
             className="p-1 rounded text-text-tertiary hover:text-accent hover:bg-accent/10 transition-colors cursor-pointer"
@@ -114,7 +123,7 @@ export default function FilesSidebar({ onCreateBucket, onBucketContextMenu }: Fi
           >
             <Plus size={12} />
           </button>
-        )}
+        }
       />
 
       <div className="px-2.5">
@@ -134,14 +143,19 @@ export default function FilesSidebar({ onCreateBucket, onBucketContextMenu }: Fi
                 count={bucket.fileCount}
                 onClick={() => setActiveFilter({ kind: 'bucket', bucketId: bucket.id })}
                 onContextMenu={(e) => onBucketContextMenu(bucket, e)}
-                trailing={(!bucket.isDefault && hoveredBucketId === bucket.id) ? (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onBucketContextMenu(bucket, e); }}
-                    className="p-0.5 rounded text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]"
-                  >
-                    <MoreHorizontal size={12} />
-                  </button>
-                ) : undefined}
+                trailing={
+                  !bucket.isDefault && hoveredBucketId === bucket.id ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onBucketContextMenu(bucket, e);
+                      }}
+                      className="p-0.5 rounded text-text-tertiary hover:text-text-primary hover:bg-white/[0.06]"
+                    >
+                      <MoreHorizontal size={12} />
+                    </button>
+                  ) : undefined
+                }
               />
             </div>
           );

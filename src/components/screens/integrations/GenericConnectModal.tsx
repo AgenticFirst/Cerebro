@@ -12,7 +12,17 @@
 
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, ArrowLeft, CheckCircle2, ExternalLink, Eye, EyeOff, Loader2, X, XCircle } from 'lucide-react';
+import {
+  ArrowRight,
+  ArrowLeft,
+  CheckCircle2,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Loader2,
+  X,
+  XCircle,
+} from 'lucide-react';
 import clsx from 'clsx';
 import type { IntegrationManifest } from '../../../types/integrations';
 
@@ -62,7 +72,10 @@ export default function GenericConnectModal({
         setVerify({ kind: 'err', error: r.error ?? 'Verification failed.' });
       }
     } catch (err) {
-      setVerify({ kind: 'err', error: err instanceof Error ? err.message : 'Verification failed.' });
+      setVerify({
+        kind: 'err',
+        error: err instanceof Error ? err.message : 'Verification failed.',
+      });
     }
   }, [manifest, fieldValues]);
 
@@ -85,10 +98,15 @@ export default function GenericConnectModal({
     }
   }, [manifest, fieldValues, onPersisted]);
 
-  const allFieldsFilled = manifest.fields.every((f) => f.optional || (fieldValues[f.key] ?? '').length > 0);
+  const allFieldsFilled = manifest.fields.every(
+    (f) => f.optional || (fieldValues[f.key] ?? '').length > 0,
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         className="relative bg-bg-surface border border-border-subtle rounded-xl shadow-2xl w-[600px] max-w-[92vw] max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -161,7 +179,9 @@ export default function GenericConnectModal({
                       />
                       {isPwd && (
                         <button
-                          onClick={() => setShowSensitive((prev) => ({ ...prev, [field.key]: !reveal }))}
+                          onClick={() =>
+                            setShowSensitive((prev) => ({ ...prev, [field.key]: !reveal }))
+                          }
                           className="text-text-tertiary hover:text-text-primary p-2"
                           aria-label="Toggle visibility"
                         >
@@ -185,7 +205,9 @@ export default function GenericConnectModal({
                       ? t('integrations.generic.verifying')
                       : t('integrations.generic.verify')}
                   </button>
-                  {verify.kind === 'verifying' && <Loader2 size={14} className="text-text-tertiary animate-spin" />}
+                  {verify.kind === 'verifying' && (
+                    <Loader2 size={14} className="text-text-tertiary animate-spin" />
+                  )}
                   {verify.kind === 'ok' && (
                     <span className="flex items-center gap-1 text-xs text-green-400">
                       <CheckCircle2 size={12} />
@@ -245,9 +267,7 @@ export default function GenericConnectModal({
             <button
               onClick={handleSave}
               disabled={
-                !allFieldsFilled ||
-                saving ||
-                (manifest.ipc.verify ? verify.kind !== 'ok' : false)
+                !allFieldsFilled || saving || (manifest.ipc.verify ? verify.kind !== 'ok' : false)
               }
               className={clsx(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer',

@@ -47,7 +47,9 @@ export function backendFetch<T = unknown>(
             try {
               const parsed = JSON.parse(data);
               if (parsed.detail) msg = parsed.detail;
-            } catch { /* use default */ }
+            } catch {
+              /* use default */
+            }
             const err = new Error(msg) as Error & { status?: number };
             err.status = res.statusCode;
             reject(err);

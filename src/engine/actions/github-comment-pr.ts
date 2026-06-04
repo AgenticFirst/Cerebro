@@ -81,11 +81,13 @@ export function createGitHubCommentPrAction(deps: {
       const body = renderTemplate(params.body ?? '', vars).trim();
       const parts = parseRepoFullName(repo);
       if (!parts) throw new Error(`GitHub: Comment PR — invalid repo "${repo}".`);
-      if (!Number.isFinite(number) || number <= 0) throw new Error('GitHub: Comment PR — pr_number is invalid.');
+      if (!Number.isFinite(number) || number <= 0)
+        throw new Error('GitHub: Comment PR — pr_number is invalid.');
       if (!body) throw new Error('GitHub: Comment PR — body is empty.');
 
       const res = await callGitHubApi<{ id?: number; html_url?: string }>(
-        token, `/repos/${parts.owner}/${parts.repo}/issues/${number}/comments`,
+        token,
+        `/repos/${parts.owner}/${parts.repo}/issues/${number}/comments`,
         { method: 'POST', body: { body }, signal: input.context.signal },
       );
       if (!res.ok) {

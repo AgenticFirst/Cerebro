@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Info, Plus, RefreshCw, Trash2, X } from 'lucide-react';
@@ -77,10 +70,7 @@ export default function UserExpertAccessEditor({ status }: Props) {
 
   // ── Derived data ────────────────────────────────────────────
   const sortedExperts = useMemo<Expert[]>(
-    () =>
-      [...allExperts]
-        .filter((e) => e.isEnabled)
-        .sort((a, b) => a.name.localeCompare(b.name)),
+    () => [...allExperts].filter((e) => e.isEnabled).sort((a, b) => a.name.localeCompare(b.name)),
     [allExperts],
   );
 
@@ -146,11 +136,7 @@ export default function UserExpertAccessEditor({ status }: Props) {
 
   // ── Persistence ─────────────────────────────────────────────
   const persist = useCallback(
-    async (next: {
-      defaultMode: AccessMode;
-      defaultExperts: string[];
-      rows: ExceptionRow[];
-    }) => {
+    async (next: { defaultMode: AccessMode; defaultExperts: string[]; rows: ExceptionRow[] }) => {
       const payload: SlackExpertAccessConfig = {
         defaultExpertAccess: next.defaultMode === 'all' ? null : next.defaultExperts,
         exceptions: next.rows.map((r) => ({
@@ -250,9 +236,7 @@ export default function UserExpertAccessEditor({ status }: Props) {
     } else {
       const userId = expertMenuOwner;
       applyRows(
-        rows.map((r) =>
-          r.userId === userId ? { ...r, expertIds: [...r.expertIds, e.id] } : r,
-        ),
+        rows.map((r) => (r.userId === userId ? { ...r, expertIds: [...r.expertIds, e.id] } : r)),
       );
     }
     closeExpertMenu();
@@ -327,9 +311,15 @@ export default function UserExpertAccessEditor({ status }: Props) {
                           <button
                             type="button"
                             onClick={() =>
-                              applyDefault('custom', defaultExperts.filter((id) => id !== e.id))
+                              applyDefault(
+                                'custom',
+                                defaultExperts.filter((id) => id !== e.id),
+                              )
                             }
-                            aria-label={t('slackSection.userExpertAccessRemoveExpert', { name: e.name }) ?? 'Remove'}
+                            aria-label={
+                              t('slackSection.userExpertAccessRemoveExpert', { name: e.name }) ??
+                              'Remove'
+                            }
                             className="hover:text-text-primary"
                           >
                             <X size={11} />
@@ -382,7 +372,9 @@ export default function UserExpertAccessEditor({ status }: Props) {
                             onChange={() =>
                               applyRows(
                                 rows.map((r) =>
-                                  r.userId === row.userId ? { ...r, mode: 'all', expertIds: [] } : r,
+                                  r.userId === row.userId
+                                    ? { ...r, mode: 'all', expertIds: [] }
+                                    : r,
                                 ),
                               )
                             }
@@ -420,12 +412,19 @@ export default function UserExpertAccessEditor({ status }: Props) {
                                       applyRows(
                                         rows.map((r) =>
                                           r.userId === row.userId
-                                            ? { ...r, expertIds: r.expertIds.filter((id) => id !== e.id) }
+                                            ? {
+                                                ...r,
+                                                expertIds: r.expertIds.filter((id) => id !== e.id),
+                                              }
                                             : r,
                                         ),
                                       )
                                     }
-                                    aria-label={t('slackSection.userExpertAccessRemoveExpert', { name: e.name }) ?? 'Remove'}
+                                    aria-label={
+                                      t('slackSection.userExpertAccessRemoveExpert', {
+                                        name: e.name,
+                                      }) ?? 'Remove'
+                                    }
                                     className="hover:text-text-primary"
                                   >
                                     <X size={11} />
@@ -433,7 +432,8 @@ export default function UserExpertAccessEditor({ status }: Props) {
                                 </span>
                               ))
                             )}
-                            {sortedExperts.filter((e) => !row.expertIds.includes(e.id)).length > 0 && (
+                            {sortedExperts.filter((e) => !row.expertIds.includes(e.id)).length >
+                              0 && (
                               <AddExpertsButton
                                 onClick={(el) => handleToggleExpertMenu(row.userId, el)}
                                 label={t('slackSection.userExpertAccessAddExperts')}
@@ -446,7 +446,9 @@ export default function UserExpertAccessEditor({ status }: Props) {
                       <button
                         type="button"
                         onClick={() => applyRows(rows.filter((r) => r.userId !== row.userId))}
-                        aria-label={t('slackSection.userExpertAccessRemovePerson') ?? 'Remove from list'}
+                        aria-label={
+                          t('slackSection.userExpertAccessRemovePerson') ?? 'Remove from list'
+                        }
                         className="flex-shrink-0 mt-0.5 text-text-tertiary hover:text-red-400"
                       >
                         <Trash2 size={14} />
@@ -733,7 +735,6 @@ function PeoplePickerContent({
               className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5"
             >
               {u.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img src={u.avatarUrl} alt="" className="w-6 h-6 rounded-full flex-shrink-0" />
               ) : (
                 <div className="w-6 h-6 rounded-full bg-bg-surface text-[10px] text-text-tertiary flex items-center justify-center flex-shrink-0">

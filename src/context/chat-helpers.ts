@@ -50,12 +50,7 @@ export function titleFromContent(content: string): string {
  * collapse all of them to the same "untitled" bucket at render time so the
  * sidebar can show a locale-aware placeholder instead of stale English text.
  */
-const UNTITLED_SENTINELS = new Set([
-  '',
-  'new conversation',
-  'new chat',
-  'untitled',
-]);
+const UNTITLED_SENTINELS = new Set(['', 'new conversation', 'new chat', 'untitled']);
 
 export function isUntitledConversationTitle(title: string | null | undefined): boolean {
   if (!title) return true;
@@ -97,19 +92,13 @@ export interface NewChatPlan {
  *  - If no today-empty exists, createNew=true and stale empties still get
  *    purged so the final state is exactly one empty chat (the fresh one).
  */
-export function resolveNewChatTarget(
-  conversations: Conversation[],
-  now: Date,
-): NewChatPlan {
+export function resolveNewChatTarget(conversations: Conversation[], now: Date): NewChatPlan {
   const empties = conversations.filter((c) => c.messages.length === 0);
   const todaysEmpties = empties.filter((c) => isSameLocalDay(c.createdAt, now));
   const staleEmpties = empties.filter((c) => !isSameLocalDay(c.createdAt, now));
 
   const survivor = todaysEmpties[0] ?? null;
-  const purgeIds = [
-    ...staleEmpties.map((c) => c.id),
-    ...todaysEmpties.slice(1).map((c) => c.id),
-  ];
+  const purgeIds = [...staleEmpties.map((c) => c.id), ...todaysEmpties.slice(1).map((c) => c.id)];
 
   return {
     reuseId: survivor?.id ?? null,
@@ -220,9 +209,7 @@ export function fromApiMessage(m: ApiMessage): Message {
       msg.engineRunId = m.metadata.engine_run_id as string;
     }
     if (m.metadata.routine_proposal) {
-      msg.routineProposal = proposalFromApi(
-        m.metadata.routine_proposal as Record<string, unknown>,
-      );
+      msg.routineProposal = proposalFromApi(m.metadata.routine_proposal as Record<string, unknown>);
     }
     if (m.metadata.expert_proposal) {
       msg.expertProposal = expertProposalFromApi(
@@ -230,9 +217,7 @@ export function fromApiMessage(m: ApiMessage): Message {
       );
     }
     if (m.metadata.team_proposal) {
-      msg.teamProposal = teamProposalFromApi(
-        m.metadata.team_proposal as Record<string, unknown>,
-      );
+      msg.teamProposal = teamProposalFromApi(m.metadata.team_proposal as Record<string, unknown>);
     }
     if (m.metadata.team_run) {
       const raw = m.metadata.team_run as Record<string, unknown>;
@@ -250,7 +235,7 @@ export function fromApiMessage(m: ApiMessage): Message {
           memberName: mem.member_name as string,
           role: mem.role as string,
           status: (mem.status as 'queued' | 'running' | 'completed' | 'error') ?? 'completed',
-          response: (mem.response as string | undefined),
+          response: mem.response as string | undefined,
         })),
       };
     }
@@ -321,9 +306,7 @@ export function toApiProposal(p: RoutineProposal): Record<string, unknown> {
   };
 }
 
-export function toApiIntegrationProposal(
-  p: IntegrationSetupProposal,
-): Record<string, unknown> {
+export function toApiIntegrationProposal(p: IntegrationSetupProposal): Record<string, unknown> {
   return {
     integration_id: p.integrationId,
     reason: p.reason,
@@ -393,10 +376,7 @@ export function apiPatchMessageMetadata(
   return apiPatchMessage(convId, msgId, { metadata });
 }
 
-export function apiDeleteMessagesAfter(
-  convId: string,
-  msgId: string,
-): Promise<unknown> {
+export function apiDeleteMessagesAfter(convId: string, msgId: string): Promise<unknown> {
   return window.cerebro.invoke({
     method: 'DELETE',
     path: `/conversations/${convId}/messages/after/${msgId}`,

@@ -33,18 +33,25 @@ const createdTicketIds = new Set<string>();
 afterAll(async () => {
   if (!HAS_TOKEN) return;
   for (const id of createdTicketIds) {
-    await callHubSpotApi(TOKEN, `/crm/v3/objects/tickets/${id}`, { method: 'DELETE' })
-      .catch(() => { /* best effort */ });
+    await callHubSpotApi(TOKEN, `/crm/v3/objects/tickets/${id}`, { method: 'DELETE' }).catch(() => {
+      /* best effort */
+    });
   }
   for (const id of createdContactIds) {
-    await callHubSpotApi(TOKEN, `/crm/v3/objects/contacts/${id}`, { method: 'DELETE' })
-      .catch(() => { /* best effort */ });
+    await callHubSpotApi(TOKEN, `/crm/v3/objects/contacts/${id}`, { method: 'DELETE' }).catch(
+      () => {
+        /* best effort */
+      },
+    );
   }
 });
 
 // ── Test helpers ──────────────────────────────────────────────
 
-function buildChannel(token: string, opts: Partial<{ pipeline: string; stage: string; portalId: string }> = {}): HubSpotChannel {
+function buildChannel(
+  token: string,
+  opts: Partial<{ pipeline: string; stage: string; portalId: string }> = {},
+): HubSpotChannel {
   return {
     getAccessToken: () => token,
     getPortalId: () => opts.portalId ?? null,
@@ -53,30 +60,48 @@ function buildChannel(token: string, opts: Partial<{ pipeline: string; stage: st
     getFollowUpProperty: () => null,
     getDueDateProperty: () => null,
     isConnected: () => Boolean(token && opts.pipeline && opts.stage),
-    listPipelines: async () => callHubSpotApi<{
-      results?: Array<{ id: string; label: string; stages?: Array<{ id: string; label: string; displayOrder?: number }> }>;
-    }>(token, '/crm/v3/pipelines/tickets').then((res) => res.ok
-      ? {
-          ok: true,
-          pipelines: (res.data?.results ?? []).map((p) => ({
-            id: p.id,
-            label: p.label,
-            stages: (p.stages ?? []).map((s) => ({ id: s.id, label: s.label, displayOrder: s.displayOrder ?? 0 })),
-          })),
-        }
-      : { ok: false, error: res.error ?? 'Failed' }),
+    listPipelines: async () =>
+      callHubSpotApi<{
+        results?: Array<{
+          id: string;
+          label: string;
+          stages?: Array<{ id: string; label: string; displayOrder?: number }>;
+        }>;
+      }>(token, '/crm/v3/pipelines/tickets').then((res) =>
+        res.ok
+          ? {
+              ok: true,
+              pipelines: (res.data?.results ?? []).map((p) => ({
+                id: p.id,
+                label: p.label,
+                stages: (p.stages ?? []).map((s) => ({
+                  id: s.id,
+                  label: s.label,
+                  displayOrder: s.displayOrder ?? 0,
+                })),
+              })),
+            }
+          : { ok: false, error: res.error ?? 'Failed' },
+      ),
   };
 }
 
-function buildActionInput(params: Record<string, unknown>, wiredInputs: Record<string, unknown> = {}): ActionInput {
+function buildActionInput(
+  params: Record<string, unknown>,
+  wiredInputs: Record<string, unknown> = {},
+): ActionInput {
   const logs: string[] = [];
   const context: ActionContext = {
     runId: 'test-run',
     stepId: 'test-step',
     backendPort: 0,
     signal: new AbortController().signal,
-    log: (msg) => { logs.push(msg); },
-    emitEvent: () => { /* no-op */ },
+    log: (msg) => {
+      logs.push(msg);
+    },
+    emitEvent: () => {
+      /* no-op */
+    },
   };
   return {
     params,
@@ -140,23 +165,27 @@ d('HubSpot integration (live)', () => {
     const action = createHubSpotUpsertContactAction({ getChannel: () => buildChannel(TOKEN) });
 
     // First call: brand-new email, expect a fresh create.
-    const first = await action.execute(buildActionInput({
-      email: TEST_EMAIL,
-      phone: TEST_PHONE,
-      firstname: 'Cerebro',
-      lastname: 'TestRun',
-    }));
+    const first = await action.execute(
+      buildActionInput({
+        email: TEST_EMAIL,
+        phone: TEST_PHONE,
+        firstname: 'Cerebro',
+        lastname: 'TestRun',
+      }),
+    );
     expect(first.data.created).toBe(true);
     expect(first.data.contact_id).toBeTruthy();
     upsertedContactId = String(first.data.contact_id);
     createdContactIds.add(upsertedContactId);
 
     // Second call with same email: action should match and return created=false.
-    const second = await action.execute(buildActionInput({
-      email: TEST_EMAIL,
-      phone: TEST_PHONE,
-      firstname: 'Cerebro',
-    }));
+    const second = await action.execute(
+      buildActionInput({
+        email: TEST_EMAIL,
+        phone: TEST_PHONE,
+        firstname: 'Cerebro',
+      }),
+    );
     expect(second.data.created).toBe(false);
     expect(second.data.matched_by).toBe('email');
     expect(second.data.contact_id).toBe(upsertedContactId);
@@ -168,20 +197,23 @@ d('HubSpot integration (live)', () => {
     expect(upsertedContactId).toBeTruthy();
 
     const action = createHubSpotCreateTicketAction({
-      getChannel: () => buildChannel(TOKEN, {
-        pipeline: firstPipelineId,
-        stage: firstStageId,
-        portalId: '123', // any value; only used to build a deep link string
-      }),
+      getChannel: () =>
+        buildChannel(TOKEN, {
+          pipeline: firstPipelineId,
+          stage: firstStageId,
+          portalId: '123', // any value; only used to build a deep link string
+        }),
     });
 
     const subject = `[Cerebro integration test ${RUN_ID}] please ignore`;
-    const result = await action.execute(buildActionInput({
-      subject,
-      content: 'Created by Cerebro\'s automated integration tests. Safe to delete.',
-      priority: 'LOW',
-      contact_id: upsertedContactId,
-    }));
+    const result = await action.execute(
+      buildActionInput({
+        subject,
+        content: "Created by Cerebro's automated integration tests. Safe to delete.",
+        priority: 'LOW',
+        contact_id: upsertedContactId,
+      }),
+    );
 
     expect(result.data.created).toBe(true);
     expect(result.data.error).toBeNull();
@@ -195,10 +227,9 @@ d('HubSpot integration (live)', () => {
     expect(result.data.ticket_url).toMatch(/^https:\/\/app\.hubspot\.com\/contacts\/123\/ticket\//);
 
     // Sanity-check via direct API: the ticket exists and has the right subject.
-    const fetched = await callHubSpotApi<{ properties?: { subject?: string; hs_pipeline?: string } }>(
-      TOKEN,
-      `/crm/v3/objects/tickets/${ticketId}?properties=subject,hs_pipeline`,
-    );
+    const fetched = await callHubSpotApi<{
+      properties?: { subject?: string; hs_pipeline?: string };
+    }>(TOKEN, `/crm/v3/objects/tickets/${ticketId}?properties=subject,hs_pipeline`);
     expect(fetched.ok).toBe(true);
     expect(fetched.data?.properties?.subject).toBe(subject);
     expect(fetched.data?.properties?.hs_pipeline).toBe(firstPipelineId);
@@ -209,22 +240,25 @@ d('HubSpot integration (live)', () => {
     expect(firstStageId).toBeTruthy();
 
     const action = createHubSpotCreateTicketAction({
-      getChannel: () => buildChannel(TOKEN, {
-        pipeline: firstPipelineId,
-        stage: firstStageId,
-        portalId: '123',
-      }),
+      getChannel: () =>
+        buildChannel(TOKEN, {
+          pipeline: firstPipelineId,
+          stage: firstStageId,
+          portalId: '123',
+        }),
     });
 
     // Brand-new email that doesn't exist yet — exercises the create-then-associate path.
     const email = `cerebro-ticket-email-${RUN_ID}@example.com`;
     const subject = `[Cerebro integration test ${RUN_ID} email-assoc] please ignore`;
-    const result = await action.execute(buildActionInput({
-      subject,
-      content: 'Created by Cerebro\'s automated integration tests. Safe to delete.',
-      priority: 'LOW',
-      contact_email: email,
-    }));
+    const result = await action.execute(
+      buildActionInput({
+        subject,
+        content: "Created by Cerebro's automated integration tests. Safe to delete.",
+        priority: 'LOW',
+        contact_email: email,
+      }),
+    );
 
     expect(result.data.created).toBe(true);
     expect(result.data.error).toBeNull();
@@ -245,10 +279,9 @@ d('HubSpot integration (live)', () => {
     expect(contact.data?.properties?.email).toBe(email);
 
     // The real proof: the ticket is actually associated to that contact in HubSpot.
-    const assoc = await callHubSpotApi<{ results?: Array<{ toObjectId?: number | string; id?: string }> }>(
-      TOKEN,
-      `/crm/v3/objects/tickets/${ticketId}/associations/contacts`,
-    );
+    const assoc = await callHubSpotApi<{
+      results?: Array<{ toObjectId?: number | string; id?: string }>;
+    }>(TOKEN, `/crm/v3/objects/tickets/${ticketId}/associations/contacts`);
     expect(assoc.ok).toBe(true);
     const associatedIds = (assoc.data?.results ?? []).map((r) => String(r.toObjectId ?? r.id));
     expect(associatedIds).toContain(contactId);

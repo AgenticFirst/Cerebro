@@ -28,7 +28,9 @@ function makeChannel(overrides: Partial<ChannelStub> = {}): ChannelStub {
     calls,
     allowed: overrides.allowed ?? new Set(['111', '222']),
     reply: overrides.reply ?? { messageId: 42, error: null },
-    isAllowlisted(id: string) { return this.allowed.has(id); },
+    isAllowlisted(id: string) {
+      return this.allowed.has(id);
+    },
     async sendActionMessage(chatId, text, parseMode) {
       calls.push({ chatId, text, parseMode });
       return this.reply;
@@ -63,7 +65,10 @@ describe('createSendTelegramAction: baseline', () => {
   it('sends a literal chat_id + message and returns sent:true', async () => {
     const result = await runAction(action, { chat_id: '111', message: 'hello' });
     expect(result.data).toEqual({
-      sent: true, message_id: 42, chat_id: '111', error: null,
+      sent: true,
+      message_id: 42,
+      chat_id: '111',
+      error: null,
     });
     expect(channel.calls).toEqual([{ chatId: '111', text: 'hello', parseMode: undefined }]);
   });
@@ -91,25 +96,30 @@ describe('createSendTelegramAction: baseline', () => {
 describe('createSendTelegramAction: guards', () => {
   it('throws when the bridge is not connected', async () => {
     const noChannelAction = createSendTelegramAction({ getChannel: () => null });
-    await expect(runAction(noChannelAction, { chat_id: '111', message: 'hi' }))
-      .rejects.toThrow(/bridge is not enabled/i);
+    await expect(runAction(noChannelAction, { chat_id: '111', message: 'hi' })).rejects.toThrow(
+      /bridge is not enabled/i,
+    );
   });
 
   it('throws when chat_id renders empty', async () => {
-    await expect(runAction(action, { chat_id: '', message: 'hi' }))
-      .rejects.toThrow(/chat_id is empty/);
-    await expect(runAction(action, { chat_id: '{{missing}}', message: 'hi' }, {}))
-      .rejects.toThrow(/chat_id is empty/);
+    await expect(runAction(action, { chat_id: '', message: 'hi' })).rejects.toThrow(
+      /chat_id is empty/,
+    );
+    await expect(runAction(action, { chat_id: '{{missing}}', message: 'hi' }, {})).rejects.toThrow(
+      /chat_id is empty/,
+    );
   });
 
   it('throws when message renders empty', async () => {
-    await expect(runAction(action, { chat_id: '111', message: '   ' }))
-      .rejects.toThrow(/message is empty/);
+    await expect(runAction(action, { chat_id: '111', message: '   ' })).rejects.toThrow(
+      /message is empty/,
+    );
   });
 
   it('throws (clean) when chat_id is not allowlisted', async () => {
-    await expect(runAction(action, { chat_id: '999', message: 'hi' }))
-      .rejects.toThrow(/not in the Telegram allowlist/);
+    await expect(runAction(action, { chat_id: '999', message: 'hi' })).rejects.toThrow(
+      /not in the Telegram allowlist/,
+    );
     expect(channel.calls).toHaveLength(0);
   });
 });

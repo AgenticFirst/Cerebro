@@ -141,7 +141,9 @@ export default function ExpertConsole({ runId, className }: ExpertConsoleProps) 
           term.write(bufferTail);
         }
         haveDoneInitialFit = true;
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     };
     doFit({ force: true });
 
@@ -204,7 +206,9 @@ export default function ExpertConsole({ runId, className }: ExpertConsoleProps) 
 
   if (!runId) {
     return (
-      <div className={clsx('w-full h-full bg-[#09090B] flex items-center justify-center', className)}>
+      <div
+        className={clsx('w-full h-full bg-[#09090B] flex items-center justify-center', className)}
+      >
         <div className="flex flex-col items-center gap-3 text-zinc-500">
           <TerminalIcon size={32} className="opacity-50" />
           <p className="text-sm">{t('tasks.consolePlaceholder')}</p>

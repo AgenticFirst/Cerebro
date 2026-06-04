@@ -28,7 +28,10 @@ interface ParsedWebResponse {
 function parseResponse(text: string): ParsedWebResponse {
   const trimmed = text.trim();
   // Claude sometimes wraps JSON in ```json fences — peel them off first.
-  const unfenced = trimmed.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+  const unfenced = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```$/, '')
+    .trim();
   // Find the first '{' and matching final '}' to tolerate leading/trailing prose.
   const start = unfenced.indexOf('{');
   const end = unfenced.lastIndexOf('}');
@@ -127,7 +130,7 @@ export const searchWebAction: ActionDefinition = {
     return {
       data: {
         results: capped,
-        ai_answer: includeAnswer ? parsed.ai_answer ?? null : null,
+        ai_answer: includeAnswer ? (parsed.ai_answer ?? null) : null,
       },
       summary: `Found ${capped.length} web result${capped.length === 1 ? '' : 's'}`,
     };

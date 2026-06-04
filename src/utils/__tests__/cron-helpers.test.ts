@@ -12,38 +12,38 @@ import {
 
 describe('scheduleToCron', () => {
   it('converts weekdays at 9:00', () => {
-    expect(scheduleToCron({ days: ['mon', 'tue', 'wed', 'thu', 'fri'], time: '09:00' }))
-      .toBe('0 9 * * 1-5');
+    expect(scheduleToCron({ days: ['mon', 'tue', 'wed', 'thu', 'fri'], time: '09:00' })).toBe(
+      '0 9 * * 1-5',
+    );
   });
 
   it('converts all days at midnight', () => {
-    expect(scheduleToCron({ days: [...ALL_DAYS], time: '00:00' }))
-      .toBe('0 0 * * *');
+    expect(scheduleToCron({ days: [...ALL_DAYS], time: '00:00' })).toBe('0 0 * * *');
   });
 
   it('converts a single day', () => {
-    expect(scheduleToCron({ days: ['sat'], time: '14:30' }))
-      .toBe('30 14 * * 6');
+    expect(scheduleToCron({ days: ['sat'], time: '14:30' })).toBe('30 14 * * 6');
   });
 
   it('converts non-consecutive days', () => {
-    expect(scheduleToCron({ days: ['mon', 'wed', 'fri'], time: '08:15' }))
-      .toBe('15 8 * * 1,3,5');
+    expect(scheduleToCron({ days: ['mon', 'wed', 'fri'], time: '08:15' })).toBe('15 8 * * 1,3,5');
   });
 
   it('compresses consecutive + standalone days', () => {
     // Mon-Wed + Sat → 1-3,6
-    expect(scheduleToCron({ days: ['mon', 'tue', 'wed', 'sat'], time: '10:00' }))
-      .toBe('0 10 * * 1-3,6');
+    expect(scheduleToCron({ days: ['mon', 'tue', 'wed', 'sat'], time: '10:00' })).toBe(
+      '0 10 * * 1-3,6',
+    );
   });
 
   it('throws on empty days', () => {
-    expect(() => scheduleToCron({ days: [], time: '09:00' })).toThrow('days array must not be empty');
+    expect(() => scheduleToCron({ days: [], time: '09:00' })).toThrow(
+      'days array must not be empty',
+    );
   });
 
   it('handles weekends', () => {
-    expect(scheduleToCron({ days: ['sat', 'sun'], time: '11:00' }))
-      .toBe('0 11 * * 0,6');
+    expect(scheduleToCron({ days: ['sat', 'sun'], time: '11:00' })).toBe('0 11 * * 0,6');
   });
 });
 
@@ -113,48 +113,41 @@ describe('cronToSchedule', () => {
 
 describe('describeSchedule', () => {
   it('describes weekdays', () => {
-    expect(describeSchedule({ days: [...WEEKDAYS], time: '09:00' }))
-      .toBe('Weekdays at 9:00 AM');
+    expect(describeSchedule({ days: [...WEEKDAYS], time: '09:00' })).toBe('Weekdays at 9:00 AM');
   });
 
   it('describes all days', () => {
-    expect(describeSchedule({ days: [...ALL_DAYS], time: '09:00' }))
-      .toBe('Every day at 9:00 AM');
+    expect(describeSchedule({ days: [...ALL_DAYS], time: '09:00' })).toBe('Every day at 9:00 AM');
   });
 
   it('describes empty days as every day', () => {
-    expect(describeSchedule({ days: [], time: '09:00' }))
-      .toBe('Every day at 9:00 AM');
+    expect(describeSchedule({ days: [], time: '09:00' })).toBe('Every day at 9:00 AM');
   });
 
   it('describes weekends', () => {
-    expect(describeSchedule({ days: ['sat', 'sun'], time: '11:00' }))
-      .toBe('Weekends at 11:00 AM');
+    expect(describeSchedule({ days: ['sat', 'sun'], time: '11:00' })).toBe('Weekends at 11:00 AM');
   });
 
   it('describes custom days', () => {
-    expect(describeSchedule({ days: ['mon', 'wed', 'fri'], time: '14:30' }))
-      .toBe('Mon, Wed, Fri at 2:30 PM');
+    expect(describeSchedule({ days: ['mon', 'wed', 'fri'], time: '14:30' })).toBe(
+      'Mon, Wed, Fri at 2:30 PM',
+    );
   });
 
   it('describes single day', () => {
-    expect(describeSchedule({ days: ['tue'], time: '08:00' }))
-      .toBe('Tue at 8:00 AM');
+    expect(describeSchedule({ days: ['tue'], time: '08:00' })).toBe('Tue at 8:00 AM');
   });
 
   it('formats PM times correctly', () => {
-    expect(describeSchedule({ days: ['mon'], time: '23:00' }))
-      .toBe('Mon at 11:00 PM');
+    expect(describeSchedule({ days: ['mon'], time: '23:00' })).toBe('Mon at 11:00 PM');
   });
 
   it('formats midnight as 12:00 AM', () => {
-    expect(describeSchedule({ days: ['mon'], time: '00:00' }))
-      .toBe('Mon at 12:00 AM');
+    expect(describeSchedule({ days: ['mon'], time: '00:00' })).toBe('Mon at 12:00 AM');
   });
 
   it('formats noon as 12:00 PM', () => {
-    expect(describeSchedule({ days: ['mon'], time: '12:00' }))
-      .toBe('Mon at 12:00 PM');
+    expect(describeSchedule({ days: ['mon'], time: '12:00' })).toBe('Mon at 12:00 PM');
   });
 });
 

@@ -20,16 +20,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Brain,
-  Check,
-  Copy,
-  ExternalLink,
-  Loader2,
-  RefreshCw,
-  Sparkles,
-  X,
-} from 'lucide-react';
+import { Brain, Check, Copy, ExternalLink, Loader2, RefreshCw, Sparkles, X } from 'lucide-react';
 import clsx from 'clsx';
 import type { ClaudeCodeInstallResult } from '../../types/ipc';
 
@@ -52,11 +43,7 @@ interface InstallCheckStepProps {
   standalone?: boolean;
 }
 
-export default function InstallCheckStep({
-  onAdvance,
-  onSeen,
-  standalone,
-}: InstallCheckStepProps) {
+export default function InstallCheckStep({ onAdvance, onSeen, standalone }: InstallCheckStepProps) {
   const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>('checking');
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -167,10 +154,7 @@ export default function InstallCheckStep({
   if (phase === 'checking') {
     return (
       <>
-        <div
-          className="fixed inset-0 z-[10000] bg-black/65 backdrop-blur-[2px]"
-          aria-hidden
-        />
+        <div className="fixed inset-0 z-[10000] bg-black/65 backdrop-blur-[2px]" aria-hidden />
         <div
           role="status"
           aria-live="polite"

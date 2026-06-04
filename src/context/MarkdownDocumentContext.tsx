@@ -8,14 +8,7 @@
  * every screen — same approach we'd use for a toaster.
  */
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import MarkdownDocument, { type MarkdownDocumentProps } from '../components/ui/MarkdownDocument';
 
 type OpenProps = Omit<MarkdownDocumentProps, 'onClose'> & {

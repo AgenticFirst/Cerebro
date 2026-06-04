@@ -59,7 +59,10 @@ describe('TelegramApi', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ ok: true, result: { id: 42, is_bot: true, first_name: 'bot', username: 'botty' } }),
+      json: async () => ({
+        ok: true,
+        result: { id: 42, is_bot: true, first_name: 'bot', username: 'botty' },
+      }),
     } as unknown as Response);
 
     const api = new TelegramApi('123456789:AAEtokenhere123456789');
@@ -80,9 +83,11 @@ describe('TelegramApi', () => {
   });
 
   it('does NOT leak the token into the thrown error message', async () => {
-    globalThis.fetch = vi.fn().mockRejectedValue(
-      new Error('connect ECONNREFUSED — leaked 123456789:AAESECRETtokenSHOULDNOTAPPEAR in logs'),
-    );
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(
+        new Error('connect ECONNREFUSED — leaked 123456789:AAESECRETtokenSHOULDNOTAPPEAR in logs'),
+      );
 
     const api = new TelegramApi('123456789:AAESECRETtokenSHOULDNOTAPPEAR');
     try {

@@ -34,12 +34,16 @@ function makeChannel(): ChannelStub {
     reply: { fileId: 'F123', error: null },
     isAllowlisted: () => true,
     isConnected: () => true,
-    async sendActionMessage() { return { messageTs: null, channelId: null, error: null }; },
+    async sendActionMessage() {
+      return { messageTs: null, channelId: null, error: null };
+    },
     async sendFileActionMessage(channel, filePath, options) {
       calls.push({ channel, filePath, options });
       return this.reply;
     },
-    async listChannels() { return { ok: true, channels: [] }; },
+    async listChannels() {
+      return { ok: true, channels: [] };
+    },
   };
 }
 
@@ -75,7 +79,10 @@ describe('createSendSlackFileAction', () => {
     expect(resolveMediaInputMock).toHaveBeenCalledWith(9999, undefined, '/tmp/report.pdf');
     // The resolved absolute path — not the raw input — reaches the bridge.
     expect(channel.calls[0].filePath).toBe('/tmp/report.pdf');
-    expect(channel.calls[0].options).toMatchObject({ comment: 'See attached', fileName: 'report.pdf' });
+    expect(channel.calls[0].options).toMatchObject({
+      comment: 'See attached',
+      fileName: 'report.pdf',
+    });
   });
 
   it('de-annotates a `@/path` file_path via the resolver and uploads the real file', async () => {
@@ -119,29 +126,46 @@ describe('createSendSlackFileAction', () => {
   });
 
   it('throws when channel is empty', async () => {
-    await expect(action.execute({
-      params: { channel: '', file_path: '/tmp/x' },
-      wiredInputs: {}, scratchpad: new RunScratchpad(), context: makeContext(),
-    })).rejects.toThrow(/channel is empty/);
+    await expect(
+      action.execute({
+        params: { channel: '', file_path: '/tmp/x' },
+        wiredInputs: {},
+        scratchpad: new RunScratchpad(),
+        context: makeContext(),
+      }),
+    ).rejects.toThrow(/channel is empty/);
   });
 
   it('rethrows resolver failures with a Send Slack File prefix', async () => {
-    resolveMediaInputMock.mockRejectedValue(new Error('must provide either file_item_id or file_path'));
-    await expect(action.execute({
-      params: { channel: 'C01ABCDE' },
-      wiredInputs: {}, scratchpad: new RunScratchpad(), context: makeContext(),
-    })).rejects.toThrow(/Send Slack File: must provide either file_item_id or file_path/);
+    resolveMediaInputMock.mockRejectedValue(
+      new Error('must provide either file_item_id or file_path'),
+    );
+    await expect(
+      action.execute({
+        params: { channel: 'C01ABCDE' },
+        wiredInputs: {},
+        scratchpad: new RunScratchpad(),
+        context: makeContext(),
+      }),
+    ).rejects.toThrow(/Send Slack File: must provide either file_item_id or file_path/);
   });
 
   it('returns sent:false for a missing local file path without uploading', async () => {
-    resolveMediaInputMock.mockRejectedValue(new Error('file_path not found on disk: /tmp/missing.pdf'));
+    resolveMediaInputMock.mockRejectedValue(
+      new Error('file_path not found on disk: /tmp/missing.pdf'),
+    );
     const result = await action.execute({
       params: { channel: 'C01ABCDE', file_path: '/tmp/missing.pdf' },
       wiredInputs: {},
       scratchpad: new RunScratchpad(),
       context: makeContext(),
     });
-    expect(result.data).toEqual({ sent: false, file_id: null, channel: 'C01ABCDE', error: 'file not found: /tmp/missing.pdf' });
+    expect(result.data).toEqual({
+      sent: false,
+      file_id: null,
+      channel: 'C01ABCDE',
+      error: 'file not found: /tmp/missing.pdf',
+    });
     expect(channel.calls).toHaveLength(0);
   });
 
@@ -150,7 +174,9 @@ describe('createSendSlackFileAction', () => {
     const ctx = makeContext();
     const result = await action.execute({
       params: { channel: 'C01ABCDE', file_path: '/tmp/big.bin' },
-      wiredInputs: {}, scratchpad: new RunScratchpad(), context: ctx,
+      wiredInputs: {},
+      scratchpad: new RunScratchpad(),
+      context: ctx,
     });
     expect(result.data).toMatchObject({ sent: false, error: 'file_too_large' });
     expect(ctx.log).toHaveBeenCalledWith(expect.stringMatching(/file upload failed/));

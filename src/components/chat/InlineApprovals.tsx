@@ -35,12 +35,7 @@ export default function InlineApprovals({ conversationId }: InlineApprovalsProps
             <ShieldAlert size={12} />
             <span>{t('approvals.inlineTitle')}</span>
           </div>
-          <ApprovalCard
-            approval={approval}
-            variant="pending"
-            onApprove={approve}
-            onDeny={deny}
-          />
+          <ApprovalCard approval={approval} variant="pending" onApprove={approve} onDeny={deny} />
         </div>
       ))}
     </div>

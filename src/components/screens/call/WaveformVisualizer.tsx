@@ -21,9 +21,7 @@ export default function WaveformVisualizer({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dataArray = analyserNode
-      ? new Uint8Array(analyserNode.frequencyBinCount)
-      : null;
+    const dataArray = analyserNode ? new Uint8Array(analyserNode.frequencyBinCount) : null;
 
     const draw = () => {
       animationRef.current = requestAnimationFrame(draw);
@@ -71,12 +69,5 @@ export default function WaveformVisualizer({
     };
   }, [analyserNode, color, barCount]);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      width={320}
-      height={40}
-      className="w-80 h-10 opacity-70"
-    />
-  );
+  return <canvas ref={canvasRef} width={320} height={40} className="w-80 h-10 opacity-70" />;
 }

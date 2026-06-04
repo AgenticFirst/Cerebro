@@ -8,11 +8,7 @@
 
 import type { DAGDefinition } from '../engine/dag/types';
 import { matchesChannelFilter, type ChannelFilterType } from '../shared/channel-helpers';
-import type {
-  BackendRoutineRecord,
-  WhatsAppFilterType,
-  WhatsAppTriggerRoutine,
-} from './types';
+import type { BackendRoutineRecord, WhatsAppFilterType, WhatsAppTriggerRoutine } from './types';
 
 // Re-export for external callers that still import the limiter from this module.
 export { SlidingWindowLimiter } from '../shared/channel-helpers';

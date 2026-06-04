@@ -51,7 +51,10 @@ export default function AvatarPicker({ value, onChange }: AvatarPickerProps) {
           )}
         </div>
         <div className="relative">
-          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none" />
+          <Search
+            size={12}
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none"
+          />
           <input
             type="text"
             value={query}
@@ -78,9 +81,7 @@ export default function AvatarPicker({ value, onChange }: AvatarPickerProps) {
                 onClick={() => onChange(avatar.id)}
                 className={clsx(
                   'aspect-square rounded-md flex items-center justify-center transition-colors',
-                  isSelected
-                    ? 'bg-accent/15 ring-1 ring-accent/60'
-                    : 'hover:bg-bg-hover',
+                  isSelected ? 'bg-accent/15 ring-1 ring-accent/60' : 'hover:bg-bg-hover',
                 )}
               >
                 <span className="twemoji text-2xl leading-none" aria-label={avatar.label}>

@@ -17,7 +17,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import VoiceSection from '../VoiceSection';
-import { VoiceContext, type VoiceCatalog, type VoiceCatalogModel } from '../../../../context/VoiceContext';
+import {
+  VoiceContext,
+  type VoiceCatalog,
+  type VoiceCatalogModel,
+} from '../../../../context/VoiceContext';
 
 // VoiceContext is the only thing this section depends on; we provide a
 // hand-rolled implementation so tests can drive every branch.
@@ -163,10 +167,7 @@ describe('VoiceSection — downloading', () => {
 describe('VoiceSection — failure', () => {
   it('shows the error message and a Retry button on failed download', () => {
     renderWithCatalog({
-      models: [
-        STT,
-        makeModel({ download_state: 'failed', error: 'ConnectionError: refused' }),
-      ],
+      models: [STT, makeModel({ download_state: 'failed', error: 'ConnectionError: refused' })],
       voice_models_dir: '/tmp/voice',
       all_installed: false,
     });
@@ -176,10 +177,7 @@ describe('VoiceSection — failure', () => {
 
   it('Retry calls startDownload again with the same model', () => {
     const { value } = renderWithCatalog({
-      models: [
-        STT,
-        makeModel({ download_state: 'failed', error: 'boom' }),
-      ],
+      models: [STT, makeModel({ download_state: 'failed', error: 'boom' })],
       voice_models_dir: '/tmp/voice',
       all_installed: false,
     });

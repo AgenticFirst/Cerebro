@@ -57,16 +57,8 @@ export default function WelcomeStep() {
             {t('onboarding.welcome.languagePrompt')}
           </p>
           <div className="grid grid-cols-2 gap-2.5">
-            <LanguageButton
-              flag="🇺🇸"
-              label="English"
-              onClick={() => pick('en')}
-            />
-            <LanguageButton
-              flag="🇪🇸"
-              label="Español"
-              onClick={() => pick('es')}
-            />
+            <LanguageButton flag="🇺🇸" label="English" onClick={() => pick('en')} />
+            <LanguageButton flag="🇪🇸" label="Español" onClick={() => pick('es')} />
           </div>
         </div>
 

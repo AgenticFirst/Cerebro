@@ -59,7 +59,7 @@ const ACTION_DESCRIPTIONS: Record<string, ActionDescription> = {
     expects: 'the message text',
   },
   send_notification: {
-    description: 'Shows a desktop notification on the user\'s machine.',
+    description: "Shows a desktop notification on the user's machine.",
     expects: 'a short headline (and optional body)',
   },
   http_request: {
@@ -178,7 +178,9 @@ export function buildRoutineContext(dag: DAGDefinition, stepId: string): string 
     lines.push('', '### Downstream steps that will run AFTER you');
     for (const ds of downstream) {
       const meta = describeAction(ds);
-      const expectsLine = meta.expects ? `\n  → They expect from your output: ${meta.expects}.` : '';
+      const expectsLine = meta.expects
+        ? `\n  → They expect from your output: ${meta.expects}.`
+        : '';
       lines.push(`- "${ds.name}" — ${meta.description}${expectsLine}`);
     }
   }

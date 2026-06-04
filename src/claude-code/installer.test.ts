@@ -189,10 +189,7 @@ describe('installer materialization', () => {
   });
 
   it('installExpert writes a single expert .md file with valid frontmatter', async () => {
-    await installExpert(
-      { dataDir, backendPort: backend.port },
-      expertsFixture[0],
-    );
+    await installExpert({ dataDir, backendPort: backend.port }, expertsFixture[0]);
     const paths = resolvePaths(dataDir);
     const slug = expertAgentName(expertsFixture[0].id, expertsFixture[0].name);
     const file = path.join(paths.agentsDir, `${slug}.md`);
@@ -208,10 +205,7 @@ describe('installer materialization', () => {
   });
 
   it('removeExpert deletes the .md file and the index entry', async () => {
-    await installExpert(
-      { dataDir, backendPort: backend.port },
-      expertsFixture[0],
-    );
+    await installExpert({ dataDir, backendPort: backend.port }, expertsFixture[0]);
     const slug = expertAgentName(expertsFixture[0].id, expertsFixture[0].name);
     removeExpert({ dataDir, backendPort: backend.port }, expertsFixture[0].id);
     const paths = resolvePaths(dataDir);

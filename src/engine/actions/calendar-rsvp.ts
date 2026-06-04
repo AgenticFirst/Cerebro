@@ -31,7 +31,10 @@ export function createCalendarRsvpAction(deps: {
       es: 'Establece tu respuesta (sí / no / quizá) a una invitación de reunión por id de evento.',
     },
     chatExamples: [
-      { en: 'Decline the 5pm budget review.', es: 'Rechaza la revisión de presupuesto de las 5pm.' },
+      {
+        en: 'Decline the 5pm budget review.',
+        es: 'Rechaza la revisión de presupuesto de las 5pm.',
+      },
     ],
     availabilityCheck: () => {
       const ch = deps.getChannel();
@@ -61,14 +64,20 @@ export function createCalendarRsvpAction(deps: {
       const params = input.params as unknown as RsvpParams;
       const vars = input.wiredInputs ?? {};
       const eventId = renderTemplate(params.event_id ?? '', vars).trim();
-      const response = renderTemplate(params.response ?? '', vars).trim().toLowerCase();
+      const response = renderTemplate(params.response ?? '', vars)
+        .trim()
+        .toLowerCase();
       if (!eventId) throw new Error('Calendar: RSVP — event_id is required.');
-      if (!VALID.has(response)) throw new Error('Calendar: RSVP — response must be accepted, declined, or tentative.');
+      if (!VALID.has(response))
+        throw new Error('Calendar: RSVP — response must be accepted, declined, or tentative.');
 
       const res = await channel.rsvp(eventId, response as RsvpResponse);
       if (!res.ok) {
         input.context.log(`Calendar RSVP failed: ${res.error}`);
-        return { data: { ok: false, error: res.error ?? 'unknown' }, summary: `Calendar RSVP failed: ${res.error}` };
+        return {
+          data: { ok: false, error: res.error ?? 'unknown' },
+          summary: `Calendar RSVP failed: ${res.error}`,
+        };
       }
       input.context.log(`RSVP ${response} for event ${eventId}`);
       return { data: { ok: true, error: null }, summary: `RSVP'd ${response}` };

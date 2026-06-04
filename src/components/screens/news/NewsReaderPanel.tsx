@@ -122,9 +122,13 @@ export default function NewsReaderPanel() {
                 </>
               )}
             </div>
-            <h1 className="text-[19px] font-semibold text-text-primary leading-snug">{article.title}</h1>
+            <h1 className="text-[19px] font-semibold text-text-primary leading-snug">
+              {article.title}
+            </h1>
             {article.summary && (
-              <p className="mt-2.5 text-[13px] text-text-secondary leading-relaxed">{article.summary}</p>
+              <p className="mt-2.5 text-[13px] text-text-secondary leading-relaxed">
+                {article.summary}
+              </p>
             )}
             <button
               onClick={() => window.cerebro.shell.openExternal(article.url)}
@@ -142,7 +146,9 @@ export default function NewsReaderPanel() {
               <div className="flex flex-col items-center text-center gap-2 py-4 px-2">
                 <Sparkles size={20} className="text-accent" />
                 <p className="text-[13px] font-medium text-text-secondary">{t('news.askTitle')}</p>
-                <p className="text-[12px] text-text-tertiary leading-relaxed">{t('news.askSubtitle')}</p>
+                <p className="text-[12px] text-text-tertiary leading-relaxed">
+                  {t('news.askSubtitle')}
+                </p>
                 <div className="flex flex-wrap justify-center gap-1.5 mt-1.5">
                   {suggestions.map((s) => (
                     <button

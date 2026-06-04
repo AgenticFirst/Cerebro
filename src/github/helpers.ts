@@ -55,7 +55,9 @@ const TRIGGER_NODE_TYPES: Record<string, GitHubEventType> = {
  * Pull the trigger config out of a routine's dag_json. Returns null if the
  * canvas trigger isn't a github_* one or required fields are missing.
  */
-export function parseGitHubTriggerRoutine(record: BackendRoutineRecord): GitHubTriggerRoutine | null {
+export function parseGitHubTriggerRoutine(
+  record: BackendRoutineRecord,
+): GitHubTriggerRoutine | null {
   if (!record.dag_json) return null;
   let dag: CanvasDagJson;
   try {
@@ -72,10 +74,10 @@ export function parseGitHubTriggerRoutine(record: BackendRoutineRecord): GitHubT
   const repo = typeof cfg.repo === 'string' ? cfg.repo.trim() : '';
   if (!repo) return null;
   const rawFilterType = typeof cfg.filter_type === 'string' ? cfg.filter_type : 'none';
-  const filter_type: GitHubFilterType = (
+  const filter_type: GitHubFilterType =
     rawFilterType === 'keyword' || rawFilterType === 'regex' || rawFilterType === 'label'
-      ? rawFilterType : 'none'
-  );
+      ? rawFilterType
+      : 'none';
   const filter_value = typeof cfg.filter_value === 'string' ? cfg.filter_value : '';
 
   return {
@@ -131,11 +133,14 @@ export function matchRoutineTriggers(
     const target = r.trigger.repo;
     const repoMatches = target === '*' || target === event.repoFullName;
     if (!repoMatches) continue;
-    if (!matchesGitHubFilter(
-      { title: event.title, body: event.body, labels: event.labels },
-      r.trigger.filter_type,
-      r.trigger.filter_value,
-    )) continue;
+    if (
+      !matchesGitHubFilter(
+        { title: event.title, body: event.body, labels: event.labels },
+        r.trigger.filter_type,
+        r.trigger.filter_value,
+      )
+    )
+      continue;
     matched.push(r);
   }
   return matched;

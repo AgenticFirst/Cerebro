@@ -35,14 +35,19 @@ export default function WorkspaceFilesView() {
   const [workspacePath, setWorkspacePath] = useState<string>('');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
 
-  useEffect(() => { loadTasks(); }, [loadTasks]);
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
 
   const tasksWithWorkspace = useMemo<Task[]>(
-    () => tasks.filter((task) => !!task.run_id).sort((a, b) => {
-      const aDate = a.updated_at || a.created_at;
-      const bDate = b.updated_at || b.created_at;
-      return bDate.localeCompare(aDate);
-    }),
+    () =>
+      tasks
+        .filter((task) => !!task.run_id)
+        .sort((a, b) => {
+          const aDate = a.updated_at || a.created_at;
+          const bDate = b.updated_at || b.created_at;
+          return bDate.localeCompare(aDate);
+        }),
     [tasks],
   );
 
@@ -99,7 +104,10 @@ export default function WorkspaceFilesView() {
               {t('files.sourceWorkspaces')}
             </div>
             <div className="text-[10px] text-text-tertiary truncate">
-              {t('files.workspacesTaskCount', { count: tasksWithWorkspace.length, defaultValue: '{{count}} task workspaces' })}
+              {t('files.workspacesTaskCount', {
+                count: tasksWithWorkspace.length,
+                defaultValue: '{{count}} task workspaces',
+              })}
             </div>
           </div>
         </div>
@@ -154,8 +162,12 @@ export default function WorkspaceFilesView() {
           <>
             <div className="flex items-center gap-2 px-4 border-b border-border-subtle flex-shrink-0 h-[60px]">
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-text-primary truncate">{selectedTask.title}</div>
-                <div className="text-[10px] text-text-tertiary truncate font-mono">{workspacePath}</div>
+                <div className="text-sm font-semibold text-text-primary truncate">
+                  {selectedTask.title}
+                </div>
+                <div className="text-[10px] text-text-tertiary truncate font-mono">
+                  {workspacePath}
+                </div>
               </div>
               <button
                 onClick={() => loadFileTree(selectedTask.id)}
@@ -225,7 +237,9 @@ export default function WorkspaceFilesView() {
           mode="copy"
           count={1}
           onClose={() => setShowSaveDialog(false)}
-          onConfirm={async (bucketId) => { await handleSaveSelected(bucketId); }}
+          onConfirm={async (bucketId) => {
+            await handleSaveSelected(bucketId);
+          }}
         />
       )}
     </div>

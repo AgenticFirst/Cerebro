@@ -85,7 +85,9 @@ async function executePython(
   );
 
   if (response.exit_code !== 0) {
-    throw new Error(`Python script failed (exit ${response.exit_code}): ${response.stderr.slice(0, 200)}`);
+    throw new Error(
+      `Python script failed (exit ${response.exit_code}): ${response.stderr.slice(0, 200)}`,
+    );
   }
 
   if (response.stdout) {
@@ -126,7 +128,7 @@ function executeJavaScript(
   sandbox.isFinite = isFinite;
   sandbox.console = {
     log: (...args: unknown[]) => {
-      const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+      const msg = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
       logs.push(msg);
     },
   };

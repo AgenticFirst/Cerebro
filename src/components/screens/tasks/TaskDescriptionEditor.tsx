@@ -15,7 +15,11 @@ interface TaskDescriptionEditorProps {
   onSave: (md: string) => void;
 }
 
-export default function TaskDescriptionEditor({ taskId, value, onSave }: TaskDescriptionEditorProps) {
+export default function TaskDescriptionEditor({
+  taskId,
+  value,
+  onSave,
+}: TaskDescriptionEditorProps) {
   const { t } = useTranslation();
   const { experts } = useExperts();
   const { open: openMarkdown } = useMarkdownDocument();
@@ -55,10 +59,7 @@ export default function TaskDescriptionEditor({ taskId, value, onSave }: TaskDes
     }
   }, [draft, value, onSave]);
 
-  const previewBody = useMemo(
-    () => normalizeToTokens(value, experts),
-    [value, experts],
-  );
+  const previewBody = useMemo(() => normalizeToTokens(value, experts), [value, experts]);
 
   return (
     <div>
@@ -111,9 +112,7 @@ export default function TaskDescriptionEditor({ taskId, value, onSave }: TaskDes
         >
           {value ? (
             <div className="prose prose-invert prose-sm max-w-none">
-              <ReactMarkdown components={mentionMarkdownComponents}>
-                {previewBody}
-              </ReactMarkdown>
+              <ReactMarkdown components={mentionMarkdownComponents}>{previewBody}</ReactMarkdown>
             </div>
           ) : (
             t('tasks.drawerDescriptionPlaceholder')

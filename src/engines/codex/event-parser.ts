@@ -195,7 +195,8 @@ function mapItemToTool(
       const allAdds =
         changes.length > 0 &&
         changes.every(
-          (c) => c != null && typeof c === 'object' && (c as Record<string, unknown>)['kind'] === 'add',
+          (c) =>
+            c != null && typeof c === 'object' && (c as Record<string, unknown>)['kind'] === 'add',
         );
       return {
         name: allAdds ? 'Write' : 'Edit',
@@ -203,8 +204,7 @@ function mapItemToTool(
       };
     }
     case 'mcp_tool_call': {
-      const name =
-        str(item, 'tool_name') ?? str(item, 'name') ?? str(item, 'server') ?? 'mcp_tool';
+      const name = str(item, 'tool_name') ?? str(item, 'name') ?? str(item, 'server') ?? 'mcp_tool';
       return { name, input: item['arguments'] ?? item['input'] ?? item['args'] ?? {} };
     }
     case 'web_search':
@@ -249,7 +249,10 @@ function mapItemToToolResult(
       return { content: summary, ok: str(item, 'status') !== 'failed' };
     }
     case 'mcp_tool_call': {
-      const result = str(item, 'result') ?? str(item, 'output') ?? safeStringify(item['result'] ?? item['output']);
+      const result =
+        str(item, 'result') ??
+        str(item, 'output') ??
+        safeStringify(item['result'] ?? item['output']);
       return { content: result, ok: str(item, 'status') !== 'failed' };
     }
     case 'web_search':
@@ -268,14 +271,22 @@ function mapItemToToolResult(
 
 export function classifyCodexError(message: string): RunnerErrorClass {
   const lower = message.toLowerCase();
-  if (/not\s+logged\s+in|not\s+authenticated|unauthori[sz]ed|401|run\s+codex\s+login|token\s+(?:expired|invalid|revoked)/.test(lower)) {
+  if (
+    /not\s+logged\s+in|not\s+authenticated|unauthori[sz]ed|401|run\s+codex\s+login|token\s+(?:expired|invalid|revoked)/.test(
+      lower,
+    )
+  ) {
     return 'auth';
   }
   if (/rate\s*limit|overload|usage\s*limit|quota|429|503/.test(lower)) return 'overload';
   if (/context|token\s+limit|too\s+(?:long|large)|max(?:imum)?\s+(?:context|tokens)/.test(lower)) {
     return 'context';
   }
-  if (/no\s+(?:such\s+)?(?:session|thread|conversation)|session\s+not\s+found|unknown\s+(?:session|thread)/.test(lower)) {
+  if (
+    /no\s+(?:such\s+)?(?:session|thread|conversation)|session\s+not\s+found|unknown\s+(?:session|thread)/.test(
+      lower,
+    )
+  ) {
     return 'session_missing';
   }
   if (/max\s*turns?/.test(lower)) return 'max_turns';

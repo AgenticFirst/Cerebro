@@ -149,11 +149,16 @@ export default function WhatsAppConnectModal({ onClose, onPersisted }: WhatsAppC
 
   const stepIcon = useMemo(() => {
     switch (step) {
-      case 1: return <Sparkles size={20} />;
-      case 2: return path === 'no' ? <MessageCircle size={20} /> : <ShieldCheck size={20} />;
-      case 3: return <QrCode size={20} />;
-      case 4: return <Users size={20} />;
-      default: return <WhatsAppIcon size={20} />;
+      case 1:
+        return <Sparkles size={20} />;
+      case 2:
+        return path === 'no' ? <MessageCircle size={20} /> : <ShieldCheck size={20} />;
+      case 3:
+        return <QrCode size={20} />;
+      case 4:
+        return <Users size={20} />;
+      default:
+        return <WhatsAppIcon size={20} />;
     }
   }, [step, path]);
 
@@ -226,20 +231,29 @@ export default function WhatsAppConnectModal({ onClose, onPersisted }: WhatsAppC
                   icon={<CheckCircle2 size={16} className="text-emerald-400" />}
                   title={t('whatsappConnect.step1ChoiceYesTitle')}
                   description={t('whatsappConnect.step1ChoiceYesDesc')}
-                  onClick={() => { setPath('yes'); setStep(2); }}
+                  onClick={() => {
+                    setPath('yes');
+                    setStep(2);
+                  }}
                 />
                 <ChoiceCard
                   icon={<MessageCircle size={16} className="text-emerald-400" />}
                   title={t('whatsappConnect.step1ChoiceNoTitle')}
                   description={t('whatsappConnect.step1ChoiceNoDesc')}
-                  onClick={() => { setPath('no'); setStep(2); }}
+                  onClick={() => {
+                    setPath('no');
+                    setStep(2);
+                  }}
                 />
                 {alreadyPaired && (
                   <ChoiceCard
                     icon={<Sparkles size={16} className="text-accent" />}
                     title={t('whatsappConnect.step1AlreadyPairedTitle')}
                     description={t('whatsappConnect.step1AlreadyPairedDesc')}
-                    onClick={() => { setPath('yes'); setStep(4); }}
+                    onClick={() => {
+                      setPath('yes');
+                      setStep(4);
+                    }}
                     subtle
                   />
                 )}
@@ -347,7 +361,9 @@ export default function WhatsAppConnectModal({ onClose, onPersisted }: WhatsAppC
                 {status?.state === 'connected' ? (
                   <div className="w-[240px] h-[240px] rounded-md bg-emerald-500/10 border border-emerald-500/30 flex flex-col items-center justify-center text-emerald-300 gap-2">
                     <CheckCircle2 size={48} />
-                    <span className="text-sm font-medium">{t('whatsappConnect.step3Connected')}</span>
+                    <span className="text-sm font-medium">
+                      {t('whatsappConnect.step3Connected')}
+                    </span>
                   </div>
                 ) : status?.state === 'connecting' ? (
                   <div className="w-[240px] h-[240px] rounded-md bg-bg-surface border border-border-subtle flex flex-col items-center justify-center text-text-secondary gap-3">
@@ -394,17 +410,18 @@ export default function WhatsAppConnectModal({ onClose, onPersisted }: WhatsAppC
                 </div>
               )}
 
-              {status && (usingKeychain ? (
-                <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
-                  <Lock size={14} className="mt-0.5 flex-shrink-0" />
-                  <span className="leading-relaxed">{t('whatsappSection.sessionKeychain')}</span>
-                </div>
-              ) : (
-                <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-border-subtle bg-bg-elevated text-xs text-text-secondary">
-                  <Lock size={14} className="mt-0.5 flex-shrink-0" />
-                  <span className="leading-relaxed">{t('whatsappSection.sessionPlaintext')}</span>
-                </div>
-              ))}
+              {status &&
+                (usingKeychain ? (
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
+                    <Lock size={14} className="mt-0.5 flex-shrink-0" />
+                    <span className="leading-relaxed">{t('whatsappSection.sessionKeychain')}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-border-subtle bg-bg-elevated text-xs text-text-secondary">
+                    <Lock size={14} className="mt-0.5 flex-shrink-0" />
+                    <span className="leading-relaxed">{t('whatsappSection.sessionPlaintext')}</span>
+                  </div>
+                ))}
             </div>
           )}
 
@@ -413,7 +430,9 @@ export default function WhatsAppConnectModal({ onClose, onPersisted }: WhatsAppC
               {!alreadyPaired && (
                 <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-amber-500/30 bg-amber-500/10 text-xs text-amber-200">
                   <Lightbulb size={13} className="mt-0.5 flex-shrink-0" />
-                  <span className="leading-relaxed">{t('whatsappConnect.step4NotConnectedYet')}</span>
+                  <span className="leading-relaxed">
+                    {t('whatsappConnect.step4NotConnectedYet')}
+                  </span>
                 </div>
               )}
 
@@ -425,7 +444,10 @@ export default function WhatsAppConnectModal({ onClose, onPersisted }: WhatsAppC
                 <input
                   type="text"
                   value={allowlistRaw}
-                  onChange={(e) => { setAllowlistRaw(e.target.value); setAllowAny(false); }}
+                  onChange={(e) => {
+                    setAllowlistRaw(e.target.value);
+                    setAllowAny(false);
+                  }}
                   placeholder={t('whatsappConnect.step4Placeholder')}
                   disabled={allowAny}
                   className="w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50 disabled:opacity-50"
@@ -471,13 +493,17 @@ export default function WhatsAppConnectModal({ onClose, onPersisted }: WhatsAppC
                   {t('whatsappConnect.step4SummaryTitle')}
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-text-tertiary text-xs">{t('whatsappConnect.step4SummaryPhone')}</span>
+                  <span className="text-text-tertiary text-xs">
+                    {t('whatsappConnect.step4SummaryPhone')}
+                  </span>
                   <span className="font-mono text-text-primary text-xs">
                     {status?.phoneNumber ?? '—'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-text-tertiary text-xs">{t('whatsappConnect.step4SummaryAllowlist')}</span>
+                  <span className="text-text-tertiary text-xs">
+                    {t('whatsappConnect.step4SummaryAllowlist')}
+                  </span>
                   <span className="font-mono text-text-primary text-xs">
                     {allowAny
                       ? t('whatsappConnect.step4SummaryAllowAny')
@@ -487,12 +513,24 @@ export default function WhatsAppConnectModal({ onClose, onPersisted }: WhatsAppC
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-text-tertiary text-xs">{t('whatsappConnect.step4SummaryStorage')}</span>
+                  <span className="text-text-tertiary text-xs">
+                    {t('whatsappConnect.step4SummaryStorage')}
+                  </span>
                   <span className="text-xs flex items-center gap-1.5">
                     {usingKeychain ? (
-                      <><Lock size={11} className="text-emerald-400" /><span className="text-emerald-400">{t('whatsappConnect.step4StorageKeychain')}</span></>
+                      <>
+                        <Lock size={11} className="text-emerald-400" />
+                        <span className="text-emerald-400">
+                          {t('whatsappConnect.step4StorageKeychain')}
+                        </span>
+                      </>
                     ) : (
-                      <><Lock size={11} className="text-text-secondary" /><span className="text-text-secondary">{t('whatsappConnect.step4StoragePlaintext')}</span></>
+                      <>
+                        <Lock size={11} className="text-text-secondary" />
+                        <span className="text-text-secondary">
+                          {t('whatsappConnect.step4StoragePlaintext')}
+                        </span>
+                      </>
                     )}
                   </span>
                 </div>
@@ -559,9 +597,13 @@ export default function WhatsAppConnectModal({ onClose, onPersisted }: WhatsAppC
               className="px-4 py-1.5 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {saving ? (
-                <><Loader2 size={12} className="animate-spin" /> {t('whatsappConnect.saving')}</>
+                <>
+                  <Loader2 size={12} className="animate-spin" /> {t('whatsappConnect.saving')}
+                </>
               ) : (
-                <><CheckCircle2 size={12} /> {t('whatsappConnect.finish')}</>
+                <>
+                  <CheckCircle2 size={12} /> {t('whatsappConnect.finish')}
+                </>
               )}
             </button>
           )}
@@ -600,7 +642,10 @@ function ChoiceCard({
         <div className="text-sm font-medium text-text-primary">{title}</div>
         <p className="text-xs text-text-secondary mt-0.5 leading-relaxed">{description}</p>
       </div>
-      <ChevronRight size={16} className="text-text-tertiary group-hover:text-text-secondary flex-shrink-0 mt-0.5" />
+      <ChevronRight
+        size={16}
+        className="text-text-tertiary group-hover:text-text-secondary flex-shrink-0 mt-0.5"
+      />
     </button>
   );
 }

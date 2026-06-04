@@ -104,7 +104,9 @@ export class RoutineScheduler {
 
     for (const routine of routines) {
       if (!routine.cron_expression || !cron.validate(routine.cron_expression)) {
-        console.warn(`[Scheduler] Skipping "${routine.name}" — invalid cron: ${routine.cron_expression}`);
+        console.warn(
+          `[Scheduler] Skipping "${routine.name}" — invalid cron: ${routine.cron_expression}`,
+        );
         continue;
       }
 
@@ -175,10 +177,15 @@ export class RoutineScheduler {
         break;
       } catch (err) {
         if (attempt === 3) {
-          console.error(`[Scheduler] Failed to fetch routine "${routineName}" after 3 attempts:`, err);
+          console.error(
+            `[Scheduler] Failed to fetch routine "${routineName}" after 3 attempts:`,
+            err,
+          );
           return;
         }
-        console.warn(`[Scheduler] Fetch attempt ${attempt} failed for "${routineName}", retrying...`);
+        console.warn(
+          `[Scheduler] Fetch attempt ${attempt} failed for "${routineName}", retrying...`,
+        );
         await new Promise((r) => setTimeout(r, 1000 * attempt));
       }
     }

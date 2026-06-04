@@ -27,7 +27,11 @@ import {
   decryptFromStorage,
   backend as secureTokenBackend,
 } from '../secure-token';
-import { backendGetSetting, backendPutSetting, backendJsonRequest } from '../shared/backend-settings';
+import {
+  backendGetSetting,
+  backendPutSetting,
+  backendJsonRequest,
+} from '../shared/backend-settings';
 import { callGitHubApi, parseRepoFullName } from './api';
 import {
   GITHUB_SETTING_KEYS,
@@ -122,10 +126,18 @@ export class GitHubBridge implements GitHubChannel {
 
   // ── Channel interface ───────────────────────────────────────────
 
-  getAccessToken(): string | null { return this.accessToken; }
-  getLogin(): string | null { return this.login; }
-  getWatchedRepos(): string[] { return [...this.watchedRepos]; }
-  isConnected(): boolean { return Boolean(this.accessToken); }
+  getAccessToken(): string | null {
+    return this.accessToken;
+  }
+  getLogin(): string | null {
+    return this.login;
+  }
+  getWatchedRepos(): string[] {
+    return [...this.watchedRepos];
+  }
+  isConnected(): boolean {
+    return Boolean(this.accessToken);
+  }
 
   // ── Wiring ──────────────────────────────────────────────────────
 
@@ -159,7 +171,7 @@ export class GitHubBridge implements GitHubChannel {
     this.watchedRepos = Array.isArray(watchedRaw)
       ? watchedRaw.filter((r) => typeof r === 'string' && isValidRepoFullName(r))
       : [];
-    this.cursors = (cursorsRaw && typeof cursorsRaw === 'object') ? cursorsRaw : {};
+    this.cursors = cursorsRaw && typeof cursorsRaw === 'object' ? cursorsRaw : {};
   }
 
   /** Start polling if a token is configured. Safe to call repeatedly. */
@@ -170,10 +182,14 @@ export class GitHubBridge implements GitHubChannel {
       return;
     }
     this.polling = true;
-    log(`polling started (every ${POLL_INTERVAL_MS / 1000}s for ${this.watchedRepos.length} watched repo(s))`);
+    log(
+      `polling started (every ${POLL_INTERVAL_MS / 1000}s for ${this.watchedRepos.length} watched repo(s))`,
+    );
     // Run a poll immediately, then schedule.
     void this.runPollCycle();
-    this.pollTimer = setInterval(() => { void this.runPollCycle(); }, POLL_INTERVAL_MS);
+    this.pollTimer = setInterval(() => {
+      void this.runPollCycle();
+    }, POLL_INTERVAL_MS);
   }
 
   stop(): void {
@@ -229,9 +245,9 @@ export class GitHubBridge implements GitHubChannel {
   // ── Watched repos ───────────────────────────────────────────────
 
   async setWatchedRepos(repos: string[]): Promise<{ ok: boolean; error?: string }> {
-    const cleaned = Array.from(new Set(
-      repos.map((r) => r.trim()).filter((r) => isValidRepoFullName(r)),
-    )).sort();
+    const cleaned = Array.from(
+      new Set(repos.map((r) => r.trim()).filter((r) => isValidRepoFullName(r))),
+    ).sort();
     this.watchedRepos = cleaned;
     // Drop cursors for repos that are no longer watched.
     const next: GitHubCursorMap = {};
@@ -249,7 +265,11 @@ export class GitHubBridge implements GitHubChannel {
   }
 
   /** Enumerate repos the current token can see, sorted by recent activity. */
-  async listAccessibleRepos(): Promise<{ ok: boolean; repos?: GitHubRepoSummary[]; error?: string }> {
+  async listAccessibleRepos(): Promise<{
+    ok: boolean;
+    repos?: GitHubRepoSummary[];
+    error?: string;
+  }> {
     if (!this.accessToken) return { ok: false, error: 'No token configured' };
     const res = await callGitHubApi<GitHubApiRepo[]>(this.accessToken, '/user/repos', {
       query: { per_page: 100, sort: 'pushed', direction: 'desc' },
@@ -283,10 +303,18 @@ export class GitHubBridge implements GitHubChannel {
   private notifyStatus(): void {
     const snapshot = this.status();
     for (const listener of this.statusListeners) {
-      try { listener(snapshot); } catch { /* listener errors must not break the bridge */ }
+      try {
+        listener(snapshot);
+      } catch {
+        /* listener errors must not break the bridge */
+      }
     }
     if (this.webContents && !this.webContents.isDestroyed()) {
-      try { this.webContents.send(IPC_CHANNELS.GITHUB_STATUS_CHANGED, snapshot); } catch { /* ignore */ }
+      try {
+        this.webContents.send(IPC_CHANNELS.GITHUB_STATUS_CHANGED, snapshot);
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -312,10 +340,15 @@ export class GitHubBridge implements GitHubChannel {
     if (!hadError) this.lastError = null;
     if (this.rateLimitRemaining !== null && this.rateLimitRemaining < RATE_LIMIT_LOW_WATERMARK) {
       this.rateLimitBackoffUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
-      log(`rate-limit low (${this.rateLimitRemaining} remaining), backing off ${RATE_LIMIT_BACKOFF_MS / 60_000}m`);
+      log(
+        `rate-limit low (${this.rateLimitRemaining} remaining), backing off ${RATE_LIMIT_BACKOFF_MS / 60_000}m`,
+      );
     }
-    await backendPutSetting(this.deps.backendPort, GITHUB_SETTING_KEYS.cursors, this.cursors)
-      .catch(() => { /* best-effort */ });
+    await backendPutSetting(this.deps.backendPort, GITHUB_SETTING_KEYS.cursors, this.cursors).catch(
+      () => {
+        /* best-effort */
+      },
+    );
     this.notifyStatus();
   }
 
@@ -335,10 +368,20 @@ export class GitHubBridge implements GitHubChannel {
     cursor: GitHubRepoCursor,
   ): Promise<void> {
     const sinceParam = cursor.issuesSince ?? new Date(Date.now() - 5 * 60_000).toISOString();
-    const res = await callGitHubApi<GitHubApiIssue[]>(this.accessToken!, `/repos/${owner}/${repo}/issues`, {
-      query: { state: 'open', since: sinceParam, sort: 'created', direction: 'asc', per_page: 50 },
-      etag: cursor.issuesEtag,
-    });
+    const res = await callGitHubApi<GitHubApiIssue[]>(
+      this.accessToken!,
+      `/repos/${owner}/${repo}/issues`,
+      {
+        query: {
+          state: 'open',
+          since: sinceParam,
+          sort: 'created',
+          direction: 'asc',
+          per_page: 50,
+        },
+        etag: cursor.issuesEtag,
+      },
+    );
     this.recordRateLimit(res.rateLimitRemaining);
     if (res.status === 304) return;
     if (!res.ok) throw new Error(res.error ?? `issues poll HTTP ${res.status}`);
@@ -366,7 +409,8 @@ export class GitHubBridge implements GitHubChannel {
         received_at: new Date().toISOString(),
       };
       await this.dispatchEvent(payload, labels);
-      if (!latestCreatedAt || issue.created_at > latestCreatedAt) latestCreatedAt = issue.created_at;
+      if (!latestCreatedAt || issue.created_at > latestCreatedAt)
+        latestCreatedAt = issue.created_at;
     }
     if (latestCreatedAt) cursor.issuesSince = latestCreatedAt;
     if (newSeen.length > SEEN_RING_BUFFER_SIZE) newSeen = newSeen.slice(-SEEN_RING_BUFFER_SIZE);
@@ -381,10 +425,14 @@ export class GitHubBridge implements GitHubChannel {
   ): Promise<void> {
     const me = this.login;
     if (!me) return;
-    const res = await callGitHubApi<GitHubApiPull[]>(this.accessToken!, `/repos/${owner}/${repo}/pulls`, {
-      query: { state: 'open', sort: 'updated', direction: 'desc', per_page: 50 },
-      etag: cursor.prsEtag,
-    });
+    const res = await callGitHubApi<GitHubApiPull[]>(
+      this.accessToken!,
+      `/repos/${owner}/${repo}/pulls`,
+      {
+        query: { state: 'open', sort: 'updated', direction: 'desc', per_page: 50 },
+        etag: cursor.prsEtag,
+      },
+    );
     this.recordRateLimit(res.rateLimitRemaining);
     if (res.status === 304) return;
     if (!res.ok) throw new Error(res.error ?? `pulls poll HTTP ${res.status}`);
@@ -426,7 +474,13 @@ export class GitHubBridge implements GitHubChannel {
   // ── Routine dispatch ────────────────────────────────────────────
 
   private async dispatchEvent(payload: GitHubTriggerPayload, labels: string[]): Promise<void> {
-    const matches = await this.matchRoutines(payload.event_type, payload.repo_full_name, payload.title, payload.body, labels);
+    const matches = await this.matchRoutines(
+      payload.event_type,
+      payload.repo_full_name,
+      payload.title,
+      payload.body,
+      labels,
+    );
     if (matches.length === 0) return;
     for (const routine of matches) {
       await this.dispatchRoutine(routine, payload);
@@ -451,7 +505,11 @@ export class GitHubBridge implements GitHubChannel {
       this.routineCache = { fetchedAt: now, routines: list };
     }
     return matchRoutineTriggers(this.routineCache.routines, {
-      type: eventType, repoFullName, title, body, labels,
+      type: eventType,
+      repoFullName,
+      title,
+      body,
+      labels,
     });
   }
 
@@ -460,10 +518,14 @@ export class GitHubBridge implements GitHubChannel {
     // types in parallel and merge so one cache covers both flows.
     const [issuesRes, prsRes] = await Promise.all([
       backendJsonRequest<{ routines?: BackendRoutineRecord[] }>(
-        this.deps.backendPort, 'GET', '/routines?trigger_type=github_issue_opened',
+        this.deps.backendPort,
+        'GET',
+        '/routines?trigger_type=github_issue_opened',
       ),
       backendJsonRequest<{ routines?: BackendRoutineRecord[] }>(
-        this.deps.backendPort, 'GET', '/routines?trigger_type=github_pr_review_requested',
+        this.deps.backendPort,
+        'GET',
+        '/routines?trigger_type=github_pr_review_requested',
       ),
     ]);
     const merged: BackendRoutineRecord[] = [
@@ -484,15 +546,18 @@ export class GitHubBridge implements GitHubChannel {
       return;
     }
     try {
-      backendJsonRequest(this.deps.backendPort, 'POST', `/routines/${routine.id}/run`)
-        .catch(() => { /* best-effort */ });
+      backendJsonRequest(this.deps.backendPort, 'POST', `/routines/${routine.id}/run`).catch(() => {
+        /* best-effort */
+      });
       const runId = await engine.startRun(this.webContents, {
         dag: routine.dag,
         routineId: routine.id,
         triggerSource: payload.event_type,
         triggerPayload: payload as unknown as Record<string, unknown>,
       });
-      log(`dispatched routine "${routine.name}" (${routine.id}) for ${payload.repo_full_name} → run ${runId}`);
+      log(
+        `dispatched routine "${routine.name}" (${routine.id}) for ${payload.repo_full_name} → run ${runId}`,
+      );
     } catch (err) {
       logError('dispatchRoutine failed', err instanceof Error ? err.message : String(err));
     }

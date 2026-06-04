@@ -5,7 +5,16 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ChevronDown, FileText, Maximize2, Plus, RefreshCw, Save, Sparkles, Trash2 } from 'lucide-react';
+import {
+  ChevronDown,
+  FileText,
+  Maximize2,
+  Plus,
+  RefreshCw,
+  Save,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
 import clsx from 'clsx';
 import type { Expert } from '../../context/ExpertContext';
 import { useMemory } from '../../context/MemoryContext';
@@ -59,7 +68,7 @@ export default function ExpertMemoryTab({ expert }: ExpertMemoryTabProps) {
   }, [expert.id]);
 
   const sortedFiles = useMemo(() => {
-    const list = slug ? files[slug] ?? [] : [];
+    const list = slug ? (files[slug] ?? []) : [];
     return [...list].sort((a, b) => {
       if (a.path === 'SOUL.md') return -1;
       if (b.path === 'SOUL.md') return 1;
@@ -231,10 +240,7 @@ export default function ExpertMemoryTab({ expert }: ExpertMemoryTabProps) {
                     onClick={() => handleExpand(file.path)}
                     className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2 text-left cursor-pointer"
                   >
-                    <Icon
-                      size={12}
-                      className={isSoul ? 'text-accent' : 'text-text-tertiary'}
-                    />
+                    <Icon size={12} className={isSoul ? 'text-accent' : 'text-text-tertiary'} />
                     <span className="text-xs text-text-primary flex-1 truncate font-mono">
                       {file.path}
                     </span>

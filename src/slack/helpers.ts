@@ -77,13 +77,20 @@ export function isSessionExpired(lastActivityAt: number, now: number, idleMs: nu
  * reusable entry so existing chats aren't wiped on upgrade. Orphaned keys from
  * the old per-message scheme are simply never looked up again.
  */
-export function migrateConversationMap(raw: unknown, now: number): Record<string, SlackConversationEntry> {
+export function migrateConversationMap(
+  raw: unknown,
+  now: number,
+): Record<string, SlackConversationEntry> {
   const out: Record<string, SlackConversationEntry> = {};
   if (!raw || typeof raw !== 'object') return out;
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof v === 'string') {
       out[k] = { conversationId: v, lastActivityAt: now };
-    } else if (v && typeof v === 'object' && typeof (v as { conversationId?: unknown }).conversationId === 'string') {
+    } else if (
+      v &&
+      typeof v === 'object' &&
+      typeof (v as { conversationId?: unknown }).conversationId === 'string'
+    ) {
       const e = v as { conversationId: string; lastActivityAt?: unknown; lastSeenTs?: unknown };
       out[k] = {
         conversationId: e.conversationId,
@@ -133,8 +140,8 @@ export type SlashSubcommand =
   | { verb: 'experts' }
   | { verb: 'expert'; sub: 'list' | 'set' | 'clear'; slug?: string }
   | { verb: 'status' }
-  | { verb: 'ask'; text: string }     // free-text question
-  | { verb: 'empty' }                  // /cerebro with no args
+  | { verb: 'ask'; text: string } // free-text question
+  | { verb: 'empty' } // /cerebro with no args
   | { verb: 'unknown'; raw: string };
 
 /**
@@ -182,7 +189,7 @@ export function parseSlashCommandText(raw: string): SlashSubcommand {
  *   - Smaller chunks render reliably on mobile.
  *   - Reading a 40-KB monolith inline is hostile UX.
  */
-export function chunkSlackText(text: string, max: number = 3500): string[] {
+export function chunkSlackText(text: string, max = 3500): string[] {
   if (text.length <= max) return [text];
   const out: string[] = [];
   let rest = text;
@@ -364,7 +371,8 @@ export function parseSlackTriggerRoutine(record: BackendRoutineRecord): SlackTri
   const rawFilterType = typeof cfg.filter_type === 'string' ? cfg.filter_type : 'none';
   const filter_type: SlackFilterType =
     rawFilterType === 'keyword' || rawFilterType === 'prefix' || rawFilterType === 'regex'
-      ? rawFilterType : 'none';
+      ? rawFilterType
+      : 'none';
   const filter_value = typeof cfg.filter_value === 'string' ? cfg.filter_value : '';
   const runtimeDag: DAGDefinition = { steps: dag.steps ?? [] };
   return {
@@ -409,8 +417,10 @@ export function matchSlackRoutineTriggers(
     const target = r.trigger.channel;
     const chanMatches = target === '*' || target === ctx.channel;
     if (!chanMatches) continue;
-    if (r.trigger.user_id && r.trigger.user_id !== '*' && r.trigger.user_id !== ctx.userId) continue;
-    if (r.trigger.surface && r.trigger.surface !== 'any' && r.trigger.surface !== ctx.surface) continue;
+    if (r.trigger.user_id && r.trigger.user_id !== '*' && r.trigger.user_id !== ctx.userId)
+      continue;
+    if (r.trigger.surface && r.trigger.surface !== 'any' && r.trigger.surface !== ctx.surface)
+      continue;
     if (!matchesSlackFilter(ctx.text, r.trigger.filter_type, r.trigger.filter_value)) continue;
     matched.push(r);
   }

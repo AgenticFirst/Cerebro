@@ -67,7 +67,7 @@ async function listOwners(token: string, signal?: AbortSignal): Promise<OwnersLi
   let after: string | null = null;
   // Bound the pagination loop; HubSpot portals rarely exceed a few hundred users.
   for (let page = 0; page < 50; page++) {
-    const path: string = `/crm/v3/owners?limit=100${after ? `&after=${encodeURIComponent(after)}` : ''}`;
+    const path = `/crm/v3/owners?limit=100${after ? `&after=${encodeURIComponent(after)}` : ''}`;
     const res = await callHubSpotApi<{
       results?: Array<{ id?: string; email?: string; firstName?: string; lastName?: string }>;
       paging?: { next?: { after?: string } };
@@ -122,30 +122,44 @@ export async function resolveOwner(
   if (/^\d+$/.test(q)) {
     const byId = owners.find((o) => o.id === q);
     if (byId) return { ownerId: byId.id, matchedBy: 'id', ambiguous: false, error: null };
-    return { ownerId: null, matchedBy: null, ambiguous: false, error: `No HubSpot user has id "${q}"` };
+    return {
+      ownerId: null,
+      matchedBy: null,
+      ambiguous: false,
+      error: `No HubSpot user has id "${q}"`,
+    };
   }
 
   const lower = q.toLowerCase();
 
   // 2. Exact email.
   const byEmail = owners.filter((o) => (o.email ?? '').toLowerCase() === lower);
-  if (byEmail.length === 1) return { ownerId: byEmail[0].id, matchedBy: 'email', ambiguous: false, error: null };
+  if (byEmail.length === 1)
+    return { ownerId: byEmail[0].id, matchedBy: 'email', ambiguous: false, error: null };
 
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
   // 3. Exact full name.
   const byFull = owners.filter((o) => norm(fullName(o)) === norm(q));
-  if (byFull.length === 1) return { ownerId: byFull[0].id, matchedBy: 'fullName', ambiguous: false, error: null };
+  if (byFull.length === 1)
+    return { ownerId: byFull[0].id, matchedBy: 'fullName', ambiguous: false, error: null };
   if (byFull.length > 1) return ambiguousResult(q, byFull);
 
   // 4. Exact first or last name.
   const byPart = owners.filter(
-    (o) => (o.firstName ?? '').toLowerCase() === lower || (o.lastName ?? '').toLowerCase() === lower,
+    (o) =>
+      (o.firstName ?? '').toLowerCase() === lower || (o.lastName ?? '').toLowerCase() === lower,
   );
-  if (byPart.length === 1) return { ownerId: byPart[0].id, matchedBy: 'name', ambiguous: false, error: null };
+  if (byPart.length === 1)
+    return { ownerId: byPart[0].id, matchedBy: 'name', ambiguous: false, error: null };
   if (byPart.length > 1) return ambiguousResult(q, byPart);
 
-  return { ownerId: null, matchedBy: null, ambiguous: false, error: `No HubSpot user matches "${q}"` };
+  return {
+    ownerId: null,
+    matchedBy: null,
+    ambiguous: false,
+    error: `No HubSpot user matches "${q}"`,
+  };
 }
 
 function ambiguousResult(query: string, candidates: HubSpotOwner[]): ResolveOwnerResult {

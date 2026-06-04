@@ -145,25 +145,20 @@ export const saveToMemoryAction: ActionDefinition = {
 
     // Kick the existing-file GET off in parallel with extract — the two are
     // independent, and extract is the slow leg (multi-second Claude call).
-    const existingPromise = readExistingFile(
-      context.backendPort,
-      agent,
-      relPath,
-      context.signal,
-    );
+    const existingPromise = readExistingFile(context.backendPort, agent, relPath, context.signal);
 
-    const body = mode === 'extract'
-      ? await extractFacts(content, params.model, context.signal)
-      : content;
+    const body =
+      mode === 'extract' ? await extractFacts(content, params.model, context.signal) : content;
 
     const header = topic ? `## ${ts} — ${topic}` : `## ${ts}`;
     const entry = `${header}\n\n${body}\n`;
 
     const existing = await existingPromise;
 
-    const nextContent = existing && existing.trim().length > 0
-      ? `${existing.replace(/\s+$/, '')}\n\n${entry}`
-      : `# Routine notes — ${date}\n\n${entry}`;
+    const nextContent =
+      existing && existing.trim().length > 0
+        ? `${existing.replace(/\s+$/, '')}\n\n${entry}`
+        : `# Routine notes — ${date}\n\n${entry}`;
 
     await backendFetch<AgentMemoryFileContent>(
       context.backendPort,

@@ -20,7 +20,13 @@ interface AttachmentChipProps {
   messageId?: string;
 }
 
-export default function AttachmentChip({ attachment, onRemove, source = 'user', conversationId, messageId }: AttachmentChipProps) {
+export default function AttachmentChip({
+  attachment,
+  onRemove,
+  source = 'user',
+  conversationId,
+  messageId,
+}: AttachmentChipProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
   const { open: openPreview } = useChatFilePreviewModal();
@@ -54,7 +60,9 @@ export default function AttachmentChip({ attachment, onRemove, source = 'user', 
       .catch(() => {
         if (!cancelled) setMissing(true);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [attachment.filePath, attachment.isDirectory, isAssistant]);
 
   const extLabel = labelForExt(attachment.extension);

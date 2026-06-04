@@ -69,7 +69,10 @@ export default function StepConfigSummary({ step, dagJson }: StepConfigSummaryPr
     [wiredParams, configuredParams],
   );
 
-  const rows = useMemo<KV[]>(() => buildRows(step.action_type, params, experts, t), [step.action_type, params, experts, t]);
+  const rows = useMemo<KV[]>(
+    () => buildRows(step.action_type, params, experts, t),
+    [step.action_type, params, experts, t],
+  );
 
   if (rows.length === 0) {
     return <JsonSection label={t('stepConfig.rawInput')} json={step.input_json} />;
@@ -122,7 +125,11 @@ function buildRows(
     case 'ask_ai':
     case 'model_call':
       return [
-        { label: t('stepConfig.model'), value: get('model') || t('stepConfig.modelDefault'), emphasis: true },
+        {
+          label: t('stepConfig.model'),
+          value: get('model') || t('stepConfig.modelDefault'),
+          emphasis: true,
+        },
         { label: t('stepConfig.agent'), value: get('agent') || 'cerebro' },
         { label: t('stepConfig.prompt'), value: trunc(get('prompt')) },
       ];

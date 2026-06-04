@@ -43,7 +43,9 @@ function buildPlainTextDump(run: RunRecord, events: EventRecord[]): string {
 
   lines.push('--- Events ---');
   for (const evt of events) {
-    lines.push(`[${evt.timestamp}] ${evt.event_type}${evt.step_id ? ` (step=${evt.step_id})` : ''}`);
+    lines.push(
+      `[${evt.timestamp}] ${evt.event_type}${evt.step_id ? ` (step=${evt.step_id})` : ''}`,
+    );
     lines.push(`  ${evt.payload_json}`);
   }
   return lines.join('\n');
@@ -70,9 +72,7 @@ export default function RunLogs({ run, events }: RunLogsProps) {
   }, [events]);
 
   const runLevelErrorEvents = useMemo(
-    () => events.filter(
-      (e) => e.event_type === 'run_failed' || e.event_type === 'run_cancelled',
-    ),
+    () => events.filter((e) => e.event_type === 'run_failed' || e.event_type === 'run_cancelled'),
     [events],
   );
 

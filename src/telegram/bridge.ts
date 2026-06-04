@@ -135,7 +135,9 @@ async function backendGetSetting<T>(port: number, key: string): Promise<T | null
         return;
       }
       let data = '';
-      res.on('data', (c: Buffer) => { data += c.toString(); });
+      res.on('data', (c: Buffer) => {
+        data += c.toString();
+      });
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data) as { value: string };
@@ -179,10 +181,16 @@ function backendRequest<T = unknown>(
       },
       (res) => {
         let data = '';
-        res.on('data', (c: Buffer) => { data += c.toString(); });
+        res.on('data', (c: Buffer) => {
+          data += c.toString();
+        });
         res.on('end', () => {
           let parsed: T | null = null;
-          try { parsed = JSON.parse(data) as T; } catch { parsed = null; }
+          try {
+            parsed = JSON.parse(data) as T;
+          } catch {
+            parsed = null;
+          }
           resolve({
             ok: res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300,
             status: res.statusCode ?? 0,
@@ -192,7 +200,10 @@ function backendRequest<T = unknown>(
       },
     );
     req.on('error', () => resolve({ ok: false, status: 0, data: null }));
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, status: 0, data: null }); });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, status: 0, data: null });
+    });
     if (bodyStr) req.write(bodyStr);
     req.end();
   });
@@ -240,11 +251,15 @@ class TelegramStreamSink implements AgentEventSink {
     this.onAuthFailureCb = onAuthFailure ?? null;
     this.typingTimer = setInterval(() => {
       if (!this.destroyed) {
-        this.api.sendChatAction(this.chatId, 'typing').catch(() => { /* non-fatal */ });
+        this.api.sendChatAction(this.chatId, 'typing').catch(() => {
+          /* non-fatal */
+        });
       }
     }, TYPING_ACTION_INTERVAL_MS);
     // Kick off initial typing indicator immediately.
-    this.api.sendChatAction(this.chatId, 'typing').catch(() => { /* non-fatal */ });
+    this.api.sendChatAction(this.chatId, 'typing').catch(() => {
+      /* non-fatal */
+    });
   }
 
   send(_channel: string, ...args: unknown[]): void {
@@ -272,7 +287,8 @@ class TelegramStreamSink implements AgentEventSink {
     }
 
     if (event.type === 'error' && 'error' in event) {
-      const errorClass = ('errorClass' in event ? (event as { errorClass?: string }).errorClass : undefined);
+      const errorClass =
+        'errorClass' in event ? (event as { errorClass?: string }).errorClass : undefined;
       void this.finalizeWithError(event.error, errorClass);
       return;
     }
@@ -363,14 +379,15 @@ class TelegramStreamSink implements AgentEventSink {
   private async finalize(): Promise<void> {
     if (this.destroyed) return;
     // Cancel scheduled debounce and flush whatever is left.
-    if (this.editTimer) { clearTimeout(this.editTimer); this.editTimer = null; }
+    if (this.editTimer) {
+      clearTimeout(this.editTimer);
+      this.editTimer = null;
+    }
 
     // If the total accumulated text exceeds what fits in a single message,
     // chunk the full text into multiple messages instead of relying on
     // mid-stream rollover (which may have left a partial final chunk).
-    const finalText = this.accumulated.trim().length === 0
-      ? '(empty response)'
-      : this.accumulated;
+    const finalText = this.accumulated.trim().length === 0 ? '(empty response)' : this.accumulated;
     const chunks = chunkText(finalText, MAX_MESSAGE_CHARS);
 
     // First chunk goes into the currentMessageId (or sendMessage if none).
@@ -391,7 +408,10 @@ class TelegramStreamSink implements AgentEventSink {
       try {
         await this.api.sendMessage(this.chatId, chunks[i]);
       } catch (err) {
-        logError('finalize chunk sendMessage failed', err instanceof Error ? err.message : String(err));
+        logError(
+          'finalize chunk sendMessage failed',
+          err instanceof Error ? err.message : String(err),
+        );
       }
     }
 
@@ -401,7 +421,10 @@ class TelegramStreamSink implements AgentEventSink {
 
   private async finalizeWithError(error: string, errorClass?: string): Promise<void> {
     if (this.destroyed) return;
-    if (this.editTimer) { clearTimeout(this.editTimer); this.editTimer = null; }
+    if (this.editTimer) {
+      clearTimeout(this.editTimer);
+      this.editTimer = null;
+    }
 
     // Auth failures get a brief reply in the chat + the bridge routes the
     // actual recovery to the operator's DM. The raw "Cerebro lost its
@@ -409,14 +432,20 @@ class TelegramStreamSink implements AgentEventSink {
     // especially when they have no terminal access to the host.
     if (errorClass === 'auth' && this.onAuthFailureCb) {
       let handled = false;
-      try { handled = await this.onAuthFailureCb(); } catch { /* fall through */ }
+      try {
+        handled = await this.onAuthFailureCb();
+      } catch {
+        /* fall through */
+      }
       if (handled) {
         const brief = "I'm reconnecting to Claude — operator notified. Try again in a moment.";
         try {
           await this.api.sendMessage(this.chatId, brief, {
             reply_to_message_id: this.replyToMessageId,
           });
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         this.teardown();
         this.onDoneCb(this.accumulated, error);
         return;
@@ -431,7 +460,9 @@ class TelegramStreamSink implements AgentEventSink {
         await this.api.sendMessage(this.chatId, text, {
           reply_to_message_id: this.replyToMessageId,
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     this.teardown();
     this.onDoneCb(this.accumulated, error);
@@ -439,8 +470,14 @@ class TelegramStreamSink implements AgentEventSink {
 
   private teardown(): void {
     this.destroyed = true;
-    if (this.typingTimer) { clearInterval(this.typingTimer); this.typingTimer = null; }
-    if (this.editTimer) { clearTimeout(this.editTimer); this.editTimer = null; }
+    if (this.typingTimer) {
+      clearInterval(this.typingTimer);
+      this.typingTimer = null;
+    }
+    if (this.editTimer) {
+      clearTimeout(this.editTimer);
+      this.editTimer = null;
+    }
   }
 }
 
@@ -481,7 +518,10 @@ export class TelegramBridge implements TelegramChannel {
 
   private unknownUserLastReply = new Map<string, number>();
   private authorizedRateLimiter = new SlidingWindowLimiter(AUTHORIZED_RATE_LIMIT_PER_MIN, 60_000);
-  private proactiveRateLimiter = new SlidingWindowLimiter(PROACTIVE_RATE_LIMIT_PER_HOUR, 60 * 60 * 1_000);
+  private proactiveRateLimiter = new SlidingWindowLimiter(
+    PROACTIVE_RATE_LIMIT_PER_HOUR,
+    60 * 60 * 1_000,
+  );
 
   private activeRuns = new Map<number, ActiveTelegramRun>(); // chatId → run
   private runWatchdogTimer: NodeJS.Timeout | null = null;
@@ -567,7 +607,9 @@ export class TelegramBridge implements TelegramChannel {
     // rate-limited via shouldReplyUnknown). No conversations are created and
     // no AI processing happens until at least one ID is added.
     if (this.settings.allowlist.length === 0) {
-      log('bridge starting in discovery mode (allowlist is empty — bot will only reply with sender IDs)');
+      log(
+        'bridge starting in discovery mode (allowlist is empty — bot will only reply with sender IDs)',
+      );
     }
 
     // Only create the temp dir when we actually need it.
@@ -621,7 +663,9 @@ export class TelegramBridge implements TelegramChannel {
     // Clean up temp files.
     for (const [p, timer] of this.tempFiles) {
       clearTimeout(timer);
-      fs.rm(p, { force: true }, () => { /* ignore */ });
+      fs.rm(p, { force: true }, () => {
+        /* ignore */
+      });
     }
     this.tempFiles.clear();
 
@@ -691,7 +735,11 @@ export class TelegramBridge implements TelegramChannel {
     try {
       const trimmed = (chatId ?? '').trim() || null;
       this.settings.operatorChatId = trimmed;
-      await backendPutSetting(this.deps.backendPort, TELEGRAM_SETTING_KEYS.operatorChatId, trimmed ?? '');
+      await backendPutSetting(
+        this.deps.backendPort,
+        TELEGRAM_SETTING_KEYS.operatorChatId,
+        trimmed ?? '',
+      );
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -710,7 +758,10 @@ export class TelegramBridge implements TelegramChannel {
     return first ?? null;
   }
 
-  private async handleAuthFailure(originalMsg: TelegramMessage, originalText: string): Promise<boolean> {
+  private async handleAuthFailure(
+    originalMsg: TelegramMessage,
+    originalText: string,
+  ): Promise<boolean> {
     if (!this.api) return false;
     if (this.pendingLogin) return true; // another auth attempt already in flight
 
@@ -727,7 +778,10 @@ export class TelegramBridge implements TelegramChannel {
     try {
       snap = await orchestrator.start('setup-token');
     } catch (err) {
-      logError('auth failure: login start failed', err instanceof Error ? err.message : String(err));
+      logError(
+        'auth failure: login start failed',
+        err instanceof Error ? err.message : String(err),
+      );
       return false;
     }
 
@@ -740,14 +794,17 @@ export class TelegramBridge implements TelegramChannel {
     try {
       await this.api.sendMessage(
         Number(operatorChatId),
-        '🔑 *Cerebro needs you to re-authenticate Claude.*\n\n'
-        + `1. Open this link in your browser: ${snap.url}\n`
-        + '2. Complete the sign-in.\n'
-        + '3. Reply to this chat with the code shown on the page.\n\n'
-        + "I'll resume the original request automatically once you reply.",
+        '🔑 *Cerebro needs you to re-authenticate Claude.*\n\n' +
+          `1. Open this link in your browser: ${snap.url}\n` +
+          '2. Complete the sign-in.\n' +
+          '3. Reply to this chat with the code shown on the page.\n\n' +
+          "I'll resume the original request automatically once you reply.",
       );
     } catch (err) {
-      logError('auth failure: operator DM send failed', err instanceof Error ? err.message : String(err));
+      logError(
+        'auth failure: operator DM send failed',
+        err instanceof Error ? err.message : String(err),
+      );
       orchestrator.cancel(snap.loginId);
       return false;
     }
@@ -755,10 +812,13 @@ export class TelegramBridge implements TelegramChannel {
     const update = (s: LoginSnapshot): void => {
       if (s.loginId !== snap.loginId) return;
       if (s.status === 'success') void this.completeAuthRecovery();
-      else if (s.status === 'failure' || s.status === 'cancelled') void this.failAuthRecovery(s.reason ?? 'Sign-in failed.');
+      else if (s.status === 'failure' || s.status === 'cancelled')
+        void this.failAuthRecovery(s.reason ?? 'Sign-in failed.');
     };
     orchestrator.on('update', update);
-    const unsubscribe = (): void => { orchestrator.off('update', update); };
+    const unsubscribe = (): void => {
+      orchestrator.off('update', update);
+    };
 
     const timeoutTimer = setTimeout(() => {
       void this.failAuthRecovery('Sign-in timed out after 10 minutes.');
@@ -789,7 +849,9 @@ export class TelegramBridge implements TelegramChannel {
           Number(pending.operatorChatId),
           `⚠️ Couldn't verify that code: ${scrubTokenish(msg)}\n\nPaste the code again, or open the link again to start over.`,
         );
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -806,7 +868,9 @@ export class TelegramBridge implements TelegramChannel {
           Number(pending.operatorChatId),
           '✅ Reconnected to Claude. Resuming the original request now.',
         );
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     // Re-dispatch the original inbound. The dedupe layer would normally
@@ -830,7 +894,11 @@ export class TelegramBridge implements TelegramChannel {
     this.pendingLogin = null;
     clearTimeout(pending.timeoutTimer);
     pending.unsubscribe();
-    try { getLoginOrchestrator().cancel(pending.loginId); } catch { /* noop */ }
+    try {
+      getLoginOrchestrator().cancel(pending.loginId);
+    } catch {
+      /* noop */
+    }
 
     if (this.api) {
       try {
@@ -838,13 +906,17 @@ export class TelegramBridge implements TelegramChannel {
           Number(pending.operatorChatId),
           `⚠️ Claude sign-in didn't complete: ${scrubTokenish(reason)}`,
         );
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       try {
         await this.api.sendMessage(
           pending.originalMsg.chat.id,
           "⚠️ Couldn't reconnect to Claude. The operator has been notified.",
         );
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -1008,9 +1080,10 @@ export class TelegramBridge implements TelegramChannel {
     if (!fs.existsSync(filePath)) return { messageId: null, error: `file not found: ${filePath}` };
     try {
       const safeCaption = caption ? this.redactForChat(caption) : undefined;
-      const sent = method === 'sendSticker'
-        ? await this.api![method](guard.numericChatId, filePath)
-        : await this.api![method](guard.numericChatId, filePath, safeCaption);
+      const sent =
+        method === 'sendSticker'
+          ? await this.api![method](guard.numericChatId, filePath)
+          : await this.api![method](guard.numericChatId, filePath, safeCaption);
       return { messageId: sent.message_id, error: null };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1120,7 +1193,9 @@ export class TelegramBridge implements TelegramChannel {
     if (!ctx.routineId) return;
 
     const routine = await backendRequest<{
-      id: string; name: string; notify_channels?: Array<{ channel: string; recipient: string }>;
+      id: string;
+      name: string;
+      notify_channels?: Array<{ channel: string; recipient: string }>;
     }>(this.deps.backendPort, 'GET', `/routines/${ctx.routineId}`);
 
     const notifyChannels = routine.data?.notify_channels ?? [];
@@ -1131,9 +1206,10 @@ export class TelegramBridge implements TelegramChannel {
     if (telegramRecipients.length === 0) return;
 
     const name = routine.data?.name ?? 'routine';
-    const summary = event.type === 'run_completed'
-      ? `✅ Routine "${name}" completed.`
-      : `❌ Routine "${name}" failed: ${'error' in event ? event.error : 'unknown error'}`;
+    const summary =
+      event.type === 'run_completed'
+        ? `✅ Routine "${name}" completed.`
+        : `❌ Routine "${name}" failed: ${'error' in event ? event.error : 'unknown error'}`;
 
     await this.sendProactive(telegramRecipients, summary);
   }
@@ -1159,7 +1235,17 @@ export class TelegramBridge implements TelegramChannel {
 
   private async loadSettings(): Promise<void> {
     const port = this.deps.backendPort;
-    const [storedToken, allowlist, enabled, forwardAll, chatMap, chatExpertMap, chatUsernames, lastUpdate, operatorChatId] = await Promise.all([
+    const [
+      storedToken,
+      allowlist,
+      enabled,
+      forwardAll,
+      chatMap,
+      chatExpertMap,
+      chatUsernames,
+      lastUpdate,
+      operatorChatId,
+    ] = await Promise.all([
       backendGetSetting<string>(port, TELEGRAM_SETTING_KEYS.token),
       backendGetSetting<string[]>(port, TELEGRAM_SETTING_KEYS.allowlist),
       backendGetSetting<boolean>(port, TELEGRAM_SETTING_KEYS.enabled),
@@ -1179,7 +1265,9 @@ export class TelegramBridge implements TelegramChannel {
       const reEncrypted = encryptForStorage(token);
       await backendPutSetting(port, TELEGRAM_SETTING_KEYS.token, reEncrypted)
         .then(() => log('migrated legacy plaintext token to OS keychain'))
-        .catch(() => { /* non-fatal — try again next load */ });
+        .catch(() => {
+          /* non-fatal — try again next load */
+        });
     }
 
     this.settings = {
@@ -1242,15 +1330,27 @@ export class TelegramBridge implements TelegramChannel {
   }
 
   private async persistChatMap(): Promise<void> {
-    await backendPutSetting(this.deps.backendPort, TELEGRAM_SETTING_KEYS.chatMap, this.settings.chatMap);
+    await backendPutSetting(
+      this.deps.backendPort,
+      TELEGRAM_SETTING_KEYS.chatMap,
+      this.settings.chatMap,
+    );
   }
 
   private async persistChatExpertMap(): Promise<void> {
-    await backendPutSetting(this.deps.backendPort, TELEGRAM_SETTING_KEYS.chatExpertMap, this.settings.chatExpertMap);
+    await backendPutSetting(
+      this.deps.backendPort,
+      TELEGRAM_SETTING_KEYS.chatExpertMap,
+      this.settings.chatExpertMap,
+    );
   }
 
   private async persistChatUsernames(): Promise<void> {
-    await backendPutSetting(this.deps.backendPort, TELEGRAM_SETTING_KEYS.chatUsernames, this.settings.chatUsernames);
+    await backendPutSetting(
+      this.deps.backendPort,
+      TELEGRAM_SETTING_KEYS.chatUsernames,
+      this.settings.chatUsernames,
+    );
   }
 
   /** Remember the @username of an inbound message so the chat header can show it. */
@@ -1266,7 +1366,11 @@ export class TelegramBridge implements TelegramChannel {
     while (this.polling && this.api) {
       try {
         const offset = this.settings.lastUpdateId > 0 ? this.settings.lastUpdateId + 1 : 0;
-        const updates = await this.api.getUpdates(offset, LONG_POLL_TIMEOUT_SEC, this.pollAbort?.signal);
+        const updates = await this.api.getUpdates(
+          offset,
+          LONG_POLL_TIMEOUT_SEC,
+          this.pollAbort?.signal,
+        );
         this.lastPollAt = Date.now();
         this.backoffMs = BACKOFF_MIN_MS;
         this.lastError = null;
@@ -1282,7 +1386,11 @@ export class TelegramBridge implements TelegramChannel {
       } catch (err) {
         if (!this.polling) break;
         const msg = err instanceof Error ? err.message : String(err);
-        if (err instanceof TelegramApiError && err.method === 'getUpdates' && /aborted/i.test(msg)) {
+        if (
+          err instanceof TelegramApiError &&
+          err.method === 'getUpdates' &&
+          /aborted/i.test(msg)
+        ) {
           break;
         }
         this.lastError = msg;
@@ -1327,10 +1435,7 @@ export class TelegramBridge implements TelegramChannel {
     // this DM is the configured operator replying with the code, route it
     // to the orchestrator instead of dispatching to the runner (which
     // would just hit the same auth failure again).
-    if (
-      this.pendingLogin
-      && this.pendingLogin.operatorChatId === String(msg.chat.id)
-    ) {
+    if (this.pendingLogin && this.pendingLogin.operatorChatId === String(msg.chat.id)) {
       await this.handleOperatorAuthCode((msg.text ?? msg.caption ?? '').trim());
       return;
     }
@@ -1342,7 +1447,9 @@ export class TelegramBridge implements TelegramChannel {
             msg.chat.id,
             `Not authorized. Your Telegram user ID is ${fromIdStr}.\n\nAsk the Cerebro owner to add it to the allowlist.`,
           );
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
       return;
     }
@@ -1350,7 +1457,9 @@ export class TelegramBridge implements TelegramChannel {
     if (!this.authorizedRateLimiter.allow(fromIdStr)) {
       try {
         await this.api.sendMessage(msg.chat.id, 'Rate limit exceeded. Try again in a minute.');
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return;
     }
 
@@ -1373,16 +1482,17 @@ export class TelegramBridge implements TelegramChannel {
     const earlyExisting = this.activeRuns.get(msg.chat.id);
     if (earlyExisting) {
       const elapsedSec = Math.round((Date.now() - earlyExisting.startedAt) / 1000);
-      const elapsedLabel = elapsedSec < 60
-        ? `${elapsedSec}s`
-        : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+      const elapsedLabel =
+        elapsedSec < 60 ? `${elapsedSec}s` : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
       try {
         await this.api.sendMessage(
           msg.chat.id,
-          `⏳ Still working on the previous message (${elapsedLabel} so far).\n`
-          + 'Send /cancel to abort it and try a different request.',
+          `⏳ Still working on the previous message (${elapsedLabel} so far).\n` +
+            'Send /cancel to abort it and try a different request.',
         );
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return;
     }
 
@@ -1391,14 +1501,14 @@ export class TelegramBridge implements TelegramChannel {
     let conversationId = await this.ensureConversation(msg.chat.id);
 
     if (isFirstContact) {
-      try { await this.api.sendMessage(msg.chat.id, this.welcomeMessage()); } catch { /* ignore */ }
+      try {
+        await this.api.sendMessage(msg.chat.id, this.welcomeMessage());
+      } catch {
+        /* ignore */
+      }
     }
 
-    conversationId = await this.postUserMessageWithRecovery(
-      conversationId,
-      msg,
-      textOrCaption,
-    );
+    conversationId = await this.postUserMessageWithRecovery(conversationId, msg, textOrCaption);
     this.emitConversationUpdated(conversationId, 'message');
 
     // Routine trigger dispatch — if any telegram_message routine matches,
@@ -1427,20 +1537,23 @@ export class TelegramBridge implements TelegramChannel {
     }
 
     if (attachmentNote) {
-      try { await this.api.sendMessage(msg.chat.id, attachmentNote); } catch { /* ignore */ }
+      try {
+        await this.api.sendMessage(msg.chat.id, attachmentNote);
+      } catch {
+        /* ignore */
+      }
     }
 
     // Concurrency: one run per chat
     const existing = this.activeRuns.get(msg.chat.id);
     if (existing) {
       const elapsedSec = Math.round((Date.now() - existing.startedAt) / 1000);
-      const elapsedLabel = elapsedSec < 60
-        ? `${elapsedSec}s`
-        : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+      const elapsedLabel =
+        elapsedSec < 60 ? `${elapsedSec}s` : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
       await this.api.sendMessage(
         msg.chat.id,
-        `⏳ Still working on the previous message (${elapsedLabel} so far).\n`
-        + `Send /cancel to abort it and try a different request.`,
+        `⏳ Still working on the previous message (${elapsedLabel} so far).\n` +
+          `Send /cancel to abort it and try a different request.`,
       );
       return;
     }
@@ -1458,12 +1571,17 @@ export class TelegramBridge implements TelegramChannel {
       async (finalText, err) => {
         try {
           if (!err) {
-            await backendRequest(this.deps.backendPort, 'POST', `/conversations/${conversationId}/messages`, {
-              id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
-              role: 'assistant',
-              content: finalText,
-              metadata: { source: 'telegram', telegram_chat_id: msg.chat.id },
-            });
+            await backendRequest(
+              this.deps.backendPort,
+              'POST',
+              `/conversations/${conversationId}/messages`,
+              {
+                id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+                role: 'assistant',
+                content: finalText,
+                metadata: { source: 'telegram', telegram_chat_id: msg.chat.id },
+              },
+            );
             this.emitConversationUpdated(conversationId, 'message');
           }
         } finally {
@@ -1507,31 +1625,38 @@ export class TelegramBridge implements TelegramChannel {
         try {
           await this.api.sendMessage(
             msg.chat.id,
-            '⏳ Still working on the previous message.\n'
-            + 'Send /cancel to abort it and try a different request.',
+            '⏳ Still working on the previous message.\n' +
+              'Send /cancel to abort it and try a different request.',
           );
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         return;
       }
       logError('startRun failed', errMsg);
       try {
-        await this.api.sendMessage(msg.chat.id, '⚠️ Something went wrong starting that. Please try again in a moment.');
-      } catch { /* ignore */ }
+        await this.api.sendMessage(
+          msg.chat.id,
+          '⚠️ Something went wrong starting that. Please try again in a moment.',
+        );
+      } catch {
+        /* ignore */
+      }
     }
   }
 
   private welcomeMessage(): string {
     return (
-      '👋 Hi — I am Cerebro.\n\n'
-      + 'Just send me a message to start chatting. I can plan, research, run routines, and delegate to your experts.\n\n'
-      + 'Commands:\n'
-      + '/help — show commands\n'
-      + '/expert list — show available experts\n'
-      + '/expert <slug> — route this chat to a specific expert\n'
-      + '/expert clear — go back to the default\n'
-      + '/cancel — abort the message I am currently working on\n'
-      + '/reset — start a fresh conversation\n\n'
-      + 'You can also send photos, voice notes, and documents.'
+      '👋 Hi — I am Cerebro.\n\n' +
+      'Just send me a message to start chatting. I can plan, research, run routines, and delegate to your experts.\n\n' +
+      'Commands:\n' +
+      '/help — show commands\n' +
+      '/expert list — show available experts\n' +
+      '/expert <slug> — route this chat to a specific expert\n' +
+      '/expert clear — go back to the default\n' +
+      '/cancel — abort the message I am currently working on\n' +
+      '/reset — start a fresh conversation\n\n' +
+      'You can also send photos, voice notes, and documents.'
     );
   }
 
@@ -1561,23 +1686,27 @@ export class TelegramBridge implements TelegramChannel {
     log(`chatMap entry for chat ${msg.chat.id} → ${conversationId} is stale (404); recreating`);
     delete this.settings.chatMap[String(msg.chat.id)];
     const fresh = await this.createConversation(msg.chat.id);
-    await backendRequest(
-      this.deps.backendPort,
-      'POST',
-      `/conversations/${fresh}/messages`,
-      { ...body, id: crypto.randomUUID().replace(/-/g, '').slice(0, 32) },
-    );
+    await backendRequest(this.deps.backendPort, 'POST', `/conversations/${fresh}/messages`, {
+      ...body,
+      id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+    });
     return fresh;
   }
 
   private async cleanupActiveRun(chatId: number, message: string): Promise<void> {
     const run = this.activeRuns.get(chatId);
     if (run) {
-      try { this.deps.agentRuntime.cancelRun(run.runId); } catch { /* ignore */ }
+      try {
+        this.deps.agentRuntime.cancelRun(run.runId);
+      } catch {
+        /* ignore */
+      }
       this.activeRuns.delete(chatId);
     }
     if (this.api) {
-      await this.api.sendMessage(chatId, message).catch(() => { /* ignore */ });
+      await this.api.sendMessage(chatId, message).catch(() => {
+        /* ignore */
+      });
     }
   }
 
@@ -1590,8 +1719,8 @@ export class TelegramBridge implements TelegramChannel {
         log(`watchdog: reclaiming stuck run ${run.runId} for chat ${chatId}`);
         void this.cleanupActiveRun(
           chatId,
-          '⚠️ The previous request stopped responding and was cancelled.\n'
-          + 'You can send a new message now.',
+          '⚠️ The previous request stopped responding and was cancelled.\n' +
+            'You can send a new message now.',
         );
       }
     }, RUN_WATCHDOG_INTERVAL_MS);
@@ -1619,13 +1748,19 @@ export class TelegramBridge implements TelegramChannel {
     if (cmd === '/reset') {
       delete this.settings.chatMap[String(chatId)];
       await this.persistChatMap();
-      await this.api.sendMessage(chatId, '🧹 Fresh conversation. Your next message starts a new thread.');
+      await this.api.sendMessage(
+        chatId,
+        '🧹 Fresh conversation. Your next message starts a new thread.',
+      );
       return;
     }
 
     if (cmd === '/cancel' || cmd === '/stop') {
       if (!this.activeRuns.has(chatId)) {
-        await this.api.sendMessage(chatId, 'Nothing to cancel — I am not working on anything right now.');
+        await this.api.sendMessage(
+          chatId,
+          'Nothing to cancel — I am not working on anything right now.',
+        );
         return;
       }
       await this.cleanupActiveRun(
@@ -1645,9 +1780,9 @@ export class TelegramBridge implements TelegramChannel {
         return;
       }
 
-      const res = await backendRequest<{ experts: Array<{ id: string; slug: string | null; name: string }> }>(
-        this.deps.backendPort, 'GET', '/experts',
-      );
+      const res = await backendRequest<{
+        experts: Array<{ id: string; slug: string | null; name: string }>;
+      }>(this.deps.backendPort, 'GET', '/experts');
       const experts = res.data?.experts ?? [];
 
       if (sub === '' || sub === 'list') {
@@ -1682,13 +1817,17 @@ export class TelegramBridge implements TelegramChannel {
     if (!this.api) return;
     const fromId = String(cb.from.id);
     if (!this.settings.allowlist.includes(fromId)) {
-      await this.api.answerCallbackQuery(cb.id, 'Not authorized').catch(() => { /* ignore */ });
+      await this.api.answerCallbackQuery(cb.id, 'Not authorized').catch(() => {
+        /* ignore */
+      });
       return;
     }
 
     const parsed = parseApprovalCallback(cb.data ?? '');
     if (!parsed) {
-      await this.api.answerCallbackQuery(cb.id, 'Unknown action').catch(() => { /* ignore */ });
+      await this.api.answerCallbackQuery(cb.id, 'Unknown action').catch(() => {
+        /* ignore */
+      });
       return;
     }
     const { action, approvalId } = parsed;
@@ -1697,7 +1836,9 @@ export class TelegramBridge implements TelegramChannel {
     // Optional replay-protection: verify the bot is actually tracking this approval.
     const expectedChat = this.approvalChatMap.get(approvalId);
     if (expectedChat !== undefined && cb.message?.chat.id !== expectedChat) {
-      await this.api.answerCallbackQuery(cb.id, 'Mismatched chat').catch(() => { /* ignore */ });
+      await this.api.answerCallbackQuery(cb.id, 'Mismatched chat').catch(() => {
+        /* ignore */
+      });
       return;
     }
 
@@ -1710,10 +1851,15 @@ export class TelegramBridge implements TelegramChannel {
     if (this.deps.executionEngine) {
       ok = await this.deps.executionEngine.resolveApproval(approvalId, approved, reason);
     } else {
-      const res = await backendRequest(this.deps.backendPort, 'PATCH', `/engine/approvals/${approvalId}/resolve`, {
-        decision: approved ? 'approved' : 'denied',
-        reason: reason ?? null,
-      });
+      const res = await backendRequest(
+        this.deps.backendPort,
+        'PATCH',
+        `/engine/approvals/${approvalId}/resolve`,
+        {
+          decision: approved ? 'approved' : 'denied',
+          reason: reason ?? null,
+        },
+      );
       ok = res.ok;
     }
 
@@ -1725,9 +1871,13 @@ export class TelegramBridge implements TelegramChannel {
           cb.message.message_id,
           `${scrubTokenish(cb.message.text ?? '(approval request)')}\n\n${note}`,
         );
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
-    await this.api.answerCallbackQuery(cb.id, ok ? note : 'Failed').catch(() => { /* ignore */ });
+    await this.api.answerCallbackQuery(cb.id, ok ? note : 'Failed').catch(() => {
+      /* ignore */
+    });
   }
 
   private async ensureConversation(chatId: number): Promise<string> {
@@ -1756,7 +1906,9 @@ export class TelegramBridge implements TelegramChannel {
     if (!this.webContents || this.webContents.isDestroyed()) return;
     try {
       this.webContents.send(IPC_CHANNELS.TELEGRAM_CONVERSATION_UPDATED, { conversationId, kind });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   /**
@@ -1781,7 +1933,11 @@ export class TelegramBridge implements TelegramChannel {
           pruned++;
         }
       } catch (err) {
-        log('backfill skipped for', conversationId, err instanceof Error ? err.message : String(err));
+        log(
+          'backfill skipped for',
+          conversationId,
+          err instanceof Error ? err.message : String(err),
+        );
       }
     }
     if (pruned > 0) {
@@ -1858,7 +2014,9 @@ export class TelegramBridge implements TelegramChannel {
     }
     try {
       // Bump backend run metadata so the routine's "last run" timestamps update.
-      backendRequest(this.deps.backendPort, 'POST', `/routines/${routine.id}/run`).catch(() => {/* ignore */});
+      backendRequest(this.deps.backendPort, 'POST', `/routines/${routine.id}/run`).catch(() => {
+        /* ignore */
+      });
 
       const runId = await engine.startRun(this.webContents, {
         dag: routine.dag,
@@ -1866,7 +2024,9 @@ export class TelegramBridge implements TelegramChannel {
         triggerSource: 'telegram_message',
         triggerPayload: payload,
       });
-      log(`dispatched routine "${routine.name}" (${routine.id}) from chat ${payload.chat_id} → run ${runId}`);
+      log(
+        `dispatched routine "${routine.name}" (${routine.id}) from chat ${payload.chat_id} → run ${runId}`,
+      );
     } catch (err) {
       logError('dispatchRoutine failed', err instanceof Error ? err.message : String(err));
     }
@@ -1914,8 +2074,8 @@ export class TelegramBridge implements TelegramChannel {
         return {
           prompt: '',
           attachmentNote:
-            '🎙️ Voice transcription is unavailable right now. '
-            + 'Try typing your message, or open Settings → Voice to set it up.',
+            '🎙️ Voice transcription is unavailable right now. ' +
+            'Try typing your message, or open Settings → Voice to set it up.',
         };
       }
     }
@@ -2017,14 +2177,15 @@ export class TelegramBridge implements TelegramChannel {
 
     // TTL cleanup
     const timer = setTimeout(() => {
-      fs.rm(dest, { force: true }, () => { /* ignore */ });
+      fs.rm(dest, { force: true }, () => {
+        /* ignore */
+      });
       this.tempFiles.delete(dest);
     }, ATTACHMENT_TTL_MS);
     this.tempFiles.set(dest, timer);
 
     return dest;
   }
-
 
   /**
    * Ensure the Whisper STT model is loaded and ready to transcribe. On a cold
@@ -2109,4 +2270,3 @@ function emptySettings(): TelegramSettings {
     operatorChatId: null,
   };
 }
-

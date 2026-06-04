@@ -33,7 +33,11 @@ interface InlineTextBody {
   body: string;
 }
 
-export default function TaskFilesTab({ taskId, projectPath, isRunning = false }: TaskFilesTabProps) {
+export default function TaskFilesTab({
+  taskId,
+  projectPath,
+  isRunning = false,
+}: TaskFilesTabProps) {
   const { t } = useTranslation();
 
   const [tree, setTree] = useState<WorkspaceFileNode[]>([]);
@@ -50,10 +54,7 @@ export default function TaskFilesTab({ taskId, projectPath, isRunning = false }:
     let cancelled = false;
     const probe = async () => {
       try {
-        const next = await window.cerebro.taskTerminal.listFiles(
-          taskId,
-          projectPath ?? undefined,
-        );
+        const next = await window.cerebro.taskTerminal.listFiles(taskId, projectPath ?? undefined);
         if (cancelled) return;
         const fp = treeFingerprint(next);
         if (fp !== treeFpRef.current) {
@@ -61,15 +62,23 @@ export default function TaskFilesTab({ taskId, projectPath, isRunning = false }:
           setTree(next);
         }
       } catch {
-        if (!cancelled) { setTree([]); treeFpRef.current = ''; }
+        if (!cancelled) {
+          setTree([]);
+          treeFpRef.current = '';
+        }
       }
     };
     probe();
     if (isRunning) {
       const id = setInterval(probe, 3000);
-      return () => { cancelled = true; clearInterval(id); };
+      return () => {
+        cancelled = true;
+        clearInterval(id);
+      };
     }
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [taskId, projectPath, isRunning, probeKey]);
 
   const flatFiles = useMemo(() => {
@@ -95,7 +104,9 @@ export default function TaskFilesTab({ taskId, projectPath, isRunning = false }:
         if (!cancelled) setTextBody({ path: selected.path, body: '' });
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [selected, taskId, textBody?.path]);
 
   const handleReveal = useCallback(async () => {
@@ -141,9 +152,11 @@ export default function TaskFilesTab({ taskId, projectPath, isRunning = false }:
       ) : null}
       <Folder size={14} className="text-text-tertiary flex-shrink-0" />
       <span className="text-xs text-text-tertiary truncate flex-1">
-        {selected
-          ? <span className="font-mono">{selected.path}</span>
-          : t('tasks.filesCount', { count: flatFiles.length })}
+        {selected ? (
+          <span className="font-mono">{selected.path}</span>
+        ) : (
+          t('tasks.filesCount', { count: flatFiles.length })
+        )}
       </span>
       <button
         onClick={() => setProbeKey((k) => k + 1)}
@@ -172,7 +185,9 @@ export default function TaskFilesTab({ taskId, projectPath, isRunning = false }:
     if (kind === 'text') {
       body = (
         <pre className="text-xs font-mono text-text-primary whitespace-pre p-4 leading-relaxed">
-          {textBody?.path === selected.path ? (textBody.body || t('tasks.previewEmptyFile')) : t('tasks.previewLoadingFile')}
+          {textBody?.path === selected.path
+            ? textBody.body || t('tasks.previewEmptyFile')
+            : t('tasks.previewLoadingFile')}
         </pre>
       );
     } else if (kind === 'image') {
@@ -219,9 +234,7 @@ export default function TaskFilesTab({ taskId, projectPath, isRunning = false }:
     return (
       <div className="flex flex-col h-full bg-bg-base">
         {toolbar}
-        <div className="flex-1 min-h-0 overflow-auto bg-bg-base">
-          {body}
-        </div>
+        <div className="flex-1 min-h-0 overflow-auto bg-bg-base">{body}</div>
       </div>
     );
   }
@@ -259,7 +272,9 @@ export default function TaskFilesTab({ taskId, projectPath, isRunning = false }:
                     disabled={!clickable}
                     className={clsx(
                       'inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-bg-elevated border border-border-subtle text-text-secondary font-mono text-xs max-w-[220px] transition-colors',
-                      clickable ? 'hover:text-text-primary hover:border-border-default cursor-pointer' : 'cursor-default opacity-70',
+                      clickable
+                        ? 'hover:text-text-primary hover:border-border-default cursor-pointer'
+                        : 'cursor-default opacity-70',
                     )}
                     title={f.path}
                   >

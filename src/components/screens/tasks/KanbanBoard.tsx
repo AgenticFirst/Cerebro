@@ -30,9 +30,7 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const allTags = useMemo(() => {
     const counts = new Map<string, number>();
@@ -46,7 +44,8 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
       .map(([name, count]) => ({ name, count }));
   }, [tasks]);
 
-  const effectiveTagFilter = tagFilter && allTags.some((tag) => tag.name === tagFilter) ? tagFilter : null;
+  const effectiveTagFilter =
+    tagFilter && allTags.some((tag) => tag.name === tagFilter) ? tagFilter : null;
 
   // Drag position math reads from the full (unfiltered) grouping so a tag
   // filter can't collapse positions across hidden neighbors.
@@ -213,9 +212,7 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
             {allTags.map((tag) => (
               <button
                 key={tag.name}
-                onClick={() =>
-                  setTagFilter((current) => (current === tag.name ? null : tag.name))
-                }
+                onClick={() => setTagFilter((current) => (current === tag.name ? null : tag.name))}
                 className={clsx(
                   'inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-medium rounded-full border transition-colors cursor-pointer',
                   effectiveTagFilter === tag.name
@@ -227,11 +224,7 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
                 {tag.name}
                 <span className="text-[10px] opacity-60">{tag.count}</span>
                 {effectiveTagFilter === tag.name && (
-                  <X
-                    size={10}
-                    className="ml-0.5"
-                    aria-label={t('tasks.clearTagFilter')}
-                  />
+                  <X size={10} className="ml-0.5" aria-label={t('tasks.clearTagFilter')} />
                 )}
               </button>
             ))}

@@ -24,7 +24,14 @@ interface AlertModalProps {
   onClose: () => void;
 }
 
-export default function AlertModal({ icon, iconTone = 'accent', title, message, actions, onClose }: AlertModalProps) {
+export default function AlertModal({
+  icon,
+  iconTone = 'accent',
+  title,
+  message,
+  actions,
+  onClose,
+}: AlertModalProps) {
   const { t } = useTranslation();
   const iconWrapClass = iconTone === 'danger' ? 'bg-red-500/10' : 'bg-accent/10';
   return (
@@ -45,7 +52,9 @@ export default function AlertModal({ icon, iconTone = 'accent', title, message, 
 
           <div className="flex items-center gap-3 mb-3">
             {icon && (
-              <div className={`w-9 h-9 rounded-lg ${iconWrapClass} flex items-center justify-center flex-shrink-0`}>
+              <div
+                className={`w-9 h-9 rounded-lg ${iconWrapClass} flex items-center justify-center flex-shrink-0`}
+              >
                 {icon}
               </div>
             )}
@@ -58,18 +67,17 @@ export default function AlertModal({ icon, iconTone = 'accent', title, message, 
             actions.map((action) => {
               let className: string;
               if (action.primary && action.variant === 'danger') {
-                className = 'px-4 py-1.5 rounded-md text-xs font-medium bg-red-500 text-white hover:bg-red-600 transition-colors cursor-pointer';
+                className =
+                  'px-4 py-1.5 rounded-md text-xs font-medium bg-red-500 text-white hover:bg-red-600 transition-colors cursor-pointer';
               } else if (action.primary) {
-                className = 'px-4 py-1.5 rounded-md text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 transition-colors cursor-pointer';
+                className =
+                  'px-4 py-1.5 rounded-md text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 transition-colors cursor-pointer';
               } else {
-                className = 'px-4 py-1.5 rounded-md text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer';
+                className =
+                  'px-4 py-1.5 rounded-md text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer';
               }
               return (
-                <button
-                  key={action.label}
-                  onClick={action.onClick}
-                  className={className}
-                >
+                <button key={action.label} onClick={action.onClick} className={className}>
                   {action.label}
                 </button>
               );

@@ -27,13 +27,7 @@ import type {
 // window where main is replacing the binary + verifying the new launch.
 // On success the process quits; on failure we surface `error` with the
 // underlying reason and the user can hit "Restart now" again.
-type UpdateStatus =
-  | 'idle'
-  | 'available'
-  | 'downloading'
-  | 'ready'
-  | 'applying'
-  | 'error';
+type UpdateStatus = 'idle' | 'available' | 'downloading' | 'ready' | 'applying' | 'error';
 
 interface UpdateContextValue {
   status: UpdateStatus;
@@ -147,15 +141,18 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   // this provider mounted (e.g. very fast first check).
   useEffect(() => {
     let cancelled = false;
-    window.cerebro.updater.checkNow().then((found) => {
-      if (cancelled) return;
-      if (found) {
-        setInfo(found);
-        setStatus((prev) => (prev === 'idle' ? 'available' : prev));
-      }
-    }).catch(() => {
-      // Ignore — main process logs the error.
-    });
+    window.cerebro.updater
+      .checkNow()
+      .then((found) => {
+        if (cancelled) return;
+        if (found) {
+          setInfo(found);
+          setStatus((prev) => (prev === 'idle' ? 'available' : prev));
+        }
+      })
+      .catch(() => {
+        // Ignore — main process logs the error.
+      });
     return () => {
       cancelled = true;
     };

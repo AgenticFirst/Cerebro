@@ -59,9 +59,7 @@ function CanvasInner({ routine }: { routine: Routine }) {
     setTimeout(() => instance.fitView({ padding: 0.3 }), 50);
   }, []);
 
-  const selectedNode = selectedNodeId
-    ? nodes.find((n) => n.id === selectedNodeId) ?? null
-    : null;
+  const selectedNode = selectedNodeId ? (nodes.find((n) => n.id === selectedNodeId) ?? null) : null;
 
   const isTriggerSelected = selectedNode?.type === 'triggerNode';
   const isStepSelected = selectedNode?.type === 'routineStep';
@@ -189,12 +187,7 @@ function CanvasInner({ routine }: { routine: Routine }) {
           deleteKeyCode={null}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-          <MiniMap
-            position="bottom-right"
-            pannable
-            zoomable
-            style={{ width: 140, height: 90 }}
-          />
+          <MiniMap position="bottom-right" pannable zoomable style={{ width: 140, height: 90 }} />
         </ReactFlow>
 
         {/* Empty state hint — sits at the bottom so it doesn't collide with the trigger node */}
@@ -205,9 +198,10 @@ function CanvasInner({ routine }: { routine: Routine }) {
                 Drag an action from the sidebar to get started
               </p>
               <p className="text-[11px] text-text-tertiary/70">
-                Press <kbd className="px-1 py-0.5 bg-bg-hover rounded text-[10px]">A</kbd> to open actions
-                {' '}&middot;{' '}
-                <kbd className="px-1 py-0.5 bg-bg-hover rounded text-[10px]">Shift+N</kbd> for sticky note
+                Press <kbd className="px-1 py-0.5 bg-bg-hover rounded text-[10px]">A</kbd> to open
+                actions &middot;{' '}
+                <kbd className="px-1 py-0.5 bg-bg-hover rounded text-[10px]">Shift+N</kbd> for
+                sticky note
               </p>
             </div>
           </div>

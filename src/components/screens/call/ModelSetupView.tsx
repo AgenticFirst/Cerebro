@@ -15,18 +15,14 @@ export default function ModelSetupView({ onBack }: ModelSetupViewProps) {
         </div>
 
         <div>
-          <h2 className="text-xl font-semibold text-text-primary">
-            {t('call.modelsNotFound')}
-          </h2>
+          <h2 className="text-xl font-semibold text-text-primary">{t('call.modelsNotFound')}</h2>
           <p className="text-sm text-text-secondary mt-3 leading-relaxed">
             {t('call.modelsNotInstalledPre')}
           </p>
           <pre className="mt-3 bg-bg-base border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-accent font-mono text-left">
             python scripts/download-voice-models.py
           </pre>
-          <p className="text-xs text-text-tertiary mt-3">
-            {t('call.modelsNotInstalledPost')}
-          </p>
+          <p className="text-xs text-text-tertiary mt-3">{t('call.modelsNotInstalledPost')}</p>
         </div>
 
         <button

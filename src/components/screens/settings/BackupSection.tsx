@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Archive, Download, Upload, RotateCcw, AlertTriangle, Loader2, FolderOpen } from 'lucide-react';
+import {
+  Archive,
+  Download,
+  Upload,
+  RotateCcw,
+  AlertTriangle,
+  Loader2,
+  FolderOpen,
+} from 'lucide-react';
 import AlertModal from '../../ui/AlertModal';
 import { useToast } from '../../../context/ToastContext';
 
@@ -117,21 +125,18 @@ export default function BackupSection() {
     }
   }, []);
 
-  const refreshEstimate = useCallback(
-    async (modelsOn: boolean) => {
-      try {
-        const res = await window.cerebro.invoke<{ bytes: number }>({
-          method: 'POST',
-          path: '/backup/estimate',
-          body: { include_models: modelsOn },
-        });
-        if (res.ok) setEstimatedBytes(res.data.bytes);
-      } catch {
-        setEstimatedBytes(null);
-      }
-    },
-    [],
-  );
+  const refreshEstimate = useCallback(async (modelsOn: boolean) => {
+    try {
+      const res = await window.cerebro.invoke<{ bytes: number }>({
+        method: 'POST',
+        path: '/backup/estimate',
+        body: { include_models: modelsOn },
+      });
+      if (res.ok) setEstimatedBytes(res.data.bytes);
+    } catch {
+      setEstimatedBytes(null);
+    }
+  }, []);
 
   useEffect(() => {
     refreshLastBackup();
@@ -187,7 +192,8 @@ export default function BackupSection() {
         body: { path, app_version: appVersion },
       });
       if (!res.ok || !res.data.ok) {
-        const detail = res.data?.error ?? (res.data as { detail?: string } | null)?.detail ?? 'unknown error';
+        const detail =
+          res.data?.error ?? (res.data as { detail?: string } | null)?.detail ?? 'unknown error';
         addToast(t('backup.inspectFailed', { detail }), 'error');
         return;
       }
@@ -273,7 +279,9 @@ export default function BackupSection() {
                 onChange={(e) => setIncludeModels(e.target.checked)}
                 className="w-3.5 h-3.5 rounded accent-accent cursor-pointer"
               />
-              <span className="text-xs text-text-secondary">{t('backup.create.includeModels')}</span>
+              <span className="text-xs text-text-secondary">
+                {t('backup.create.includeModels')}
+              </span>
             </label>
 
             <div className="flex items-center justify-between gap-3 mt-4">
@@ -353,7 +361,10 @@ export default function BackupSection() {
                   : '?',
               })}
             </p>
-            <p className="text-[11px] text-text-tertiary truncate" title={lastBackup.last_backup_path ?? ''}>
+            <p
+              className="text-[11px] text-text-tertiary truncate"
+              title={lastBackup.last_backup_path ?? ''}
+            >
               {lastBackup.last_backup_path}
             </p>
           </div>
@@ -455,7 +466,8 @@ function RestorePreviewModal({
 
   const message = [...lines, '', t('backup.preview.warning')].join('\n');
 
-  const blocked = !inspect.compatible || (inspect.warnings && inspect.warnings.length > 0 && !inspect.compatible);
+  const blocked =
+    !inspect.compatible || (inspect.warnings && inspect.warnings.length > 0 && !inspect.compatible);
   const warning = inspect.warnings && inspect.warnings[0];
 
   return (

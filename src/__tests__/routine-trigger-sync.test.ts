@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Node } from '@xyflow/react';
-import {
-  routineTriggerToActionType,
-  reconcileTriggerNode,
-} from '../hooks/useRoutineCanvas';
+import { routineTriggerToActionType, reconcileTriggerNode } from '../hooks/useRoutineCanvas';
 import type { Routine, TriggerType } from '../types/routines';
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -73,10 +70,7 @@ describe('routineTriggerToActionType', () => {
 describe('reconcileTriggerNode', () => {
   describe('from null (fresh canvas)', () => {
     it('builds a trigger node for a manual routine', () => {
-      const node = reconcileTriggerNode(
-        null,
-        makeRoutine({ triggerType: 'manual' }),
-      );
+      const node = reconcileTriggerNode(null, makeRoutine({ triggerType: 'manual' }));
       expect(node.id).toBe('__trigger__');
       expect(node.type).toBe('triggerNode');
       expect(node.data).toEqual({ triggerType: 'trigger_manual', config: {} });
@@ -85,10 +79,7 @@ describe('reconcileTriggerNode', () => {
     });
 
     it('builds a webhook trigger with empty config', () => {
-      const node = reconcileTriggerNode(
-        null,
-        makeRoutine({ triggerType: 'webhook' }),
-      );
+      const node = reconcileTriggerNode(null, makeRoutine({ triggerType: 'webhook' }));
       expect(node.data).toEqual({ triggerType: 'trigger_webhook', config: {} });
     });
 
@@ -107,10 +98,7 @@ describe('reconcileTriggerNode', () => {
   describe('switching trigger type (the original bug)', () => {
     it('manual → webhook updates type and clears config', () => {
       const prev = makeTriggerNode('trigger_manual');
-      const node = reconcileTriggerNode(
-        prev,
-        makeRoutine({ triggerType: 'webhook' }),
-      );
+      const node = reconcileTriggerNode(prev, makeRoutine({ triggerType: 'webhook' }));
       expect(node).not.toBe(prev);
       const data = node.data as { triggerType: string; config: Record<string, unknown> };
       expect(data.triggerType).toBe('trigger_webhook');
@@ -130,10 +118,7 @@ describe('reconcileTriggerNode', () => {
 
     it('webhook → manual clears a stale webhook path from config', () => {
       const prev = makeTriggerNode('trigger_webhook', { path: '/webhook/abc' });
-      const node = reconcileTriggerNode(
-        prev,
-        makeRoutine({ triggerType: 'manual' }),
-      );
+      const node = reconcileTriggerNode(prev, makeRoutine({ triggerType: 'manual' }));
       const data = node.data as { triggerType: string; config: Record<string, unknown> };
       expect(data.triggerType).toBe('trigger_manual');
       expect(data.config).toEqual({});
@@ -158,10 +143,7 @@ describe('reconcileTriggerNode', () => {
   describe('position is preserved', () => {
     it('keeps a user-dragged position when switching trigger types', () => {
       const prev = makeTriggerNode('trigger_manual', {}, { x: 420, y: 69 });
-      const node = reconcileTriggerNode(
-        prev,
-        makeRoutine({ triggerType: 'webhook' }),
-      );
+      const node = reconcileTriggerNode(prev, makeRoutine({ triggerType: 'webhook' }));
       expect(node.position).toEqual({ x: 420, y: 69 });
     });
 
@@ -177,19 +159,13 @@ describe('reconcileTriggerNode', () => {
   describe('idempotency (same-type, same-config)', () => {
     it('returns the same node reference when already in sync (manual)', () => {
       const prev = makeTriggerNode('trigger_manual');
-      const node = reconcileTriggerNode(
-        prev,
-        makeRoutine({ triggerType: 'manual' }),
-      );
+      const node = reconcileTriggerNode(prev, makeRoutine({ triggerType: 'manual' }));
       expect(node).toBe(prev);
     });
 
     it('returns the same node reference when already in sync (webhook with path)', () => {
       const prev = makeTriggerNode('trigger_webhook', { path: '/webhook/xyz' });
-      const node = reconcileTriggerNode(
-        prev,
-        makeRoutine({ triggerType: 'webhook' }),
-      );
+      const node = reconcileTriggerNode(prev, makeRoutine({ triggerType: 'webhook' }));
       expect(node).toBe(prev);
     });
 
@@ -211,10 +187,7 @@ describe('reconcileTriggerNode', () => {
         path: '/webhook/custom',
         secret: 'shh',
       });
-      const node = reconcileTriggerNode(
-        prev,
-        makeRoutine({ triggerType: 'webhook' }),
-      );
+      const node = reconcileTriggerNode(prev, makeRoutine({ triggerType: 'webhook' }));
       // Nothing changed, reference is preserved
       expect(node).toBe(prev);
     });
@@ -259,10 +232,7 @@ describe('reconcileTriggerNode', () => {
 
   describe('shape of returned node', () => {
     it('always returns a deletable:false triggerNode with id __trigger__', () => {
-      const node = reconcileTriggerNode(
-        null,
-        makeRoutine({ triggerType: 'manual' }),
-      );
+      const node = reconcileTriggerNode(null, makeRoutine({ triggerType: 'manual' }));
       expect(node.id).toBe('__trigger__');
       expect(node.type).toBe('triggerNode');
       expect(node.deletable).toBe(false);

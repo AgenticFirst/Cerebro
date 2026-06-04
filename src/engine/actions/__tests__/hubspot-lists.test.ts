@@ -31,14 +31,21 @@ function buildChannel(opts: Partial<{ token: string | null }> = {}): HubSpotChan
   };
 }
 
-function buildActionInput(params: Record<string, unknown>, wiredInputs: Record<string, unknown> = {}): ActionInput {
+function buildActionInput(
+  params: Record<string, unknown>,
+  wiredInputs: Record<string, unknown> = {},
+): ActionInput {
   const context: ActionContext = {
     runId: 'test-run',
     stepId: 'test-step',
     backendPort: 0,
     signal: new AbortController().signal,
-    log: () => { /* no-op */ },
-    emitEvent: () => { /* no-op */ },
+    log: () => {
+      /* no-op */
+    },
+    emitEvent: () => {
+      /* no-op */
+    },
   };
   return {
     params,
@@ -116,7 +123,14 @@ describe('hubspot_delete_list', () => {
 describe('hubspot_list_lists', () => {
   it('searches lists and maps size from additionalProperties', async () => {
     const fetchMock = mockFetch(200, {
-      lists: [{ listId: '42', name: 'VIP', processingType: 'MANUAL', additionalProperties: { hs_list_size: '5' } }],
+      lists: [
+        {
+          listId: '42',
+          name: 'VIP',
+          processingType: 'MANUAL',
+          additionalProperties: { hs_list_size: '5' },
+        },
+      ],
       total: 1,
     });
     const action = createHubSpotListListsAction({ getChannel: () => buildChannel() });
@@ -128,7 +142,12 @@ describe('hubspot_list_lists', () => {
     expect(sent.query).toBe('VIP');
 
     expect(result.data.count).toBe(1);
-    expect(result.data.lists[0]).toEqual({ list_id: '42', name: 'VIP', processing_type: 'MANUAL', size: 5 });
+    expect(result.data.lists[0]).toEqual({
+      list_id: '42',
+      name: 'VIP',
+      processing_type: 'MANUAL',
+      size: 5,
+    });
   });
 });
 
@@ -136,7 +155,9 @@ describe('hubspot_list_membership', () => {
   it('PUTs an array of ids to the add endpoint, parsing a comma-separated string', async () => {
     const fetchMock = mockFetch(200, { recordsIdsAdded: ['789', '790'] });
     const action = createHubSpotListMembershipAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({ list_id: '42', mode: 'add', record_ids: '789, 790' }));
+    const result = await action.execute(
+      buildActionInput({ list_id: '42', mode: 'add', record_ids: '789, 790' }),
+    );
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('/crm/v3/lists/42/memberships/add');
@@ -157,13 +178,17 @@ describe('hubspot_list_membership', () => {
   it('surfaces a dynamic-list rejection gracefully', async () => {
     mockFetch(400, { message: 'Cannot manually add records to a dynamic list' });
     const action = createHubSpotListMembershipAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({ list_id: '42', mode: 'add', record_ids: '789' }));
+    const result = await action.execute(
+      buildActionInput({ list_id: '42', mode: 'add', record_ids: '789' }),
+    );
     expect(result.data.updated).toBe(0);
     expect(result.data.error).toMatch(/dynamic list/i);
   });
 
   it('throws when no record ids are given', async () => {
     const action = createHubSpotListMembershipAction({ getChannel: () => buildChannel() });
-    await expect(action.execute(buildActionInput({ list_id: '42', mode: 'add', record_ids: '' }))).rejects.toThrow(/record id/i);
+    await expect(
+      action.execute(buildActionInput({ list_id: '42', mode: 'add', record_ids: '' })),
+    ).rejects.toThrow(/record id/i);
   });
 });

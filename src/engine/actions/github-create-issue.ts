@@ -87,7 +87,9 @@ export function createGitHubCreateIssueAction(deps: {
     execute: async (input: ActionInput): Promise<ActionOutput> => {
       const channel = deps.getChannel();
       if (!channel || !channel.isConnected()) {
-        throw new Error('GitHub: Create issue — GitHub is not configured. Connect GitHub in Integrations first.');
+        throw new Error(
+          'GitHub: Create issue — GitHub is not configured. Connect GitHub in Integrations first.',
+        );
       }
       const token = channel.getAccessToken()!;
       const params = input.params as unknown as CreateIssueParams;
@@ -97,7 +99,8 @@ export function createGitHubCreateIssueAction(deps: {
       const title = renderTemplate(params.title ?? '', vars).trim();
       const body = renderTemplate(params.body ?? '', vars).trim();
       const parts = parseRepoFullName(repo);
-      if (!parts) throw new Error(`GitHub: Create issue — invalid repo "${repo}". Expected "owner/name".`);
+      if (!parts)
+        throw new Error(`GitHub: Create issue — invalid repo "${repo}". Expected "owner/name".`);
       if (!title) throw new Error('GitHub: Create issue — title is empty.');
 
       const labels = normalizeList(params.labels, vars);
@@ -109,7 +112,8 @@ export function createGitHubCreateIssueAction(deps: {
       if (assignees.length > 0) reqBody.assignees = assignees;
 
       const res = await callGitHubApi<{ number?: number; html_url?: string }>(
-        token, `/repos/${parts.owner}/${parts.repo}/issues`,
+        token,
+        `/repos/${parts.owner}/${parts.repo}/issues`,
         { method: 'POST', body: reqBody, signal: input.context.signal },
       );
       if (!res.ok) {

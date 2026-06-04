@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { FileText, FileCode, FileImage, FileVideo, FileAudio, File as FileIcon, Star } from 'lucide-react';
+import {
+  FileText,
+  FileCode,
+  FileImage,
+  FileVideo,
+  FileAudio,
+  File as FileIcon,
+  Star,
+} from 'lucide-react';
 import type { FileItem } from '../../../types/files';
 import { previewKindFor, formatBytes, formatRelative } from './utils';
 
@@ -23,7 +31,11 @@ function iconFor(item: FileItem) {
   if (kind === 'video') return FileVideo;
   if (kind === 'audio') return FileAudio;
   if (kind === 'markdown' || kind === 'text') return FileText;
-  if (kind === 'html' || ['ts', 'tsx', 'js', 'jsx', 'py', 'go', 'rs', 'rb', 'java', 'json'].includes(item.ext)) return FileCode;
+  if (
+    kind === 'html' ||
+    ['ts', 'tsx', 'js', 'jsx', 'py', 'go', 'rs', 'rb', 'java', 'json'].includes(item.ext)
+  )
+    return FileCode;
   return FileIcon;
 }
 
@@ -43,24 +55,29 @@ function ImageThumb({ item }: { item: FileItem }) {
         storagePath: item.storagePath,
         taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
       })
-      .then((u) => { if (!cancelled) setResolvedUrl(u); })
-      .catch(() => { if (!cancelled) setResolvedUrl(null); });
-    return () => { cancelled = true; };
+      .then((u) => {
+        if (!cancelled) setResolvedUrl(u);
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [syncUrl, item.storageKind, item.storagePath, item.sourceTaskId, item.sourceTaskWorkspaceDir]);
 
   const url = syncUrl ?? resolvedUrl;
   if (!url) return <div className="w-full h-full bg-bg-surface" />;
-  return (
-    <img
-      src={url}
-      alt={item.name}
-      className="w-full h-full object-cover"
-      loading="lazy"
-    />
-  );
+  return <img src={url} alt={item.name} className="w-full h-full object-cover" loading="lazy" />;
 }
 
-export default function FileGrid({ items, selectedItemIds, onSelect, onOpen, onContextMenu }: FileGridProps) {
+export default function FileGrid({
+  items,
+  selectedItemIds,
+  onSelect,
+  onOpen,
+  onContextMenu,
+}: FileGridProps) {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 p-4">
       {items.map((item) => {

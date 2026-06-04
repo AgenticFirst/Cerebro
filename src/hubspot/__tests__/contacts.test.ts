@@ -47,13 +47,20 @@ function queue(...rs: Responder[]): void {
   responders.push(...rs);
 }
 
-const searchHit = (id: string, props: Record<string, string> = {}): Responder =>
+const searchHit =
+  (id: string, props: Record<string, string> = {}): Responder =>
   () => ({ status: 200, json: { results: [{ id, properties: props }] } });
 const searchMiss: Responder = () => ({ status: 200, json: { results: [] } });
-const created = (id: string): Responder => () => ({ status: 201, json: { id } });
+const created =
+  (id: string): Responder =>
+  () => ({ status: 201, json: { id } });
 
-beforeEach(() => { mockFetch(); });
-afterEach(() => { vi.unstubAllGlobals(); });
+beforeEach(() => {
+  mockFetch();
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 // ── test scaffolding for actions ──────────────────────────────
 
@@ -76,8 +83,12 @@ function buildActionInput(params: Record<string, unknown>): ActionInput {
     stepId: 'test-step',
     backendPort: 0,
     signal: new AbortController().signal,
-    log: () => { /* no-op */ },
-    emitEvent: () => { /* no-op */ },
+    log: () => {
+      /* no-op */
+    },
+    emitEvent: () => {
+      /* no-op */
+    },
   };
   return {
     params,
@@ -94,7 +105,10 @@ describe('findContactByEmail', () => {
     queue(searchHit('501', { email: 'maria@example.com', firstname: 'Maria' }));
     const res = await findContactByEmail(TOKEN, 'maria@example.com');
     expect(res.error).toBeNull();
-    expect(res.contact).toEqual({ id: '501', properties: { email: 'maria@example.com', firstname: 'Maria' } });
+    expect(res.contact).toEqual({
+      id: '501',
+      properties: { email: 'maria@example.com', firstname: 'Maria' },
+    });
     expect(calls[0].url).toContain('/crm/v3/objects/contacts/search');
   });
 
@@ -140,7 +154,9 @@ describe('hubspot_create_ticket — contact_email association', () => {
 
   it('associates an existing contact found by email', async () => {
     queue(searchHit('501'), created('900')); // search contact, then create ticket
-    const out = await action.execute(buildActionInput({ subject: 'Help', contact_email: 'maria@example.com' }));
+    const out = await action.execute(
+      buildActionInput({ subject: 'Help', contact_email: 'maria@example.com' }),
+    );
     expect(out.data.created).toBe(true);
     expect(out.data.contact_associated).toBe(true);
     expect(out.data.contact_id).toBe('501');
@@ -148,18 +164,26 @@ describe('hubspot_create_ticket — contact_email association', () => {
     const ticketCall = calls[calls.length - 1];
     expect(ticketCall.url).toContain('/crm/v3/objects/tickets');
     expect(ticketCall.body?.associations).toEqual([
-      { to: { id: '501' }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 16 }] },
+      {
+        to: { id: '501' },
+        types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 16 }],
+      },
     ]);
   });
 
   it('creates then associates when the email is unknown', async () => {
     queue(searchMiss, created('778'), created('901')); // search miss, create contact, create ticket
-    const out = await action.execute(buildActionInput({ subject: 'Help', contact_email: 'new@example.com' }));
+    const out = await action.execute(
+      buildActionInput({ subject: 'Help', contact_email: 'new@example.com' }),
+    );
     expect(out.data.contact_associated).toBe(true);
     expect(out.data.contact_id).toBe('778');
     const ticketCall = calls[calls.length - 1];
     expect(ticketCall.body?.associations).toEqual([
-      { to: { id: '778' }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 16 }] },
+      {
+        to: { id: '778' },
+        types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 16 }],
+      },
     ]);
   });
 
@@ -170,7 +194,9 @@ describe('hubspot_create_ticket — contact_email association', () => {
       () => ({ status: 500, json: { message: 'create down' } }),
       created('902'),
     );
-    const out = await action.execute(buildActionInput({ subject: 'Help', contact_email: 'maria@example.com' }));
+    const out = await action.execute(
+      buildActionInput({ subject: 'Help', contact_email: 'maria@example.com' }),
+    );
     expect(out.data.created).toBe(true);
     expect(out.data.contact_associated).toBe(false);
     expect(out.data.contact_id).toBeNull();

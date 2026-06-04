@@ -27,9 +27,7 @@ describe('uniqueVarName', () => {
   });
 
   it('falls back to step-id suffix on collision', () => {
-    const existing = [
-      { sourceStepId: 'abc', sourceField: 'response', targetField: 'summary' },
-    ];
+    const existing = [{ sourceStepId: 'abc', sourceField: 'response', targetField: 'summary' }];
     expect(uniqueVarName('summary', existing, 'def-1234-5678')).toBe('summary_def-');
   });
 
@@ -90,36 +88,28 @@ describe('computeAutoWireMapping', () => {
   });
 
   it('returns null when a mapping for the same source+field already exists', () => {
-    const m = computeAutoWireMapping(
-      { id: 'step-1', name: 'Ask AI', actionType: 'ask_ai' },
-      [{ sourceStepId: 'step-1', sourceField: 'response', targetField: 'whatever' }],
-    );
+    const m = computeAutoWireMapping({ id: 'step-1', name: 'Ask AI', actionType: 'ask_ai' }, [
+      { sourceStepId: 'step-1', sourceField: 'response', targetField: 'whatever' },
+    ]);
     expect(m).toBeNull();
   });
 
   it('disambiguates targetField when two sources sanitize to the same name', () => {
-    const m = computeAutoWireMapping(
-      { id: 'step-abc1', name: 'Summary', actionType: 'ask_ai' },
-      [{ sourceStepId: 'step-xyz9', sourceField: 'response', targetField: 'summary' }],
-    );
+    const m = computeAutoWireMapping({ id: 'step-abc1', name: 'Summary', actionType: 'ask_ai' }, [
+      { sourceStepId: 'step-xyz9', sourceField: 'response', targetField: 'summary' },
+    ]);
     expect(m).not.toBeNull();
     expect(m?.targetField).toBe('summary_step');
     expect(m?.sourceField).toBe('response');
   });
 
   it('falls back to step-id-based target when name is all punctuation', () => {
-    const m = computeAutoWireMapping(
-      { id: 'abc-1234', name: '???', actionType: 'ask_ai' },
-      [],
-    );
+    const m = computeAutoWireMapping({ id: 'abc-1234', name: '???', actionType: 'ask_ai' }, []);
     expect(m?.targetField).toBe('step_abc-');
   });
 
   it('resolves classify to its primary field (category)', () => {
-    const m = computeAutoWireMapping(
-      { id: 'step-1', name: 'Triage', actionType: 'classify' },
-      [],
-    );
+    const m = computeAutoWireMapping({ id: 'step-1', name: 'Triage', actionType: 'classify' }, []);
     expect(m).toEqual({
       sourceStepId: 'step-1',
       sourceField: 'category',
@@ -128,9 +118,7 @@ describe('computeAutoWireMapping', () => {
   });
 
   it('still produces a mapping when other sources already contributed mappings', () => {
-    const existing = [
-      { sourceStepId: 'step-A', sourceField: 'category', targetField: 'triage' },
-    ];
+    const existing = [{ sourceStepId: 'step-A', sourceField: 'category', targetField: 'triage' }];
     const m = computeAutoWireMapping(
       { id: 'step-B', name: 'Summarize', actionType: 'ask_ai' },
       existing,

@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { BackendResponse } from '../types/ipc';
 
 /* ── Types ─────────────────────────────────────────────────────── */
@@ -124,7 +117,11 @@ interface KnowledgeBaseContextValue {
 const KnowledgeBaseContext = createContext<KnowledgeBaseContextValue | null>(null);
 
 /** Walk a tree, applying `fn` to the node with the given id (in place on a copy). */
-function patchNode(nodes: KbTreeNode[], id: string, fn: (n: KbTreeNode) => KbTreeNode): KbTreeNode[] {
+function patchNode(
+  nodes: KbTreeNode[],
+  id: string,
+  fn: (n: KbTreeNode) => KbTreeNode,
+): KbTreeNode[] {
   return nodes.map((n) => {
     if (n.id === id) return fn(n);
     if (n.children.length) return { ...n, children: patchNode(n.children, id, fn) };
@@ -319,8 +316,9 @@ export function KnowledgeBaseProvider({ children }: { children: ReactNode }) {
 
   const loadTrash = useCallback(async (): Promise<KbTrashItem[]> => {
     try {
-      const res: BackendResponse<{ pages: Array<{ id: string; parent_id: string | null; title: string; icon: string | null }> }> =
-        await window.cerebro.invoke({ method: 'GET', path: '/knowledge/trash' });
+      const res: BackendResponse<{
+        pages: Array<{ id: string; parent_id: string | null; title: string; icon: string | null }>;
+      }> = await window.cerebro.invoke({ method: 'GET', path: '/knowledge/trash' });
       if (res.ok) {
         return res.data.pages.map((p) => ({
           id: p.id,
@@ -340,7 +338,13 @@ export function KnowledgeBaseProvider({ children }: { children: ReactNode }) {
     if (!query) return [];
     try {
       const res: BackendResponse<{
-        results: Array<{ id: string; parent_id: string | null; title: string; icon: string | null; snippet: string }>;
+        results: Array<{
+          id: string;
+          parent_id: string | null;
+          title: string;
+          icon: string | null;
+          snippet: string;
+        }>;
       }> = await window.cerebro.invoke({
         method: 'GET',
         path: `/knowledge/search?q=${encodeURIComponent(query)}`,

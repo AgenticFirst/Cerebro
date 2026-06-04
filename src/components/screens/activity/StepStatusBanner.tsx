@@ -18,14 +18,16 @@ export default function StepStatusBanner({ step, allSteps, events }: StepStatusB
 
   // Live elapsed counter for running/queued steps. Re-render every second
   // so the user sees "0:42" tick up.
-  const isActive = step.status === 'running' || step.status === 'queued' || step.status === 'pending';
+  const isActive =
+    step.status === 'running' || step.status === 'queued' || step.status === 'pending';
   const elapsedSinceStart = useElapsed(step.started_at, step.status === 'running');
 
   // Last event for this step — drives the "last activity Xs ago" hint.
   const lastEvent = events
     .filter((e) => e.step_id === step.step_id)
     .reduce<EventRecord | null>(
-      (acc, e) => (!acc || parseServerTimestamp(e.timestamp) > parseServerTimestamp(acc.timestamp) ? e : acc),
+      (acc, e) =>
+        !acc || parseServerTimestamp(e.timestamp) > parseServerTimestamp(acc.timestamp) ? e : acc,
       null,
     );
   const lastEventMs = lastEvent
@@ -76,10 +78,17 @@ export default function StepStatusBanner({ step, allSteps, events }: StepStatusB
   }
 
   // queued / pending — show what we're waiting on
-  const dependencies = allSteps.filter((s) => s.order_index < step.order_index && s.status !== 'completed' && s.status !== 'skipped');
+  const dependencies = allSteps.filter(
+    (s) => s.order_index < step.order_index && s.status !== 'completed' && s.status !== 'skipped',
+  );
   const waitingFor = dependencies[0];
   return (
-    <div className={clsx('flex items-center gap-2 text-[11px]', isActive ? 'text-text-secondary' : 'text-text-tertiary')}>
+    <div
+      className={clsx(
+        'flex items-center gap-2 text-[11px]',
+        isActive ? 'text-text-secondary' : 'text-text-tertiary',
+      )}
+    >
       <Clock size={11} />
       {waitingFor ? (
         <span>{t('stepStatus.queuedWaitingFor', { name: waitingFor.step_name })}</span>

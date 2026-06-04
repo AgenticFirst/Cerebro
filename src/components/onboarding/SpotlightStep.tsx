@@ -65,10 +65,7 @@ export default function SpotlightStep({
   if (!primaryRect) {
     return (
       <>
-        <div
-          className="fixed inset-0 z-[10000] bg-black/65 backdrop-blur-[2px]"
-          aria-hidden
-        />
+        <div className="fixed inset-0 z-[10000] bg-black/65 backdrop-blur-[2px]" aria-hidden />
         <TooltipCard
           emoji={step.emoji}
           title={title}
@@ -247,7 +244,11 @@ export default function SpotlightStep({
         onPrev={onPrev}
         onSkip={onSkip}
         side={placement}
-        style={{ ...tooltipStyle, transition: 'top 320ms cubic-bezier(0.2, 0.7, 0.2, 1), left 320ms cubic-bezier(0.2, 0.7, 0.2, 1)' }}
+        style={{
+          ...tooltipStyle,
+          transition:
+            'top 320ms cubic-bezier(0.2, 0.7, 0.2, 1), left 320ms cubic-bezier(0.2, 0.7, 0.2, 1)',
+        }}
         isFirstSpotlight={isFirstSpotlight}
         isLastSpotlight={isLastSpotlight}
       />

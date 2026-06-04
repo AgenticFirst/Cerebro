@@ -4,7 +4,22 @@
  */
 
 export const ALLOWED_COMMANDS: readonly string[] = [
-  'git', 'gh', 'npm', 'npx', 'pip',
-  'claude', 'bun', 'pnpm', 'yarn', 'cargo', 'make', 'docker',
-  'ls', 'cat', 'echo', 'curl', 'wget', 'jq',
+  'git',
+  'gh',
+  'npm',
+  'npx',
+  'pip',
+  'claude',
+  'bun',
+  'pnpm',
+  'yarn',
+  'cargo',
+  'make',
+  'docker',
+  'ls',
+  'cat',
+  'echo',
+  'curl',
+  'wget',
+  'jq',
 ];

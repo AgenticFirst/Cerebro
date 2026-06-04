@@ -24,9 +24,7 @@ export async function callGHLApi<T = unknown>(
     signal?: AbortSignal;
   } = {},
 ): Promise<GHLApiResult<T>> {
-  const qs = init.query
-    ? '?' + new URLSearchParams(init.query).toString()
-    : '';
+  const qs = init.query ? '?' + new URLSearchParams(init.query).toString() : '';
   const url = pathname.startsWith('http') ? pathname : `${GHL_API_BASE}${pathname}${qs}`;
   const method = init.method ?? 'GET';
   let response: Response;
@@ -49,13 +47,18 @@ export async function callGHLApi<T = unknown>(
   const text = await response.text().catch(() => '');
   let parsed: T | null = null;
   if (text) {
-    try { parsed = JSON.parse(text) as T; } catch { parsed = null; }
+    try {
+      parsed = JSON.parse(text) as T;
+    } catch {
+      parsed = null;
+    }
   }
 
   if (!response.ok) {
-    const maybeMsg = parsed && typeof (parsed as Record<string, unknown>).message === 'string'
-      ? (parsed as Record<string, unknown>).message as string
-      : `HTTP ${response.status}`;
+    const maybeMsg =
+      parsed && typeof (parsed as Record<string, unknown>).message === 'string'
+        ? ((parsed as Record<string, unknown>).message as string)
+        : `HTTP ${response.status}`;
     return { ok: false, status: response.status, data: parsed, error: maybeMsg };
   }
   return { ok: true, status: response.status, data: parsed, error: null };

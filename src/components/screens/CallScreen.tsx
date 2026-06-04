@@ -49,9 +49,7 @@ export default function CallScreen() {
   const [callDuration, setCallDuration] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const expert = activeSession
-    ? experts.find((e) => e.id === activeSession.expertId)
-    : null;
+  const expert = activeSession ? experts.find((e) => e.id === activeSession.expertId) : null;
 
   // Audio capture → send chunks to main process
   const onAudioChunk = useCallback(
@@ -85,7 +83,11 @@ export default function CallScreen() {
 
   // Start mic capture when call is active (always running for waveform)
   useEffect(() => {
-    if (sessionState === 'listening' || sessionState === 'speaking' || sessionState === 'processing') {
+    if (
+      sessionState === 'listening' ||
+      sessionState === 'speaking' ||
+      sessionState === 'processing'
+    ) {
       startCapture();
     }
   }, [sessionState, startCapture]);
@@ -94,14 +96,11 @@ export default function CallScreen() {
   useEffect(() => {
     if (!activeSession) return;
 
-    const unsubscribe = window.cerebro.voice.onEvent(
-      activeSession.sessionId,
-      (event) => {
-        if (event.type === 'tts_audio') {
-          playChunk(event.chunk);
-        }
-      },
-    );
+    const unsubscribe = window.cerebro.voice.onEvent(activeSession.sessionId, (event) => {
+      if (event.type === 'tts_audio') {
+        playChunk(event.chunk);
+      }
+    });
 
     return unsubscribe;
   }, [activeSession, playChunk]);
@@ -195,17 +194,13 @@ export default function CallScreen() {
               {statusMessage}
             </span>
           ) : (
-            <span className="text-xs text-text-secondary">
-              {displayStatus}
-            </span>
+            <span className="text-xs text-text-secondary">{displayStatus}</span>
           )}
         </div>
 
         {/* Microphone error */}
         {micError && (
-          <span className="text-xs text-red-400 mt-1">
-            Microphone error: {micError}
-          </span>
+          <span className="text-xs text-red-400 mt-1">Microphone error: {micError}</span>
         )}
 
         {/* Call error (non-fatal, shown inline) */}
@@ -225,12 +220,8 @@ export default function CallScreen() {
               <AlertCircle size={28} className="text-red-400" />
             </div>
             <div>
-              <h3 className="text-base font-medium text-text-primary">
-                Call Failed
-              </h3>
-              <p className="text-sm text-text-secondary mt-1">
-                {callError}
-              </p>
+              <h3 className="text-base font-medium text-text-primary">Call Failed</h3>
+              <p className="text-sm text-text-secondary mt-1">{callError}</p>
             </div>
             <button
               onClick={() => setActiveScreen('experts')}

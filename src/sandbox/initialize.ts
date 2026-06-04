@@ -46,7 +46,9 @@ export async function initializeSandbox(params: InitializeSandboxParams): Promis
       `[Sandbox] Active. Workspace: ${config.workspace_path}. Linked projects: ${config.linked_projects.length}`,
     );
   } else if (config.enabled && !config.platform_supported) {
-    console.log('[Sandbox] Enabled in settings but current platform is not supported — running without enforcement');
+    console.log(
+      '[Sandbox] Enabled in settings but current platform is not supported — running without enforcement',
+    );
   } else {
     console.log('[Sandbox] Disabled — Claude Code has unrestricted host access');
   }

@@ -30,8 +30,13 @@ interface ExecFileFailure extends Error {
 const ALLOWED_COMMANDS_SET = new Set(ALLOWED_COMMANDS);
 
 const BLOCKED_ENV_KEYS = new Set([
-  'PATH', 'LD_PRELOAD', 'LD_LIBRARY_PATH', 'DYLD_INSERT_LIBRARIES',
-  'DYLD_LIBRARY_PATH', 'NODE_OPTIONS', 'PYTHONPATH',
+  'PATH',
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
+  'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+  'NODE_OPTIONS',
+  'PYTHONPATH',
 ]);
 
 /**
@@ -112,7 +117,7 @@ export const runCommandAction: ActionDefinition = {
     if (!ALLOWED_COMMANDS_SET.has(command)) {
       throw new Error(
         `Command "${command}" is not allowed. ` +
-        `Allowed commands: ${ALLOWED_COMMANDS.join(', ')}`
+          `Allowed commands: ${ALLOWED_COMMANDS.join(', ')}`,
       );
     }
 
@@ -153,9 +158,7 @@ export const runCommandAction: ActionDefinition = {
           cwd: renderedWorkingDir || undefined,
           timeout: timeoutMs,
           maxBuffer: 10 * 1024 * 1024, // 10MB
-          env: renderedEnv
-            ? { ...process.env, ...renderedEnv }
-            : process.env,
+          env: renderedEnv ? { ...process.env, ...renderedEnv } : process.env,
         },
         (error, stdout, stderr) => {
           removeAbortListener();

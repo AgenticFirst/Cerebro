@@ -83,12 +83,12 @@ export default function ConnectedAppsSection() {
   const refreshHubSpot = useCallback(async () => {
     const s = await window.cerebro.hubspot.status();
     setHubSpotStatus((prev) =>
-      prev
-        && prev.hasToken === s.hasToken
-        && prev.portalId === s.portalId
-        && prev.defaultPipeline === s.defaultPipeline
-        && prev.defaultStage === s.defaultStage
-        && prev.tokenBackend === s.tokenBackend
+      prev &&
+      prev.hasToken === s.hasToken &&
+      prev.portalId === s.portalId &&
+      prev.defaultPipeline === s.defaultPipeline &&
+      prev.defaultStage === s.defaultStage &&
+      prev.tokenBackend === s.tokenBackend
         ? prev
         : s,
     );
@@ -107,9 +107,10 @@ export default function ConnectedAppsSection() {
     </span>
   ) : null;
 
-  const hubSpotDescription = hubSpotStatus?.hasToken && hubSpotStatus.portalId
-    ? `Connected to portal ${hubSpotStatus.portalId}.`
-    : 'Open support tickets and update contacts in HubSpot from a routine.';
+  const hubSpotDescription =
+    hubSpotStatus?.hasToken && hubSpotStatus.portalId
+      ? `Connected to portal ${hubSpotStatus.portalId}.`
+      : 'Open support tickets and update contacts in HubSpot from a routine.';
 
   return (
     <div>
@@ -181,8 +182,15 @@ export default function ConnectedAppsSection() {
 
       {showHubSpotTour && (
         <HubSpotConnectModal
-          onClose={() => { setShowHubSpotTour(false); setReloadKey((k) => k + 1); void refreshHubSpot(); }}
-          onPersisted={() => { setReloadKey((k) => k + 1); void refreshHubSpot(); }}
+          onClose={() => {
+            setShowHubSpotTour(false);
+            setReloadKey((k) => k + 1);
+            void refreshHubSpot();
+          }}
+          onPersisted={() => {
+            setReloadKey((k) => k + 1);
+            void refreshHubSpot();
+          }}
         />
       )}
 

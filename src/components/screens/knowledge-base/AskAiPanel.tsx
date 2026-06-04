@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { Sparkles, X, Plus, Trash2, Send, Loader2, Globe, ChevronDown, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import {
+  Sparkles,
+  X,
+  Plus,
+  Trash2,
+  Send,
+  Loader2,
+  Globe,
+  ChevronDown,
+  PanelRightClose,
+  PanelRightOpen,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useKnowledgeAi } from '../../../context/KnowledgeAiContext';
@@ -40,7 +51,8 @@ export function AskAiPanel() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, streaming]);
 
-  const currentTitle = threads.find((th) => th.id === threadId)?.title ?? t('knowledgeBase.askAiNewChat');
+  const currentTitle =
+    threads.find((th) => th.id === threadId)?.title ?? t('knowledgeBase.askAiNewChat');
   const isEmpty = messages.length === 0 && !streaming;
 
   // Collapsed: a slim rail docked on the right. The run keeps streaming behind
@@ -114,7 +126,9 @@ export function AskAiPanel() {
                       setThreadMenuOpen(false);
                     }}
                   >
-                    <span className="flex-1 truncate text-[13px] text-text-secondary">{th.title}</span>
+                    <span className="flex-1 truncate text-[13px] text-text-secondary">
+                      {th.title}
+                    </span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -166,8 +180,12 @@ export function AskAiPanel() {
         {isEmpty && (
           <div className="flex flex-col items-center justify-center text-center gap-2 h-full px-4">
             <Sparkles size={22} className="text-accent" />
-            <p className="text-[13px] font-medium text-text-secondary">{t('knowledgeBase.askAiEmptyTitle')}</p>
-            <p className="text-[12px] text-text-tertiary leading-relaxed">{t('knowledgeBase.askAiEmptySubtitle')}</p>
+            <p className="text-[13px] font-medium text-text-secondary">
+              {t('knowledgeBase.askAiEmptyTitle')}
+            </p>
+            <p className="text-[12px] text-text-tertiary leading-relaxed">
+              {t('knowledgeBase.askAiEmptySubtitle')}
+            </p>
           </div>
         )}
 

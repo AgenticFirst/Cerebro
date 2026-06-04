@@ -155,16 +155,7 @@ const CEREBRO_TOOLS = [
   'WebFetch',
 ];
 
-const EXPERT_TOOLS = [
-  'Read',
-  'Edit',
-  'Write',
-  'Bash',
-  'Grep',
-  'Glob',
-  'WebSearch',
-  'WebFetch',
-];
+const EXPERT_TOOLS = ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob', 'WebSearch', 'WebFetch'];
 
 function memoryInstructions(memoryDir: string): string {
   return `## Memory
@@ -401,7 +392,9 @@ The \`<team_id>\` is your team_id (\`${expert.id}\`) shown at the top of this pr
 Keep your own coordinator output focused on routing and synthesis — do **not** restate full member outputs in your own reply (they will be surfaced separately).`;
 
   const coordinatorPrompt = (expert.coordinator_prompt || '').trim();
-  const coordinatorBlock = coordinatorPrompt ? `## Coordinator Instructions\n\n${coordinatorPrompt}` : '';
+  const coordinatorBlock = coordinatorPrompt
+    ? `## Coordinator Instructions\n\n${coordinatorPrompt}`
+    : '';
 
   const deliveryBlock = `## Delivering files
 
@@ -454,9 +447,7 @@ const MAX_CONTEXT_FILE_CHARS_PER_FILE = 40_000;
 /** Aggregate cap across all reference docs for one expert. */
 const MAX_CONTEXT_FILE_TOTAL_CHARS = 120_000;
 
-function renderExpertContextSection(
-  contextFiles: ContextFileData[] = [],
-): string {
+function renderExpertContextSection(contextFiles: ContextFileData[] = []): string {
   if (contextFiles.length === 0) return '';
 
   const blocks: string[] = [];
@@ -477,8 +468,9 @@ function renderExpertContextSection(
       body = `(File preserved at \`${cf.file_storage_path}\`. Use the Read tool only for text/image formats — never on binary office docs.)`;
     } else {
       if (body.length > MAX_CONTEXT_FILE_CHARS_PER_FILE) {
-        body = body.slice(0, MAX_CONTEXT_FILE_CHARS_PER_FILE)
-          + `\n\n[truncated — original was ${body.length} chars; raise expert.token_budget or split the file]`;
+        body =
+          body.slice(0, MAX_CONTEXT_FILE_CHARS_PER_FILE) +
+          `\n\n[truncated — original was ${body.length} chars; raise expert.token_budget or split the file]`;
       }
       if (totalChars + body.length > MAX_CONTEXT_FILE_TOTAL_CHARS) {
         footer = `\n\n[remaining reference files omitted — aggregate context cap of ${MAX_CONTEXT_FILE_TOTAL_CHARS} chars reached]`;
@@ -492,11 +484,11 @@ function renderExpertContextSection(
   }
 
   return (
-    '\n## Reference documents\n\n'
-    + 'These files were attached by the user as permanent reference for every turn. '
-    + 'Use them as authoritative context. When a file is marked TEMPLATE, your output MUST follow its structure (headings, sections, formatting) exactly.\n\n'
-    + blocks.join('\n\n')
-    + '\n'
+    '\n## Reference documents\n\n' +
+    'These files were attached by the user as permanent reference for every turn. ' +
+    'Use them as authoritative context. When a file is marked TEMPLATE, your output MUST follow its structure (headings, sections, formatting) exactly.\n\n' +
+    blocks.join('\n\n') +
+    '\n'
   );
 }
 
@@ -520,7 +512,8 @@ function buildExpertBody(
   }
 
   if (skills.length > 0) {
-    body += '\n## Skills\n\nYou have the following skills. Follow their instructions when relevant:\n\n';
+    body +=
+      '\n## Skills\n\nYou have the following skills. Follow their instructions when relevant:\n\n';
     for (const skill of skills) {
       body += `### ${skill.name}\n\n${skill.instructions.trimEnd()}\n\n`;
     }
@@ -574,10 +567,10 @@ function buildSoulFile(_expert: ExpertData): string {
   // SOUL.md is purely for communication preferences the expert learns over time.
   return [
     '# Soul\n',
-    '## Working Style\n\n'
-    + '- Be direct and actionable\n'
-    + "- Adapt to the user's level of expertise\n"
-    + '- Ask clarifying questions when the request is ambiguous\n',
+    '## Working Style\n\n' +
+      '- Be direct and actionable\n' +
+      "- Adapt to the user's level of expertise\n" +
+      '- Ask clarifying questions when the request is ambiguous\n',
     "## Communication\n\n(Evolve this section as you learn the user's communication preferences.)\n",
   ].join('\n');
 }
@@ -588,7 +581,8 @@ function buildCerebroSoulFile(): string {
     name: 'Cerebro',
     slug: 'cerebro',
     description: "The user's personal AI assistant",
-    system_prompt: 'You are Cerebro, the user\'s personal AI assistant. You coordinate a team of specialist subagents (called "experts") and manage long-lived memory about the user across conversations.',
+    system_prompt:
+      'You are Cerebro, the user\'s personal AI assistant. You coordinate a team of specialist subagents (called "experts") and manage long-lived memory about the user across conversations.',
     domain: null,
     policies: null,
     is_enabled: true,
@@ -1908,7 +1902,8 @@ Only after this step — once any attachments are saved (or explicitly skipped) 
     },
     {
       name: 'attach-expert-context',
-      description: 'Permanently attach a document to an existing expert as a template (output must follow this format) or reference (background knowledge). Use whenever the user wants the file to persist for future turns — including the implicit case where they are *configuring* an expert and attach a template/reference.',
+      description:
+        'Permanently attach a document to an existing expert as a template (output must follow this format) or reference (background knowledge). Use whenever the user wants the file to persist for future turns — including the implicit case where they are *configuring* an expert and attach a template/reference.',
       body: `# Attach expert context
 
 Use this skill when the user wants an existing expert to use a specific document on future turns. Two common shapes:
@@ -1947,7 +1942,8 @@ Where \`KIND\` is exactly \`template\` or \`reference\`. The script registers th
     },
     {
       name: 'update-expert',
-      description: "Modify an existing expert's name, description, or system prompt via the backend. Use ONLY when the user explicitly asks to change the expert itself — never when they ask the expert to do work.",
+      description:
+        "Modify an existing expert's name, description, or system prompt via the backend. Use ONLY when the user explicitly asks to change the expert itself — never when they ask the expert to do work.",
       body: `# Update expert
 
 Use this skill **only** when the user explicitly asks to change an existing expert — its persona, system prompt, name, or description.
@@ -2075,7 +2071,8 @@ If the output says **ERROR**, report the error to the user.
     },
     {
       name: 'list-tasks',
-      description: 'List existing Kanban task cards from the backend, with an optional column filter. Read-only.',
+      description:
+        'List existing Kanban task cards from the backend, with an optional column filter. Read-only.',
       body: `# List tasks
 
 This skill reads the **tasks** on the Kanban board (the cards created via \`create-task\` and shown on the Tasks screen). Use it whenever the user wants to *see* their tasks rather than create one.
@@ -2121,7 +2118,8 @@ Present a concise list — title, column, priority, and due date when present. I
     },
     {
       name: 'run-chat-action',
-      description: 'Invoke a connected integration action (HubSpot, Telegram, Slack, WhatsApp, …) directly from chat. Pauses for human approval unless the user has set a "don\'t ask again" rule for that exact destination.',
+      description:
+        'Invoke a connected integration action (HubSpot, Telegram, Slack, WhatsApp, …) directly from chat. Pauses for human approval unless the user has set a "don\'t ask again" rule for that exact destination.',
       body: `# Run chat action
 
 Use this skill whenever the user asks Cerebro to **do** something through a connected integration — anything that touches an external service (HubSpot, Telegram, Slack, WhatsApp, HTTP endpoints, desktop notifications, and any future integrations like GitHub or iMessage).
@@ -2295,7 +2293,8 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" list
     },
     {
       name: 'propose-routine',
-      description: 'Draft a Cerebro Routine from a natural-language request, confirm it with the user, dry-run it end-to-end (with side-effects stubbed), then save it on success.',
+      description:
+        'Draft a Cerebro Routine from a natural-language request, confirm it with the user, dry-run it end-to-end (with side-effects stubbed), then save it on success.',
       body: `# Propose routine
 
 Use this skill whenever the user asks for **recurring or triggered work** — anything they want Cerebro to run more than once on a schedule, on an inbound message, or by clicking Run. Phrases that should match (English **or** Spanish):
@@ -2549,16 +2548,11 @@ async function fetchExperts(backendPort: number): Promise<ExpertData[]> {
   return result?.experts ?? [];
 }
 
-async function fetchExpertSkills(
-  backendPort: number,
-  expertId: string,
-): Promise<SkillData[]> {
+async function fetchExpertSkills(backendPort: number, expertId: string): Promise<SkillData[]> {
   const result = await fetchJson<{
     skills: Array<{ skill: SkillData; is_active: boolean }>;
   }>(backendPort, `/experts/${expertId}/skills`);
-  return (result?.skills ?? [])
-    .filter((s) => s.is_active)
-    .map((s) => s.skill);
+  return (result?.skills ?? []).filter((s) => s.is_active).map((s) => s.skill);
 }
 
 interface ContextFileData {
@@ -2644,14 +2638,8 @@ export async function installAll(options: InstallerOptions): Promise<void> {
 
   // Fetch skills + context files for each regular expert (teams don't carry either).
   const [regularSkillSets, regularContextSets] = await Promise.all([
-    Promise.all(
-      regulars.map((expert) => fetchExpertSkills(options.backendPort, expert.id)),
-    ),
-    Promise.all(
-      regulars.map((expert) =>
-        fetchExpertContextFiles(options.backendPort, expert.id),
-      ),
-    ),
+    Promise.all(regulars.map((expert) => fetchExpertSkills(options.backendPort, expert.id))),
+    Promise.all(regulars.map((expert) => fetchExpertContextFiles(options.backendPort, expert.id))),
   ]);
 
   const agentNameById: Record<string, string> = {};
@@ -2661,13 +2649,7 @@ export async function installAll(options: InstallerOptions): Promise<void> {
     const expert = regulars[i];
     const agentName = expertAgentName(expert.id, expert.name);
     seen.add(agentName);
-    writeExpertAgent(
-      paths,
-      expert,
-      agentName,
-      regularSkillSets[i],
-      regularContextSets[i],
-    );
+    writeExpertAgent(paths, expert, agentName, regularSkillSets[i], regularContextSets[i]);
     index.experts[expert.id] = agentName;
     agentNameById[expert.id] = agentName;
     memberNamesById[expert.id] = expert.name;
@@ -2685,7 +2667,11 @@ export async function installAll(options: InstallerOptions): Promise<void> {
   for (const [expertId, agentName] of Object.entries(index.experts)) {
     if (!seen.has(agentName)) {
       const filePath = path.join(paths.agentsDir, `${agentName}.md`);
-      try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        /* ignore */
+      }
       toRemoveIds.push(expertId);
     }
   }
@@ -2699,7 +2685,11 @@ export async function installAll(options: InstallerOptions): Promise<void> {
       if (!file.endsWith('.md')) continue;
       const name = file.slice(0, -3);
       if (knownNames.has(name)) continue;
-      try { fs.unlinkSync(path.join(paths.agentsDir, file)); } catch { /* ignore */ }
+      try {
+        fs.unlinkSync(path.join(paths.agentsDir, file));
+      } catch {
+        /* ignore */
+      }
     }
   } catch {
     /* directory missing — ignore */
@@ -2720,7 +2710,11 @@ export async function installExpert(options: InstallerOptions, expert: ExpertDat
 
   // If name changed, remove the stale file.
   if (previousName && previousName !== agentName) {
-    try { fs.unlinkSync(path.join(paths.agentsDir, `${previousName}.md`)); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(path.join(paths.agentsDir, `${previousName}.md`));
+    } catch {
+      /* ignore */
+    }
   }
 
   if (expert.type === 'team') {
@@ -2782,7 +2776,7 @@ interface LegacyContextFile {
 }
 
 interface LegacyMemoryItem {
-  scope: string;       // "personal", "expert", etc.
+  scope: string; // "personal", "expert", etc.
   scope_id: string | null;
   content: string;
   created_at: string;
@@ -2952,7 +2946,10 @@ function installCerebroMainAgent(paths: InstallerPaths, teamsEnabled: boolean): 
 }
 
 async function fetchTeamsFlag(backendPort: number): Promise<boolean> {
-  const result = await fetchJson<{ key: string; value: string }>(backendPort, '/settings/beta:teams');
+  const result = await fetchJson<{ key: string; value: string }>(
+    backendPort,
+    '/settings/beta:teams',
+  );
   if (!result || typeof result.value !== 'string') return false;
   try {
     return JSON.parse(result.value) === true;
@@ -2979,11 +2976,7 @@ function writeTeamAgent(
     tools: [...EXPERT_TOOLS, 'Agent'],
     body: buildTeamBody(expert, memoryDir, agentNameById, memberNamesById),
   };
-  fs.writeFileSync(
-    path.join(paths.agentsDir, `${agentName}.md`),
-    renderAgentFile(file),
-    'utf-8',
-  );
+  fs.writeFileSync(path.join(paths.agentsDir, `${agentName}.md`), renderAgentFile(file), 'utf-8');
   seedFileIfMissing(path.join(memoryDir, 'SOUL.md'), buildSoulFile(expert));
 }
 
@@ -3007,11 +3000,7 @@ function writeExpertAgent(
     tools: allTools,
     body: buildExpertBody(expert, memoryDir, skills, contextFiles),
   };
-  fs.writeFileSync(
-    path.join(paths.agentsDir, `${agentName}.md`),
-    renderAgentFile(file),
-    'utf-8',
-  );
+  fs.writeFileSync(path.join(paths.agentsDir, `${agentName}.md`), renderAgentFile(file), 'utf-8');
   seedFileIfMissing(path.join(memoryDir, 'SOUL.md'), buildSoulFile(expert));
 }
 

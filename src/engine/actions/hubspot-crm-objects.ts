@@ -59,7 +59,10 @@ const NAMED_FIELD_SCHEMA: Record<string, { type: string; description: string }> 
   domain: { type: 'string', description: 'Company domain, e.g. acme.com. Templated.' },
   industry: { type: 'string', description: 'Company industry. Templated.' },
   // deals
-  dealname: { type: 'string', description: 'Deal name. Required when object_type is deals. Templated.' },
+  dealname: {
+    type: 'string',
+    description: 'Deal name. Required when object_type is deals. Templated.',
+  },
   amount: { type: 'string', description: 'Deal amount (number as string). Templated.' },
   dealstage: { type: 'string', description: 'Deal stage id. Templated.' },
   pipeline: { type: 'string', description: 'Deal pipeline id. Templated.' },
@@ -73,7 +76,10 @@ const OBJECT_TYPE_SCHEMA = {
 };
 
 /** Render every named field + the escape-hatch `properties` into one map. */
-function gatherProps(params: Record<string, unknown>, vars: Record<string, unknown>): Record<string, string> {
+function gatherProps(
+  params: Record<string, unknown>,
+  vars: Record<string, unknown>,
+): Record<string, string> {
   const props: Record<string, string> = {};
   const escape = params.properties;
   if (escape && typeof escape === 'object') {
@@ -96,7 +102,9 @@ function requireChannel(
 ): { channel: HubSpotChannel; token: string } {
   const channel = deps.getChannel();
   if (!channel) {
-    throw new Error(`${actionName} — HubSpot is not configured. Connect HubSpot in Integrations first.`);
+    throw new Error(
+      `${actionName} — HubSpot is not configured. Connect HubSpot in Integrations first.`,
+    );
   }
   const token = channel.getAccessToken();
   if (!token) {
@@ -105,15 +113,25 @@ function requireChannel(
   return { channel, token };
 }
 
-function resolveObjectType(params: Record<string, unknown>, vars: Record<string, unknown>, actionName: string): CrmObjectType {
-  const raw = renderTemplate(String(params.object_type ?? ''), vars).trim().toLowerCase();
+function resolveObjectType(
+  params: Record<string, unknown>,
+  vars: Record<string, unknown>,
+  actionName: string,
+): CrmObjectType {
+  const raw = renderTemplate(String(params.object_type ?? ''), vars)
+    .trim()
+    .toLowerCase();
   if (!isCrmObjectType(raw)) {
-    throw new Error(`${actionName} — object_type must be one of ${CRM_OBJECT_TYPES.join(', ')} (got "${raw}").`);
+    throw new Error(
+      `${actionName} — object_type must be one of ${CRM_OBJECT_TYPES.join(', ')} (got "${raw}").`,
+    );
   }
   return raw;
 }
 
-function availability(deps: { getChannel: () => HubSpotChannel | null }): 'available' | 'not_connected' {
+function availability(deps: {
+  getChannel: () => HubSpotChannel | null;
+}): 'available' | 'not_connected' {
   const ch = deps.getChannel();
   if (!ch) return 'not_connected';
   return ch.isConnected() ? 'available' : 'not_connected';
@@ -139,7 +157,10 @@ export function createHubSpotListObjectsAction(deps: {
     },
     chatExamples: [
       { en: 'List my HubSpot companies.', es: 'Lista mis empresas de HubSpot.' },
-      { en: 'Show the HubSpot deals in the sales pipeline.', es: 'Muéstrame los negocios de HubSpot del pipeline de ventas.' },
+      {
+        en: 'Show the HubSpot deals in the sales pipeline.',
+        es: 'Muéstrame los negocios de HubSpot del pipeline de ventas.',
+      },
     ],
     availabilityCheck: () => availability(deps),
     setupHref: 'integrations#hubspot',
@@ -148,12 +169,30 @@ export function createHubSpotListObjectsAction(deps: {
       type: 'object',
       properties: {
         object_type: OBJECT_TYPE_SCHEMA,
-        query: { type: 'string', description: 'Free-text search across the object. Optional. Templated.' },
-        email: { type: 'string', description: 'Filter contacts by exact email. Optional. Templated.' },
-        domain: { type: 'string', description: 'Filter companies by exact domain. Optional. Templated.' },
-        name: { type: 'string', description: 'Filter companies by exact name. Optional. Templated.' },
-        dealstage: { type: 'string', description: 'Filter deals by stage id. Optional. Templated.' },
-        pipeline: { type: 'string', description: 'Filter deals by pipeline id. Optional. Templated.' },
+        query: {
+          type: 'string',
+          description: 'Free-text search across the object. Optional. Templated.',
+        },
+        email: {
+          type: 'string',
+          description: 'Filter contacts by exact email. Optional. Templated.',
+        },
+        domain: {
+          type: 'string',
+          description: 'Filter companies by exact domain. Optional. Templated.',
+        },
+        name: {
+          type: 'string',
+          description: 'Filter companies by exact name. Optional. Templated.',
+        },
+        dealstage: {
+          type: 'string',
+          description: 'Filter deals by stage id. Optional. Templated.',
+        },
+        pipeline: {
+          type: 'string',
+          description: 'Filter deals by pipeline id. Optional. Templated.',
+        },
         limit: { type: 'number', description: 'Max records to return. Default 50, capped at 100.' },
       },
       required: ['object_type'],
@@ -187,7 +226,8 @@ export function createHubSpotListObjectsAction(deps: {
       const type = resolveObjectType(params, vars, 'HubSpot: List Objects');
 
       const query = renderTemplate(String(params.query ?? ''), vars).trim();
-      const rawLimit = typeof params.limit === 'string' ? parseInt(params.limit, 10) : (params.limit as number);
+      const rawLimit =
+        typeof params.limit === 'string' ? parseInt(params.limit, 10) : (params.limit as number);
       const limit = Number.isFinite(rawLimit) ? rawLimit : undefined;
 
       // Build EQ filters from any field the type recognizes as searchable.
@@ -199,7 +239,12 @@ export function createHubSpotListObjectsAction(deps: {
         }
       }
 
-      const res = await listCrmObjects(token, type, { query: query || undefined, filters, limit, signal: input.context.signal });
+      const res = await listCrmObjects(token, type, {
+        query: query || undefined,
+        filters,
+        limit,
+        signal: input.context.signal,
+      });
       if (res.error) {
         input.context.log(`HubSpot list_objects (${type}) failed: ${res.error}`);
         return {
@@ -243,8 +288,14 @@ export function createHubSpotCreateObjectAction(deps: {
       es: 'Crea una empresa o un negocio en HubSpot — o un contacto (que se asocia por correo/teléfono si ya existe). Devuelve el id del registro y un enlace.',
     },
     chatExamples: [
-      { en: 'Add the company Acme (acme.com) to HubSpot.', es: 'Agrega la empresa Acme (acme.com) a HubSpot.' },
-      { en: 'Create a HubSpot deal called Q3 Renewal for 5000.', es: 'Crea un negocio de HubSpot llamado Renovación Q3 por 5000.' },
+      {
+        en: 'Add the company Acme (acme.com) to HubSpot.',
+        es: 'Agrega la empresa Acme (acme.com) a HubSpot.',
+      },
+      {
+        en: 'Create a HubSpot deal called Q3 Renewal for 5000.',
+        es: 'Crea un negocio de HubSpot llamado Renovación Q3 por 5000.',
+      },
     ],
     availabilityCheck: () => availability(deps),
     setupHref: 'integrations#hubspot',
@@ -256,7 +307,8 @@ export function createHubSpotCreateObjectAction(deps: {
         ...NAMED_FIELD_SCHEMA,
         properties: {
           type: 'object',
-          description: 'Escape hatch: extra HubSpot internal property names → values for fields not listed above.',
+          description:
+            'Escape hatch: extra HubSpot internal property names → values for fields not listed above.',
         },
       },
       required: ['object_type'],
@@ -280,10 +332,18 @@ export function createHubSpotCreateObjectAction(deps: {
       const type = resolveObjectType(params, vars, 'HubSpot: Create Object');
 
       const props = gatherProps(params, vars);
-      const result = await createCrmObject(token, type, props, input.context.signal, (m) => input.context.log(m));
+      const result = await createCrmObject(token, type, props, input.context.signal, (m) =>
+        input.context.log(m),
+      );
       if (result.error || !result.id) {
         return {
-          data: { object_type: type, id: result.id, created: false, url: null, error: result.error },
+          data: {
+            object_type: type,
+            id: result.id,
+            created: false,
+            url: null,
+            error: result.error,
+          },
           summary: `HubSpot create ${type} failed: ${result.error ?? 'no id returned'}`,
         };
       }
@@ -320,8 +380,14 @@ export function createHubSpotUpdateObjectAction(deps: {
       es: 'Actualiza campos de un contacto, empresa o negocio existente de HubSpot por su id. Devuelve el id del registro y un enlace.',
     },
     chatExamples: [
-      { en: 'Update HubSpot deal 12345, set the amount to 8000.', es: 'Actualiza el negocio de HubSpot 12345, cambia el monto a 8000.' },
-      { en: 'Change company 678 industry to Software.', es: 'Cambia la industria de la empresa 678 a Software.' },
+      {
+        en: 'Update HubSpot deal 12345, set the amount to 8000.',
+        es: 'Actualiza el negocio de HubSpot 12345, cambia el monto a 8000.',
+      },
+      {
+        en: 'Change company 678 industry to Software.',
+        es: 'Cambia la industria de la empresa 678 a Software.',
+      },
     ],
     availabilityCheck: () => availability(deps),
     setupHref: 'integrations#hubspot',
@@ -334,7 +400,8 @@ export function createHubSpotUpdateObjectAction(deps: {
         ...NAMED_FIELD_SCHEMA,
         properties: {
           type: 'object',
-          description: 'Escape hatch: extra HubSpot internal property names → values for fields not listed above.',
+          description:
+            'Escape hatch: extra HubSpot internal property names → values for fields not listed above.',
         },
       },
       required: ['object_type', 'object_id'],
@@ -360,10 +427,18 @@ export function createHubSpotUpdateObjectAction(deps: {
       if (!id) throw new Error('HubSpot: Update Object — object_id is required.');
 
       const props = gatherProps(params, vars);
-      const result = await updateCrmObject(token, type, id, props, input.context.signal, (m) => input.context.log(m));
+      const result = await updateCrmObject(token, type, id, props, input.context.signal, (m) =>
+        input.context.log(m),
+      );
       if (result.error || !result.id) {
         return {
-          data: { object_type: type, id: result.id, updated: false, url: null, error: result.error },
+          data: {
+            object_type: type,
+            id: result.id,
+            updated: false,
+            url: null,
+            error: result.error,
+          },
           summary: `HubSpot update ${type} failed: ${result.error ?? 'unknown error'}`,
         };
       }
@@ -433,7 +508,9 @@ export function createHubSpotDeleteObjectAction(deps: {
       const id = renderTemplate(String(params.object_id ?? ''), vars).trim();
       if (!id) throw new Error('HubSpot: Delete Object — object_id is required.');
 
-      const result = await deleteCrmObject(token, type, id, input.context.signal, (m) => input.context.log(m));
+      const result = await deleteCrmObject(token, type, id, input.context.signal, (m) =>
+        input.context.log(m),
+      );
       if (!result.ok) {
         return {
           data: { object_type: type, id, deleted: false, error: result.error },

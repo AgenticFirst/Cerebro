@@ -74,7 +74,11 @@ export class TelegramApi {
     return this.call('getMe', {});
   }
 
-  async getUpdates(offset: number, timeoutSec: number, signal?: AbortSignal): Promise<TelegramUpdate[]> {
+  async getUpdates(
+    offset: number,
+    timeoutSec: number,
+    signal?: AbortSignal,
+  ): Promise<TelegramUpdate[]> {
     this.abortController = new AbortController();
     const combined = combineSignals(signal, this.abortController.signal);
     return this.call<TelegramUpdate[]>(
@@ -110,7 +114,10 @@ export class TelegramApi {
     });
   }
 
-  async sendChatAction(chatId: number | string, action: 'typing' | 'upload_photo'): Promise<boolean> {
+  async sendChatAction(
+    chatId: number | string,
+    action: 'typing' | 'upload_photo',
+  ): Promise<boolean> {
     return this.call('sendChatAction', { chat_id: chatId, action });
   }
 
@@ -127,24 +134,44 @@ export class TelegramApi {
   // disk rather than base64-blob it through JSON. Telegram caps photos at
   // 10 MB and other files at 50 MB.
 
-  async sendPhoto(chatId: number | string, filePath: string, caption?: string): Promise<TelegramSentMessage> {
+  async sendPhoto(
+    chatId: number | string,
+    filePath: string,
+    caption?: string,
+  ): Promise<TelegramSentMessage> {
     return this.callMultipart('sendPhoto', chatId, 'photo', filePath, caption);
   }
 
-  async sendDocument(chatId: number | string, filePath: string, caption?: string): Promise<TelegramSentMessage> {
+  async sendDocument(
+    chatId: number | string,
+    filePath: string,
+    caption?: string,
+  ): Promise<TelegramSentMessage> {
     return this.callMultipart('sendDocument', chatId, 'document', filePath, caption);
   }
 
-  async sendAudio(chatId: number | string, filePath: string, caption?: string): Promise<TelegramSentMessage> {
+  async sendAudio(
+    chatId: number | string,
+    filePath: string,
+    caption?: string,
+  ): Promise<TelegramSentMessage> {
     return this.callMultipart('sendAudio', chatId, 'audio', filePath, caption);
   }
 
-  async sendVideo(chatId: number | string, filePath: string, caption?: string): Promise<TelegramSentMessage> {
+  async sendVideo(
+    chatId: number | string,
+    filePath: string,
+    caption?: string,
+  ): Promise<TelegramSentMessage> {
     return this.callMultipart('sendVideo', chatId, 'video', filePath, caption);
   }
 
   /** Voice notes — single OGG opus file, displayed inline as a waveform. */
-  async sendVoice(chatId: number | string, filePath: string, caption?: string): Promise<TelegramSentMessage> {
+  async sendVoice(
+    chatId: number | string,
+    filePath: string,
+    caption?: string,
+  ): Promise<TelegramSentMessage> {
     return this.callMultipart('sendVoice', chatId, 'voice', filePath, caption);
   }
 
@@ -175,7 +202,11 @@ export class TelegramApi {
     const url = `${BASE}/bot${this.token}/${method}`;
     const stat = statSync(filePath);
     if (stat.size > 50 * 1024 * 1024) {
-      throw new TelegramApiError(method, 413, `file too large for Telegram (${stat.size} bytes; cap is 50 MB)`);
+      throw new TelegramApiError(
+        method,
+        413,
+        `file too large for Telegram (${stat.size} bytes; cap is 50 MB)`,
+      );
     }
 
     // Build a Blob from the file bytes. We read fully into memory because
@@ -207,7 +238,11 @@ export class TelegramApi {
       throw new TelegramApiError(method, res.status, `non-JSON response (${res.status})`);
     }
     if (!json.ok || json.result === undefined) {
-      throw new TelegramApiError(method, json.error_code ?? res.status, json.description ?? 'unknown error');
+      throw new TelegramApiError(
+        method,
+        json.error_code ?? res.status,
+        json.description ?? 'unknown error',
+      );
     }
     return json.result;
   }
@@ -220,11 +255,17 @@ export class TelegramApi {
       throw new TelegramApiError('downloadFile', res.status, `download failed (${res.status})`);
     }
     // Node 20's fetch returns a Web ReadableStream — convert to Node Readable for pipeline.
-    const nodeStream = Readable.fromWeb(res.body as unknown as import('node:stream/web').ReadableStream);
+    const nodeStream = Readable.fromWeb(
+      res.body as unknown as import('node:stream/web').ReadableStream,
+    );
     await pipeline(nodeStream, createWriteStream(destPath));
   }
 
-  private async call<T>(method: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  private async call<T>(
+    method: string,
+    body: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const url = `${BASE}/bot${this.token}/${method}`;
     let res: Response;
     try {
@@ -247,7 +288,11 @@ export class TelegramApi {
     }
 
     if (!json.ok || json.result === undefined) {
-      throw new TelegramApiError(method, json.error_code ?? res.status, json.description ?? 'unknown error');
+      throw new TelegramApiError(
+        method,
+        json.error_code ?? res.status,
+        json.description ?? 'unknown error',
+      );
     }
     return json.result;
   }
@@ -275,9 +320,11 @@ export function escapeMarkdownV2(s: string): string {
 /** Build an Approve/Deny inline keyboard for an approval id. */
 export function approvalKeyboard(approvalId: string): InlineKeyboardMarkup {
   return {
-    inline_keyboard: [[
-      { text: 'Approve ✓', callback_data: `approve:${approvalId}` },
-      { text: 'Deny ✗', callback_data: `deny:${approvalId}` },
-    ]],
+    inline_keyboard: [
+      [
+        { text: 'Approve ✓', callback_data: `approve:${approvalId}` },
+        { text: 'Deny ✗', callback_data: `deny:${approvalId}` },
+      ],
+    ],
   };
 }

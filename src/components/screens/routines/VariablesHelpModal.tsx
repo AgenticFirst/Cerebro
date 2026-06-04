@@ -45,15 +45,7 @@ function ExampleCard({
   );
 }
 
-function Step({
-  n,
-  title,
-  body,
-}: {
-  n: number;
-  title: string;
-  body: React.ReactNode;
-}) {
+function Step({ n, title, body }: { n: number; title: string; body: React.ReactNode }) {
   return (
     <li className="flex gap-3">
       <span className="flex-shrink-0 w-5 h-5 rounded-full bg-accent/10 text-accent text-[10px] font-semibold flex items-center justify-center">
@@ -61,9 +53,7 @@ function Step({
       </span>
       <div className="flex-1 min-w-0">
         <div className="text-xs font-medium text-text-primary">{title}</div>
-        <div className="text-[11px] text-text-secondary leading-relaxed mt-0.5">
-          {body}
-        </div>
+        <div className="text-[11px] text-text-secondary leading-relaxed mt-0.5">{body}</div>
       </div>
     </li>
   );
@@ -75,10 +65,7 @@ export default function VariablesHelpModal({ onClose }: VariablesHelpModalProps)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
       {/* Dialog */}
       <div className="relative bg-bg-surface border border-border-subtle rounded-xl shadow-2xl w-full max-w-lg mx-4 animate-fade-in max-h-[85vh] overflow-y-auto scrollbar-thin">
@@ -96,15 +83,12 @@ export default function VariablesHelpModal({ onClose }: VariablesHelpModalProps)
             <div className="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
               <Sparkles size={16} className="text-accent" />
             </div>
-            <h3 className="text-sm font-medium text-text-primary">
-              {t('variablesHelp.title')}
-            </h3>
+            <h3 className="text-sm font-medium text-text-primary">{t('variablesHelp.title')}</h3>
           </div>
 
           {/* Intro */}
           <p className="text-xs text-text-secondary leading-relaxed mb-4">
-            {t('variablesHelp.introBefore')}{' '}
-            <Chip>{'{{name}}'}</Chip>{' '}
+            {t('variablesHelp.introBefore')} <Chip>{'{{name}}'}</Chip>{' '}
             {t('variablesHelp.introAfter')}
           </p>
 
@@ -142,8 +126,7 @@ export default function VariablesHelpModal({ onClose }: VariablesHelpModalProps)
                     label: t('variablesHelp.step2BodyLabel'),
                     value: (
                       <>
-                        {t('variablesHelp.step2BodyPrefix')}{' '}
-                        <Chip>{'{{summarize_email}}'}</Chip>
+                        {t('variablesHelp.step2BodyPrefix')} <Chip>{'{{summarize_email}}'}</Chip>
                       </>
                     ),
                   },
@@ -151,8 +134,7 @@ export default function VariablesHelpModal({ onClose }: VariablesHelpModalProps)
                     label: t('variablesHelp.step2RuntimeLabel'),
                     value: (
                       <em>
-                        "{t('variablesHelp.step2BodyPrefix')}{' '}
-                        {t('variablesHelp.step1OutputValue')}"
+                        "{t('variablesHelp.step2BodyPrefix')} {t('variablesHelp.step1OutputValue')}"
                       </em>
                     ),
                   },
@@ -170,18 +152,13 @@ export default function VariablesHelpModal({ onClose }: VariablesHelpModalProps)
               {t('variablesHelp.howLabel')}
             </div>
             <ol className="space-y-2.5">
-              <Step
-                n={1}
-                title={t('variablesHelp.tip1Title')}
-                body={t('variablesHelp.tip1Body')}
-              />
+              <Step n={1} title={t('variablesHelp.tip1Title')} body={t('variablesHelp.tip1Body')} />
               <Step
                 n={2}
                 title={t('variablesHelp.tip2Title')}
                 body={
                   <>
-                    {t('variablesHelp.tip2BodyBefore')}{' '}
-                    <Chip>{'{{name}}'}</Chip>{' '}
+                    {t('variablesHelp.tip2BodyBefore')} <Chip>{'{{name}}'}</Chip>{' '}
                     {t('variablesHelp.tip2BodyAfter')}
                   </>
                 }
@@ -191,8 +168,7 @@ export default function VariablesHelpModal({ onClose }: VariablesHelpModalProps)
                 title={t('variablesHelp.tip3Title')}
                 body={
                   <>
-                    {t('variablesHelp.tip3BodyBefore')}{' '}
-                    <Chip>{'{{name}}'}</Chip>{' '}
+                    {t('variablesHelp.tip3BodyBefore')} <Chip>{'{{name}}'}</Chip>{' '}
                     {t('variablesHelp.tip3BodyAfter')}
                   </>
                 }

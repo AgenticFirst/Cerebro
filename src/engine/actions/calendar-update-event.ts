@@ -37,7 +37,10 @@ export function createCalendarUpdateEventAction(deps: {
       es: 'Cambia la hora, título, ubicación u otros detalles de un evento existente. Úsalo para reprogramar ("mueve mi reunión de las 3 al viernes").',
     },
     chatExamples: [
-      { en: 'Move my 3pm meeting to Friday at the same time.', es: 'Mueve mi reunión de las 3pm al viernes a la misma hora.' },
+      {
+        en: 'Move my 3pm meeting to Friday at the same time.',
+        es: 'Mueve mi reunión de las 3pm al viernes a la misma hora.',
+      },
       { en: 'Rename the standup to "Daily sync".', es: 'Renombra el standup a "Daily sync".' },
     ],
     availabilityCheck: () => {
@@ -50,7 +53,10 @@ export function createCalendarUpdateEventAction(deps: {
     inputSchema: {
       type: 'object',
       properties: {
-        event_id: { type: 'string', description: 'Id of the event to update (from calendar_query_events).' },
+        event_id: {
+          type: 'string',
+          description: 'Id of the event to update (from calendar_query_events).',
+        },
         title: { type: 'string' },
         start: { type: 'string', description: 'New start, ISO 8601.' },
         end: { type: 'string', description: 'New end, ISO 8601.' },
@@ -95,7 +101,10 @@ export function createCalendarUpdateEventAction(deps: {
       const res = await channel.updateEvent(eventId, patch);
       if (!res.ok) {
         input.context.log(`Calendar update failed: ${res.error}`);
-        return { data: { updated: false, error: res.error ?? 'unknown' }, summary: `Calendar update failed: ${res.error}` };
+        return {
+          data: { updated: false, error: res.error ?? 'unknown' },
+          summary: `Calendar update failed: ${res.error}`,
+        };
       }
       input.context.log(`Updated calendar event ${eventId}`);
       return { data: { updated: true, error: null }, summary: `Updated calendar event` };

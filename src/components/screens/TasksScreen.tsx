@@ -12,12 +12,9 @@ export default function TasksScreen() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const selectedTask = selectedTaskId ? tasks.find((x) => x.id === selectedTaskId) ?? null : null;
+  const selectedTask = selectedTaskId ? (tasks.find((x) => x.id === selectedTaskId) ?? null) : null;
 
-  const handleCardClick = useCallback(
-    (task: Task) => setSelectedTaskId(task.id),
-    [],
-  );
+  const handleCardClick = useCallback((task: Task) => setSelectedTaskId(task.id), []);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -36,10 +33,7 @@ export default function TasksScreen() {
         <KanbanBoard onCardClick={handleCardClick} />
       </div>
 
-      <TaskDetailDrawer
-        task={selectedTask}
-        onClose={() => setSelectedTaskId(null)}
-      />
+      <TaskDetailDrawer task={selectedTask} onClose={() => setSelectedTaskId(null)} />
 
       <NewTaskDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
     </div>

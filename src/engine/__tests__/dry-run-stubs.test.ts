@@ -33,7 +33,9 @@ function makeInput(params: Record<string, unknown> = {}): ActionInput {
       backendPort: 0,
       signal: new AbortController().signal,
       log: (m) => logs.push(m),
-      emitEvent: () => {/* noop */},
+      emitEvent: () => {
+        /* noop */
+      },
     },
   };
 }

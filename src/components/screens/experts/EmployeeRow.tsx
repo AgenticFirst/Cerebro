@@ -31,9 +31,7 @@ export default function EmployeeRow({
       onContextMenu={onContextMenu}
       className={clsx(
         'expert-node group w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors',
-        isSelected
-          ? 'bg-accent/10 ring-1 ring-accent/40'
-          : 'hover:bg-bg-hover',
+        isSelected ? 'bg-accent/10 ring-1 ring-accent/40' : 'hover:bg-bg-hover',
         !isEnabled && 'opacity-50',
       )}
     >
@@ -62,15 +60,9 @@ export default function EmployeeRow({
           {expert.name}
         </span>
         {expert.isVerified && (
-          <BadgeCheck
-            size={11}
-            className="text-accent flex-shrink-0"
-            strokeWidth={2.25}
-          />
+          <BadgeCheck size={11} className="text-accent flex-shrink-0" strokeWidth={2.25} />
         )}
-        {expert.isPinned && (
-          <Pin size={10} className="text-accent flex-shrink-0" />
-        )}
+        {expert.isPinned && <Pin size={10} className="text-accent flex-shrink-0" />}
       </div>
 
       {role && (

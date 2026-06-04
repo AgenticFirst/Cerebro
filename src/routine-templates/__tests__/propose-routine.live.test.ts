@@ -67,7 +67,9 @@ beforeAll(async () => {
   }
   mockServer = http.createServer((req, res) => {
     let body = '';
-    req.on('data', (c) => { body += c; });
+    req.on('data', (c) => {
+      body += c;
+    });
     req.on('end', () => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{}');
@@ -92,14 +94,14 @@ function makeMockWebContents() {
     isDestroyed: () => false,
     send: vi.fn(),
     ipc: { on: vi.fn(), removeListener: vi.fn() },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
 function makeMockRuntime() {
   return {
     startRun: vi.fn(),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
@@ -259,7 +261,9 @@ d('propose-routine — Haiku drafts and dry-run validates', () => {
       const result = await makeEngine().dryRunRoutine(makeMockWebContents(), { dag: draft.dag });
       expect(result.error).toBeUndefined();
       expect(result.ok).toBe(true);
-      expect(result.steps.every((s) => s.status === 'completed' || s.status === 'skipped')).toBe(true);
+      expect(result.steps.every((s) => s.status === 'completed' || s.status === 'skipped')).toBe(
+        true,
+      );
     },
     TIMEOUT,
   );
@@ -268,7 +272,7 @@ d('propose-routine — Haiku drafts and dry-run validates', () => {
     'telegram-trigger routine: classify inbound message and reply',
     async () => {
       const draft = await draftRoutineWithHaiku(
-        'When a Telegram message arrives, classify whether it\'s a question or a complaint. If it\'s a complaint, send a reply on Telegram saying "We\'re on it" to the same chat.',
+        "When a Telegram message arrives, classify whether it's a question or a complaint. If it's a complaint, send a reply on Telegram saying \"We're on it\" to the same chat.",
       );
 
       expect(draft.trigger_type).toBe('telegram_message');
@@ -305,7 +309,7 @@ d('propose-routine — Haiku drafts and dry-run validates', () => {
     'whatsapp-trigger routine: HubSpot ticket on complaint',
     async () => {
       const draft = await draftRoutineWithHaiku(
-        'When a WhatsApp message arrives, decide if it\'s a complaint. If yes, create a HubSpot ticket with the message body as the description, and reply on WhatsApp letting them know we got it.',
+        "When a WhatsApp message arrives, decide if it's a complaint. If yes, create a HubSpot ticket with the message body as the description, and reply on WhatsApp letting them know we got it.",
       );
 
       expect(draft.trigger_type).toBe('whatsapp_message');

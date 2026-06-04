@@ -39,7 +39,8 @@ export const askAiAction: ActionDefinition = {
     properties: {
       prompt: {
         type: 'string',
-        description: 'Message sent to the AI. Use {{variable}} to insert values from upstream steps.',
+        description:
+          'Message sent to the AI. Use {{variable}} to insert values from upstream steps.',
       },
       system_prompt: {
         type: 'string',
@@ -74,23 +75,19 @@ export const askAiAction: ActionDefinition = {
     const systemPrompt = renderTemplate(params.system_prompt ?? '', vars);
 
     if (!prompt.trim()) {
-      throw new Error('Ask AI: prompt is empty. Enter an instruction or wire one in from an upstream step.');
+      throw new Error(
+        'Ask AI: prompt is empty. Enter an instruction or wire one in from an upstream step.',
+      );
     }
 
     // Routine-shape preface. Same logic as run_expert: if this Ask AI
     // step lives inside a multi-step DAG, tell the model where it sits
     // and what downstream steps will do — so it produces the deliverable
     // they need instead of trying to perform their work itself.
-    const routinePreface = context.dag
-      ? buildRoutineContext(context.dag, context.stepId)
-      : '';
+    const routinePreface = context.dag ? buildRoutineContext(context.dag, context.stepId) : '';
 
     // Final prompt: [workflow context] + [system_prompt] + [user prompt].
-    const fullPrompt = [
-      routinePreface,
-      systemPrompt,
-      prompt,
-    ]
+    const fullPrompt = [routinePreface, systemPrompt, prompt]
       .map((s) => (s ?? '').trim())
       .filter((s) => s.length > 0)
       .join('\n\n---\n\n');
@@ -105,9 +102,7 @@ export const askAiAction: ActionDefinition = {
 
     context.log(response);
 
-    const summary = response.length > 80
-      ? response.slice(0, 77) + '...'
-      : response;
+    const summary = response.length > 80 ? response.slice(0, 77) + '...' : response;
 
     return {
       data: { response },
