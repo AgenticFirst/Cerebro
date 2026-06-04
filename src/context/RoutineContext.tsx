@@ -48,7 +48,10 @@ const SCHEDULE_FIELDS = new Set(['trigger_type', 'cron_expression', 'is_enabled'
 export function RoutineProvider({ children }: { children: ReactNode }) {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [total, setTotal] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
+  // Start in the loading state: RoutineList always kicks off a load on mount,
+  // so the first frame must show the spinner rather than briefly flashing the
+  // "No routines yet" empty placeholder before the load begins (issue #55).
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
   const runCallbackRef = useRef<RunRoutineCallback | null>(null);
