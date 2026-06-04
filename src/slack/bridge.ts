@@ -1203,9 +1203,8 @@ export class SlackBridge implements SlackChannel {
     //    "thinking…" placeholder and the answer under the original message
     //    instead of cluttering the channel with separate top-level posts.
     //    DMs stay at the channel top level (no thread side panel).
-    const threadTsForReply = ctx.surface === 'app_mention'
-      ? (ctx.threadTs ?? ctx.ts)
-      : ctx.threadTs;
+    const threadTsForReply =
+      ctx.surface === 'app_mention' ? (ctx.threadTs ?? ctx.ts) : ctx.threadTs;
     const bumpActivity = () => {
       const r = this.activeRuns.get(key);
       if (r) r.lastActivityAt = Date.now();
