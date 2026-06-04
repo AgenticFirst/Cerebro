@@ -844,9 +844,10 @@ export class SlackBridge implements SlackChannel {
           channelType: 'channel',
           userId: event.user ?? '',
           ts: event.ts,
-          // Only set when Slack actually delivered a thread_ts (i.e. the
-          // mention was inside an existing thread). Leaving it undefined
-          // makes our reply land at the channel top level.
+          // Carries Slack's literal thread_ts — only present when the mention
+          // was already inside a thread. handleInbound falls back to `ts` as
+          // the thread root for top-level mentions so the reply still lands in
+          // the mention's thread rather than at the channel top level.
           threadTs: event.thread_ts,
           text: stripped,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1116,11 +1117,16 @@ export class SlackBridge implements SlackChannel {
       return;
     }
 
-    // 9. Start the agent run. Reply lands at the channel/DM top level unless
-    //    the inbound message was already inside an existing thread — keeps
-    //    Cerebro from forcing users to open a thread side panel for every
-    //    DM or top-level @mention.
-    const threadTsForReply = ctx.threadTs;
+    // 9. Start the agent run. Channel @mentions always reply inside the
+    //    triggering message's thread — Slack only delivers `thread_ts` when the
+    //    mention was already in a thread, so for a top-level mention we fall
+    //    back to the mention's own `ts` as the thread root. That keeps the
+    //    "thinking…" placeholder and the answer under the original message
+    //    instead of cluttering the channel with separate top-level posts.
+    //    DMs stay at the channel top level (no thread side panel).
+    const threadTsForReply = ctx.surface === 'app_mention'
+      ? (ctx.threadTs ?? ctx.ts)
+      : ctx.threadTs;
     const bumpActivity = () => {
       const r = this.activeRuns.get(key);
       if (r) r.lastActivityAt = Date.now();
