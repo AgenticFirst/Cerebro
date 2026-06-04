@@ -41,22 +41,21 @@ describe('markdownToMrkdwn', () => {
   });
 
   it('converts ATX headers to bold', () => {
-    expect(markdownToMrkdwn('## ⚡ Acciones directas'))
-      .toBe('*⚡ Acciones directas*');
-    expect(markdownToMrkdwn('# H1\n## H2\n### H3'))
-      .toBe('*H1*\n*H2*\n*H3*');
+    expect(markdownToMrkdwn('## ⚡ Acciones directas')).toBe('*⚡ Acciones directas*');
+    expect(markdownToMrkdwn('# H1\n## H2\n### H3')).toBe('*H1*\n*H2*\n*H3*');
   });
 
   it('converts [text](url) links to <url|text>', () => {
-    expect(markdownToMrkdwn('see [docs](https://example.com/x) please'))
-      .toBe('see <https://example.com/x|docs> please');
+    expect(markdownToMrkdwn('see [docs](https://example.com/x) please')).toBe(
+      'see <https://example.com/x|docs> please',
+    );
   });
 
   it('converts image syntax to angle-bracket links', () => {
-    expect(markdownToMrkdwn('![alt](https://img.test/p.png)'))
-      .toBe('<https://img.test/p.png|alt>');
-    expect(markdownToMrkdwn('![](https://img.test/p.png)'))
-      .toBe('<https://img.test/p.png|https://img.test/p.png>');
+    expect(markdownToMrkdwn('![alt](https://img.test/p.png)')).toBe('<https://img.test/p.png|alt>');
+    expect(markdownToMrkdwn('![](https://img.test/p.png)')).toBe(
+      '<https://img.test/p.png|https://img.test/p.png>',
+    );
   });
 
   it('converts -, *, + bullet list markers to •', () => {
@@ -71,13 +70,11 @@ describe('markdownToMrkdwn', () => {
 
   it('protects fenced code blocks from inner transforms', () => {
     const md = 'before\n```\n**not bold** and [no link](x)\n```\nafter';
-    expect(markdownToMrkdwn(md))
-      .toBe('before\n```\n**not bold** and [no link](x)\n```\nafter');
+    expect(markdownToMrkdwn(md)).toBe('before\n```\n**not bold** and [no link](x)\n```\nafter');
   });
 
   it('protects inline code from inner transforms', () => {
-    expect(markdownToMrkdwn('use `**raw**` here'))
-      .toBe('use `**raw**` here');
+    expect(markdownToMrkdwn('use `**raw**` here')).toBe('use `**raw**` here');
   });
 
   it('converts GFM tables into fenced code blocks', () => {
@@ -113,24 +110,26 @@ describe('markdownToMrkdwn', () => {
       '- Cerrar el ciclo',
     ].join('\n');
     const out = markdownToMrkdwn(md);
-    expect(out).toBe([
-      '*Resumen*',
-      '',
-      '*Total*: 3 ítems.',
-      '',
-      '• Ver <https://r.test/1|reporte>',
-      '• Cerrar el ciclo',
-    ].join('\n'));
+    expect(out).toBe(
+      [
+        '*Resumen*',
+        '',
+        '*Total*: 3 ítems.',
+        '',
+        '• Ver <https://r.test/1|reporte>',
+        '• Cerrar el ciclo',
+      ].join('\n'),
+    );
   });
 
   it('preserves Spanish accents and ñ', () => {
-    expect(markdownToMrkdwn('**Año** con `ñ` y _más_ acentuación: áéíóú'))
-      .toBe('*Año* con `ñ` y _más_ acentuación: áéíóú');
+    expect(markdownToMrkdwn('**Año** con `ñ` y _más_ acentuación: áéíóú')).toBe(
+      '*Año* con `ñ` y _más_ acentuación: áéíóú',
+    );
   });
 
   it('does not turn list-leading * into italic afterwards', () => {
-    expect(markdownToMrkdwn('* item one\n* item two'))
-      .toBe('• item one\n• item two');
+    expect(markdownToMrkdwn('* item one\n* item two')).toBe('• item one\n• item two');
   });
 
   it('handles nested bold inside link text', () => {

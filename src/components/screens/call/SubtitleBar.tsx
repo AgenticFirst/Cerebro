@@ -31,9 +31,7 @@ export default function SubtitleBar({
 
   return (
     <div className="w-full max-w-2xl mx-auto px-4">
-      <div
-        className="bg-bg-elevated/80 backdrop-blur-sm border border-border-subtle rounded-xl px-5 py-3 animate-fade-in"
-      >
+      <div className="bg-bg-elevated/80 backdrop-blur-sm border border-border-subtle rounded-xl px-5 py-3 animate-fade-in">
         <p
           className={`text-sm leading-relaxed ${
             hasTranscription && !isExpertSpeaking

@@ -34,9 +34,7 @@ export default function SandboxBanner() {
           <Shield size={15} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-text-primary">
-            {t('sandboxBanner.title')}
-          </div>
+          <div className="text-sm font-medium text-text-primary">{t('sandboxBanner.title')}</div>
           <div className="text-xs text-text-secondary mt-0.5 leading-relaxed">
             {t('sandboxBanner.description')}
           </div>

@@ -22,8 +22,8 @@ export interface AvatarOption {
   group: string;
 }
 
-export const AVATAR_OPTIONS: AvatarOption[] = [...GENERATED_AVATAR_OPTIONS].sort(
-  (a, b) => a.label.localeCompare(b.label),
+export const AVATAR_OPTIONS: AvatarOption[] = [...GENERATED_AVATAR_OPTIONS].sort((a, b) =>
+  a.label.localeCompare(b.label),
 );
 
 const byId = new Map(AVATAR_OPTIONS.map((a) => [a.id, a]));

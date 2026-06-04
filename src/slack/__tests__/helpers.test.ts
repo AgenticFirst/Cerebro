@@ -23,8 +23,20 @@ import {
 describe('conversationKey', () => {
   it('keeps a DM stable across messages (ignores per-message ts)', () => {
     // The original bug: every DM message had a unique ts → a new conversation.
-    const first = conversationKey({ teamId: 'T1', channel: 'D1', channelType: 'im', userId: 'U1', ts: '1.000' });
-    const second = conversationKey({ teamId: 'T1', channel: 'D1', channelType: 'im', userId: 'U1', ts: '99.000' });
+    const first = conversationKey({
+      teamId: 'T1',
+      channel: 'D1',
+      channelType: 'im',
+      userId: 'U1',
+      ts: '1.000',
+    });
+    const second = conversationKey({
+      teamId: 'T1',
+      channel: 'D1',
+      channelType: 'im',
+      userId: 'U1',
+      ts: '99.000',
+    });
     expect(first.key).toBe('dm:T1:D1');
     expect(second.key).toBe(first.key);
     expect(first.surface).toBe('dm');
@@ -32,25 +44,57 @@ describe('conversationKey', () => {
   });
 
   it('keeps a DM stable even when a reply lands in a thread', () => {
-    const top = conversationKey({ teamId: 'T1', channel: 'D1', channelType: 'im', userId: 'U1', ts: '1.000' });
-    const threaded = conversationKey({ teamId: 'T1', channel: 'D1', channelType: 'im', userId: 'U1', ts: '5.000', threadTs: '2.000' });
+    const top = conversationKey({
+      teamId: 'T1',
+      channel: 'D1',
+      channelType: 'im',
+      userId: 'U1',
+      ts: '1.000',
+    });
+    const threaded = conversationKey({
+      teamId: 'T1',
+      channel: 'D1',
+      channelType: 'im',
+      userId: 'U1',
+      ts: '5.000',
+      threadTs: '2.000',
+    });
     expect(threaded.key).toBe(top.key);
   });
 
   it('keys a channel thread by its root and never rotates', () => {
-    const k = conversationKey({ teamId: 'T1', channel: 'C1', channelType: 'channel', userId: 'U1', ts: '5.000', threadTs: '2.000' });
+    const k = conversationKey({
+      teamId: 'T1',
+      channel: 'C1',
+      channelType: 'channel',
+      userId: 'U1',
+      ts: '5.000',
+      threadTs: '2.000',
+    });
     expect(k.key).toBe('thread:T1:C1:2.000');
     expect(k.surface).toBe('thread');
     expect(k.rotates).toBe(false);
   });
 
   it('keys a top-level channel @mention per channel+user and rotates', () => {
-    const k = conversationKey({ teamId: 'T1', channel: 'C1', channelType: 'channel', userId: 'U1', ts: '5.000' });
+    const k = conversationKey({
+      teamId: 'T1',
+      channel: 'C1',
+      channelType: 'channel',
+      userId: 'U1',
+      ts: '5.000',
+    });
     expect(k.key).toBe('mention:T1:C1:U1');
     expect(k.surface).toBe('mention');
     expect(k.rotates).toBe(true);
     // A different user in the same channel gets a distinct conversation.
-    const other = conversationKey({ teamId: 'T1', channel: 'C1', channelType: 'channel', userId: 'U2', ts: '5.000' });
+    const other = conversationKey({
+      teamId: 'T1',
+      channel: 'C1',
+      channelType: 'channel',
+      userId: 'U2',
+      ts: '5.000',
+    });
     expect(other.key).not.toBe(k.key);
   });
 });
@@ -94,7 +138,10 @@ describe('migrateConversationMap', () => {
 
 describe('parseAllowlistRaw', () => {
   it('parses Slack channel ids', () => {
-    expect(parseAllowlistRaw('C01ABCDEF, G01ABCDEF', 'channel')).toEqual(['C01ABCDEF', 'G01ABCDEF']);
+    expect(parseAllowlistRaw('C01ABCDEF, G01ABCDEF', 'channel')).toEqual([
+      'C01ABCDEF',
+      'G01ABCDEF',
+    ]);
   });
   it('parses Slack DM channel ids', () => {
     expect(parseAllowlistRaw('D01ABCDEF', 'channel')).toEqual(['D01ABCDEF']);
@@ -103,10 +150,10 @@ describe('parseAllowlistRaw', () => {
     expect(parseAllowlistRaw('U01ABCDEF W098XYZAB', 'user')).toEqual(['U01ABCDEF', 'W098XYZAB']);
   });
   it('strips <#C123|name> mention wrappers', () => {
-    expect(parseAllowlistRaw('<#C01ABCDEF|general>, <@U01ABCDEF>', 'channel'))
-      .toEqual(['C01ABCDEF']);
-    expect(parseAllowlistRaw('<#C01ABCDEF|general>, <@U01ABCDEF>', 'user'))
-      .toEqual(['U01ABCDEF']);
+    expect(parseAllowlistRaw('<#C01ABCDEF|general>, <@U01ABCDEF>', 'channel')).toEqual([
+      'C01ABCDEF',
+    ]);
+    expect(parseAllowlistRaw('<#C01ABCDEF|general>, <@U01ABCDEF>', 'user')).toEqual(['U01ABCDEF']);
   });
   it('keeps the literal wildcard', () => {
     expect(parseAllowlistRaw('*', 'channel')).toEqual(['*']);
@@ -145,11 +192,22 @@ describe('parseSlashCommandText', () => {
     expect(parseSlashCommandText('expert')).toEqual({ verb: 'expert', sub: 'list' });
     expect(parseSlashCommandText('expert list')).toEqual({ verb: 'expert', sub: 'list' });
     expect(parseSlashCommandText('expert clear')).toEqual({ verb: 'expert', sub: 'clear' });
-    expect(parseSlashCommandText('expert sales-coach')).toEqual({ verb: 'expert', sub: 'set', slug: 'sales-coach' });
-    expect(parseSlashCommandText('expert set sales-coach')).toEqual({ verb: 'expert', sub: 'set', slug: 'sales-coach' });
+    expect(parseSlashCommandText('expert sales-coach')).toEqual({
+      verb: 'expert',
+      sub: 'set',
+      slug: 'sales-coach',
+    });
+    expect(parseSlashCommandText('expert set sales-coach')).toEqual({
+      verb: 'expert',
+      sub: 'set',
+      slug: 'sales-coach',
+    });
   });
   it('treats free text as an ask', () => {
-    expect(parseSlashCommandText('what is our refund policy')).toEqual({ verb: 'ask', text: 'what is our refund policy' });
+    expect(parseSlashCommandText('what is our refund policy')).toEqual({
+      verb: 'ask',
+      text: 'what is our refund policy',
+    });
   });
 });
 
@@ -162,7 +220,9 @@ describe('chunkSlackText', () => {
     const chunks = chunkSlackText(long, 3500);
     expect(chunks.length).toBeGreaterThan(1);
     for (const c of chunks) expect(c.length).toBeLessThanOrEqual(3500);
-    expect(chunks.join(' ').replace(/\s+/g, ' ').replace(/^ /, '')).toBe(long.replace(/\s+/g, ' ').replace(/^ /, ''));
+    expect(chunks.join(' ').replace(/\s+/g, ' ').replace(/^ /, '')).toBe(
+      long.replace(/\s+/g, ' ').replace(/^ /, ''),
+    );
   });
   it('handles text without any whitespace', () => {
     const blob = 'x'.repeat(10000);
@@ -216,7 +276,9 @@ describe('stripBotMention', () => {
     expect(stripBotMention('<@U098ABC> hi', null)).toBe('<@U098ABC> hi');
   });
   it('leaves other mentions alone', () => {
-    expect(stripBotMention('<@U098ABC> say hi to <@U999XYZ>', 'U098ABC')).toBe('say hi to <@U999XYZ>');
+    expect(stripBotMention('<@U098ABC> say hi to <@U999XYZ>', 'U098ABC')).toBe(
+      'say hi to <@U999XYZ>',
+    );
   });
 });
 
@@ -262,26 +324,40 @@ describe('parseSlackTriggerRoutine', () => {
     expect(parseSlackTriggerRoutine({ ...rec({}), dag_json: null })).toBe(null);
   });
   it('returns null when triggerType is not slack', () => {
-    expect(parseSlackTriggerRoutine(rec({ trigger: { triggerType: 'trigger_telegram_message', config: { channel: 'C1' } } }))).toBe(null);
+    expect(
+      parseSlackTriggerRoutine(
+        rec({ trigger: { triggerType: 'trigger_telegram_message', config: { channel: 'C1' } } }),
+      ),
+    ).toBe(null);
   });
   it('parses a minimal slack trigger', () => {
-    const parsed = parseSlackTriggerRoutine(rec({
-      trigger: { triggerType: 'trigger_slack_message', config: { channel: 'C1' } },
-      steps: [],
-    }));
+    const parsed = parseSlackTriggerRoutine(
+      rec({
+        trigger: { triggerType: 'trigger_slack_message', config: { channel: 'C1' } },
+        steps: [],
+      }),
+    );
     expect(parsed).not.toBe(null);
     expect(parsed!.trigger.channel).toBe('C1');
     expect(parsed!.trigger.surface).toBe('any');
     expect(parsed!.trigger.filter_type).toBe('none');
   });
   it('respects optional surface and user_id', () => {
-    const parsed = parseSlackTriggerRoutine(rec({
-      trigger: {
-        triggerType: 'trigger_slack_message',
-        config: { channel: '*', user_id: 'U123', surface: 'app_mention', filter_type: 'keyword', filter_value: 'urgent' },
-      },
-      steps: [],
-    }));
+    const parsed = parseSlackTriggerRoutine(
+      rec({
+        trigger: {
+          triggerType: 'trigger_slack_message',
+          config: {
+            channel: '*',
+            user_id: 'U123',
+            surface: 'app_mention',
+            filter_type: 'keyword',
+            filter_value: 'urgent',
+          },
+        },
+        steps: [],
+      }),
+    );
     expect(parsed!.trigger.user_id).toBe('U123');
     expect(parsed!.trigger.surface).toBe('app_mention');
     expect(parsed!.trigger.filter_type).toBe('keyword');
@@ -318,28 +394,77 @@ describe('matchSlackRoutineTriggers', () => {
     trigger: { channel: 'C1', filter_type: 'none' as const, filter_value: '' },
   };
   it('matches a channel-specific routine', () => {
-    expect(matchSlackRoutineTriggers([baseRoutine], {
-      channel: 'C1', userId: 'U1', surface: 'app_mention', text: 'hi',
-    }).length).toBe(1);
+    expect(
+      matchSlackRoutineTriggers([baseRoutine], {
+        channel: 'C1',
+        userId: 'U1',
+        surface: 'app_mention',
+        text: 'hi',
+      }).length,
+    ).toBe(1);
   });
   it('rejects a routine for the wrong channel', () => {
-    expect(matchSlackRoutineTriggers([baseRoutine], {
-      channel: 'C2', userId: 'U1', surface: 'app_mention', text: 'hi',
-    }).length).toBe(0);
+    expect(
+      matchSlackRoutineTriggers([baseRoutine], {
+        channel: 'C2',
+        userId: 'U1',
+        surface: 'app_mention',
+        text: 'hi',
+      }).length,
+    ).toBe(0);
   });
   it('wildcard channel matches anything', () => {
-    expect(matchSlackRoutineTriggers([{ ...baseRoutine, trigger: { ...baseRoutine.trigger, channel: '*' } }], {
-      channel: 'C99', userId: 'U1', surface: 'message_im', text: 'hi',
-    }).length).toBe(1);
+    expect(
+      matchSlackRoutineTriggers(
+        [{ ...baseRoutine, trigger: { ...baseRoutine.trigger, channel: '*' } }],
+        {
+          channel: 'C99',
+          userId: 'U1',
+          surface: 'message_im',
+          text: 'hi',
+        },
+      ).length,
+    ).toBe(1);
   });
   it('user_id constraint narrows the match', () => {
     const r = { ...baseRoutine, trigger: { ...baseRoutine.trigger, user_id: 'U42' } };
-    expect(matchSlackRoutineTriggers([r], { channel: 'C1', userId: 'U42', surface: 'app_mention', text: 'hi' }).length).toBe(1);
-    expect(matchSlackRoutineTriggers([r], { channel: 'C1', userId: 'U99', surface: 'app_mention', text: 'hi' }).length).toBe(0);
+    expect(
+      matchSlackRoutineTriggers([r], {
+        channel: 'C1',
+        userId: 'U42',
+        surface: 'app_mention',
+        text: 'hi',
+      }).length,
+    ).toBe(1);
+    expect(
+      matchSlackRoutineTriggers([r], {
+        channel: 'C1',
+        userId: 'U99',
+        surface: 'app_mention',
+        text: 'hi',
+      }).length,
+    ).toBe(0);
   });
   it('surface constraint narrows the match', () => {
-    const r = { ...baseRoutine, trigger: { ...baseRoutine.trigger, surface: 'app_mention' as const } };
-    expect(matchSlackRoutineTriggers([r], { channel: 'C1', userId: 'U1', surface: 'app_mention', text: 'hi' }).length).toBe(1);
-    expect(matchSlackRoutineTriggers([r], { channel: 'C1', userId: 'U1', surface: 'message_im', text: 'hi' }).length).toBe(0);
+    const r = {
+      ...baseRoutine,
+      trigger: { ...baseRoutine.trigger, surface: 'app_mention' as const },
+    };
+    expect(
+      matchSlackRoutineTriggers([r], {
+        channel: 'C1',
+        userId: 'U1',
+        surface: 'app_mention',
+        text: 'hi',
+      }).length,
+    ).toBe(1);
+    expect(
+      matchSlackRoutineTriggers([r], {
+        channel: 'C1',
+        userId: 'U1',
+        surface: 'message_im',
+        text: 'hi',
+      }).length,
+    ).toBe(0);
   });
 });

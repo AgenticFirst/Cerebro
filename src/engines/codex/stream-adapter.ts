@@ -178,7 +178,8 @@ export class CodexRunner extends EventEmitter implements StreamingRunner {
       this.checkAuthFailure(text, runId);
       for (const raw of text.split('\n')) {
         const line = raw.trim();
-        if (line) this.emit('event', { type: 'subprocess_stderr', runId, line } as RendererAgentEvent);
+        if (line)
+          this.emit('event', { type: 'subprocess_stderr', runId, line } as RendererAgentEvent);
       }
     });
 

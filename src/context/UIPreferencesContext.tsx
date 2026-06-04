@@ -25,7 +25,9 @@ export function UIPreferencesProvider({ children }: { children: ReactNode }) {
       const saved = localStorage.getItem(STORAGE_KEY_SHOW_TOOL_CALLS);
       if (saved === 'true') return true;
       if (saved === 'false') return false;
-    } catch { /* private mode */ }
+    } catch {
+      /* private mode */
+    }
     return false;
   });
 
@@ -37,16 +39,25 @@ export function UIPreferencesProvider({ children }: { children: ReactNode }) {
         setShowToolCallsState((prev) => (prev === v ? prev : v));
       }
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const setShowToolCalls = useCallback((next: boolean) => {
     setShowToolCallsState(next);
-    try { localStorage.setItem(STORAGE_KEY_SHOW_TOOL_CALLS, String(next)); } catch { /* private mode */ }
+    try {
+      localStorage.setItem(STORAGE_KEY_SHOW_TOOL_CALLS, String(next));
+    } catch {
+      /* private mode */
+    }
     saveSetting(SETTING_KEY_SHOW_TOOL_CALLS, next);
   }, []);
 
-  const value = useMemo(() => ({ showToolCalls, setShowToolCalls }), [showToolCalls, setShowToolCalls]);
+  const value = useMemo(
+    () => ({ showToolCalls, setShowToolCalls }),
+    [showToolCalls, setShowToolCalls],
+  );
 
   return <UIPreferencesContext.Provider value={value}>{children}</UIPreferencesContext.Provider>;
 }

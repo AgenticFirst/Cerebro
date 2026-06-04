@@ -1,19 +1,59 @@
 export const TEXT_EXTENSIONS = new Set([
-  'md', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'csv',
-  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs',
-  'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp',
-  'css', 'scss', 'sass', 'less',
-  'sh', 'bash', 'zsh', 'fish',
-  'env', 'gitignore', 'dockerfile', 'log',
+  'md',
+  'txt',
+  'json',
+  'yaml',
+  'yml',
+  'toml',
+  'xml',
+  'csv',
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'mjs',
+  'cjs',
+  'py',
+  'rb',
+  'go',
+  'rs',
+  'java',
+  'c',
+  'cpp',
+  'h',
+  'hpp',
+  'css',
+  'scss',
+  'sass',
+  'less',
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'env',
+  'gitignore',
+  'dockerfile',
+  'log',
 ]);
 
 export const HTML_EXTENSIONS = new Set(['html', 'htm']);
-export const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'avif']);
+export const IMAGE_EXTENSIONS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'svg',
+  'ico',
+  'avif',
+]);
 export const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mov']);
 export const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'ogg']);
 export const PDF_EXTENSIONS = new Set(['pdf']);
 
-export function previewKindFor(ext: string): 'markdown' | 'html' | 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'binary' {
+export function previewKindFor(
+  ext: string,
+): 'markdown' | 'html' | 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'binary' {
   const e = ext.toLowerCase();
   if (e === 'md') return 'markdown';
   if (HTML_EXTENSIONS.has(e)) return 'html';

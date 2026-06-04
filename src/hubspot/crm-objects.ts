@@ -44,7 +44,16 @@ export const CRM_OBJECT_TYPES: CrmObjectType[] = ['contacts', 'companies', 'deal
 export const CRM_OBJECT_PROPS: Record<CrmObjectType, CrmObjectSpec> = {
   contacts: {
     searchable: ['email', 'firstname', 'lastname', 'phone', 'company', 'lifecyclestage'],
-    writable: ['email', 'firstname', 'lastname', 'phone', 'company', 'lifecyclestage', 'jobtitle', 'website'],
+    writable: [
+      'email',
+      'firstname',
+      'lastname',
+      'phone',
+      'company',
+      'lifecyclestage',
+      'jobtitle',
+      'website',
+    ],
     required: (p) => (p.email || p.phone ? null : 'A contact needs at least an email or phone.'),
     label: (p) => {
       const name = [p.firstname, p.lastname].filter(Boolean).join(' ').trim();
@@ -65,7 +74,15 @@ export const CRM_OBJECT_PROPS: Record<CrmObjectType, CrmObjectSpec> = {
   },
   deals: {
     searchable: ['dealname', 'amount', 'dealstage', 'pipeline', 'closedate', 'dealtype'],
-    writable: ['dealname', 'amount', 'dealstage', 'pipeline', 'closedate', 'dealtype', 'description'],
+    writable: [
+      'dealname',
+      'amount',
+      'dealstage',
+      'pipeline',
+      'closedate',
+      'dealtype',
+      'description',
+    ],
     required: (p) => (p.dealname ? null : 'A deal needs a dealname.'),
     label: (p) => {
       if (p.dealname && p.amount) return `${p.dealname} (${p.amount})`;
@@ -100,7 +117,11 @@ export function filterWritableProps(
 }
 
 /** Deep-link to a single record in the HubSpot UI, or null without a portal id. */
-export function crmObjectUrl(portalId: string | null, type: CrmObjectType, id: string): string | null {
+export function crmObjectUrl(
+  portalId: string | null,
+  type: CrmObjectType,
+  id: string,
+): string | null {
   if (!portalId) return null;
   return `https://app.hubspot.com/contacts/${portalId}/record/${CRM_OBJECT_PROPS[type].urlObjectId}/${id}`;
 }
@@ -136,14 +157,15 @@ export async function listCrmObjects(
   };
   if (opts.query) body.query = opts.query;
 
-  const res = await callHubSpotApi<{ results?: Array<{ id?: string; properties?: Record<string, string> }>; total?: number }>(
-    token,
-    `/crm/v3/objects/${type}/search`,
-    { method: 'POST', body, signal: opts.signal },
-  );
+  const res = await callHubSpotApi<{
+    results?: Array<{ id?: string; properties?: Record<string, string> }>;
+    total?: number;
+  }>(token, `/crm/v3/objects/${type}/search`, { method: 'POST', body, signal: opts.signal });
   if (!res.ok) return { results: [], total: 0, error: res.error };
   const results = (res.data?.results ?? [])
-    .filter((r): r is { id: string; properties?: Record<string, string> } => typeof r.id === 'string')
+    .filter(
+      (r): r is { id: string; properties?: Record<string, string> } => typeof r.id === 'string',
+    )
     .map((r) => ({ id: r.id, properties: r.properties ?? {} }));
   return { results, total: res.data?.total ?? results.length, error: null };
 }
@@ -192,7 +214,8 @@ export async function createCrmObject(
   log?: (msg: string) => void,
 ): Promise<MutateCrmObjectResult> {
   const { properties, dropped } = filterWritableProps(type, rawProps);
-  if (dropped.length) log?.(`HubSpot ${type} create: ignoring unsupported fields: ${dropped.join(', ')}`);
+  if (dropped.length)
+    log?.(`HubSpot ${type} create: ignoring unsupported fields: ${dropped.join(', ')}`);
 
   const missing = CRM_OBJECT_PROPS[type].required(properties);
   if (missing) return { id: null, properties, error: missing };
@@ -236,16 +259,21 @@ export async function updateCrmObject(
   log?: (msg: string) => void,
 ): Promise<MutateCrmObjectResult> {
   const { properties, dropped } = filterWritableProps(type, rawProps);
-  if (dropped.length) log?.(`HubSpot ${type} update: ignoring unsupported fields: ${dropped.join(', ')}`);
+  if (dropped.length)
+    log?.(`HubSpot ${type} update: ignoring unsupported fields: ${dropped.join(', ')}`);
   if (Object.keys(properties).length === 0) {
     return { id, properties, error: 'No updatable fields were provided.' };
   }
 
-  const res = await callHubSpotApi<{ id?: string }>(token, `/crm/v3/objects/${type}/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: { properties },
-    signal,
-  });
+  const res = await callHubSpotApi<{ id?: string }>(
+    token,
+    `/crm/v3/objects/${type}/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      body: { properties },
+      signal,
+    },
+  );
   if (!res.ok) {
     log?.(`HubSpot ${type} update ${res.status}: ${res.error}`);
     return { id: null, properties, error: res.error };

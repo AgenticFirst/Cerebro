@@ -16,7 +16,14 @@ interface KanbanColumnProps {
   onDeleteTask: (taskId: string) => void;
 }
 
-export default function KanbanColumn({ column, tasks, onCardClick, onMoveTask, onStartTask, onDeleteTask }: KanbanColumnProps) {
+export default function KanbanColumn({
+  column,
+  tasks,
+  onCardClick,
+  onMoveTask,
+  onStartTask,
+  onDeleteTask,
+}: KanbanColumnProps) {
   const { t } = useTranslation();
   const { createTask, liveTaskIds } = useTasks();
   const [isAdding, setIsAdding] = useState(false);
@@ -144,9 +151,7 @@ export default function KanbanColumn({ column, tasks, onCardClick, onMoveTask, o
         {tasks.length === 0 && !isAdding && (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 min-h-[120px]">
             <CheckCircle size={24} className="text-accent/40" />
-            <span className="text-xs text-text-tertiary">
-              {t('tasks.allClear')}
-            </span>
+            <span className="text-xs text-text-tertiary">{t('tasks.allClear')}</span>
           </div>
         )}
       </div>

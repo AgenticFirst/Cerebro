@@ -36,10 +36,7 @@ function runCommand(cmd: string, args: string[]): Promise<string> {
  */
 function getFallbackPaths(): string[] {
   const home = os.homedir();
-  const candidates = [
-    '/usr/local/bin/claude',
-    path.join(home, '.npm-global', 'bin', 'claude'),
-  ];
+  const candidates = ['/usr/local/bin/claude', path.join(home, '.npm-global', 'bin', 'claude')];
 
   // Expand ~/.nvm/versions/node/*/bin/claude
   const nvmVersionsDir = path.join(home, '.nvm', 'versions', 'node');

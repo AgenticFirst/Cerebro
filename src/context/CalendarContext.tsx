@@ -47,7 +47,10 @@ interface CalendarContextValue {
   refresh: () => Promise<void>;
   reloadAccounts: () => Promise<void>;
   createEvent: (input: CalendarEventInput) => Promise<{ ok: boolean; error?: string }>;
-  updateEvent: (eventId: string, patch: Partial<CalendarEventInput>) => Promise<{ ok: boolean; error?: string }>;
+  updateEvent: (
+    eventId: string,
+    patch: Partial<CalendarEventInput>,
+  ) => Promise<{ ok: boolean; error?: string }>;
   deleteEvent: (eventId: string) => Promise<{ ok: boolean; error?: string }>;
   rsvp: (eventId: string, response: RsvpResponse) => Promise<{ ok: boolean; error?: string }>;
 }
@@ -156,37 +159,52 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
 
   const goToday = useCallback(() => setAnchorDate(new Date()), []);
   const goToDate = useCallback((d: Date) => setAnchorDate(d), []);
-  const step = useCallback((dir: 1 | -1) => {
-    setAnchorDate((prev) => {
-      const next = new Date(prev);
-      if (viewMode === 'month') next.setMonth(next.getMonth() + dir);
-      else next.setDate(next.getDate() + dir * (viewMode === 'week' ? 7 : 1));
-      return next;
-    });
-  }, [viewMode]);
+  const step = useCallback(
+    (dir: 1 | -1) => {
+      setAnchorDate((prev) => {
+        const next = new Date(prev);
+        if (viewMode === 'month') next.setMonth(next.getMonth() + dir);
+        else next.setDate(next.getDate() + dir * (viewMode === 'week' ? 7 : 1));
+        return next;
+      });
+    },
+    [viewMode],
+  );
   const goPrev = useCallback(() => step(-1), [step]);
   const goNext = useCallback(() => step(1), [step]);
 
-  const createEvent = useCallback(async (input: CalendarEventInput) => {
-    const r = await window.cerebro.calendar.createEvent(input);
-    if (r.ok) await fetchEvents();
-    return { ok: r.ok, error: r.error };
-  }, [fetchEvents]);
-  const updateEvent = useCallback(async (eventId: string, patch: Partial<CalendarEventInput>) => {
-    const r = await window.cerebro.calendar.updateEvent(eventId, patch);
-    if (r.ok) await fetchEvents();
-    return { ok: r.ok, error: r.error };
-  }, [fetchEvents]);
-  const deleteEvent = useCallback(async (eventId: string) => {
-    const r = await window.cerebro.calendar.deleteEvent(eventId);
-    if (r.ok) await fetchEvents();
-    return r;
-  }, [fetchEvents]);
-  const rsvp = useCallback(async (eventId: string, response: RsvpResponse) => {
-    const r = await window.cerebro.calendar.rsvp(eventId, response);
-    if (r.ok) await fetchEvents();
-    return r;
-  }, [fetchEvents]);
+  const createEvent = useCallback(
+    async (input: CalendarEventInput) => {
+      const r = await window.cerebro.calendar.createEvent(input);
+      if (r.ok) await fetchEvents();
+      return { ok: r.ok, error: r.error };
+    },
+    [fetchEvents],
+  );
+  const updateEvent = useCallback(
+    async (eventId: string, patch: Partial<CalendarEventInput>) => {
+      const r = await window.cerebro.calendar.updateEvent(eventId, patch);
+      if (r.ok) await fetchEvents();
+      return { ok: r.ok, error: r.error };
+    },
+    [fetchEvents],
+  );
+  const deleteEvent = useCallback(
+    async (eventId: string) => {
+      const r = await window.cerebro.calendar.deleteEvent(eventId);
+      if (r.ok) await fetchEvents();
+      return r;
+    },
+    [fetchEvents],
+  );
+  const rsvp = useCallback(
+    async (eventId: string, response: RsvpResponse) => {
+      const r = await window.cerebro.calendar.rsvp(eventId, response);
+      if (r.ok) await fetchEvents();
+      return r;
+    },
+    [fetchEvents],
+  );
 
   const value: CalendarContextValue = {
     accounts,

@@ -26,10 +26,17 @@ interface ConditionParams {
   value?: string;
 }
 
-function evaluateCondition(fieldValue: unknown, operator: Operator, compareValue: string | undefined): boolean {
-  const strValue = fieldValue != null
-    ? (typeof fieldValue === 'object' ? JSON.stringify(fieldValue) : String(fieldValue))
-    : '';
+function evaluateCondition(
+  fieldValue: unknown,
+  operator: Operator,
+  compareValue: string | undefined,
+): boolean {
+  const strValue =
+    fieldValue != null
+      ? typeof fieldValue === 'object'
+        ? JSON.stringify(fieldValue)
+        : String(fieldValue)
+      : '';
 
   switch (operator) {
     case 'equals':
@@ -57,15 +64,23 @@ function evaluateCondition(fieldValue: unknown, operator: Operator, compareValue
     }
 
     case 'is_empty':
-      return fieldValue == null || strValue === '' || (Array.isArray(fieldValue) && fieldValue.length === 0);
+      return (
+        fieldValue == null ||
+        strValue === '' ||
+        (Array.isArray(fieldValue) && fieldValue.length === 0)
+      );
 
     case 'is_not_empty':
-      return fieldValue != null && strValue !== '' && !(Array.isArray(fieldValue) && fieldValue.length === 0);
+      return (
+        fieldValue != null &&
+        strValue !== '' &&
+        !(Array.isArray(fieldValue) && fieldValue.length === 0)
+      );
 
     case 'matches_regex':
       try {
         const pattern = compareValue ?? '';
-        if (pattern.length > 200) return false;  // ReDoS protection
+        if (pattern.length > 200) return false; // ReDoS protection
         return new RegExp(pattern).test(strValue);
       } catch {
         return false;

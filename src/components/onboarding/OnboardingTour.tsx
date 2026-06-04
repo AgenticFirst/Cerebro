@@ -19,16 +19,8 @@ import CompletionStep from './CompletionStep';
 import InstallCheckStep from './InstallCheckStep';
 
 export default function OnboardingTour() {
-  const {
-    isOpen,
-    step,
-    stepIndex,
-    next,
-    prev,
-    finish,
-    standaloneInstallCheck,
-    markInstallSeen,
-  } = useOnboarding();
+  const { isOpen, step, stepIndex, next, prev, finish, standaloneInstallCheck, markInstallSeen } =
+    useOnboarding();
   const { setActiveScreen } = useChat();
 
   // Drive the active screen from the current step.
@@ -57,7 +49,6 @@ export default function OnboardingTour() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, step, stepIndex]);
 
   if (!isOpen) return null;

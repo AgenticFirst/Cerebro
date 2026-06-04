@@ -20,7 +20,7 @@ describe('renderMarkdownToHtml', () => {
   });
 
   it('renders fenced code blocks with <pre><code>', () => {
-    const html = renderMarkdownToHtml("```ts\nconst x = 1;\n```");
+    const html = renderMarkdownToHtml('```ts\nconst x = 1;\n```');
     expect(html).toContain('<pre>');
     expect(html).toContain('<code');
     expect(html).toContain('const x = 1;');

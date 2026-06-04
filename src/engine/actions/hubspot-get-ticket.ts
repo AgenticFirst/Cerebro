@@ -13,7 +13,11 @@ import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { renderTemplate } from './utils/template';
 import type { HubSpotChannel } from './hubspot-channel';
 import { callHubSpotApi } from '../../hubspot/api';
-import { resolveTicketAssociations, toContactOutputs, toCompanyOutputs } from '../../hubspot/associations';
+import {
+  resolveTicketAssociations,
+  toContactOutputs,
+  toCompanyOutputs,
+} from '../../hubspot/associations';
 import { ownerDisplayNames } from '../../hubspot/owners';
 import { formatHubSpotDate } from '../../hubspot/ticket-fields';
 
@@ -82,10 +86,22 @@ export function createHubSpotGetTicketAction(deps: {
         created_at: { type: ['string', 'null'] },
         updated_at: { type: ['string', 'null'] },
         owner_id: { type: ['string', 'null'] },
-        owner_name: { type: ['string', 'null'], description: 'Display name of the ticket owner, resolved from owner_id.' },
-        follow_up_user: { type: ['string', 'null'], description: 'Follow-up user id, when a follow-up property is configured.' },
-        follow_up_name: { type: ['string', 'null'], description: 'Display name of the follow-up user.' },
-        due_date: { type: ['string', 'null'], description: 'Due date as YYYY-MM-DD, when a due-date property is configured.' },
+        owner_name: {
+          type: ['string', 'null'],
+          description: 'Display name of the ticket owner, resolved from owner_id.',
+        },
+        follow_up_user: {
+          type: ['string', 'null'],
+          description: 'Follow-up user id, when a follow-up property is configured.',
+        },
+        follow_up_name: {
+          type: ['string', 'null'],
+          description: 'Display name of the follow-up user.',
+        },
+        due_date: {
+          type: ['string', 'null'],
+          description: 'Due date as YYYY-MM-DD, when a due-date property is configured.',
+        },
         ticket_url: { type: ['string', 'null'] },
         contacts: {
           type: 'array',
@@ -125,7 +141,9 @@ export function createHubSpotGetTicketAction(deps: {
     execute: async (input: ActionInput): Promise<ActionOutput> => {
       const channel = deps.getChannel();
       if (!channel) {
-        throw new Error('HubSpot: Get Ticket — HubSpot is not configured. Connect HubSpot in Integrations first.');
+        throw new Error(
+          'HubSpot: Get Ticket — HubSpot is not configured. Connect HubSpot in Integrations first.',
+        );
       }
       const token = channel.getAccessToken();
       if (!token) {
@@ -143,8 +161,14 @@ export function createHubSpotGetTicketAction(deps: {
       const followUpProp = (channel.getFollowUpProperty() ?? '').trim();
       const dueDateProp = (channel.getDueDateProperty() ?? '').trim();
       const propList = [
-        'subject', 'content', 'hs_pipeline', 'hs_pipeline_stage', 'hs_ticket_priority',
-        'createdate', 'hs_lastmodifieddate', 'hubspot_owner_id',
+        'subject',
+        'content',
+        'hs_pipeline',
+        'hs_pipeline_stage',
+        'hs_ticket_priority',
+        'createdate',
+        'hs_lastmodifieddate',
+        'hubspot_owner_id',
         ...(followUpProp ? [followUpProp] : []),
         ...(dueDateProp ? [dueDateProp] : []),
       ];
@@ -188,7 +212,9 @@ export function createHubSpotGetTicketAction(deps: {
             }
           }
         } catch (err) {
-          input.context.log(`HubSpot get_ticket: pipeline label lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+          input.context.log(
+            `HubSpot get_ticket: pipeline label lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
 
@@ -200,8 +226,11 @@ export function createHubSpotGetTicketAction(deps: {
 
       let scopeNote = '';
       if (assoc.companiesScopeMissing) {
-        scopeNote = ' (companies not returned — grant crm.objects.companies.read on the HubSpot Private App)';
-        input.context.log('HubSpot get_ticket: companies unavailable — token lacks crm.objects.companies.read');
+        scopeNote =
+          ' (companies not returned — grant crm.objects.companies.read on the HubSpot Private App)';
+        input.context.log(
+          'HubSpot get_ticket: companies unavailable — token lacks crm.objects.companies.read',
+        );
       } else if (assoc.error) {
         input.context.log(`HubSpot get_ticket: association lookup failed: ${assoc.error}`);
       }
@@ -218,7 +247,9 @@ export function createHubSpotGetTicketAction(deps: {
           if (ownerId) ownerName = names.get(ownerId) ?? null;
           if (followUpId) followUpName = names.get(followUpId) ?? null;
         } catch (err) {
-          input.context.log(`HubSpot get_ticket: owner name lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+          input.context.log(
+            `HubSpot get_ticket: owner name lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
       const dueDate = dueDateProp ? formatHubSpotDate(ticketProps[dueDateProp]) : null;
@@ -239,9 +270,9 @@ export function createHubSpotGetTicketAction(deps: {
           subject: ticketProps.subject ?? null,
           content: ticketProps.content ?? null,
           pipeline: pipelineId,
-          pipeline_label: pipelineId ? pipelineLabels.get(pipelineId) ?? null : null,
+          pipeline_label: pipelineId ? (pipelineLabels.get(pipelineId) ?? null) : null,
           stage: stageId,
-          stage_label: stageId ? stageLabels.get(stageId) ?? null : null,
+          stage_label: stageId ? (stageLabels.get(stageId) ?? null) : null,
           priority: ticketProps.hs_ticket_priority ?? null,
           created_at: ticketProps.createdate ?? null,
           updated_at: ticketProps.hs_lastmodifieddate ?? null,
@@ -250,7 +281,9 @@ export function createHubSpotGetTicketAction(deps: {
           follow_up_user: followUpId,
           follow_up_name: followUpName,
           due_date: dueDate,
-          ticket_url: portal ? `https://app.hubspot.com/contacts/${portal}/ticket/${ticketId}` : null,
+          ticket_url: portal
+            ? `https://app.hubspot.com/contacts/${portal}/ticket/${ticketId}`
+            : null,
           contacts,
           companies,
           companies_scope_missing: assoc.companiesScopeMissing,

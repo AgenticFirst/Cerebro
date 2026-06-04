@@ -90,14 +90,20 @@ export async function singleShotCodex(options: SingleShotEngineOptions): Promise
     let stderr = '';
     let aborted = false;
 
-    child.stdout?.on('data', (c: Buffer) => { stdout += c.toString(); });
-    child.stderr?.on('data', (c: Buffer) => { stderr += c.toString(); });
+    child.stdout?.on('data', (c: Buffer) => {
+      stdout += c.toString();
+    });
+    child.stderr?.on('data', (c: Buffer) => {
+      stderr += c.toString();
+    });
 
     const onAbort = () => {
       aborted = true;
       if (!child.killed) {
         child.kill('SIGTERM');
-        setTimeout(() => { if (!child.killed) child.kill('SIGKILL'); }, 2000);
+        setTimeout(() => {
+          if (!child.killed) child.kill('SIGKILL');
+        }, 2000);
       }
       reject(new Error('Aborted'));
     };

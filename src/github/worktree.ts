@@ -80,10 +80,17 @@ async function runGit(args: string[], cwd: string, env?: NodeJS.ProcessEnv): Pro
     let timeout: NodeJS.Timeout | null = setTimeout(() => {
       child.kill('SIGKILL');
     }, GIT_TIMEOUT_MS);
-    child.stdout.on('data', (b: Buffer) => { stdout += b.toString(); });
-    child.stderr.on('data', (b: Buffer) => { stderr += b.toString(); });
+    child.stdout.on('data', (b: Buffer) => {
+      stdout += b.toString();
+    });
+    child.stderr.on('data', (b: Buffer) => {
+      stderr += b.toString();
+    });
     child.on('close', (code) => {
-      if (timeout) { clearTimeout(timeout); timeout = null; }
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
       resolve({
         ok: code === 0,
         stdout: stdout.trim(),
@@ -92,7 +99,10 @@ async function runGit(args: string[], cwd: string, env?: NodeJS.ProcessEnv): Pro
       });
     });
     child.on('error', (err) => {
-      if (timeout) { clearTimeout(timeout); timeout = null; }
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
       resolve({ ok: false, stdout: '', stderr: err.message, exitCode: -1 });
     });
   });
@@ -149,16 +159,12 @@ export async function commitAndPush(opts: CommitAndPushOpts): Promise<CommitAndP
   const add = await runGit(['add', '-A'], cwd);
   if (!add.ok) throw new Error(`git add failed: ${add.stderr}`);
 
-  const commit = await runGit(
-    ['commit', '-m', opts.commitMessage],
-    cwd,
-    {
-      GIT_AUTHOR_NAME: author.name,
-      GIT_AUTHOR_EMAIL: author.email,
-      GIT_COMMITTER_NAME: author.name,
-      GIT_COMMITTER_EMAIL: author.email,
-    },
-  );
+  const commit = await runGit(['commit', '-m', opts.commitMessage], cwd, {
+    GIT_AUTHOR_NAME: author.name,
+    GIT_AUTHOR_EMAIL: author.email,
+    GIT_COMMITTER_NAME: author.name,
+    GIT_COMMITTER_EMAIL: author.email,
+  });
   if (!commit.ok) throw new Error(`git commit failed: ${commit.stderr}`);
 
   const sha = await runGit(['rev-parse', 'HEAD'], cwd);

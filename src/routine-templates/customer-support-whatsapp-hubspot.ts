@@ -60,7 +60,10 @@ function step(cfg: {
     if (branch === 'true' || branch === 'false') mapping.branchCondition = branch;
     return mapping;
   });
-  const deps = new Set<string>([...(cfg.extraDepends ?? []), ...inputMappings.map((m) => m.sourceStepId)]);
+  const deps = new Set<string>([
+    ...(cfg.extraDepends ?? []),
+    ...inputMappings.map((m) => m.sourceStepId),
+  ]);
   return {
     id: cfg.id,
     name: cfg.name,
@@ -89,16 +92,16 @@ const EXTRACT_PROMPT =
 
 const CONFIRMATION_SYSTEM =
   'You are %%bot_name%%, a customer-support agent at %%company_name%%. Tone: %%bot_tone%%. ' +
-  'Match the customer\'s language exactly. A support ticket was just created for this customer. ' +
+  "Match the customer's language exactly. A support ticket was just created for this customer. " +
   'Write a short, warm confirmation under 60 words that: (a) thanks them by name if you know it, ' +
   '(b) mentions the ticket id, (c) sets expectations that a human teammate will follow up. ' +
   'Never promise a specific response time.';
 
 const GATHERING_SYSTEM =
   'You are %%bot_name%%, a customer-support agent at %%company_name%%. Tone: %%bot_tone%%. ' +
-  'Always match the customer\'s language. You are in the middle of gathering info so you can open a support ticket. ' +
+  "Always match the customer's language. You are in the middle of gathering info so you can open a support ticket. " +
   'Current conversation state: {{state}}. Use that to decide what to say next:\n' +
-  '- greeting: introduce yourself briefly as %%bot_name%%, ask the customer\'s name.\n' +
+  "- greeting: introduce yourself briefly as %%bot_name%%, ask the customer's name.\n" +
   '- awaiting_name: thank them by name, ask how you can help.\n' +
   '- awaiting_issue: ask them to describe the problem in their own words.\n' +
   '- gathering_details: ask the SINGLE most useful follow-up question to reach enough detail ' +
@@ -108,7 +111,9 @@ const GATHERING_SYSTEM =
 
 const STEPS: Step[] = [
   step({
-    id: 'classify_state', name: 'Classify conversation state', actionType: 'classify',
+    id: 'classify_state',
+    name: 'Classify conversation state',
+    actionType: 'classify',
     params: {
       prompt: CLASSIFY_PROMPT,
       // Categories MUST be {label, description} objects — the classify action
@@ -116,12 +121,30 @@ const STEPS: Step[] = [
       // produce an empty `category` field, which silently keeps the @false
       // branch firing forever.
       categories: [
-        { label: 'greeting', description: 'latest message is just "hi" / "hola" / similar, with no substance yet' },
+        {
+          label: 'greeting',
+          description: 'latest message is just "hi" / "hola" / similar, with no substance yet',
+        },
         { label: 'awaiting_name', description: 'we greeted them but no name is known yet' },
-        { label: 'awaiting_issue', description: 'name is known, customer has not described a problem' },
-        { label: 'gathering_details', description: 'a problem is mentioned but you could NOT yet write a useful one-sentence ticket subject from it (e.g. "something is broken" with zero specifics)' },
-        { label: 'ready_for_ticket', description: 'pick this if you could right now write a useful one-sentence ticket subject (e.g. "Login fails with Error 401 since yesterday"). The customer does NOT need to explicitly ask for a ticket; they only need to have named a concrete error / failure / blocker. If torn between gathering_details and ready_for_ticket, choose ready_for_ticket' },
-        { label: 'off_topic', description: 'NOT a support request — sales pitch, spam, totally unrelated. A plain "hi" is greeting, not off_topic' },
+        {
+          label: 'awaiting_issue',
+          description: 'name is known, customer has not described a problem',
+        },
+        {
+          label: 'gathering_details',
+          description:
+            'a problem is mentioned but you could NOT yet write a useful one-sentence ticket subject from it (e.g. "something is broken" with zero specifics)',
+        },
+        {
+          label: 'ready_for_ticket',
+          description:
+            'pick this if you could right now write a useful one-sentence ticket subject (e.g. "Login fails with Error 401 since yesterday"). The customer does NOT need to explicitly ask for a ticket; they only need to have named a concrete error / failure / blocker. If torn between gathering_details and ready_for_ticket, choose ready_for_ticket',
+        },
+        {
+          label: 'off_topic',
+          description:
+            'NOT a support request — sales pitch, spam, totally unrelated. A plain "hi" is greeting, not off_topic',
+        },
       ],
       agent: 'cerebro',
     },
@@ -131,15 +154,39 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'extract_fields', name: 'Extract customer info', actionType: 'extract',
+    id: 'extract_fields',
+    name: 'Extract customer info',
+    actionType: 'extract',
     params: {
       prompt: EXTRACT_PROMPT,
       schema: [
-        { name: 'customer_name', type: 'string', description: 'The customer\'s first name or preferred name. null if not stated.' },
-        { name: 'customer_email', type: 'string', description: 'Customer email if mentioned. null otherwise.' },
-        { name: 'issue_summary', type: 'string', description: 'One-sentence summary of the customer\'s problem. null if unknown.' },
-        { name: 'issue_category', type: 'string', description: 'Best-guess category (billing, technical, access, general_inquiry, other). null if unclear.' },
-        { name: 'urgency', type: 'string', description: 'One of LOW, MEDIUM, HIGH based on how blocked the customer is. null if unclear.' },
+        {
+          name: 'customer_name',
+          type: 'string',
+          description: "The customer's first name or preferred name. null if not stated.",
+        },
+        {
+          name: 'customer_email',
+          type: 'string',
+          description: 'Customer email if mentioned. null otherwise.',
+        },
+        {
+          name: 'issue_summary',
+          type: 'string',
+          description: "One-sentence summary of the customer's problem. null if unknown.",
+        },
+        {
+          name: 'issue_category',
+          type: 'string',
+          description:
+            'Best-guess category (billing, technical, access, general_inquiry, other). null if unclear.',
+        },
+        {
+          name: 'urgency',
+          type: 'string',
+          description:
+            'One of LOW, MEDIUM, HIGH based on how blocked the customer is. null if unclear.',
+        },
       ],
       agent: 'cerebro',
     },
@@ -149,14 +196,21 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'is_ready', name: 'Ready to open ticket?', actionType: 'condition',
+    id: 'is_ready',
+    name: 'Ready to open ticket?',
+    actionType: 'condition',
     params: { field: 'category', operator: 'equals', value: 'ready_for_ticket' },
     wire: ['classify_state.category -> category'],
   }),
   step({
-    id: 'upsert_contact', name: 'HubSpot: Upsert contact', actionType: 'hubspot_upsert_contact',
+    id: 'upsert_contact',
+    name: 'HubSpot: Upsert contact',
+    actionType: 'hubspot_upsert_contact',
     params: {
-      email: '{{email}}', phone: '{{phone}}', firstname: '{{firstname}}', lifecyclestage: 'customer',
+      email: '{{email}}',
+      phone: '{{phone}}',
+      firstname: '{{firstname}}',
+      lifecyclestage: 'customer',
     },
     wire: [
       'is_ready.branch -> _gate @true',
@@ -166,7 +220,9 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'create_ticket', name: 'HubSpot: Create ticket', actionType: 'hubspot_create_ticket',
+    id: 'create_ticket',
+    name: 'HubSpot: Create ticket',
+    actionType: 'hubspot_create_ticket',
     params: {
       subject: '{{subject}}',
       content:
@@ -194,14 +250,18 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'save_ticket_summary', name: 'Save ticket snapshot to memory', actionType: 'save_to_memory',
+    id: 'save_ticket_summary',
+    name: 'Save ticket snapshot to memory',
+    actionType: 'save_to_memory',
     params: {
       content:
         'WhatsApp ticket opened.\n' +
         'Ticket id: {{ticket_id}}\nTicket URL: {{ticket_url}}\n' +
         'Customer: {{customer_name}}\nPhone: {{phone_number}}\n' +
         'Issue: {{issue_summary}}',
-      agent: 'cerebro', mode: 'write', topic: 'Support ticket {{ticket_id}}',
+      agent: 'cerebro',
+      mode: 'write',
+      topic: 'Support ticket {{ticket_id}}',
     },
     wire: [
       'is_ready.branch -> _gate @true',
@@ -214,7 +274,9 @@ const STEPS: Step[] = [
     onError: 'skip',
   }),
   step({
-    id: 'compose_confirmation', name: 'Compose confirmation reply', actionType: 'ask_ai',
+    id: 'compose_confirmation',
+    name: 'Compose confirmation reply',
+    actionType: 'ask_ai',
     params: {
       system_prompt: CONFIRMATION_SYSTEM,
       prompt:
@@ -230,7 +292,9 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'send_confirmation', name: 'Send WhatsApp confirmation', actionType: 'send_whatsapp_message',
+    id: 'send_confirmation',
+    name: 'Send WhatsApp confirmation',
+    actionType: 'send_whatsapp_message',
     params: { phone_number: '{{phone_number}}', message: '{{response}}' },
     wire: [
       'is_ready.branch -> _gate @true',
@@ -239,7 +303,9 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'compose_next_message', name: 'Compose next gathering reply', actionType: 'ask_ai',
+    id: 'compose_next_message',
+    name: 'Compose next gathering reply',
+    actionType: 'ask_ai',
     params: {
       system_prompt: GATHERING_SYSTEM,
       prompt:
@@ -260,7 +326,9 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'send_next_message', name: 'Send WhatsApp reply', actionType: 'send_whatsapp_message',
+    id: 'send_next_message',
+    name: 'Send WhatsApp reply',
+    actionType: 'send_whatsapp_message',
     params: { phone_number: '{{phone_number}}', message: '{{response}}' },
     wire: [
       // Same gating reason as the @true branch — without this, send_next_message
@@ -290,7 +358,7 @@ export const customerSupportWhatsAppHubSpotTemplate: RoutineTemplate = {
   id: 'customer-support-whatsapp-hubspot',
   name: 'Customer Support via WhatsApp (HubSpot tickets)',
   description:
-    "When a customer messages your WhatsApp Business number, %%bot_name%% greets them, " +
+    'When a customer messages your WhatsApp Business number, %%bot_name%% greets them, ' +
     'asks for their name and issue, and opens a HubSpot ticket once enough detail is gathered.',
   category: 'customer_support',
   requiredConnections: ['whatsapp', 'hubspot'],
@@ -298,7 +366,7 @@ export const customerSupportWhatsAppHubSpotTemplate: RoutineTemplate = {
     'A customer sends a WhatsApp message to your paired business number',
     '%%bot_name%% classifies the conversation state (greeting, gathering info, or ready for a ticket)',
     'If information is still missing, %%bot_name%% asks the next most-useful question',
-    'Once the issue is clear, a HubSpot contact is upserted and a ticket is opened in %%company_name%%\'s configured pipeline',
+    "Once the issue is clear, a HubSpot contact is upserted and a ticket is opened in %%company_name%%'s configured pipeline",
     '%%bot_name%% confirms the ticket id back to the customer on WhatsApp',
     'The ticket snapshot is saved to memory for future agent look-ups',
   ],
@@ -330,7 +398,7 @@ export const customerSupportWhatsAppHubSpotTemplate: RoutineTemplate = {
     {
       key: 'bot_tone',
       label: 'Tone',
-      description: 'Tone guidance injected into the bot\'s system prompt.',
+      description: "Tone guidance injected into the bot's system prompt.",
       type: 'textarea',
       required: false,
       default: 'warm, concise, professional',

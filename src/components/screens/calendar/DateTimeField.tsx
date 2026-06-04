@@ -21,10 +21,20 @@ interface Props {
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 function fmtDate(d: Date): string {
-  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
-export default function DateTimeField({ value, onChange, mode = 'datetime', minuteStep = 15 }: Props) {
+export default function DateTimeField({
+  value,
+  onChange,
+  mode = 'datetime',
+  minuteStep = 15,
+}: Props) {
   const [open, setOpen] = useState<null | 'date' | 'time'>(null);
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(value));
 
@@ -41,7 +51,11 @@ export default function DateTimeField({ value, onChange, mode = 'datetime', minu
         <button
           type="button"
           onClick={() => setOpen(open === 'date' ? null : 'date')}
-          className={clsx(triggerCls, 'flex-1', open === 'date' ? 'border-accent' : 'border-border-subtle hover:border-accent/50')}
+          className={clsx(
+            triggerCls,
+            'flex-1',
+            open === 'date' ? 'border-accent' : 'border-border-subtle hover:border-accent/50',
+          )}
         >
           {fmtDate(value)}
         </button>
@@ -49,7 +63,11 @@ export default function DateTimeField({ value, onChange, mode = 'datetime', minu
           <button
             type="button"
             onClick={() => setOpen(open === 'time' ? null : 'time')}
-            className={clsx(triggerCls, 'w-24', open === 'time' ? 'border-accent' : 'border-border-subtle hover:border-accent/50')}
+            className={clsx(
+              triggerCls,
+              'w-24',
+              open === 'time' ? 'border-accent' : 'border-border-subtle hover:border-accent/50',
+            )}
           >
             {fmtTime(value.getTime())}
           </button>
@@ -72,12 +90,16 @@ export default function DateTimeField({ value, onChange, mode = 'datetime', minu
       )}
 
       {open === 'time' && (
-        <TimeList value={value} minuteStep={minuteStep} onPick={(h, m) => {
-          const next = new Date(value);
-          next.setHours(h, m, 0, 0);
-          onChange(next);
-          setOpen(null);
-        }} />
+        <TimeList
+          value={value}
+          minuteStep={minuteStep}
+          onPick={(h, m) => {
+            const next = new Date(value);
+            next.setHours(h, m, 0, 0);
+            onChange(next);
+            setOpen(null);
+          }}
+        />
       )}
     </div>
   );
@@ -119,19 +141,29 @@ function MiniCalendar({
   return (
     <div className="mt-1.5 rounded-lg border border-border-subtle bg-bg-base p-2 animate-fade-in">
       <div className="flex items-center justify-between px-1 pb-1.5">
-        <button type="button" onClick={onPrev} className="p-1 rounded text-text-tertiary hover:bg-bg-hover">
+        <button
+          type="button"
+          onClick={onPrev}
+          className="p-1 rounded text-text-tertiary hover:bg-bg-hover"
+        >
           <ChevronLeft size={14} />
         </button>
         <span className="text-[12px] font-medium text-text-primary">
           {viewMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
         </span>
-        <button type="button" onClick={onNext} className="p-1 rounded text-text-tertiary hover:bg-bg-hover">
+        <button
+          type="button"
+          onClick={onNext}
+          className="p-1 rounded text-text-tertiary hover:bg-bg-hover"
+        >
           <ChevronRight size={14} />
         </button>
       </div>
       <div className="grid grid-cols-7 gap-0.5">
         {WEEKDAYS.map((w, i) => (
-          <div key={i} className="text-center text-[9px] uppercase text-text-tertiary py-0.5">{w}</div>
+          <div key={i} className="text-center text-[9px] uppercase text-text-tertiary py-0.5">
+            {w}
+          </div>
         ))}
         {days.map((d) => {
           const inMonth = d.getMonth() === viewMonth.getMonth();
@@ -162,7 +194,15 @@ function MiniCalendar({
   );
 }
 
-function TimeList({ value, minuteStep, onPick }: { value: Date; minuteStep: number; onPick: (h: number, m: number) => void }) {
+function TimeList({
+  value,
+  minuteStep,
+  onPick,
+}: {
+  value: Date;
+  minuteStep: number;
+  onPick: (h: number, m: number) => void;
+}) {
   const listRef = useRef<HTMLDivElement>(null);
   const slots = useMemo(() => {
     const out: { h: number; m: number; label: string }[] = [];
@@ -170,7 +210,11 @@ function TimeList({ value, minuteStep, onPick }: { value: Date; minuteStep: numb
       const h = Math.floor(mins / 60);
       const m = mins % 60;
       const d = new Date(2000, 0, 1, h, m);
-      out.push({ h, m, label: d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) });
+      out.push({
+        h,
+        m,
+        label: d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }),
+      });
     }
     return out;
   }, [minuteStep]);
@@ -184,7 +228,10 @@ function TimeList({ value, minuteStep, onPick }: { value: Date; minuteStep: numb
   }, []);
 
   return (
-    <div ref={listRef} className="mt-1.5 max-h-48 overflow-y-auto scrollbar-thin rounded-lg border border-border-subtle bg-bg-base p-1 animate-fade-in">
+    <div
+      ref={listRef}
+      className="mt-1.5 max-h-48 overflow-y-auto scrollbar-thin rounded-lg border border-border-subtle bg-bg-base p-1 animate-fade-in"
+    >
       {slots.map((s) => {
         const mins = s.h * 60 + s.m;
         const isSel = Math.abs(mins - selectedMins) < minuteStep / 2;

@@ -49,7 +49,9 @@ describe('isEncryptionAvailable / backend', () => {
   });
 
   it('returns false when safeStorage throws', () => {
-    mockSafeStorage.isEncryptionAvailable.mockImplementationOnce(() => { throw new Error('no DBus'); });
+    mockSafeStorage.isEncryptionAvailable.mockImplementationOnce(() => {
+      throw new Error('no DBus');
+    });
     expect(isEncryptionAvailable()).toBe(false);
   });
 });

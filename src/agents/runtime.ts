@@ -35,7 +35,12 @@ import { clearProbeCache } from '../claude-code/auth-probe';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
 import { isReplIdleTail } from './completion-detection';
-import { getAgentNameForExpert, installAll, installExpert, expertAgentName } from '../claude-code/installer';
+import {
+  getAgentNameForExpert,
+  installAll,
+  installExpert,
+  expertAgentName,
+} from '../claude-code/installer';
 import { MediaIngestService } from '../files/media-ingest';
 import type { ResolvedAttachment } from '../files/types';
 import fsSync from 'node:fs';
@@ -131,7 +136,11 @@ function isEscalatable(cls: RunnerErrorClass): boolean {
  * with no "Claude Code (code N)" / "Session ID … in use" leakage. The raw
  * detail is still written to the per-run log for debugging.
  */
-function friendlySurfaceError(cls: RunnerErrorClass, lang: string | undefined, raw: string): string {
+function friendlySurfaceError(
+  cls: RunnerErrorClass,
+  lang: string | undefined,
+  raw: string,
+): string {
   const es = lang === 'es';
   switch (cls) {
     case 'auth':
@@ -253,7 +262,6 @@ export function parseDeliverableBlock(text: string): ParsedDeliverable | null {
   };
 }
 
-
 /**
  * Synthesize a `<deliverable>` envelope when the agent exited cleanly with
  * substantive output but never emitted the tagged block itself. We strip
@@ -299,7 +307,9 @@ function buildSeedPrompt(history: MessageSnapshot[], newMessage: string): string
     const tag = m.role === 'user' ? 'human' : 'assistant';
     const line = `<${tag}>\n${m.content}\n</${tag}>`;
     if (totalChars + line.length > SEED_MAX_TOTAL_CHARS && lines.length > 0) {
-      lines.push('<truncated_history note="Earlier turns omitted; total exceeded the seed limit." />');
+      lines.push(
+        '<truncated_history note="Earlier turns omitted; total exceeded the seed limit." />',
+      );
       break;
     }
     lines.push(line);
@@ -366,7 +376,11 @@ export class AgentRuntime {
   }
 
   /** Internal: emit a single agent event on both the main bus and the renderer channel. */
-  private deliverEvent(runId: string, webContents: AgentEventSink, event: RendererAgentEvent): void {
+  private deliverEvent(
+    runId: string,
+    webContents: AgentEventSink,
+    event: RendererAgentEvent,
+  ): void {
     this.bus.emit(`event:${runId}`, event);
     if (!webContents.isDestroyed()) {
       webContents.send(`agent:event:${runId}`, event);
@@ -377,10 +391,7 @@ export class AgentRuntime {
    * Spawn a Claude Code subprocess for one chat turn.
    * Returns the runId immediately; events stream over `agent:event:<runId>`.
    */
-  async startRun(
-    webContents: AgentEventSink,
-    request: AgentRunRequest,
-  ): Promise<string> {
+  async startRun(webContents: AgentEventSink, request: AgentRunRequest): Promise<string> {
     if (this.activeRuns.size >= MAX_CONCURRENT_RUNS) {
       throw new Error('Too many concurrent agent runs');
     }
@@ -392,7 +403,8 @@ export class AgentRuntime {
     // Single-flight per conversation for chat runs. Engine runs use a
     // synthetic per-run conversationId (`engine-run:<id>`) so they never
     // collide; task runs key sessions off runId, not conversationId.
-    const isEngineRunPrefix = typeof conversationId === 'string' && conversationId.startsWith('engine-run:');
+    const isEngineRunPrefix =
+      typeof conversationId === 'string' && conversationId.startsWith('engine-run:');
     const gateConversation = !isTaskRun && !isEngineRunPrefix && !!conversationId;
     if (gateConversation) {
       const existing = this.activeConversations.get(conversationId!);
@@ -437,7 +449,10 @@ export class AgentRuntime {
       resolvedContent = resolved.content;
       resolvedAttachments = resolved.attachments;
     } catch (err) {
-      console.warn(`[AgentRuntime] media ingest failed for run ${runId}; falling back to raw content:`, err);
+      console.warn(
+        `[AgentRuntime] media ingest failed for run ${runId}; falling back to raw content:`,
+        err,
+      );
     }
 
     // Build the prompt. Task runs get a structured envelope; chat runs
@@ -457,16 +472,23 @@ Your working directory is the per-task workspace at $PWD. You may only use the \
 
 ## Decision tree
 
-1. Read the goal${request.clarificationAnswers ? ' AND the user\'s answers below' : ''}.
-2. ${request.clarificationAnswers
-        ? 'The user already answered clarifying questions. Do NOT ask more — go straight to step 4.'
-        : `If the goal is ambiguous and you'd likely waste turns on wrong assumptions, ask 1–${maxQ} clarifying questions as a \`<clarification>\` block and STOP. You will be re-invoked with the answers.`}
-3. ${request.clarificationAnswers
-        ? ''
-        : 'If the goal is clear enough to plan without asking (one-shots, very specific requests), skip straight to step 4.'}
+1. Read the goal${request.clarificationAnswers ? " AND the user's answers below" : ''}.
+2. ${
+        request.clarificationAnswers
+          ? 'The user already answered clarifying questions. Do NOT ask more — go straight to step 4.'
+          : `If the goal is ambiguous and you'd likely waste turns on wrong assumptions, ask 1–${maxQ} clarifying questions as a \`<clarification>\` block and STOP. You will be re-invoked with the answers.`
+      }
+3. ${
+        request.clarificationAnswers
+          ? ''
+          : 'If the goal is clear enough to plan without asking (one-shots, very specific requests), skip straight to step 4.'
+      }
 4. Write \`PLAN.md\` in $PWD using the \`Write\` tool. Format below. Then STOP — emit no further output.
 
-${request.clarificationAnswers ? '' : `## Clarification format (only when needed)
+${
+  request.clarificationAnswers
+    ? ''
+    : `## Clarification format (only when needed)
 
 <clarification>
 {"questions":[
@@ -482,7 +504,8 @@ ${request.clarificationAnswers ? '' : `## Clarification format (only when needed
 - Do NOT ask about things you should decide yourself (framework, file structure, which expert to use).
 - Do NOT ask about things already specified in the goal.
 - After emitting the \`<clarification>\` block, stop. Do not write PLAN.md in the same run.
-`}
+`
+}
 
 ## PLAN.md format
 
@@ -617,7 +640,12 @@ ${RUN_INFO_EXAMPLE}
 - NEVER spawn a long-running dev server or background process — use bounded commands only.
 - If the plan is genuinely impossible or needs info only the user has, skip remaining items and explain inside a \`<deliverable kind="markdown">\` block.
 </task_execute>`;
-    } else if (isTaskRun && request.taskPhase === 'direct' && request.resumeSessionId && request.interactiveResume) {
+    } else if (
+      isTaskRun &&
+      request.taskPhase === 'direct' &&
+      request.resumeSessionId &&
+      request.interactiveResume
+    ) {
       // Interactive resume: the user clicked Resume on a paused/stopped task
       // and wants to drive the TUI themselves. No prompt is sent — the
       // positional arg is already suppressed for resume, and TaskPtyRunner
@@ -744,9 +772,7 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     // All task phases run inside the task workspace: plan writes PLAN.md
     // there, execute reads PLAN.md and produces deliverables, follow_up
     // edits the existing workspace. Fall back to dataDir for chat runs.
-    const cwd = (isTaskRun && request.workspacePath)
-      ? request.workspacePath
-      : this.dataDir;
+    const cwd = isTaskRun && request.workspacePath ? request.workspacePath : this.dataDir;
 
     const activeRun: ActiveRun = {
       runId,
@@ -786,7 +812,8 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     //   with `IntegrityError: FOREIGN KEY constraint failed`. Engine runs
     //   are tracked by step_records + execution_events anyway, so the
     //   agent_runs row would be redundant.
-    const isEngineRun = typeof conversationId === 'string' && conversationId.startsWith('engine-run:');
+    const isEngineRun =
+      typeof conversationId === 'string' && conversationId.startsWith('engine-run:');
     if (!isTaskRun && !isEngineRun) {
       this.backendPost('/agent-runs', {
         id: runId,
@@ -866,7 +893,11 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
           this.finalizeRun(runId, 'completed', messageContent, undefined, deliverable);
         } else {
           if (!webContents.isDestroyed()) {
-            webContents.send(channel, { type: 'error', runId, error: errorDetail } as RendererAgentEvent);
+            webContents.send(channel, {
+              type: 'error',
+              runId,
+              error: errorDetail,
+            } as RendererAgentEvent);
           }
           this.finalizeRun(runId, 'error', activeRun.accumulatedText, errorDetail);
         }
@@ -877,7 +908,11 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       const initiateGracefulExit = (outcome: 'completed' | 'error', detail?: string) => {
         if (gracefulExitInitiated || ptyRunner.isAborted()) return;
         gracefulExitInitiated = true;
-        try { ptyRunner.write('/exit\r'); } catch { /* noop */ }
+        try {
+          ptyRunner.write('/exit\r');
+        } catch {
+          /* noop */
+        }
         forceKillTimer = setTimeout(() => {
           forceKillTimer = null;
           if (ptyRunner.isAborted()) return;
@@ -906,7 +941,10 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
           console.log(`[AgentRuntime] idle timeout fired for run ${runId} — sending /exit`);
-          initiateGracefulExit('error', 'Agent idle timeout — no output for 2 minutes. Re-run to resume the session.');
+          initiateGracefulExit(
+            'error',
+            'Agent idle timeout — no output for 2 minutes. Re-run to resume the session.',
+          );
         }, IDLE_TIMEOUT_MS);
       };
 
@@ -1028,7 +1066,12 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
 
       // Resize IPC — filter by bufferKey since the renderer binds the Console
       // to the session id, not the internal Electron runId.
-      const resizeHandler = (_event: Electron.IpcMainEvent, resizeRunId: string, cols: number, rows: number) => {
+      const resizeHandler = (
+        _event: Electron.IpcMainEvent,
+        resizeRunId: string,
+        cols: number,
+        rows: number,
+      ) => {
         if (resizeRunId === bufferKey) {
           ptyRunner.resize(cols, rows);
         }
@@ -1133,7 +1176,8 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       // under `claude_session:<conversationId>`; we honor that stored id here
       // so future turns — and restarts — skip straight to the healthy session
       // instead of re-colliding on the wedged deterministic one.
-      let sessionId = (await this.getStoredClaudeSessionId(conversationId)) ?? toUuidFormat(conversationId);
+      let sessionId =
+        (await this.getStoredClaudeSessionId(conversationId)) ?? toUuidFormat(conversationId);
       // Only resume when this conversation has at least one prior ASSISTANT
       // turn — that's the load-bearing signal that a Claude Code session
       // file exists on disk. The renderer may include the just-typed user
@@ -1145,7 +1189,8 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       // heuristic decide; callers that don't (Slack/Telegram bridges) pass an
       // explicit `resume` hint. Either guess self-heals via the bidirectional
       // session recovery below.
-      const hasPriorMessages = request.resume ?? !!request.recentMessages?.some((m) => m.role === 'assistant');
+      const hasPriorMessages =
+        request.resume ?? !!request.recentMessages?.some((m) => m.role === 'assistant');
       // Track whether the seed-on-missing-session fallback has already
       // fired for this run, so a misconfiguration can't loop us forever.
       let sessionSeedAttempted = false;
@@ -1295,16 +1340,17 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
             return;
           }
 
-          const next = isEscalatable(cls) && attempt < MAX_ESCALATION_ATTEMPTS
-            ? nextRung(model, tier)
-            : null;
+          const next =
+            isEscalatable(cls) && attempt < MAX_ESCALATION_ATTEMPTS ? nextRung(model, tier) : null;
           if (next) {
             // Preserve "no cap" semantics across escalation: when the run
             // started without a turn budget (the default chat path), retries
             // also run uncapped. Explicit caller overrides keep their number.
             const nextTurns = userOverrodeMaxTurns
               ? turns
-              : (typeof maxTurns === 'number' ? maxTurnsForTier(next.tier) : undefined);
+              : typeof maxTurns === 'number'
+                ? maxTurnsForTier(next.tier)
+                : undefined;
             this.deliverEvent(runId, webContents, {
               type: 'agent_escalation',
               runId,
@@ -1396,8 +1442,18 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     activeRun: ActiveRun;
     maxTurns: number | undefined;
   }): Promise<void> {
-    const { engine, runId, webContents, request, conversationId, agentName, cwd, fullPrompt, activeRun, maxTurns } =
-      params;
+    const {
+      engine,
+      runId,
+      webContents,
+      request,
+      conversationId,
+      agentName,
+      cwd,
+      fullPrompt,
+      activeRun,
+      maxTurns,
+    } = params;
 
     const resolved = engine.resolveModel(
       request.qualityTier as QualityTier | undefined,
@@ -1496,7 +1552,13 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
    */
   startAssistantRun(
     webContents: AgentEventSink,
-    request: { runId: string; prompt: string; model?: string; qualityTier?: QualityTier; language?: string },
+    request: {
+      runId: string;
+      prompt: string;
+      model?: string;
+      qualityTier?: QualityTier;
+      language?: string;
+    },
   ): string {
     const { runId, prompt } = request;
     const runner = new ClaudeCodeRunner();
@@ -1509,7 +1571,11 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       this.deliverEvent(runId, webContents, event);
     });
     runner.on('done', (messageContent: string) => {
-      this.deliverEvent(runId, webContents, { type: 'done', runId, messageContent } as RendererAgentEvent);
+      this.deliverEvent(runId, webContents, {
+        type: 'done',
+        runId,
+        messageContent,
+      } as RendererAgentEvent);
       this.assistantRuns.delete(runId);
     });
     runner.on('error', (error: string) => {
@@ -1607,7 +1673,8 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
 
     // Engine-spawned runs were never INSERT'd (see startRun) so don't PATCH
     // either — the row doesn't exist.
-    const isEngineRun = typeof run.conversationId === 'string' && run.conversationId.startsWith('engine-run:');
+    const isEngineRun =
+      typeof run.conversationId === 'string' && run.conversationId.startsWith('engine-run:');
     if (!isTaskRun && !isEngineRun) {
       this.backendRequest('PATCH', `/agent-runs/${runId}`, {
         status,
@@ -1624,15 +1691,15 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       // (stale-run_id and already_terminal guards), so the renderer's call
       // and this one race harmlessly.
       const eventType =
-        status === 'completed' ? 'run_completed'
-          : status === 'cancelled' ? 'run_cancelled'
+        status === 'completed'
+          ? 'run_completed'
+          : status === 'cancelled'
+            ? 'run_cancelled'
             : 'run_failed';
       // Forward parsed deliverable on completion so the backend persists
       // result_md/result_title/result_kind even when the renderer's POST is
       // lost (destroyed webContents, crashed renderer, etc.).
-      const deliverablePayload = status === 'completed'
-        ? buildDeliverablePayload(deliverable)
-        : {};
+      const deliverablePayload = status === 'completed' ? buildDeliverablePayload(deliverable) : {};
       this.backendRequest('POST', `/tasks/${taskId}/run-event`, {
         type: eventType,
         run_id: runId,
@@ -1734,7 +1801,9 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     );
     const v = row?.value;
     // Only honor a well-formed UUID; anything else falls back to the default.
-    return v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+    return v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+      ? v
+      : null;
   }
 
   private async setStoredClaudeSessionId(conversationId: string, uuid: string): Promise<void> {
@@ -1767,7 +1836,9 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
           return;
         }
         let data = '';
-        res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        res.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         res.on('end', () => {
           try {
             resolve(JSON.parse(data) as T);
@@ -1805,7 +1876,9 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
         },
         (res) => {
           let data = '';
-          res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+          res.on('data', (chunk: Buffer) => {
+            data += chunk.toString();
+          });
           res.on('end', () => {
             try {
               resolve(JSON.parse(data) as T);

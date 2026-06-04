@@ -59,7 +59,9 @@ function TeamRow({
           {team.isVerified && (
             <BadgeCheck size={11} className="text-accent flex-shrink-0" strokeWidth={2.25} />
           )}
-          {team.isPinned && <Star size={10} className="text-accent flex-shrink-0" strokeWidth={2.5} />}
+          {team.isPinned && (
+            <Star size={10} className="text-accent flex-shrink-0" strokeWidth={2.5} />
+          )}
         </div>
         <div className="text-[11px] text-text-tertiary truncate">{memberLine}</div>
       </div>
@@ -107,12 +109,12 @@ function Row({
           {expert.isVerified && (
             <BadgeCheck size={11} className="text-accent flex-shrink-0" strokeWidth={2.25} />
           )}
-          {expert.isPinned && <Star size={10} className="text-accent flex-shrink-0" strokeWidth={2.5} />}
+          {expert.isPinned && (
+            <Star size={10} className="text-accent flex-shrink-0" strokeWidth={2.5} />
+          )}
         </div>
         {expert.domain && (
-          <div className="text-[11px] text-text-tertiary capitalize truncate">
-            {expert.domain}
-          </div>
+          <div className="text-[11px] text-text-tertiary capitalize truncate">{expert.domain}</div>
         )}
       </div>
       <span

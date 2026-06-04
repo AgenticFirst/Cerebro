@@ -9,7 +9,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, CornerDownLeft, Loader2, CalendarDays, RefreshCw, Plus, Plug, Clock } from 'lucide-react';
+import {
+  Search,
+  CornerDownLeft,
+  Loader2,
+  CalendarDays,
+  RefreshCw,
+  Plus,
+  Plug,
+  Clock,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useChat } from '../../context/ChatContext';
 import { useCalendar } from '../../context/CalendarContext';
@@ -64,12 +73,54 @@ export default function CommandPalette() {
 
   const staticCommands: StaticCommand[] = useMemo(
     () => [
-      { id: 'today', labelKey: 'calendar.palette.goToday', icon: CalendarDays, run: () => { setActiveScreen('calendar'); cal.goToday(); } },
-      { id: 'week', labelKey: 'calendar.palette.weekView', icon: CalendarDays, run: () => { setActiveScreen('calendar'); cal.setViewMode('week'); } },
-      { id: 'day', labelKey: 'calendar.palette.dayView', icon: CalendarDays, run: () => { setActiveScreen('calendar'); cal.setViewMode('day'); } },
-      { id: 'refresh', labelKey: 'calendar.palette.refresh', icon: RefreshCw, run: () => { setActiveScreen('calendar'); void cal.refresh(); } },
-      { id: 'new', labelKey: 'calendar.palette.newEvent', icon: Plus, run: () => setActiveScreen('calendar') },
-      { id: 'connect', labelKey: 'calendar.palette.connect', icon: Plug, run: () => setActiveScreen('calendar') },
+      {
+        id: 'today',
+        labelKey: 'calendar.palette.goToday',
+        icon: CalendarDays,
+        run: () => {
+          setActiveScreen('calendar');
+          cal.goToday();
+        },
+      },
+      {
+        id: 'week',
+        labelKey: 'calendar.palette.weekView',
+        icon: CalendarDays,
+        run: () => {
+          setActiveScreen('calendar');
+          cal.setViewMode('week');
+        },
+      },
+      {
+        id: 'day',
+        labelKey: 'calendar.palette.dayView',
+        icon: CalendarDays,
+        run: () => {
+          setActiveScreen('calendar');
+          cal.setViewMode('day');
+        },
+      },
+      {
+        id: 'refresh',
+        labelKey: 'calendar.palette.refresh',
+        icon: RefreshCw,
+        run: () => {
+          setActiveScreen('calendar');
+          void cal.refresh();
+        },
+      },
+      {
+        id: 'new',
+        labelKey: 'calendar.palette.newEvent',
+        icon: Plus,
+        run: () => setActiveScreen('calendar'),
+      },
+      {
+        id: 'connect',
+        labelKey: 'calendar.palette.connect',
+        icon: Plug,
+        run: () => setActiveScreen('calendar'),
+      },
     ],
     [cal, setActiveScreen],
   );
@@ -93,7 +144,13 @@ export default function CommandPalette() {
     if (res.ok && res.command) {
       setParse({ kind: 'parsed', command: res.command });
     } else {
-      setParse({ kind: 'error', message: res.error === 'noMatch' ? t('calendar.palette.noMatch') : res.error ?? t('calendar.palette.noMatch') });
+      setParse({
+        kind: 'error',
+        message:
+          res.error === 'noMatch'
+            ? t('calendar.palette.noMatch')
+            : (res.error ?? t('calendar.palette.noMatch')),
+      });
     }
   };
 
@@ -112,7 +169,10 @@ export default function CommandPalette() {
           await cal.deleteEvent(String(p.event_id ?? ''));
           break;
         case 'calendar_rsvp':
-          await cal.rsvp(String(p.event_id ?? ''), String(p.response ?? 'accepted') as RsvpResponse);
+          await cal.rsvp(
+            String(p.event_id ?? ''),
+            String(p.response ?? 'accepted') as RsvpResponse,
+          );
           break;
         default:
           // Read-only actions (query/find_free_time): just take the user to the calendar.
@@ -141,7 +201,10 @@ export default function CommandPalette() {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center pt-[15vh] bg-black/40" onClick={close}>
+    <div
+      className="fixed inset-0 z-[60] flex items-start justify-center pt-[15vh] bg-black/40"
+      onClick={close}
+    >
       <div
         className="w-[560px] max-w-[92vw] rounded-xl border border-border-subtle bg-bg-base shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -155,12 +218,17 @@ export default function CommandPalette() {
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => { setQuery(e.target.value); if (parse.kind !== 'idle') setParse({ kind: 'idle' }); }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              if (parse.kind !== 'idle') setParse({ kind: 'idle' });
+            }}
             onKeyDown={onInputKeyDown}
             placeholder={t('calendar.palette.placeholder')}
             className="flex-1 bg-transparent text-[14px] text-text-primary outline-none placeholder:text-text-tertiary"
           />
-          <kbd className="text-[10px] text-text-tertiary border border-border-subtle rounded px-1.5 py-0.5">esc</kbd>
+          <kbd className="text-[10px] text-text-tertiary border border-border-subtle rounded px-1.5 py-0.5">
+            esc
+          </kbd>
         </div>
 
         <div className="max-h-[320px] overflow-y-auto scrollbar-thin py-1.5">
@@ -169,9 +237,12 @@ export default function CommandPalette() {
             <div className="px-3.5 py-2">
               <div className="rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5">
                 <div className="flex items-center gap-2 text-[12px] text-accent mb-1">
-                  <Clock size={13} /> {parse.command.action.replace('calendar_', '').replace(/_/g, ' ')}
+                  <Clock size={13} />{' '}
+                  {parse.command.action.replace('calendar_', '').replace(/_/g, ' ')}
                 </div>
-                <p className="text-[13px] text-text-primary">{parse.command.summary || t('calendar.palette.run')}</p>
+                <p className="text-[13px] text-text-primary">
+                  {parse.command.summary || t('calendar.palette.run')}
+                </p>
                 <button
                   onClick={() => void dispatch(parse.command)}
                   className="mt-2 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] bg-accent text-black font-medium hover:brightness-110"
@@ -187,23 +258,26 @@ export default function CommandPalette() {
           )}
 
           {parse.kind === 'parsing' && (
-            <div className="px-3.5 py-2 text-[12px] text-text-tertiary">{t('calendar.palette.parsing')}</div>
+            <div className="px-3.5 py-2 text-[12px] text-text-tertiary">
+              {t('calendar.palette.parsing')}
+            </div>
           )}
 
           {/* Static commands */}
-          {(parse.kind === 'idle' || parse.kind === 'error') && filtered.map((cmd) => {
-            const Icon = cmd.icon;
-            return (
-              <button
-                key={cmd.id}
-                onClick={() => runStatic(cmd)}
-                className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-[13px] text-text-secondary hover:bg-bg-hover"
-              >
-                <Icon size={14} className="text-text-tertiary" />
-                {t(cmd.labelKey)}
-              </button>
-            );
-          })}
+          {(parse.kind === 'idle' || parse.kind === 'error') &&
+            filtered.map((cmd) => {
+              const Icon = cmd.icon;
+              return (
+                <button
+                  key={cmd.id}
+                  onClick={() => runStatic(cmd)}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-[13px] text-text-secondary hover:bg-bg-hover"
+                >
+                  <Icon size={14} className="text-text-tertiary" />
+                  {t(cmd.labelKey)}
+                </button>
+              );
+            })}
 
           {/* NL hint */}
           {parse.kind === 'idle' && (

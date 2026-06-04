@@ -92,7 +92,7 @@ interface CapturedRequest {
 
 let mockServer: http.Server;
 let serverPort: number;
-let persistenceCalls: CapturedRequest[] = [];
+const persistenceCalls: CapturedRequest[] = [];
 
 // stepRecordId → { runId, stepId } so we can match step PATCHes back to their
 // logical step id (which is what tests assert on).
@@ -109,10 +109,16 @@ beforeAll(async () => {
 
   mockServer = http.createServer((req, res) => {
     let body = '';
-    req.on('data', (chunk) => { body += chunk; });
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
     req.on('end', () => {
       let parsed: unknown = null;
-      try { parsed = body ? JSON.parse(body) : null; } catch { parsed = body; }
+      try {
+        parsed = body ? JSON.parse(body) : null;
+      } catch {
+        parsed = body;
+      }
       const url = req.url || '/';
       const method = req.method || 'GET';
 
@@ -144,12 +150,18 @@ afterAll(async () => {
   // 1. HubSpot cleanup. Tickets first because they reference contacts.
   if (READY) {
     for (const id of createdTicketIds) {
-      await callHubSpotApi(TOKEN, `/crm/v3/objects/tickets/${id}`, { method: 'DELETE' })
-        .catch(() => { /* best effort */ });
+      await callHubSpotApi(TOKEN, `/crm/v3/objects/tickets/${id}`, { method: 'DELETE' }).catch(
+        () => {
+          /* best effort */
+        },
+      );
     }
     for (const id of createdContactIds) {
-      await callHubSpotApi(TOKEN, `/crm/v3/objects/contacts/${id}`, { method: 'DELETE' })
-        .catch(() => { /* best effort */ });
+      await callHubSpotApi(TOKEN, `/crm/v3/objects/contacts/${id}`, { method: 'DELETE' }).catch(
+        () => {
+          /* best effort */
+        },
+      );
     }
   }
   // 2. Mock backend.
@@ -163,14 +175,14 @@ function makeMockWebContents() {
     isDestroyed: () => false,
     send: vi.fn(),
     ipc: { on: vi.fn(), removeListener: vi.fn() },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
 function makeMockRuntime() {
   return {
     startRun: vi.fn(),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
@@ -210,7 +222,10 @@ function buildWhatsAppStub(captured: CapturedSend[]): WhatsAppChannel {
   };
 }
 
-function waitForRunComplete(runId: string, timeoutMs = 120_000): Promise<'completed' | 'failed' | 'cancelled'> {
+function waitForRunComplete(
+  runId: string,
+  timeoutMs = 120_000,
+): Promise<'completed' | 'failed' | 'cancelled'> {
   const startedAt = Date.now();
   return new Promise((resolve, reject) => {
     const tick = () => {
@@ -247,7 +262,11 @@ function getStepOutput(runId: string, logicalStepId: string): Record<string, unk
     if (!mapping || mapping.stepId !== logicalStepId) continue;
     const body = call.body as { output_json?: string; status?: string };
     if (body.status !== 'completed' || !body.output_json) continue;
-    try { return JSON.parse(body.output_json) as Record<string, unknown>; } catch { return null; }
+    try {
+      return JSON.parse(body.output_json) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
   }
   return null;
 }
@@ -357,8 +376,10 @@ function extractAndTrackHubSpotIds(turn: TurnResult): { contactId: string; ticke
   const ticketOut = getStepOutput(turn.runId, 'create_ticket');
   const contactId = String(upsertOut?.contact_id ?? '');
   const ticketId = String(ticketOut?.ticket_id ?? '');
-  if (!contactId) throw new Error(`turn ${turn.turnIndex}: upsert_contact did not return a contact_id`);
-  if (!ticketId) throw new Error(`turn ${turn.turnIndex}: create_ticket did not return a ticket_id`);
+  if (!contactId)
+    throw new Error(`turn ${turn.turnIndex}: upsert_contact did not return a contact_id`);
+  if (!ticketId)
+    throw new Error(`turn ${turn.turnIndex}: create_ticket did not return a ticket_id`);
   createdContactIds.add(contactId);
   createdTicketIds.add(ticketId);
   return { contactId, ticketId };
@@ -379,9 +400,26 @@ function uniqueTestPhone(): string {
 function looksLikeSpanish(text: string): { ok: boolean; hits: string[] } {
   const lower = text.toLowerCase();
   const markers = [
-    'á', 'é', 'í', 'ó', 'ú', 'ñ', '¿', '¡',
-    'hola', 'gracias', 'cómo', 'qué', 'soy ', ' es ', ' un ',
-    'por favor', 'usted', 'tú ', 'te ', 'le ',
+    'á',
+    'é',
+    'í',
+    'ó',
+    'ú',
+    'ñ',
+    '¿',
+    '¡',
+    'hola',
+    'gracias',
+    'cómo',
+    'qué',
+    'soy ',
+    ' es ',
+    ' un ',
+    'por favor',
+    'usted',
+    'tú ',
+    'te ',
+    'le ',
     'ticket', // Spanish loanword — neutral but appears in confirmation
   ];
   const hits = markers.filter((m) => lower.includes(m));
@@ -414,192 +452,198 @@ d('WhatsApp → HubSpot customer support routine (live)', () => {
   });
 
   // ── Scenario 1: Happy path, gradual conversation ─────────────
-  it(
-    'Scenario 1: gradual support conversation opens a ticket with the right pipeline + stage and confirms via WhatsApp',
-    async () => {
-      const phone = uniqueTestPhone();
-      const turns = await driveConversation({
-        engine, webContents, dag, capturedSends,
-        phoneNumber: phone,
-        customerScript: [
-          'Hi',
-          "Hi I'm Ana",
-          "I can't log into your platform",
-          "I keep getting Error 401 since yesterday morning. My account email is ana@example.com.",
-          "I'm trying to log into the customer dashboard at app.example.com. The error happens in both Chrome and Safari. Started yesterday around 9am. That's all I can tell you — please open a ticket so someone can help.",
-        ],
-        maxTurns: 6,
-      });
+  it('Scenario 1: gradual support conversation opens a ticket with the right pipeline + stage and confirms via WhatsApp', async () => {
+    const phone = uniqueTestPhone();
+    const turns = await driveConversation({
+      engine,
+      webContents,
+      dag,
+      capturedSends,
+      phoneNumber: phone,
+      customerScript: [
+        'Hi',
+        "Hi I'm Ana",
+        "I can't log into your platform",
+        'I keep getting Error 401 since yesterday morning. My account email is ana@example.com.',
+        "I'm trying to log into the customer dashboard at app.example.com. The error happens in both Chrome and Safari. Started yesterday around 9am. That's all I can tell you — please open a ticket so someone can help.",
+      ],
+      maxTurns: 6,
+    });
 
-      // Find the turn that actually created the ticket. Build a compact
-      // turn-by-turn trace into the failure message so the next maintainer
-      // can see *why* a turn missed (classifier category vs branch vs reply).
-      const ticketTurn = turns.find((t) => t.ticketCreated);
-      const diagnostic = turns.map((t, i) => {
+    // Find the turn that actually created the ticket. Build a compact
+    // turn-by-turn trace into the failure message so the next maintainer
+    // can see *why* a turn missed (classifier category vs branch vs reply).
+    const ticketTurn = turns.find((t) => t.ticketCreated);
+    const diagnostic = turns
+      .map((t, i) => {
         const classify = getStepOutput(t.runId, 'classify_state');
         const isReady = getStepOutput(t.runId, 'is_ready');
         return `\n  turn ${i} status=${t.runStatus} category=${JSON.stringify(classify?.category)} branch=${JSON.stringify(isReady?.branch)} reply="${t.botReplied.slice(0, 80)}"`;
-      }).join('');
-      expect(ticketTurn, `expected a ticket within ${turns.length} turns.${diagnostic}`).toBeDefined();
+      })
+      .join('');
+    expect(
+      ticketTurn,
+      `expected a ticket within ${turns.length} turns.${diagnostic}`,
+    ).toBeDefined();
 
-      const { contactId, ticketId } = extractAndTrackHubSpotIds(ticketTurn!);
+    const { contactId, ticketId } = extractAndTrackHubSpotIds(ticketTurn!);
 
-      // ── HubSpot ground truth ────────────────────────────────
-      const fetched = await callHubSpotApi<{ properties?: Record<string, string | null> }>(
-        TOKEN,
-        `/crm/v3/objects/tickets/${ticketId}?properties=subject,content,hs_pipeline,hs_pipeline_stage`,
-      );
-      expect(fetched.ok).toBe(true);
-      expect(fetched.data?.properties?.hs_pipeline).toBe(PIPELINE);
-      expect(fetched.data?.properties?.hs_pipeline_stage).toBe(STAGE);
-      expect((fetched.data?.properties?.subject ?? '').length).toBeGreaterThan(0);
-      // Ticket content should reference the customer's phone (templated in).
-      expect(fetched.data?.properties?.content ?? '').toContain(phone);
+    // ── HubSpot ground truth ────────────────────────────────
+    const fetched = await callHubSpotApi<{ properties?: Record<string, string | null> }>(
+      TOKEN,
+      `/crm/v3/objects/tickets/${ticketId}?properties=subject,content,hs_pipeline,hs_pipeline_stage`,
+    );
+    expect(fetched.ok).toBe(true);
+    expect(fetched.data?.properties?.hs_pipeline).toBe(PIPELINE);
+    expect(fetched.data?.properties?.hs_pipeline_stage).toBe(STAGE);
+    expect((fetched.data?.properties?.subject ?? '').length).toBeGreaterThan(0);
+    // Ticket content should reference the customer's phone (templated in).
+    expect(fetched.data?.properties?.content ?? '').toContain(phone);
 
-      // Contact upsert hit HubSpot too.
-      const contactFetch = await callHubSpotApi<{ properties?: Record<string, string | null> }>(
-        TOKEN,
-        `/crm/v3/objects/contacts/${contactId}?properties=email,firstname,phone`,
-      );
-      expect(contactFetch.ok).toBe(true);
+    // Contact upsert hit HubSpot too.
+    const contactFetch = await callHubSpotApi<{ properties?: Record<string, string | null> }>(
+      TOKEN,
+      `/crm/v3/objects/contacts/${contactId}?properties=email,firstname,phone`,
+    );
+    expect(contactFetch.ok).toBe(true);
 
-      // ── WhatsApp confirmation ────────────────────────────────
-      const lastSend = ticketTurn!.sendsThisTurn[ticketTurn!.sendsThisTurn.length - 1];
-      expect(lastSend?.phone).toBe(phone);
-      expect(lastSend?.message ?? '').toContain(ticketId);
+    // ── WhatsApp confirmation ────────────────────────────────
+    const lastSend = ticketTurn!.sendsThisTurn[ticketTurn!.sendsThisTurn.length - 1];
+    expect(lastSend?.phone).toBe(phone);
+    expect(lastSend?.message ?? '').toContain(ticketId);
 
-      // ── Step trace (the @true branch ran end-to-end) ─────────
-      expect(ticketTurn!.completedSteps).toContain('upsert_contact');
-      expect(ticketTurn!.completedSteps).toContain('create_ticket');
-      expect(ticketTurn!.completedSteps).toContain('compose_confirmation');
-      expect(ticketTurn!.completedSteps).toContain('send_confirmation');
-      // The "keep gathering" branch should NOT have fired this turn.
-      expect(ticketTurn!.completedSteps.has('compose_next_message')).toBe(false);
-    },
-    240_000,
-  );
+    // ── Step trace (the @true branch ran end-to-end) ─────────
+    expect(ticketTurn!.completedSteps).toContain('upsert_contact');
+    expect(ticketTurn!.completedSteps).toContain('create_ticket');
+    expect(ticketTurn!.completedSteps).toContain('compose_confirmation');
+    expect(ticketTurn!.completedSteps).toContain('send_confirmation');
+    // The "keep gathering" branch should NOT have fired this turn.
+    expect(ticketTurn!.completedSteps.has('compose_next_message')).toBe(false);
+  }, 240_000);
 
   // ── Scenario 2: One-shot Spanish ─────────────────────────────
-  it(
-    'Scenario 2: one-shot Spanish message opens a ticket on turn 1 and replies in Spanish',
-    async () => {
-      const phone = uniqueTestPhone();
-      const turns = await driveConversation({
-        engine, webContents, dag, capturedSends,
-        phoneNumber: phone,
-        customerScript: [
-          'Hola, soy Ana. No puedo iniciar sesión en su plataforma — me sale Error 401 desde ayer por la mañana. Mi correo es ana@example.com.',
-        ],
-        maxTurns: 2,
-      });
+  it('Scenario 2: one-shot Spanish message opens a ticket on turn 1 and replies in Spanish', async () => {
+    const phone = uniqueTestPhone();
+    const turns = await driveConversation({
+      engine,
+      webContents,
+      dag,
+      capturedSends,
+      phoneNumber: phone,
+      customerScript: [
+        'Hola, soy Ana. No puedo iniciar sesión en su plataforma — me sale Error 401 desde ayer por la mañana. Mi correo es ana@example.com.',
+      ],
+      maxTurns: 2,
+    });
 
-      const ticketTurn = turns.find((t) => t.ticketCreated);
-      expect(ticketTurn, 'expected the one-shot Spanish message to open a ticket').toBeDefined();
-      expect(ticketTurn!.turnIndex).toBe(0);
+    const ticketTurn = turns.find((t) => t.ticketCreated);
+    expect(ticketTurn, 'expected the one-shot Spanish message to open a ticket').toBeDefined();
+    expect(ticketTurn!.turnIndex).toBe(0);
 
-      const { ticketId } = extractAndTrackHubSpotIds(ticketTurn!);
+    const { ticketId } = extractAndTrackHubSpotIds(ticketTurn!);
 
-      const lastSend = ticketTurn!.sendsThisTurn[ticketTurn!.sendsThisTurn.length - 1];
-      expect(lastSend?.message ?? '').toContain(ticketId);
+    const lastSend = ticketTurn!.sendsThisTurn[ticketTurn!.sendsThisTurn.length - 1];
+    expect(lastSend?.message ?? '').toContain(ticketId);
 
-      const lang = looksLikeSpanish(lastSend?.message ?? '');
-      expect(lang.ok, `bot confirmation should look Spanish. Got: "${lastSend?.message}"`).toBe(true);
-    },
-    240_000,
-  );
+    const lang = looksLikeSpanish(lastSend?.message ?? '');
+    expect(lang.ok, `bot confirmation should look Spanish. Got: "${lastSend?.message}"`).toBe(true);
+  }, 240_000);
 
   // ── Scenario 3: Off-topic — no HubSpot calls ─────────────────
-  it(
-    'Scenario 3: off-topic sales pitch is rejected — no HubSpot contact, no ticket',
-    async () => {
-      const phone = uniqueTestPhone();
-      const turns = await driveConversation({
-        engine, webContents, dag, capturedSends,
-        phoneNumber: phone,
-        customerScript: [
-          'Hi! I run a digital agency and I want to sell you SEO services. Are you the decision maker?',
-        ],
-        maxTurns: 2,
-        stopOnTicket: false,
-      });
+  it('Scenario 3: off-topic sales pitch is rejected — no HubSpot contact, no ticket', async () => {
+    const phone = uniqueTestPhone();
+    const turns = await driveConversation({
+      engine,
+      webContents,
+      dag,
+      capturedSends,
+      phoneNumber: phone,
+      customerScript: [
+        'Hi! I run a digital agency and I want to sell you SEO services. Are you the decision maker?',
+      ],
+      maxTurns: 2,
+      stopOnTicket: false,
+    });
 
-      // No turn should have hit the ticket branch.
-      for (const turn of turns) {
-        expect(turn.ticketCreated, `turn ${turn.turnIndex} unexpectedly created a ticket`).toBe(false);
-        expect(turn.completedSteps.has('upsert_contact'), 'no contact upsert on off-topic').toBe(false);
-        expect(turn.completedSteps.has('create_ticket'), 'no ticket creation on off-topic').toBe(false);
-      }
-      // Bot should still have replied (politely redirecting).
-      expect(turns[0].botReplied.length).toBeGreaterThan(0);
-    },
-    180_000,
-  );
+    // No turn should have hit the ticket branch.
+    for (const turn of turns) {
+      expect(turn.ticketCreated, `turn ${turn.turnIndex} unexpectedly created a ticket`).toBe(
+        false,
+      );
+      expect(turn.completedSteps.has('upsert_contact'), 'no contact upsert on off-topic').toBe(
+        false,
+      );
+      expect(turn.completedSteps.has('create_ticket'), 'no ticket creation on off-topic').toBe(
+        false,
+      );
+    }
+    // Bot should still have replied (politely redirecting).
+    expect(turns[0].botReplied.length).toBeGreaterThan(0);
+  }, 180_000);
 
   // ── Scenario 4: Customer never gives name — null tolerance ───
-  it(
-    'Scenario 4: customer describes a clear issue without ever giving their name — upsert tolerates null name',
-    async () => {
-      const phone = uniqueTestPhone();
-      const turns = await driveConversation({
-        engine, webContents, dag, capturedSends,
-        phoneNumber: phone,
-        customerScript: [
-          'Hi',
-          'My checkout page is throwing a 500 error on every purchase attempt',
-          'Yes it started about 2 hours ago, no the error message is exactly "Internal Server Error", yes it happens for every product',
-          'My account email is anonymous-buyer@example.com',
-        ],
-        maxTurns: 6,
-      });
+  it('Scenario 4: customer describes a clear issue without ever giving their name — upsert tolerates null name', async () => {
+    const phone = uniqueTestPhone();
+    const turns = await driveConversation({
+      engine,
+      webContents,
+      dag,
+      capturedSends,
+      phoneNumber: phone,
+      customerScript: [
+        'Hi',
+        'My checkout page is throwing a 500 error on every purchase attempt',
+        'Yes it started about 2 hours ago, no the error message is exactly "Internal Server Error", yes it happens for every product',
+        'My account email is anonymous-buyer@example.com',
+      ],
+      maxTurns: 6,
+    });
 
-      // We don't strictly require the ticket to open within these turns —
-      // some classifier runs may keep gathering. What we DO require: if a
-      // ticket DID open, the upsert / ticket creation didn't crash on a
-      // potentially-null firstname.
-      const ticketTurn = turns.find((t) => t.ticketCreated);
-      if (ticketTurn) {
-        const ids = extractAndTrackHubSpotIds(ticketTurn);
-        // Upserted contact may or may not have a firstname — both are valid.
-        // The point of this scenario is that the routine *didn't fail*.
-        expect(ticketTurn.runStatus).toBe('completed');
-        expect(ids.contactId).toBeTruthy();
-        expect(ids.ticketId).toBeTruthy();
-      } else {
-        // Even without a ticket, every turn should have completed successfully.
-        for (const t of turns) {
-          expect(t.runStatus, `turn ${t.turnIndex} did not complete cleanly`).toBe('completed');
-        }
+    // We don't strictly require the ticket to open within these turns —
+    // some classifier runs may keep gathering. What we DO require: if a
+    // ticket DID open, the upsert / ticket creation didn't crash on a
+    // potentially-null firstname.
+    const ticketTurn = turns.find((t) => t.ticketCreated);
+    if (ticketTurn) {
+      const ids = extractAndTrackHubSpotIds(ticketTurn);
+      // Upserted contact may or may not have a firstname — both are valid.
+      // The point of this scenario is that the routine *didn't fail*.
+      expect(ticketTurn.runStatus).toBe('completed');
+      expect(ids.contactId).toBeTruthy();
+      expect(ids.ticketId).toBeTruthy();
+    } else {
+      // Even without a ticket, every turn should have completed successfully.
+      for (const t of turns) {
+        expect(t.runStatus, `turn ${t.turnIndex} did not complete cleanly`).toBe('completed');
       }
-    },
-    300_000,
-  );
+    }
+  }, 300_000);
 
   // ── Scenario 5: Single greeting — no HubSpot calls ───────────
-  it(
-    'Scenario 5: a lone "Hello" is greeted but does not touch HubSpot',
-    async () => {
-      const phone = uniqueTestPhone();
-      const turns = await driveConversation({
-        engine, webContents, dag, capturedSends,
-        phoneNumber: phone,
-        customerScript: ['Hello'],
-        maxTurns: 1,
-        stopOnTicket: false,
-      });
+  it('Scenario 5: a lone "Hello" is greeted but does not touch HubSpot', async () => {
+    const phone = uniqueTestPhone();
+    const turns = await driveConversation({
+      engine,
+      webContents,
+      dag,
+      capturedSends,
+      phoneNumber: phone,
+      customerScript: ['Hello'],
+      maxTurns: 1,
+      stopOnTicket: false,
+    });
 
-      expect(turns).toHaveLength(1);
-      const turn = turns[0];
-      expect(turn.runStatus).toBe('completed');
-      expect(turn.ticketCreated).toBe(false);
-      expect(turn.completedSteps.has('upsert_contact')).toBe(false);
-      expect(turn.completedSteps.has('create_ticket')).toBe(false);
-      // The bot should have replied — the gathering branch ran.
-      expect(turn.completedSteps.has('compose_next_message')).toBe(true);
-      expect(turn.completedSteps.has('send_next_message')).toBe(true);
-      expect(turn.botReplied.length).toBeGreaterThan(0);
-    },
-    180_000,
-  );
+    expect(turns).toHaveLength(1);
+    const turn = turns[0];
+    expect(turn.runStatus).toBe('completed');
+    expect(turn.ticketCreated).toBe(false);
+    expect(turn.completedSteps.has('upsert_contact')).toBe(false);
+    expect(turn.completedSteps.has('create_ticket')).toBe(false);
+    // The bot should have replied — the gathering branch ran.
+    expect(turn.completedSteps.has('compose_next_message')).toBe(true);
+    expect(turn.completedSteps.has('send_next_message')).toBe(true);
+    expect(turn.botReplied.length).toBeGreaterThan(0);
+  }, 180_000);
 
   // ── Scenario 6: Gradual Spanish conversation → ticket ────────
   // Mirrors scenario 1 in Spanish, including the "Hola" / "¿Cómo estás?"
@@ -608,102 +652,116 @@ d('WhatsApp → HubSpot customer support routine (live)', () => {
   //   · the bot doesn't get stuck on small talk — it pivots to "how can I help"
   //   · once a clear error + customer info exists, the ticket opens
   //   · the WhatsApp confirmation message is also in Spanish
-  it(
-    'Scenario 6: gradual Spanish conversation (with small talk) opens a ticket and confirms in Spanish',
-    async () => {
-      const phone = uniqueTestPhone();
-      const turns = await driveConversation({
-        engine, webContents, dag, capturedSends,
-        phoneNumber: phone,
-        customerScript: [
-          'Hola',
-          '¿Cómo estás?',
-          'Bien, gracias. Soy María',
-          'No puedo entrar a mi cuenta de su plataforma',
-          'Me sale el error 403 desde ayer por la mañana. Mi correo es maria@ejemplo.com. Es bastante urgente, por favor abrime un ticket.',
-        ],
-        maxTurns: 6,
-      });
+  it('Scenario 6: gradual Spanish conversation (with small talk) opens a ticket and confirms in Spanish', async () => {
+    const phone = uniqueTestPhone();
+    const turns = await driveConversation({
+      engine,
+      webContents,
+      dag,
+      capturedSends,
+      phoneNumber: phone,
+      customerScript: [
+        'Hola',
+        '¿Cómo estás?',
+        'Bien, gracias. Soy María',
+        'No puedo entrar a mi cuenta de su plataforma',
+        'Me sale el error 403 desde ayer por la mañana. Mi correo es maria@ejemplo.com. Es bastante urgente, por favor abrime un ticket.',
+      ],
+      maxTurns: 6,
+    });
 
-      const ticketTurn = turns.find((t) => t.ticketCreated);
-      const diagnostic = turns.map((t, i) => {
+    const ticketTurn = turns.find((t) => t.ticketCreated);
+    const diagnostic = turns
+      .map((t, i) => {
         const classify = getStepOutput(t.runId, 'classify_state');
         const isReady = getStepOutput(t.runId, 'is_ready');
         return `\n  turn ${i} status=${t.runStatus} category=${JSON.stringify(classify?.category)} branch=${JSON.stringify(isReady?.branch)} reply="${t.botReplied.slice(0, 80)}"`;
-      }).join('');
-      expect(ticketTurn, `expected a ticket within ${turns.length} Spanish turns.${diagnostic}`).toBeDefined();
+      })
+      .join('');
+    expect(
+      ticketTurn,
+      `expected a ticket within ${turns.length} Spanish turns.${diagnostic}`,
+    ).toBeDefined();
 
-      const { contactId, ticketId } = extractAndTrackHubSpotIds(ticketTurn!);
+    const { contactId, ticketId } = extractAndTrackHubSpotIds(ticketTurn!);
 
-      // HubSpot ground truth — same shape as scenario 1 but Spanish content.
-      const fetched = await callHubSpotApi<{ properties?: Record<string, string | null> }>(
-        TOKEN,
-        `/crm/v3/objects/tickets/${ticketId}?properties=subject,content,hs_pipeline,hs_pipeline_stage`,
-      );
-      expect(fetched.ok).toBe(true);
-      expect(fetched.data?.properties?.hs_pipeline).toBe(PIPELINE);
-      expect(fetched.data?.properties?.hs_pipeline_stage).toBe(STAGE);
-      expect((fetched.data?.properties?.subject ?? '').length).toBeGreaterThan(0);
-      expect(fetched.data?.properties?.content ?? '').toContain(phone);
+    // HubSpot ground truth — same shape as scenario 1 but Spanish content.
+    const fetched = await callHubSpotApi<{ properties?: Record<string, string | null> }>(
+      TOKEN,
+      `/crm/v3/objects/tickets/${ticketId}?properties=subject,content,hs_pipeline,hs_pipeline_stage`,
+    );
+    expect(fetched.ok).toBe(true);
+    expect(fetched.data?.properties?.hs_pipeline).toBe(PIPELINE);
+    expect(fetched.data?.properties?.hs_pipeline_stage).toBe(STAGE);
+    expect((fetched.data?.properties?.subject ?? '').length).toBeGreaterThan(0);
+    expect(fetched.data?.properties?.content ?? '').toContain(phone);
 
-      const contactFetch = await callHubSpotApi<{ properties?: Record<string, string | null> }>(
-        TOKEN,
-        `/crm/v3/objects/contacts/${contactId}?properties=email,firstname,phone`,
-      );
-      expect(contactFetch.ok).toBe(true);
+    const contactFetch = await callHubSpotApi<{ properties?: Record<string, string | null> }>(
+      TOKEN,
+      `/crm/v3/objects/contacts/${contactId}?properties=email,firstname,phone`,
+    );
+    expect(contactFetch.ok).toBe(true);
 
-      // Confirmation must reference the ticket id AND be in Spanish.
-      const lastSend = ticketTurn!.sendsThisTurn[ticketTurn!.sendsThisTurn.length - 1];
-      expect(lastSend?.phone).toBe(phone);
-      expect(lastSend?.message ?? '').toContain(ticketId);
-      const confirmLang = looksLikeSpanish(lastSend?.message ?? '');
-      expect(confirmLang.ok, `confirmation should be Spanish. Got: "${lastSend?.message}"`).toBe(true);
+    // Confirmation must reference the ticket id AND be in Spanish.
+    const lastSend = ticketTurn!.sendsThisTurn[ticketTurn!.sendsThisTurn.length - 1];
+    expect(lastSend?.phone).toBe(phone);
+    expect(lastSend?.message ?? '').toContain(ticketId);
+    const confirmLang = looksLikeSpanish(lastSend?.message ?? '');
+    expect(confirmLang.ok, `confirmation should be Spanish. Got: "${lastSend?.message}"`).toBe(
+      true,
+    );
 
-      // Every gathering-turn reply should also be Spanish — language drift on
-      // turn 2 ("¿Cómo estás?" → English reply) would be a real regression.
-      for (const t of turns.slice(0, -1)) {
-        if (!t.botReplied) continue;
-        const lang = looksLikeSpanish(t.botReplied);
-        expect(lang.ok, `turn ${t.turnIndex} bot reply drifted out of Spanish: "${t.botReplied}"`).toBe(true);
-      }
+    // Every gathering-turn reply should also be Spanish — language drift on
+    // turn 2 ("¿Cómo estás?" → English reply) would be a real regression.
+    for (const t of turns.slice(0, -1)) {
+      if (!t.botReplied) continue;
+      const lang = looksLikeSpanish(t.botReplied);
+      expect(
+        lang.ok,
+        `turn ${t.turnIndex} bot reply drifted out of Spanish: "${t.botReplied}"`,
+      ).toBe(true);
+    }
 
-      // Branch sanity: ticket-opening turn should NOT also run the gather branch.
-      expect(ticketTurn!.completedSteps).toContain('upsert_contact');
-      expect(ticketTurn!.completedSteps).toContain('create_ticket');
-      expect(ticketTurn!.completedSteps).toContain('send_confirmation');
-      expect(ticketTurn!.completedSteps.has('compose_next_message')).toBe(false);
-    },
-    300_000,
-  );
+    // Branch sanity: ticket-opening turn should NOT also run the gather branch.
+    expect(ticketTurn!.completedSteps).toContain('upsert_contact');
+    expect(ticketTurn!.completedSteps).toContain('create_ticket');
+    expect(ticketTurn!.completedSteps).toContain('send_confirmation');
+    expect(ticketTurn!.completedSteps.has('compose_next_message')).toBe(false);
+  }, 300_000);
 
   // ── Scenario 7: Spanish off-topic — no HubSpot calls ─────────
   // Parity with scenario 3 but in Spanish. A sales pitch in any language must
   // be classified off_topic; the bot must still reply (politely, in Spanish).
-  it(
-    'Scenario 7: Spanish off-topic sales pitch is rejected — no HubSpot, bot redirects in Spanish',
-    async () => {
-      const phone = uniqueTestPhone();
-      const turns = await driveConversation({
-        engine, webContents, dag, capturedSends,
-        phoneNumber: phone,
-        customerScript: [
-          'Hola, te escribo de una agencia digital. Vendemos servicios de SEO y posicionamiento web. ¿Eres tú quien decide?',
-        ],
-        maxTurns: 2,
-        stopOnTicket: false,
-      });
+  it('Scenario 7: Spanish off-topic sales pitch is rejected — no HubSpot, bot redirects in Spanish', async () => {
+    const phone = uniqueTestPhone();
+    const turns = await driveConversation({
+      engine,
+      webContents,
+      dag,
+      capturedSends,
+      phoneNumber: phone,
+      customerScript: [
+        'Hola, te escribo de una agencia digital. Vendemos servicios de SEO y posicionamiento web. ¿Eres tú quien decide?',
+      ],
+      maxTurns: 2,
+      stopOnTicket: false,
+    });
 
-      for (const turn of turns) {
-        expect(turn.ticketCreated, `turn ${turn.turnIndex} unexpectedly created a ticket`).toBe(false);
-        expect(turn.completedSteps.has('upsert_contact'), 'no contact upsert on off-topic').toBe(false);
-        expect(turn.completedSteps.has('create_ticket'), 'no ticket creation on off-topic').toBe(false);
-      }
-      expect(turns[0].botReplied.length).toBeGreaterThan(0);
-      const lang = looksLikeSpanish(turns[0].botReplied);
-      expect(lang.ok, `redirect should be in Spanish. Got: "${turns[0].botReplied}"`).toBe(true);
-    },
-    180_000,
-  );
+    for (const turn of turns) {
+      expect(turn.ticketCreated, `turn ${turn.turnIndex} unexpectedly created a ticket`).toBe(
+        false,
+      );
+      expect(turn.completedSteps.has('upsert_contact'), 'no contact upsert on off-topic').toBe(
+        false,
+      );
+      expect(turn.completedSteps.has('create_ticket'), 'no ticket creation on off-topic').toBe(
+        false,
+      );
+    }
+    expect(turns[0].botReplied.length).toBeGreaterThan(0);
+    const lang = looksLikeSpanish(turns[0].botReplied);
+    expect(lang.ok, `redirect should be in Spanish. Got: "${turns[0].botReplied}"`).toBe(true);
+  }, 180_000);
 });
 
 // Surface a friendly hint in test output when nothing ran.

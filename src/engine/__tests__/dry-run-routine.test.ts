@@ -32,10 +32,16 @@ let serverPort: number;
 beforeAll(async () => {
   mockServer = http.createServer((req, res) => {
     let body = '';
-    req.on('data', (chunk) => { body += chunk; });
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
     req.on('end', () => {
       let parsed: unknown = null;
-      try { parsed = body ? JSON.parse(body) : null; } catch { parsed = body; }
+      try {
+        parsed = body ? JSON.parse(body) : null;
+      } catch {
+        parsed = body;
+      }
 
       const url = req.url ?? '';
       if (req.method === 'POST' && url.endsWith('/runs')) {
@@ -72,18 +78,20 @@ function makeMockWebContents() {
     isDestroyed: () => false,
     send: vi.fn(),
     ipc: { on: vi.fn(), removeListener: vi.fn() },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
 function makeMockRuntime() {
   return {
     startRun: vi.fn(),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
-function step(overrides: Partial<StepDefinition> & { id: string; actionType: string }): StepDefinition {
+function step(
+  overrides: Partial<StepDefinition> & { id: string; actionType: string },
+): StepDefinition {
   return {
     name: overrides.id,
     params: {},
@@ -117,9 +125,7 @@ describe('dryRunRoutine — happy paths', () => {
           name: 'Notify',
           actionType: 'send_notification',
           dependsOn: ['s1'],
-          inputMappings: [
-            { sourceStepId: 's1', sourceField: 'response', targetField: 'summary' },
-          ],
+          inputMappings: [{ sourceStepId: 's1', sourceField: 'response', targetField: 'summary' }],
           params: { title: 'Daily summary', body: '{{summary}}' },
         }),
       ],
@@ -237,9 +243,7 @@ describe('dryRunRoutine — happy paths', () => {
           name: 'Send',
           actionType: 'send_telegram_message',
           dependsOn: ['gate'],
-          inputMappings: [
-            { sourceStepId: 's1', sourceField: 'response', targetField: 'msg' },
-          ],
+          inputMappings: [{ sourceStepId: 's1', sourceField: 'response', targetField: 'msg' }],
           requiresApproval: true,
           params: { chat_id: '999', message: '{{msg}}' },
         }),

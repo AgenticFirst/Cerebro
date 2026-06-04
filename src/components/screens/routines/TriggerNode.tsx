@@ -20,15 +20,24 @@ function TriggerNode({ data, selected }: NodeProps) {
 
   const label = (() => {
     switch (type) {
-      case 'trigger_schedule': return t('triggers.scheduleTrigger');
-      case 'trigger_manual': return t('triggers.manualTrigger');
-      case 'trigger_webhook': return t('triggers.webhookTrigger');
-      case 'trigger_telegram_message': return t('triggers.telegramMessageTrigger');
-      case 'trigger_whatsapp_message': return t('triggers.whatsappMessageTrigger');
-      case 'trigger_github_issue_opened': return t('triggers.githubIssueOpenedTrigger');
-      case 'trigger_github_pr_review_requested': return t('triggers.githubPrReviewRequestedTrigger');
-      case 'trigger_app_event': return t('triggers.appEventTrigger');
-      default: return t('triggers.trigger');
+      case 'trigger_schedule':
+        return t('triggers.scheduleTrigger');
+      case 'trigger_manual':
+        return t('triggers.manualTrigger');
+      case 'trigger_webhook':
+        return t('triggers.webhookTrigger');
+      case 'trigger_telegram_message':
+        return t('triggers.telegramMessageTrigger');
+      case 'trigger_whatsapp_message':
+        return t('triggers.whatsappMessageTrigger');
+      case 'trigger_github_issue_opened':
+        return t('triggers.githubIssueOpenedTrigger');
+      case 'trigger_github_pr_review_requested':
+        return t('triggers.githubPrReviewRequestedTrigger');
+      case 'trigger_app_event':
+        return t('triggers.appEventTrigger');
+      default:
+        return t('triggers.trigger');
     }
   })();
 
@@ -77,11 +86,7 @@ function TriggerNode({ data, selected }: NodeProps) {
 
   const hoverCard = useMemo(
     () => (
-      <TooltipCard
-        title={label}
-        description={detail}
-        hint={t('routineTooltips.triggerNodeHint')}
-      />
+      <TooltipCard title={label} description={detail} hint={t('routineTooltips.triggerNodeHint')} />
     ),
     [label, detail, t],
   );
@@ -91,9 +96,7 @@ function TriggerNode({ data, selected }: NodeProps) {
       <div
         className={clsx(
           'w-[260px] rounded-lg border bg-teal-500/5 transition-all duration-150',
-          selected
-            ? 'shadow-lg'
-            : 'border-border-subtle hover:border-border-default',
+          selected ? 'shadow-lg' : 'border-border-subtle hover:border-border-default',
         )}
         style={{
           borderLeftWidth: 4,
@@ -129,9 +132,7 @@ function TriggerNode({ data, selected }: NodeProps) {
 
         {/* Detail */}
         <div className="px-3 pb-3">
-          <span className="text-sm text-text-secondary block truncate">
-            {detail}
-          </span>
+          <span className="text-sm text-text-secondary block truncate">{detail}</span>
         </div>
 
         <Handle

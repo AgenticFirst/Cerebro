@@ -138,7 +138,12 @@ export function buildNewsAskPrompt(
     `URL: ${article.url}`,
   ];
   if (article.publishedAt) lines.push(`Published: ${article.publishedAt}`);
-  lines.push('', '# RSS summary (may be partial)', '', article.summary?.trim() || '(no summary provided)');
+  lines.push(
+    '',
+    '# RSS summary (may be partial)',
+    '',
+    article.summary?.trim() || '(no summary provided)',
+  );
   if (history.length > 0) {
     lines.push('', '# Conversation so far');
     for (const m of history) {

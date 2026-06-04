@@ -21,7 +21,9 @@ const mockSingleShot = vi.mocked(singleShotClaudeCode);
 
 // ── Test helpers ───────────────────────────────────────────────
 
-function makeStep(overrides: Partial<StepDefinition> & { id: string; actionType: string }): StepDefinition {
+function makeStep(
+  overrides: Partial<StepDefinition> & { id: string; actionType: string },
+): StepDefinition {
   return {
     name: overrides.id,
     params: {},
@@ -59,7 +61,17 @@ let captured: CapturedRequest[];
 /** Virtual file store for agent-memory mock: key = `<slug>:<relPath>` → content */
 let memoryStore: Map<string, string>;
 /** Virtual buckets mock: bucket_id → array of BucketContent */
-let bucketStore: Map<string, Array<{ id: string; name: string; ext: string; mime: string | null; size_bytes: number; abs_path: string }>>;
+let bucketStore: Map<
+  string,
+  Array<{
+    id: string;
+    name: string;
+    ext: string;
+    mime: string | null;
+    size_bytes: number;
+    abs_path: string;
+  }>
+>;
 
 function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -67,7 +79,11 @@ function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
     const check = () => {
       if (predicate()) return resolve();
       if (Date.now() - start > timeoutMs) {
-        return reject(new Error(`Timeout. Captured: ${JSON.stringify(captured.map(r => `${r.method} ${r.path}`))}`));
+        return reject(
+          new Error(
+            `Timeout. Captured: ${JSON.stringify(captured.map((r) => `${r.method} ${r.path}`))}`,
+          ),
+        );
       }
       setTimeout(check, 15);
     };
@@ -77,7 +93,12 @@ function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
 
 function waitForRunCompleted(runId: string): Promise<void> {
   return waitFor(() =>
-    captured.some(r => r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'completed'),
+    captured.some(
+      (r) =>
+        r.method === 'PATCH' &&
+        r.path === `/engine/runs/${runId}` &&
+        r.body?.status === 'completed',
+    ),
   );
 }
 
@@ -88,23 +109,36 @@ beforeAll(async () => {
 
   mockServer = http.createServer((req, res) => {
     let body = '';
-    req.on('data', (chunk) => { body += chunk; });
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
     req.on('end', () => {
       let parsed: any = null;
-      try { parsed = JSON.parse(body); } catch { parsed = body; }
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        parsed = body;
+      }
 
       const url = req.url || '/';
       const method = req.method || 'GET';
       captured.push({ method, path: url, body: parsed });
 
       // ── Engine persistence routes (match engine-integration.test.ts) ───
-      if (method === 'POST' && url.endsWith('/runs') && !url.includes('/steps') && !url.includes('/events')) {
+      if (
+        method === 'POST' &&
+        url.endsWith('/runs') &&
+        !url.includes('/steps') &&
+        !url.includes('/events')
+      ) {
         res.writeHead(201, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ id: parsed?.id || 'test' }));
       }
       if (method === 'POST' && url.includes('/steps') && !url.includes('/events')) {
         res.writeHead(201, { 'Content-Type': 'application/json' });
-        const steps = Array.isArray(parsed) ? parsed.map((s: any) => ({ ...s, run_id: 'test' })) : [];
+        const steps = Array.isArray(parsed)
+          ? parsed.map((s: any) => ({ ...s, run_id: 'test' }))
+          : [];
         return res.end(JSON.stringify(steps));
       }
       if (method === 'POST' && url.includes('/events')) {
@@ -142,12 +176,20 @@ beforeAll(async () => {
             return res.end(JSON.stringify({ detail: 'File not found' }));
           }
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ path: relPath, content, last_modified: '2026-04-21T14:32:00' }));
+          return res.end(
+            JSON.stringify({ path: relPath, content, last_modified: '2026-04-21T14:32:00' }),
+          );
         }
         if (method === 'PUT') {
           memoryStore.set(key, parsed.content ?? '');
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ path: relPath, content: parsed.content, last_modified: '2026-04-21T14:32:00' }));
+          return res.end(
+            JSON.stringify({
+              path: relPath,
+              content: parsed.content,
+              last_modified: '2026-04-21T14:32:00',
+            }),
+          );
         }
       }
 
@@ -232,7 +274,10 @@ describe('SM-I1: search_memory inside a DAG returns parsed hits end-to-end', () 
     const runId = await engine.startRun(makeMockWebContents(), request);
     await waitForRunCompleted(runId);
 
-    const out = getStepOutput('mem') as { results: Array<{ content: string; source: string; score: number }>; count: number };
+    const out = getStepOutput('mem') as {
+      results: Array<{ content: string; source: string; score: number }>;
+      count: number;
+    };
     expect(out).toBeTruthy();
     expect(out.count).toBe(1);
     expect(out.results[0].content).toBe('pairing notes');
@@ -272,7 +317,7 @@ describe('SW-I1: search_web inside a DAG returns parsed results end-to-end', () 
 
     const out = getStepOutput('web') as { results: Array<{ url: string }> };
     expect(out.results).toHaveLength(2);
-    expect(out.results.map(r => r.url)).toEqual(['https://one.test', 'https://two.test']);
+    expect(out.results.map((r) => r.url)).toEqual(['https://one.test', 'https://two.test']);
     expect(mockSingleShot).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTools: 'WebSearch,WebFetch' }),
     );
@@ -282,8 +327,22 @@ describe('SW-I1: search_web inside a DAG returns parsed results end-to-end', () 
 describe('SD-I1: search_documents fetches bucket contents from the backend then asks Claude', () => {
   it('passes bucket abs_paths into the Claude prompt and returns parsed hits', async () => {
     bucketStore.set('bk-integration', [
-      { id: 'f1', name: 'a.md', ext: 'md', mime: 'text/markdown', size_bytes: 100, abs_path: '/abs/a.md' },
-      { id: 'f2', name: 'b.md', ext: 'md', mime: 'text/markdown', size_bytes: 100, abs_path: '/abs/b.md' },
+      {
+        id: 'f1',
+        name: 'a.md',
+        ext: 'md',
+        mime: 'text/markdown',
+        size_bytes: 100,
+        abs_path: '/abs/a.md',
+      },
+      {
+        id: 'f2',
+        name: 'b.md',
+        ext: 'md',
+        mime: 'text/markdown',
+        size_bytes: 100,
+        abs_path: '/abs/b.md',
+      },
     ]);
     mockSingleShot.mockResolvedValueOnce(
       JSON.stringify([{ path: '/abs/a.md', snippet: 'hit in a', score: 0.9 }]),
@@ -306,7 +365,9 @@ describe('SD-I1: search_documents fetches bucket contents from the backend then 
     await waitForRunCompleted(runId);
 
     // Bucket-contents GET actually fired against the mock backend.
-    const bucketGet = captured.find(r => r.method === 'GET' && r.path.startsWith('/files/buckets/bk-integration/contents'));
+    const bucketGet = captured.find(
+      (r) => r.method === 'GET' && r.path.startsWith('/files/buckets/bk-integration/contents'),
+    );
     expect(bucketGet).toBeDefined();
 
     // Paths were in the prompt.
@@ -344,8 +405,14 @@ describe('STM-I1: save_to_memory writes to /agent-memory via the backend', () =>
     await waitForRunCompleted(runId);
 
     // GET-then-PUT sequence to the correct slug.
-    const memGet = captured.find(r => r.method === 'GET' && r.path.startsWith('/agent-memory/fitness-coach-ab12/files/routines/'));
-    const memPut = captured.find(r => r.method === 'PUT' && r.path.startsWith('/agent-memory/fitness-coach-ab12/files/routines/'));
+    const memGet = captured.find(
+      (r) =>
+        r.method === 'GET' && r.path.startsWith('/agent-memory/fitness-coach-ab12/files/routines/'),
+    );
+    const memPut = captured.find(
+      (r) =>
+        r.method === 'PUT' && r.path.startsWith('/agent-memory/fitness-coach-ab12/files/routines/'),
+    );
     expect(memGet).toBeDefined();
     expect(memPut).toBeDefined();
     expect(memPut!.body.content).toContain('integration-test body');
@@ -353,7 +420,7 @@ describe('STM-I1: save_to_memory writes to /agent-memory via the backend', () =>
 
     // Store now reflects the write.
     const keys = Array.from(memoryStore.keys());
-    expect(keys.some(k => k.startsWith('fitness-coach-ab12:routines/'))).toBe(true);
+    expect(keys.some((k) => k.startsWith('fitness-coach-ab12:routines/'))).toBe(true);
 
     const out = getStepOutput('save') as { saved: boolean; item_id: string };
     expect(out.saved).toBe(true);

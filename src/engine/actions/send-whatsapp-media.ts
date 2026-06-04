@@ -54,7 +54,7 @@ const SPECS: MediaSpec[] = [
     },
     chatExamples: [
       {
-        en: "Send Maria the screenshot on WhatsApp.",
+        en: 'Send Maria the screenshot on WhatsApp.',
         es: 'Envíale a Maria la captura por WhatsApp.',
       },
     ],
@@ -184,7 +184,10 @@ function makeMediaAction(
           type: 'string',
           description: 'WhatsApp phone (E.164 or digits) from your allowlist. Templated.',
         },
-        file_item_id: { type: 'string', description: 'Preferred: id of a registered FileItem on disk.' },
+        file_item_id: {
+          type: 'string',
+          description: 'Preferred: id of a registered FileItem on disk.',
+        },
         file_path: {
           type: 'string',
           description: 'Escape hatch: absolute path to a file on disk Cerebro just created.',
@@ -241,9 +244,8 @@ function makeMediaAction(
         throw new Error(`${spec.name}: ${msg}`);
       }
 
-      const caption = spec.acceptsCaption && params.caption
-        ? renderTemplate(params.caption, vars)
-        : undefined;
+      const caption =
+        spec.acceptsCaption && params.caption ? renderTemplate(params.caption, vars) : undefined;
 
       let outcome: { messageId: string | null; error: string | null };
       if (spec.channelMethod === 'sendDocumentActionMessage') {
@@ -282,7 +284,9 @@ function makeMediaAction(
           summary: `${spec.name}: ${outcome.error}`,
         };
       }
-      input.context.log(`${spec.name}: sent ${resolved.fileName} (${resolved.sizeBytes} bytes) to ${phone}`);
+      input.context.log(
+        `${spec.name}: sent ${resolved.fileName} (${resolved.sizeBytes} bytes) to ${phone}`,
+      );
       return {
         data: {
           sent: true,
@@ -358,26 +362,46 @@ export function createSendWhatsAppLocationAction(deps: {
       const phone = renderTemplate(params.phone_number ?? '', vars).trim();
       if (!phone) throw new Error('Send WhatsApp Location: phone_number is empty.');
       if (!channel.isAllowlisted(phone)) {
-        throw new Error(`Send WhatsApp Location: phone_number ${phone} is not in the WhatsApp allowlist.`);
+        throw new Error(
+          `Send WhatsApp Location: phone_number ${phone} is not in the WhatsApp allowlist.`,
+        );
       }
-      const lat = Number(typeof params.latitude === 'string'
-        ? renderTemplate(params.latitude, vars)
-        : params.latitude);
-      const lon = Number(typeof params.longitude === 'string'
-        ? renderTemplate(params.longitude, vars)
-        : params.longitude);
+      const lat = Number(
+        typeof params.latitude === 'string'
+          ? renderTemplate(params.latitude, vars)
+          : params.latitude,
+      );
+      const lon = Number(
+        typeof params.longitude === 'string'
+          ? renderTemplate(params.longitude, vars)
+          : params.longitude,
+      );
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
         throw new Error('Send WhatsApp Location: latitude/longitude must be numeric.');
       }
       const { messageId, error } = await channel.sendLocationActionMessage(phone, lat, lon);
       if (error) {
         return {
-          data: { sent: false, message_id: messageId, phone_number: phone, latitude: lat, longitude: lon, error },
+          data: {
+            sent: false,
+            message_id: messageId,
+            phone_number: phone,
+            latitude: lat,
+            longitude: lon,
+            error,
+          },
           summary: `Send WhatsApp location failed: ${error}`,
         };
       }
       return {
-        data: { sent: true, message_id: messageId, phone_number: phone, latitude: lat, longitude: lon, error: null },
+        data: {
+          sent: true,
+          message_id: messageId,
+          phone_number: phone,
+          latitude: lat,
+          longitude: lon,
+          error: null,
+        },
         summary: `Sent location (${lat}, ${lon}) to WhatsApp ${phone}`,
       };
     },

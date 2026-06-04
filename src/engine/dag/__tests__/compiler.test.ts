@@ -66,9 +66,7 @@ describe('compileLinearDAG', () => {
     // First step — no previous context
     expect(dag.steps[0].params.additionalContext).toBeUndefined();
     // Second step — reference uses the sanitized previous step name
-    expect(dag.steps[1].params.additionalContext).toBe(
-      'Previous step output: {{step_a}}',
-    );
+    expect(dag.steps[1].params.additionalContext).toBe('Previous step output: {{step_a}}');
   });
 
   // ── Approval gates ─────────────────────────────────────────────
@@ -116,5 +114,4 @@ describe('compileLinearDAG', () => {
     expect(dag.steps[0].dependsOn).toEqual([]);
     expect(dag.steps[0].inputMappings).toEqual([]);
   });
-
 });

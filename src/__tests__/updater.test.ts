@@ -181,13 +181,15 @@ function makeAsset(name: string, size = 100_000): GithubAsset {
   };
 }
 
-function makeRelease(opts: {
-  tag?: string;
-  draft?: boolean;
-  prerelease?: boolean;
-  assets?: GithubAsset[];
-  body?: string;
-} = {}): string {
+function makeRelease(
+  opts: {
+    tag?: string;
+    draft?: boolean;
+    prerelease?: boolean;
+    assets?: GithubAsset[];
+    body?: string;
+  } = {},
+): string {
   return JSON.stringify({
     tag_name: opts.tag ?? 'v0.2.0',
     name: opts.tag ?? 'v0.2.0',
@@ -195,12 +197,11 @@ function makeRelease(opts: {
     html_url: `https://github.com/AgenticFirst/Cerebro/releases/tag/${opts.tag ?? 'v0.2.0'}`,
     prerelease: opts.prerelease ?? false,
     draft: opts.draft ?? false,
-    assets:
-      opts.assets ?? [
-        makeAsset('Cerebro-0.2.0.dmg'),
-        makeAsset('Cerebro-0.2.0 Setup.exe'),
-        makeAsset('Cerebro-0.2.0.AppImage'),
-      ],
+    assets: opts.assets ?? [
+      makeAsset('Cerebro-0.2.0.dmg'),
+      makeAsset('Cerebro-0.2.0 Setup.exe'),
+      makeAsset('Cerebro-0.2.0.AppImage'),
+    ],
   });
 }
 
@@ -232,10 +233,7 @@ describe('pickAssetForPlatform', () => {
   });
 
   it('picks the Setup.exe on win32 (not the bare .exe)', () => {
-    const assets = [
-      makeAsset('cerebro-helper.exe'),
-      makeAsset('Cerebro-1.0.0 Setup.exe'),
-    ];
+    const assets = [makeAsset('cerebro-helper.exe'), makeAsset('Cerebro-1.0.0 Setup.exe')];
     const asset = pickAssetForPlatform(assets, 'win32', 'x64');
     expect(asset?.name).toBe('Cerebro-1.0.0 Setup.exe');
   });
@@ -252,10 +250,7 @@ describe('pickAssetForPlatform', () => {
   });
 
   it('falls back to .deb when AppImage is missing on linux', () => {
-    const assets = [
-      makeAsset('cerebro_1.0.0_amd64.deb'),
-      makeAsset('cerebro-1.0.0.x86_64.rpm'),
-    ];
+    const assets = [makeAsset('cerebro_1.0.0_amd64.deb'), makeAsset('cerebro-1.0.0.x86_64.rpm')];
     const asset = pickAssetForPlatform(assets, 'linux', 'x64');
     expect(asset?.name).toBe('cerebro_1.0.0_amd64.deb');
   });
@@ -270,12 +265,12 @@ describe('pickAssetForPlatform', () => {
     expect(pickAssetForPlatform([makeAsset('CEREBRO.DMG')], 'darwin', 'arm64')?.name).toBe(
       'CEREBRO.DMG',
     );
-    expect(
-      pickAssetForPlatform([makeAsset('Cerebro.AppImage')], 'linux', 'x64')?.name,
-    ).toBe('Cerebro.AppImage');
-    expect(
-      pickAssetForPlatform([makeAsset('Cerebro.APPIMAGE')], 'linux', 'x64')?.name,
-    ).toBe('Cerebro.APPIMAGE');
+    expect(pickAssetForPlatform([makeAsset('Cerebro.AppImage')], 'linux', 'x64')?.name).toBe(
+      'Cerebro.AppImage',
+    );
+    expect(pickAssetForPlatform([makeAsset('Cerebro.APPIMAGE')], 'linux', 'x64')?.name).toBe(
+      'Cerebro.APPIMAGE',
+    );
   });
 
   it('returns null when no asset matches the platform', () => {
@@ -285,12 +280,8 @@ describe('pickAssetForPlatform', () => {
   });
 
   it('returns null for unsupported platforms (freebsd, sunos, etc.)', () => {
-    expect(
-      pickAssetForPlatform(allAssets, 'freebsd' as NodeJS.Platform, 'x64'),
-    ).toBeNull();
-    expect(
-      pickAssetForPlatform(allAssets, 'sunos' as NodeJS.Platform, 'x64'),
-    ).toBeNull();
+    expect(pickAssetForPlatform(allAssets, 'freebsd' as NodeJS.Platform, 'x64')).toBeNull();
+    expect(pickAssetForPlatform(allAssets, 'sunos' as NodeJS.Platform, 'x64')).toBeNull();
   });
 
   it('returns null when the assets array is empty', () => {
@@ -313,19 +304,13 @@ describe('pickAssetForPlatform', () => {
 
 describe('pickAssetForPlatform — architecture awareness', () => {
   it('picks the arm64 DMG for an Apple Silicon user', () => {
-    const assets = [
-      makeAsset('Cerebro-1.0.0-x64.dmg'),
-      makeAsset('Cerebro-1.0.0-arm64.dmg'),
-    ];
+    const assets = [makeAsset('Cerebro-1.0.0-x64.dmg'), makeAsset('Cerebro-1.0.0-arm64.dmg')];
     const asset = pickAssetForPlatform(assets, 'darwin', 'arm64');
     expect(asset?.name).toBe('Cerebro-1.0.0-arm64.dmg');
   });
 
   it('picks the x64 DMG for an Intel Mac user', () => {
-    const assets = [
-      makeAsset('Cerebro-1.0.0-arm64.dmg'),
-      makeAsset('Cerebro-1.0.0-x64.dmg'),
-    ];
+    const assets = [makeAsset('Cerebro-1.0.0-arm64.dmg'), makeAsset('Cerebro-1.0.0-x64.dmg')];
     const asset = pickAssetForPlatform(assets, 'darwin', 'x64');
     expect(asset?.name).toBe('Cerebro-1.0.0-x64.dmg');
   });
@@ -336,9 +321,7 @@ describe('pickAssetForPlatform — architecture awareness', () => {
       makeAsset('cerebro-1.0.0.x86_64.rpm'),
       makeAsset('cerebro_1.0.0_amd64.deb'),
     ];
-    expect(pickAssetForPlatform(assets, 'linux', 'x64')?.name).toBe(
-      'cerebro_1.0.0_amd64.deb',
-    );
+    expect(pickAssetForPlatform(assets, 'linux', 'x64')?.name).toBe('cerebro_1.0.0_amd64.deb');
   });
 
   it('treats aarch64 as an alias for arm64', () => {
@@ -352,12 +335,8 @@ describe('pickAssetForPlatform — architecture awareness', () => {
 
   it('falls back to an arch-agnostic asset when no exact arch match exists', () => {
     const assets = [makeAsset('Cerebro-1.0.0.dmg')];
-    expect(pickAssetForPlatform(assets, 'darwin', 'arm64')?.name).toBe(
-      'Cerebro-1.0.0.dmg',
-    );
-    expect(pickAssetForPlatform(assets, 'darwin', 'x64')?.name).toBe(
-      'Cerebro-1.0.0.dmg',
-    );
+    expect(pickAssetForPlatform(assets, 'darwin', 'arm64')?.name).toBe('Cerebro-1.0.0.dmg');
+    expect(pickAssetForPlatform(assets, 'darwin', 'x64')?.name).toBe('Cerebro-1.0.0.dmg');
   });
 
   it('still returns *something* (last-resort) if only the wrong arch is published', () => {
@@ -708,11 +687,16 @@ describe('applyUpdate', () => {
     mockFsPromises.copyFile.mockReset().mockResolvedValue(undefined);
     mockFsPromises.unlink.mockReset().mockResolvedValue(undefined);
     mockFsPromises.access.mockReset().mockResolvedValue(undefined);
-    fsPromisesRef.promises.chmod = mockFsPromises.chmod as unknown as typeof fsPromisesRef.promises.chmod;
-    fsPromisesRef.promises.rename = mockFsPromises.rename as unknown as typeof fsPromisesRef.promises.rename;
-    fsPromisesRef.promises.copyFile = mockFsPromises.copyFile as unknown as typeof fsPromisesRef.promises.copyFile;
-    fsPromisesRef.promises.unlink = mockFsPromises.unlink as unknown as typeof fsPromisesRef.promises.unlink;
-    fsPromisesRef.promises.access = mockFsPromises.access as unknown as typeof fsPromisesRef.promises.access;
+    fsPromisesRef.promises.chmod =
+      mockFsPromises.chmod as unknown as typeof fsPromisesRef.promises.chmod;
+    fsPromisesRef.promises.rename =
+      mockFsPromises.rename as unknown as typeof fsPromisesRef.promises.rename;
+    fsPromisesRef.promises.copyFile =
+      mockFsPromises.copyFile as unknown as typeof fsPromisesRef.promises.copyFile;
+    fsPromisesRef.promises.unlink =
+      mockFsPromises.unlink as unknown as typeof fsPromisesRef.promises.unlink;
+    fsPromisesRef.promises.access =
+      mockFsPromises.access as unknown as typeof fsPromisesRef.promises.access;
   });
 
   afterEach(() => {
@@ -794,7 +778,11 @@ describe('applyUpdate', () => {
 
     // Stage-3: spawn with --appimage-extract-and-run + sanitized env.
     expect(mockSpawn).toHaveBeenCalledTimes(1);
-    const [cmd, args, opts] = mockSpawn.mock.calls[0] as [string, string[], Record<string, unknown>];
+    const [cmd, args, opts] = mockSpawn.mock.calls[0] as [
+      string,
+      string[],
+      Record<string, unknown>,
+    ];
     expect(cmd).toBe('/home/me/Applications/Cerebro.AppImage');
     expect(args).toEqual(['--appimage-extract-and-run']);
     expect(opts).toMatchObject({ detached: true });
@@ -850,7 +838,7 @@ describe('applyUpdate', () => {
     expect(mockFsPromises.copyFile).not.toHaveBeenCalled();
     expect(mockFsPromises.rename).not.toHaveBeenCalled();
     expect(mockSpawn.mock.calls[0][0]).toBe(expectedPath);
-    expect((mockSpawn.mock.calls[0][1] as string[])).toEqual(['--appimage-extract-and-run']);
+    expect(mockSpawn.mock.calls[0][1] as string[]).toEqual(['--appimage-extract-and-run']);
     expect(mockAppQuit).toHaveBeenCalledTimes(1);
   });
 
@@ -895,9 +883,9 @@ describe('applyUpdate', () => {
     const enoent = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     mockFsPromises.access.mockRejectedValueOnce(enoent);
 
-    await expect(
-      applyUpdate(makeUpdateAsset('Cerebro-0.2.0-x64.AppImage')),
-    ).rejects.toThrow(/Downloaded update is missing.*re-download/);
+    await expect(applyUpdate(makeUpdateAsset('Cerebro-0.2.0-x64.AppImage'))).rejects.toThrow(
+      /Downloaded update is missing.*re-download/,
+    );
     expect(mockSpawn).not.toHaveBeenCalled();
     expect(mockAppQuit).not.toHaveBeenCalled();
   });

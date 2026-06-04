@@ -9,9 +9,9 @@ describe('expertAgentName', () => {
     // first runs" even though files existed on disk.
     // The UI now computes the name the same way the installer does; both must
     // produce this exact string forever.
-    expect(
-      expertAgentName('56c2c4c2b71d4fd49f8256a44e0da693', 'TikTok Strategist'),
-    ).toBe('tiktok-strategist-z8pnvt');
+    expect(expertAgentName('56c2c4c2b71d4fd49f8256a44e0da693', 'TikTok Strategist')).toBe(
+      'tiktok-strategist-z8pnvt',
+    );
   });
 
   it('is deterministic on the id — same id+name always produces same dir', () => {
@@ -30,9 +30,7 @@ describe('expertAgentName', () => {
     // Rename migrates: installer deletes the old dir and writes a new one.
     // If this invariant changes we need to re-validate the rename path.
     const id = 'stable-id';
-    expect(expertAgentName(id, 'Fitness Coach')).not.toBe(
-      expertAgentName(id, 'Running Coach'),
-    );
+    expect(expertAgentName(id, 'Fitness Coach')).not.toBe(expertAgentName(id, 'Running Coach'));
   });
 
   it('strips diacritics and non-alphanumerics consistently', () => {

@@ -6,7 +6,7 @@ export default function RoutinesScreen() {
   const { editingRoutineId, routines } = useRoutines();
 
   const editingRoutine = editingRoutineId
-    ? routines.find((r) => r.id === editingRoutineId) ?? null
+    ? (routines.find((r) => r.id === editingRoutineId) ?? null)
     : null;
 
   if (editingRoutine) {

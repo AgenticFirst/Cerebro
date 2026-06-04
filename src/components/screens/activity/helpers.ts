@@ -77,7 +77,12 @@ export function formatEventTime(dateStr: string): string {
   const ts = parseServerTimestamp(dateStr);
   if (Number.isNaN(ts)) return '\u2014';
   const d = new Date(ts);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  return d.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }
 
 // ── Status config ────────────────────────────────────────────────
@@ -89,12 +94,12 @@ export interface StatusStyle {
 }
 
 export const STATUS_CONFIG: Record<string, StatusStyle> = {
-  running:   { dot: 'bg-yellow-500', text: 'text-yellow-500', glow: true },
-  paused:    { dot: 'bg-amber-400',  text: 'text-amber-400',  glow: true },
-  completed: { dot: 'bg-green-500',  text: 'text-green-500' },
-  failed:    { dot: 'bg-red-500',    text: 'text-red-500' },
-  cancelled: { dot: 'bg-zinc-500',   text: 'text-text-tertiary' },
-  created:   { dot: 'bg-zinc-500',   text: 'text-text-tertiary' },
+  running: { dot: 'bg-yellow-500', text: 'text-yellow-500', glow: true },
+  paused: { dot: 'bg-amber-400', text: 'text-amber-400', glow: true },
+  completed: { dot: 'bg-green-500', text: 'text-green-500' },
+  failed: { dot: 'bg-red-500', text: 'text-red-500' },
+  cancelled: { dot: 'bg-zinc-500', text: 'text-text-tertiary' },
+  created: { dot: 'bg-zinc-500', text: 'text-text-tertiary' },
 };
 
 // ── Error humanizer ──────────────────────────────────────────────
@@ -106,10 +111,7 @@ export const STATUS_CONFIG: Record<string, StatusStyle> = {
  *
  * Falls back to the original string when we can't find a matching step.
  */
-export function humanizeRunError(
-  error: string | null,
-  steps: StepRecord[] | null,
-): string | null {
+export function humanizeRunError(error: string | null, steps: StepRecord[] | null): string | null {
   if (!error) return error;
   const match = error.match(/Step\s+"([0-9a-f-]{8,})"\s+(.+)$/i);
   if (!match) return error;

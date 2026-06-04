@@ -272,8 +272,7 @@ export function pickAssetForPlatform(
   } else if (platform === 'win32') {
     // Squirrel "Setup.exe" is the auto-update-aware installer; bare ".exe"
     // is the fallback for cases where Forge only emits the inner binary.
-    chosen =
-      choose(candidatesByExt('setup.exe')) ?? choose(candidatesByExt('.exe'));
+    chosen = choose(candidatesByExt('setup.exe')) ?? choose(candidatesByExt('.exe'));
   } else if (platform === 'linux') {
     chosen =
       choose(candidatesByExt('.appimage')) ??
@@ -630,9 +629,7 @@ function streamAssetToPartial(
 
     const followRedirects = (url: string, hops: number) => {
       if (hops > 5) {
-        rejectOnce(
-          new UpdaterError('network', 'Too many redirects while downloading update.'),
-        );
+        rejectOnce(new UpdaterError('network', 'Too many redirects while downloading update.'));
         return;
       }
       const headers: Record<string, string> = {
@@ -667,9 +664,7 @@ function streamAssetToPartial(
         const writeFlags = appending ? 'a' : 'w';
         let received = appending ? resumeFrom : 0;
         const totalRemaining = Number(res.headers['content-length']);
-        const total = Number.isFinite(totalRemaining)
-          ? received + totalRemaining
-          : asset.size || 0;
+        const total = Number.isFinite(totalRemaining) ? received + totalRemaining : asset.size || 0;
         let lastEmit = 0;
 
         armStallTimer();
@@ -867,8 +862,7 @@ async function verifyAppImageMagic(filePath: string): Promise<void> {
   try {
     const buf = Buffer.alloc(16);
     await fh.read(buf, 0, 16, 0);
-    const elfOk =
-      buf[0] === 0x7f && buf[1] === 0x45 && buf[2] === 0x4c && buf[3] === 0x46;
+    const elfOk = buf[0] === 0x7f && buf[1] === 0x45 && buf[2] === 0x4c && buf[3] === 0x46;
     if (!elfOk) {
       throw new UpdaterError(
         'verify',
@@ -982,7 +976,10 @@ async function applyLinuxAppImage(downloadedPath: string): Promise<void> {
       // Stage a backup BEFORE overwriting so rollback is always possible.
       await fs.promises.copyFile(runningAppImage, backupPath);
     } catch (err) {
-      console.warn('[updater] Could not back up running AppImage (will continue without rollback):', err);
+      console.warn(
+        '[updater] Could not back up running AppImage (will continue without rollback):',
+        err,
+      );
       backupPath = null;
     }
 
@@ -999,7 +996,10 @@ async function applyLinuxAppImage(downloadedPath: string): Promise<void> {
           await fs.promises.unlink(downloadedPath);
           launchPath = runningAppImage;
         } catch (copyErr) {
-          console.warn('[updater] Cross-device replace failed; launching from updates dir:', copyErr);
+          console.warn(
+            '[updater] Cross-device replace failed; launching from updates dir:',
+            copyErr,
+          );
           // Backup is useless if we never replaced — delete it so we don't
           // leave .bak files lying around.
           await safeUnlink(backupPath);
@@ -1035,7 +1035,10 @@ async function applyLinuxAppImage(downloadedPath: string): Promise<void> {
         rolledBack = true;
         console.log('[updater] Rolled back to previous AppImage after failed launch');
       } catch (rollbackErr) {
-        console.error('[updater] Rollback failed — user may need to reinstall manually:', rollbackErr);
+        console.error(
+          '[updater] Rollback failed — user may need to reinstall manually:',
+          rollbackErr,
+        );
       }
     }
     logUpdaterEvent('apply_rollback', {

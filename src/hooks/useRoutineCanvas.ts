@@ -24,20 +24,12 @@ import type { RoutineStepData, CanvasDefinition } from '../utils/dag-flow-mappin
 import { dagToFlow, flowToDag, autoLayoutNodes, TRIGGER_NODE_ID } from '../utils/dag-flow-mapping';
 import { getDefaultStepData, ACTION_META, resolveActionType } from '../utils/step-defaults';
 import { getEdgeColor } from '../utils/handle-types';
-import {
-  computeAutoWireMapping,
-  sanitizeVarName,
-  uniqueVarName,
-} from '../utils/action-outputs';
+import { computeAutoWireMapping, sanitizeVarName, uniqueVarName } from '../utils/action-outputs';
 import { useRoutines } from '../context/RoutineContext';
 
 // ── Cycle detection (BFS from target to see if it reaches source) ──
 
-function wouldCreateCycle(
-  edges: Edge[],
-  source: string,
-  target: string,
-): boolean {
+function wouldCreateCycle(edges: Edge[], source: string, target: string): boolean {
   const adjacency = new Map<string, string[]>();
   for (const edge of edges) {
     const neighbors = adjacency.get(edge.source) ?? [];
@@ -113,10 +105,14 @@ function stripMappingsForRemovedEdges(
 
 export function routineTriggerToActionType(triggerType: string): string {
   switch (triggerType) {
-    case 'cron': return 'trigger_schedule';
-    case 'webhook': return 'trigger_webhook';
-    case 'telegram_message': return 'trigger_telegram_message';
-    default: return 'trigger_manual';
+    case 'cron':
+      return 'trigger_schedule';
+    case 'webhook':
+      return 'trigger_webhook';
+    case 'telegram_message':
+      return 'trigger_telegram_message';
+    default:
+      return 'trigger_manual';
   }
 }
 
@@ -161,8 +157,7 @@ export function reconcileTriggerNode(
       };
 
   const sameType = prevData.triggerType === desiredType;
-  const sameConfig =
-    JSON.stringify(prevData.config ?? {}) === JSON.stringify(nextConfig);
+  const sameConfig = JSON.stringify(prevData.config ?? {}) === JSON.stringify(nextConfig);
   if (prev && sameType && sameConfig) return prev;
 
   return {
@@ -225,14 +220,12 @@ export function useRoutineCanvas(routine: Routine) {
         position: { x: 0, y: -120 },
         data: {
           triggerType: tt,
-          config: routine.cronExpression
-            ? { cron_expression: routine.cronExpression }
-            : {},
+          config: routine.cronExpression ? { cron_expression: routine.cronExpression } : {},
         },
         deletable: false,
       });
     }
-  }, [routine.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routine.id]);
 
   // Reconcile trigger node when routine.trigger_type / cron_expression changes
   // (e.g. user switches the trigger pill in EditorToolbar). Runs only after
@@ -247,7 +240,7 @@ export function useRoutineCanvas(routine: Routine) {
       return next;
     });
     if (changed) setIsDirty(true);
-  }, [routine.triggerType, routine.cronExpression]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [routine.triggerType, routine.cronExpression]);
 
   // Combine all node types for ReactFlow rendering
   const allNodes = useMemo(() => {
@@ -345,9 +338,7 @@ export function useRoutineCanvas(routine: Routine) {
           const without = prev.filter((n) => n.id !== nodeId);
           return stripMappingsForRemovedEdges(without, removedPairs);
         });
-        setEdges((prev) =>
-          prev.filter((e) => e.source !== nodeId && e.target !== nodeId),
-        );
+        setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
       }
 
       if (selectedNodeId === nodeId) setSelectedNodeId(null);
@@ -374,9 +365,7 @@ export function useRoutineCanvas(routine: Routine) {
       const isAnnotation = annotationNodes.some((n) => n.id === nodeId);
       if (isAnnotation) {
         setAnnotationNodes((prev) =>
-          prev.map((n) =>
-            n.id === nodeId ? { ...n, data: { ...n.data, ...partial } } : n,
-          ),
+          prev.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...partial } } : n)),
         );
         setIsDirty(true);
         return;
@@ -392,16 +381,12 @@ export function useRoutineCanvas(routine: Routine) {
         const nameIsChanging =
           typeof partial.name === 'string' && partial.name !== currentData.name;
         const oldVar = nameIsChanging ? sanitizeVarName(currentData.name) : '';
-        const newVarBase = nameIsChanging
-          ? sanitizeVarName(partial.name as string)
-          : '';
+        const newVarBase = nameIsChanging ? sanitizeVarName(partial.name as string) : '';
 
         // Fast path: nothing to cascade — only the renamed/patched node changes.
         if (!nameIsChanging || !oldVar) {
           return prev.map((node) =>
-            node.id === nodeId
-              ? { ...node, data: { ...node.data, ...partial } }
-              : node,
+            node.id === nodeId ? { ...node, data: { ...node.data, ...partial } } : node,
           );
         }
 
@@ -464,21 +449,18 @@ export function useRoutineCanvas(routine: Routine) {
 
   // ── Add sticky note ──
 
-  const addStickyNote = useCallback(
-    (position: { x: number; y: number }) => {
-      const id = `note-${crypto.randomUUID()}`;
-      const note: Node = {
-        id,
-        type: 'stickyNote',
-        position,
-        data: { text: '', width: 200, height: 120 },
-      };
-      setAnnotationNodes((prev) => [...prev, note]);
-      setIsDirty(true);
-      return id;
-    },
-    [],
-  );
+  const addStickyNote = useCallback((position: { x: number; y: number }) => {
+    const id = `note-${crypto.randomUUID()}`;
+    const note: Node = {
+      id,
+      type: 'stickyNote',
+      position,
+      data: { text: '', width: 200, height: 120 },
+    };
+    setAnnotationNodes((prev) => [...prev, note]);
+    setIsDirty(true);
+    return id;
+  }, []);
 
   // ── Connect edges with cycle detection ──
 
@@ -598,10 +580,7 @@ export function useRoutineCanvas(routine: Routine) {
 
     setEdges((prev) =>
       prev.filter(
-        (e) =>
-          !selectedNodeIds.has(e.source) &&
-          !selectedNodeIds.has(e.target) &&
-          !e.selected,
+        (e) => !selectedNodeIds.has(e.source) && !selectedNodeIds.has(e.target) && !e.selected,
       ),
     );
 
@@ -663,9 +642,7 @@ export function useRoutineCanvas(routine: Routine) {
     const handler = (e: Event) => {
       const { id, text } = (e as CustomEvent).detail;
       setAnnotationNodes((prev) =>
-        prev.map((n) =>
-          n.id === id ? { ...n, data: { ...n.data, text } } : n,
-        ),
+        prev.map((n) => (n.id === id ? { ...n, data: { ...n.data, text } } : n)),
       );
       setIsDirty(true);
     };

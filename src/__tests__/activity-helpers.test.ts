@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { parseServerTimestamp, formatDuration, humanizeRunError } from '../components/screens/activity/helpers';
+import {
+  parseServerTimestamp,
+  formatDuration,
+  humanizeRunError,
+} from '../components/screens/activity/helpers';
 import type { StepRecord } from '../components/screens/activity/types';
 
 // ── parseServerTimestamp ───────────────────────────────────────
@@ -110,8 +114,7 @@ describe('humanizeRunError', () => {
   });
 
   it('passes through non-step errors', () => {
-    expect(humanizeRunError('Run was cancelled', []))
-      .toBe('Run was cancelled');
+    expect(humanizeRunError('Run was cancelled', [])).toBe('Run was cancelled');
   });
 
   it('replaces UUID with step name and converts ms to minutes', () => {
@@ -131,10 +134,7 @@ describe('humanizeRunError', () => {
   });
 
   it('returns the original when the UUID is not in the steps list', () => {
-    const out = humanizeRunError(
-      'Step "unknown-uuid-9999" timed out after 300000ms',
-      [step()],
-    );
+    const out = humanizeRunError('Step "unknown-uuid-9999" timed out after 300000ms', [step()]);
     expect(out).toBe('Step "unknown-uuid-9999" timed out after 300000ms');
   });
 

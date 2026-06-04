@@ -50,12 +50,24 @@ export class HubSpotHolder implements HubSpotChannel {
 
   constructor(private deps: HolderDeps) {}
 
-  getAccessToken(): string | null { return this.accessToken; }
-  getPortalId(): string | null { return this.portalId; }
-  getDefaultPipeline(): string | null { return this.defaultPipeline; }
-  getDefaultStage(): string | null { return this.defaultStage; }
-  getFollowUpProperty(): string | null { return this.followUpProperty; }
-  getDueDateProperty(): string | null { return this.dueDateProperty; }
+  getAccessToken(): string | null {
+    return this.accessToken;
+  }
+  getPortalId(): string | null {
+    return this.portalId;
+  }
+  getDefaultPipeline(): string | null {
+    return this.defaultPipeline;
+  }
+  getDefaultStage(): string | null {
+    return this.defaultStage;
+  }
+  getFollowUpProperty(): string | null {
+    return this.followUpProperty;
+  }
+  getDueDateProperty(): string | null {
+    return this.dueDateProperty;
+  }
   isConnected(): boolean {
     return Boolean(this.accessToken && this.defaultPipeline && this.defaultStage);
   }
@@ -84,16 +96,24 @@ export class HubSpotHolder implements HubSpotChannel {
    *  portal id on success so the UI can display it. */
   async verify(token: string): Promise<HubSpotVerifyResult> {
     if (!token || !token.trim()) return { ok: false, error: 'Empty token' };
-    const res = await callHubSpotApi<{ portalId?: number | string }>(token.trim(), '/account-info/v3/details');
+    const res = await callHubSpotApi<{ portalId?: number | string }>(
+      token.trim(),
+      '/account-info/v3/details',
+    );
     if (!res.ok) return { ok: false, error: res.error ?? 'Verification failed' };
-    const portal = res.data?.portalId !== undefined && res.data?.portalId !== null
-      ? String(res.data.portalId)
-      : null;
+    const portal =
+      res.data?.portalId !== undefined && res.data?.portalId !== null
+        ? String(res.data.portalId)
+        : null;
     return { ok: true, portalId: portal };
   }
 
   /** List pipelines + stages for the "tickets" object type. Cached for 5 min. */
-  async listPipelines(): Promise<{ ok: boolean; pipelines?: HubSpotPipelineSummary[]; error?: string }> {
+  async listPipelines(): Promise<{
+    ok: boolean;
+    pipelines?: HubSpotPipelineSummary[];
+    error?: string;
+  }> {
     if (!this.accessToken) return { ok: false, error: 'No access token configured' };
     const cached = this.pipelinesCache;
     if (cached && Date.now() - cached.at < PIPELINES_CACHE_TTL_MS) {
@@ -110,11 +130,13 @@ export class HubSpotHolder implements HubSpotChannel {
     const pipelines: HubSpotPipelineSummary[] = (res.data?.results ?? []).map((p) => ({
       id: p.id,
       label: p.label,
-      stages: (p.stages ?? []).map((s) => ({
-        id: s.id,
-        label: s.label,
-        displayOrder: typeof s.displayOrder === 'number' ? s.displayOrder : 0,
-      })).sort((a, b) => a.displayOrder - b.displayOrder),
+      stages: (p.stages ?? [])
+        .map((s) => ({
+          id: s.id,
+          label: s.label,
+          displayOrder: typeof s.displayOrder === 'number' ? s.displayOrder : 0,
+        }))
+        .sort((a, b) => a.displayOrder - b.displayOrder),
     }));
     this.pipelinesCache = { pipelines, at: Date.now() };
     return { ok: true, pipelines };
@@ -172,18 +194,38 @@ export class HubSpotHolder implements HubSpotChannel {
     this.defaultPipeline = defaults.pipeline ?? null;
     this.defaultStage = defaults.stage ?? null;
     const writes: Array<Promise<unknown>> = [
-      backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultPipeline, this.defaultPipeline ?? ''),
-      backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultStage, this.defaultStage ?? ''),
+      backendPutSetting(
+        this.deps.backendPort,
+        HUBSPOT_SETTING_KEYS.defaultPipeline,
+        this.defaultPipeline ?? '',
+      ),
+      backendPutSetting(
+        this.deps.backendPort,
+        HUBSPOT_SETTING_KEYS.defaultStage,
+        this.defaultStage ?? '',
+      ),
     ];
     // Only touch the custom-property settings when the caller passes them, so an
     // older client that omits these fields doesn't blank them out.
     if (defaults.followUpProperty !== undefined) {
       this.followUpProperty = defaults.followUpProperty || null;
-      writes.push(backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.followUpProperty, this.followUpProperty ?? ''));
+      writes.push(
+        backendPutSetting(
+          this.deps.backendPort,
+          HUBSPOT_SETTING_KEYS.followUpProperty,
+          this.followUpProperty ?? '',
+        ),
+      );
     }
     if (defaults.dueDateProperty !== undefined) {
       this.dueDateProperty = defaults.dueDateProperty || null;
-      writes.push(backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.dueDateProperty, this.dueDateProperty ?? ''));
+      writes.push(
+        backendPutSetting(
+          this.deps.backendPort,
+          HUBSPOT_SETTING_KEYS.dueDateProperty,
+          this.dueDateProperty ?? '',
+        ),
+      );
     }
     await Promise.all(writes);
   }

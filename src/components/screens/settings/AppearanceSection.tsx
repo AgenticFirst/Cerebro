@@ -41,7 +41,11 @@ export default function AppearanceSection() {
   const handleLanguageChange = (code: string) => {
     i18n.changeLanguage(code);
     saveSetting('ui_language', code);
-    try { localStorage.setItem('cerebro_ui_language', code); } catch { /* private browsing */ }
+    try {
+      localStorage.setItem('cerebro_ui_language', code);
+    } catch {
+      /* private browsing */
+    }
   };
 
   return (
@@ -53,9 +57,7 @@ export default function AppearanceSection() {
       <div className="flex items-start justify-between gap-4 py-3 border-b border-white/[0.06]">
         <div>
           <p className="text-sm text-text-primary">{t('appearance.theme')}</p>
-          <p className="text-xs text-text-secondary mt-0.5">
-            {t('appearance.themeDesc')}
-          </p>
+          <p className="text-xs text-text-secondary mt-0.5">{t('appearance.themeDesc')}</p>
         </div>
         <select
           value={theme}
@@ -74,9 +76,7 @@ export default function AppearanceSection() {
       <div className="flex items-start justify-between gap-4 py-3 border-b border-white/[0.06]">
         <div>
           <p className="text-sm text-text-primary">{t('appearance.language')}</p>
-          <p className="text-xs text-text-secondary mt-0.5">
-            {t('appearance.languageDesc')}
-          </p>
+          <p className="text-xs text-text-secondary mt-0.5">{t('appearance.languageDesc')}</p>
         </div>
         <select
           value={i18n.language}
@@ -95,9 +95,7 @@ export default function AppearanceSection() {
       <div className="flex items-start justify-between gap-4 py-3 border-b border-white/[0.06]">
         <div>
           <p className="text-sm text-text-primary">{t('appearance.showToolCalls')}</p>
-          <p className="text-xs text-text-secondary mt-0.5">
-            {t('appearance.showToolCallsDesc')}
-          </p>
+          <p className="text-xs text-text-secondary mt-0.5">{t('appearance.showToolCallsDesc')}</p>
         </div>
         <Toggle checked={showToolCalls} onChange={() => setShowToolCalls(!showToolCalls)} />
       </div>
@@ -117,9 +115,7 @@ export default function AppearanceSection() {
       <div className="flex items-start justify-between gap-4 py-3">
         <div>
           <p className="text-sm text-text-primary">{t('appearance.takeTourTitle')}</p>
-          <p className="text-xs text-text-secondary mt-0.5">
-            {t('appearance.takeTourDesc')}
-          </p>
+          <p className="text-xs text-text-secondary mt-0.5">{t('appearance.takeTourDesc')}</p>
         </div>
         <button
           onClick={startTour}

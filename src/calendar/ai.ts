@@ -99,7 +99,13 @@ export async function parseCalendarCommand(
   ].join('\n');
 
   try {
-    const raw = await singleShotClaudeCode({ agent: 'cerebro', prompt, model: MODEL, signal, maxTurns: 1 });
+    const raw = await singleShotClaudeCode({
+      agent: 'cerebro',
+      prompt,
+      model: MODEL,
+      signal,
+      maxTurns: 1,
+    });
     const parsed = extractJson(raw) as CalendarParsedCommand | null;
     if (!parsed || typeof parsed.action !== 'string') {
       return { ok: false, error: 'Could not understand the command' };
@@ -107,9 +113,13 @@ export async function parseCalendarCommand(
     if (parsed.action === 'none' || !VALID_ACTIONS.includes(parsed.action)) {
       return { ok: false, error: 'noMatch' };
     }
-    return { ok: true, command: { action: parsed.action, params: parsed.params ?? {}, summary: parsed.summary } };
+    return {
+      ok: true,
+      command: { action: parsed.action, params: parsed.params ?? {}, summary: parsed.summary },
+    };
   } catch (err) {
-    if (err instanceof ClaudeCodeUnavailableError) return { ok: false, error: 'Claude Code is not available' };
+    if (err instanceof ClaudeCodeUnavailableError)
+      return { ok: false, error: 'Claude Code is not available' };
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -142,10 +152,17 @@ export async function summarizeCalendar(
   ].join('\n');
 
   try {
-    const text = await singleShotClaudeCode({ agent: 'cerebro', prompt, model: MODEL, signal, maxTurns: 1 });
+    const text = await singleShotClaudeCode({
+      agent: 'cerebro',
+      prompt,
+      model: MODEL,
+      signal,
+      maxTurns: 1,
+    });
     return { ok: true, text: text.trim() };
   } catch (err) {
-    if (err instanceof ClaudeCodeUnavailableError) return { ok: false, error: 'Claude Code is not available' };
+    if (err instanceof ClaudeCodeUnavailableError)
+      return { ok: false, error: 'Claude Code is not available' };
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

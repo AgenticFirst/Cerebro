@@ -10,9 +10,9 @@ import EmptySection from './integrations/EmptySection';
 type Section = 'engine' | 'connected-apps' | 'channels' | 'remote-access';
 
 const SECTION_KEYS: Record<Section, string> = {
-  'engine': 'integrations.engine',
+  engine: 'integrations.engine',
   'connected-apps': 'integrations.connectedApps',
-  'channels': 'integrations.channels',
+  channels: 'integrations.channels',
   'remote-access': 'integrations.remoteAccess',
 };
 

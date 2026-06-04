@@ -23,7 +23,8 @@ import type { CalendarAttendee, RemoteCalendar } from '../../types/calendar';
 const AUTH_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize';
 const TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
 const GRAPH = 'https://graph.microsoft.com/v1.0';
-const SCOPES = 'openid email profile offline_access https://graph.microsoft.com/Calendars.ReadWrite';
+const SCOPES =
+  'openid email profile offline_access https://graph.microsoft.com/Calendars.ReadWrite';
 
 interface GraphEvent {
   id: string;
@@ -55,7 +56,12 @@ interface GraphEvent {
 export class OutlookCalendarProvider implements CalendarProvider {
   readonly id = 'outlook' as const;
 
-  buildAuthUrl(opts: { client: OAuthClient; pkceChallenge: string; state: string; loginHint?: string }): string {
+  buildAuthUrl(opts: {
+    client: OAuthClient;
+    pkceChallenge: string;
+    state: string;
+    loginHint?: string;
+  }): string {
     const p = new URLSearchParams({
       client_id: opts.client.clientId,
       redirect_uri: opts.client.redirectUri,
@@ -70,7 +76,11 @@ export class OutlookCalendarProvider implements CalendarProvider {
     return `${AUTH_URL}?${p.toString()}`;
   }
 
-  async exchangeCode(opts: { client: OAuthClient; code: string; pkceVerifier: string }): Promise<TokenSet> {
+  async exchangeCode(opts: {
+    client: OAuthClient;
+    code: string;
+    pkceVerifier: string;
+  }): Promise<TokenSet> {
     const body = new URLSearchParams({
       code: opts.code,
       client_id: opts.client.clientId,
@@ -98,15 +108,17 @@ export class OutlookCalendarProvider implements CalendarProvider {
   }
 
   async getUserInfo(accessToken: string): Promise<{ email: string; name?: string }> {
-    const me = await apiGet<{ mail?: string; userPrincipalName?: string; displayName?: string }>(`${GRAPH}/me`, accessToken);
+    const me = await apiGet<{ mail?: string; userPrincipalName?: string; displayName?: string }>(
+      `${GRAPH}/me`,
+      accessToken,
+    );
     return { email: me.mail ?? me.userPrincipalName ?? '', name: me.displayName };
   }
 
   async listCalendars(accessToken: string): Promise<RemoteCalendar[]> {
-    const r = await apiGet<{ value?: Array<{ id: string; name?: string; hexColor?: string; isDefaultCalendar?: boolean }> }>(
-      `${GRAPH}/me/calendars`,
-      accessToken,
-    );
+    const r = await apiGet<{
+      value?: Array<{ id: string; name?: string; hexColor?: string; isDefaultCalendar?: boolean }>;
+    }>(`${GRAPH}/me/calendars`, accessToken);
     return (r.value ?? []).map((c) => ({
       id: c.id,
       name: c.name ?? c.id,
@@ -141,7 +153,11 @@ export class OutlookCalendarProvider implements CalendarProvider {
       try {
         page = await apiGet(url, opts.accessToken, { Prefer: 'outlook.timezone="UTC"' });
       } catch (err) {
-        if (err instanceof ProviderHttpError && (err.status === 410 || err.status === 400) && opts.syncCursor) {
+        if (
+          err instanceof ProviderHttpError &&
+          (err.status === 410 || err.status === 400) &&
+          opts.syncCursor
+        ) {
           return { events: [], deletions: [], nextCursor: null, cursorExpired: true };
         }
         throw err;
@@ -166,7 +182,11 @@ export class OutlookCalendarProvider implements CalendarProvider {
     return { events, deletions, nextCursor, cursorExpired: false };
   }
 
-  async createEvent(opts: { accessToken: string; calendarId: string; event: ProviderEventWrite }): Promise<WriteResult> {
+  async createEvent(opts: {
+    accessToken: string;
+    calendarId: string;
+    event: ProviderEventWrite;
+  }): Promise<WriteResult> {
     const r = await apiSend<GraphEvent>(
       `${GRAPH}/me/calendars/${encodeURIComponent(opts.calendarId)}/events`,
       opts.accessToken,
@@ -191,8 +211,16 @@ export class OutlookCalendarProvider implements CalendarProvider {
     return { providerEventId: r.id ?? opts.providerEventId, etag: r['@odata.etag'] ?? null };
   }
 
-  async deleteEvent(opts: { accessToken: string; calendarId: string; providerEventId: string }): Promise<void> {
-    await apiSend(`${GRAPH}/me/events/${encodeURIComponent(opts.providerEventId)}`, opts.accessToken, 'DELETE');
+  async deleteEvent(opts: {
+    accessToken: string;
+    calendarId: string;
+    providerEventId: string;
+  }): Promise<void> {
+    await apiSend(
+      `${GRAPH}/me/events/${encodeURIComponent(opts.providerEventId)}`,
+      opts.accessToken,
+      'DELETE',
+    );
   }
 
   async setRsvp(opts: {
@@ -201,7 +229,12 @@ export class OutlookCalendarProvider implements CalendarProvider {
     providerEventId: string;
     response: string;
   }): Promise<void> {
-    const action = opts.response === 'accepted' ? 'accept' : opts.response === 'declined' ? 'decline' : 'tentativelyAccept';
+    const action =
+      opts.response === 'accepted'
+        ? 'accept'
+        : opts.response === 'declined'
+          ? 'decline'
+          : 'tentativelyAccept';
     await apiSend(
       `${GRAPH}/me/events/${encodeURIComponent(opts.providerEventId)}/${action}`,
       opts.accessToken,
@@ -214,8 +247,11 @@ export class OutlookCalendarProvider implements CalendarProvider {
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 const tokenRequest = (body: URLSearchParams) => oauthTokenRequest(TOKEN_URL, body, 'Microsoft');
-const apiGet = <T>(url: string, accessToken: string, extraHeaders: Record<string, string> = {}): Promise<T> =>
-  providerFetch<T>(url, accessToken, { headers: extraHeaders, label: 'Graph' });
+const apiGet = <T>(
+  url: string,
+  accessToken: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<T> => providerFetch<T>(url, accessToken, { headers: extraHeaders, label: 'Graph' });
 const apiSend = <T = unknown>(
   url: string,
   accessToken: string,
@@ -247,9 +283,8 @@ function graphIso(slot?: { dateTime?: string }): string | null {
 
 function normalizeGraphEvent(ev: GraphEvent): NormalizedEvent {
   const self = ev.responseStatus?.response;
-  const visibility = ev.sensitivity === 'private' || ev.sensitivity === 'confidential'
-    ? 'private'
-    : 'default';
+  const visibility =
+    ev.sensitivity === 'private' || ev.sensitivity === 'confidential' ? 'private' : 'default';
   return {
     providerEventId: ev.id,
     etag: ev['@odata.etag'] ?? null,
@@ -273,7 +308,7 @@ function normalizeGraphEvent(ev: GraphEvent): NormalizedEvent {
         }))
       : null,
     organizerEmail: ev.organizer?.emailAddress?.address ?? null,
-    rsvpStatus: self ? mapResponse(self) ?? null : null,
+    rsvpStatus: self ? (mapResponse(self) ?? null) : null,
     visibility,
     transparency: ev.showAs === 'free' ? 'transparent' : 'opaque',
     status: ev.isCancelled ? 'cancelled' : 'confirmed',

@@ -26,23 +26,53 @@ export default function FilePreviewDrawer({ item, onClose }: FilePreviewDrawerPr
     setTextContent(null);
     setLoadError(null);
 
-    if (kind === 'image' || kind === 'html' || kind === 'video' || kind === 'audio' || kind === 'pdf') {
+    if (
+      kind === 'image' ||
+      kind === 'html' ||
+      kind === 'video' ||
+      kind === 'audio' ||
+      kind === 'pdf'
+    ) {
       window.cerebro.files
-        .previewUrl({ storageKind: item.storageKind, storagePath: item.storagePath, taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId })
-        .then((u) => { if (!cancelled) setPreviewUrl(u); })
-        .catch((err) => { if (!cancelled) setLoadError(String(err)); });
+        .previewUrl({
+          storageKind: item.storageKind,
+          storagePath: item.storagePath,
+          taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
+        })
+        .then((u) => {
+          if (!cancelled) setPreviewUrl(u);
+        })
+        .catch((err) => {
+          if (!cancelled) setLoadError(String(err));
+        });
     } else if (kind === 'text' || kind === 'markdown') {
-      const loader = item.storageKind === 'managed'
-        ? window.cerebro.files.readManagedText(item.storagePath)
-        : item.sourceTaskId
-          ? window.cerebro.taskTerminal.readFile(item.sourceTaskWorkspaceDir || item.sourceTaskId, item.storagePath).then((c) => c ?? '')
-          : Promise.resolve('');
+      const loader =
+        item.storageKind === 'managed'
+          ? window.cerebro.files.readManagedText(item.storagePath)
+          : item.sourceTaskId
+            ? window.cerebro.taskTerminal
+                .readFile(item.sourceTaskWorkspaceDir || item.sourceTaskId, item.storagePath)
+                .then((c) => c ?? '')
+            : Promise.resolve('');
       loader
-        .then((c) => { if (!cancelled) setTextContent(c); })
-        .catch((err) => { if (!cancelled) setLoadError(String(err)); });
+        .then((c) => {
+          if (!cancelled) setTextContent(c);
+        })
+        .catch((err) => {
+          if (!cancelled) setLoadError(String(err));
+        });
     }
-    return () => { cancelled = true; };
-  }, [item.id, item.storagePath, item.storageKind, item.sourceTaskId, item.sourceTaskWorkspaceDir, kind]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    item.id,
+    item.storagePath,
+    item.storageKind,
+    item.sourceTaskId,
+    item.sourceTaskWorkspaceDir,
+    kind,
+  ]);
 
   // Esc closes
   useEffect(() => {
@@ -53,21 +83,24 @@ export default function FilePreviewDrawer({ item, onClose }: FilePreviewDrawerPr
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const handleOpen = () => window.cerebro.files.open({
-    storageKind: item.storageKind,
-    storagePath: item.storagePath,
-    taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
-  });
-  const handleReveal = () => window.cerebro.files.reveal({
-    storageKind: item.storageKind,
-    storagePath: item.storagePath,
-    taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
-  });
-  const handleDownload = () => window.cerebro.files.download({
-    storageKind: item.storageKind,
-    storagePath: item.storagePath,
-    taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
-  });
+  const handleOpen = () =>
+    window.cerebro.files.open({
+      storageKind: item.storageKind,
+      storagePath: item.storagePath,
+      taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
+    });
+  const handleReveal = () =>
+    window.cerebro.files.reveal({
+      storageKind: item.storageKind,
+      storagePath: item.storagePath,
+      taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
+    });
+  const handleDownload = () =>
+    window.cerebro.files.download({
+      storageKind: item.storageKind,
+      storagePath: item.storagePath,
+      taskId: item.sourceTaskWorkspaceDir || item.sourceTaskId,
+    });
 
   useEffect(() => {
     if (kind === 'markdown' && textContent !== null) {
@@ -82,7 +115,6 @@ export default function FilePreviewDrawer({ item, onClose }: FilePreviewDrawerPr
     }
   }, [kind, textContent, item.id, item.name, item.storagePath, openMarkdown, onClose]);
 
-
   return (
     <div className="w-[460px] flex-shrink-0 border-l border-border-subtle flex flex-col min-h-0 bg-bg-base animate-slide-in-right">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border-subtle flex-shrink-0">
@@ -92,16 +124,31 @@ export default function FilePreviewDrawer({ item, onClose }: FilePreviewDrawerPr
             {formatBytes(item.sizeBytes)} · {formatRelative(item.createdAt)}
           </div>
         </div>
-        <button onClick={handleDownload} title={t('files.actionDownload')} className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer">
+        <button
+          onClick={handleDownload}
+          title={t('files.actionDownload')}
+          className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer"
+        >
           <Download size={14} />
         </button>
-        <button onClick={handleReveal} title={t('files.actionReveal')} className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer">
+        <button
+          onClick={handleReveal}
+          title={t('files.actionReveal')}
+          className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer"
+        >
           <FolderOpen size={14} />
         </button>
-        <button onClick={handleOpen} title={t('files.actionOpen')} className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer">
+        <button
+          onClick={handleOpen}
+          title={t('files.actionOpen')}
+          className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer"
+        >
           <ExternalLink size={14} />
         </button>
-        <button onClick={onClose} className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer">
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover cursor-pointer"
+        >
           <X size={14} />
         </button>
       </div>

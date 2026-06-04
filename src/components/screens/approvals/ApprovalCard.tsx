@@ -52,7 +52,13 @@ function StatusBadge({ status }: { status: string }) {
   const c = config[status] ?? config.expired;
 
   return (
-    <span className={clsx('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium', c.bg, c.text)}>
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium',
+        c.bg,
+        c.text,
+      )}
+    >
       {status === 'approved' && <CheckCircle size={11} />}
       {status === 'denied' && <XCircle size={11} />}
       {status === 'expired' && <Clock size={11} />}
@@ -110,12 +116,14 @@ export default function ApprovalCard({ approval, variant, onApprove, onDeny }: A
     <div className="bg-bg-surface border border-border-subtle rounded-xl p-5">
       {/* Header */}
       <div className="flex items-start gap-3">
-        <div className={clsx(
-          'flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0 mt-0.5',
-          variant === 'pending'
-            ? 'bg-amber-500/15 text-amber-400'
-            : 'bg-zinc-500/10 text-text-tertiary',
-        )}>
+        <div
+          className={clsx(
+            'flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0 mt-0.5',
+            variant === 'pending'
+              ? 'bg-amber-500/15 text-amber-400'
+              : 'bg-zinc-500/10 text-text-tertiary',
+          )}
+        >
           <Zap size={16} />
         </div>
         <div className="flex-1 min-w-0">
@@ -131,9 +139,7 @@ export default function ApprovalCard({ approval, variant, onApprove, onDeny }: A
             {t('approvals.requested', { time: timeAgo(approval.requested_at, t) })}
           </p>
         </div>
-        {variant === 'history' && (
-          <StatusBadge status={approval.status} />
-        )}
+        {variant === 'history' && <StatusBadge status={approval.status} />}
       </div>
 
       {/* Parameters */}
@@ -155,9 +161,7 @@ export default function ApprovalCard({ approval, variant, onApprove, onDeny }: A
       )}
 
       {/* Error feedback */}
-      {actionError && (
-        <p className="mt-3 text-[11px] text-red-400">{actionError}</p>
-      )}
+      {actionError && <p className="mt-3 text-[11px] text-red-400">{actionError}</p>}
 
       {/* Actions (pending only) */}
       {variant === 'pending' && (
@@ -172,7 +176,10 @@ export default function ApprovalCard({ approval, variant, onApprove, onDeny }: A
                 className="flex-1 px-2.5 py-1.5 rounded-lg bg-black/20 border border-white/[0.06] text-[12px] text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-red-500/40"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleDeny();
-                  if (e.key === 'Escape') { setShowDenyForm(false); setDenyReason(''); }
+                  if (e.key === 'Escape') {
+                    setShowDenyForm(false);
+                    setDenyReason('');
+                  }
                 }}
                 autoFocus
               />
@@ -185,7 +192,10 @@ export default function ApprovalCard({ approval, variant, onApprove, onDeny }: A
                 {t('approvals.confirm')}
               </button>
               <button
-                onClick={() => { setShowDenyForm(false); setDenyReason(''); }}
+                onClick={() => {
+                  setShowDenyForm(false);
+                  setDenyReason('');
+                }}
                 className="px-2 py-1.5 rounded-lg text-[12px] text-text-tertiary hover:text-text-secondary transition-colors cursor-pointer"
               >
                 {t('common.cancel')}
@@ -206,7 +216,11 @@ export default function ApprovalCard({ approval, variant, onApprove, onDeny }: A
                 disabled={isApproving || isDenying}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-accent/15 text-accent hover:bg-accent/25 border border-accent/20 transition-colors cursor-pointer disabled:opacity-50"
               >
-                {isApproving ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                {isApproving ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <CheckCircle size={13} />
+                )}
                 {t('approvals.approve')}
               </button>
             </div>

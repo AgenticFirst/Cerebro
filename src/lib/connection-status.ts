@@ -29,30 +29,50 @@ export async function fetchConnectionStatus(
 
   if (needed.includes('hubspot')) {
     tasks.push(
-      window.cerebro.hubspot.status()
-        .then((s) => { out.hubspot = s.hasToken; })
-        .catch(() => { /* leave undefined → caller treats as unknown */ }),
+      window.cerebro.hubspot
+        .status()
+        .then((s) => {
+          out.hubspot = s.hasToken;
+        })
+        .catch(() => {
+          /* leave undefined → caller treats as unknown */
+        }),
     );
   }
   if (needed.includes('whatsapp')) {
     tasks.push(
-      window.cerebro.whatsapp.status()
-        .then((s) => { out.whatsapp = s.state === 'connected'; })
-        .catch(() => { /* unknown */ }),
+      window.cerebro.whatsapp
+        .status()
+        .then((s) => {
+          out.whatsapp = s.state === 'connected';
+        })
+        .catch(() => {
+          /* unknown */
+        }),
     );
   }
   if (needed.includes('telegram')) {
     tasks.push(
-      window.cerebro.telegram.status()
-        .then((s) => { out.telegram = Boolean(s.hasToken); })
-        .catch(() => { /* unknown */ }),
+      window.cerebro.telegram
+        .status()
+        .then((s) => {
+          out.telegram = Boolean(s.hasToken);
+        })
+        .catch(() => {
+          /* unknown */
+        }),
     );
   }
   if (needed.includes('github')) {
     tasks.push(
-      window.cerebro.github.status()
-        .then((s) => { out.github = s.hasToken; })
-        .catch(() => { /* unknown */ }),
+      window.cerebro.github
+        .status()
+        .then((s) => {
+          out.github = s.hasToken;
+        })
+        .catch(() => {
+          /* unknown */
+        }),
     );
   }
 

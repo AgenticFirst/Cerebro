@@ -12,8 +12,8 @@ import * as path from 'path';
 
 export type StagingSource = 'telegram' | 'whatsapp' | 'slack' | 'chat';
 
-export const ATTACHMENT_TTL_MS = 30 * 60 * 1000;   // 30 min — same as legacy Telegram
-export const ORPHAN_THRESHOLD_MS = 24 * 60 * 60 * 1000;   // boot-time sweep cutoff
+export const ATTACHMENT_TTL_MS = 30 * 60 * 1000; // 30 min — same as legacy Telegram
+export const ORPHAN_THRESHOLD_MS = 24 * 60 * 60 * 1000; // boot-time sweep cutoff
 
 export class IntegrationStaging {
   constructor(private readonly userDataDir: string) {}
@@ -33,7 +33,9 @@ export class IntegrationStaging {
   /** Schedule a per-file unlink after the TTL. Cancellable via the returned handle. */
   scheduleCleanup(absPath: string, ttlMs: number = ATTACHMENT_TTL_MS): NodeJS.Timeout {
     return setTimeout(() => {
-      fs.promises.rm(absPath, { force: true }).catch(() => {/* swallow */});
+      fs.promises.rm(absPath, { force: true }).catch(() => {
+        /* swallow */
+      });
     }, ttlMs);
   }
 
@@ -54,7 +56,9 @@ export class IntegrationStaging {
             fs.unlinkSync(full);
             removed++;
           }
-        } catch {/* ignore vanished entries */}
+        } catch {
+          /* ignore vanished entries */
+        }
       }
     }
     return removed;

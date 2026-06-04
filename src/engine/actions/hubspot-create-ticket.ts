@@ -77,20 +77,52 @@ export function createHubSpotCreateTicketAction(deps: {
       properties: {
         subject: { type: 'string', description: 'Ticket subject. Templated.' },
         content: { type: 'string', description: 'Ticket body / description. Templated.' },
-        pipeline: { type: 'string', description: 'Ticket pipeline id. Falls back to the default configured in Integrations.' },
-        stage: { type: 'string', description: 'Ticket stage id within the pipeline. Falls back to the default configured in Integrations.' },
+        pipeline: {
+          type: 'string',
+          description: 'Ticket pipeline id. Falls back to the default configured in Integrations.',
+        },
+        stage: {
+          type: 'string',
+          description:
+            'Ticket stage id within the pipeline. Falls back to the default configured in Integrations.',
+        },
         priority: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
         source_type: { type: 'string' },
-        contact_id: { type: 'string', description: 'Associate the ticket to an existing contact id. Takes precedence over contact_email.' },
-        contact_email: { type: 'string', description: 'Associate the ticket to a contact by email. The contact is looked up and created if missing. Templated.' },
-        owner: { type: 'string', description: 'Assign the ticket to a HubSpot user by name, email, or owner id. The name/email is resolved to the owner id. Templated.' },
-        owner_id: { type: 'string', description: 'Legacy: assign by raw HubSpot owner id. Prefer `owner` (accepts name/email). Honored only when `owner` is empty.' },
-        follow_up_user: { type: 'string', description: 'Follow-up user (usuario de seguimiento) by name, email, or owner id. Requires the follow-up property configured in the HubSpot integration settings. Templated.' },
-        due_date: { type: 'string', description: 'Due date (fecha de vencimiento) as YYYY-MM-DD or ISO. Requires the due-date property configured in the HubSpot integration settings. Templated.' },
+        contact_id: {
+          type: 'string',
+          description:
+            'Associate the ticket to an existing contact id. Takes precedence over contact_email.',
+        },
+        contact_email: {
+          type: 'string',
+          description:
+            'Associate the ticket to a contact by email. The contact is looked up and created if missing. Templated.',
+        },
+        owner: {
+          type: 'string',
+          description:
+            'Assign the ticket to a HubSpot user by name, email, or owner id. The name/email is resolved to the owner id. Templated.',
+        },
+        owner_id: {
+          type: 'string',
+          description:
+            'Legacy: assign by raw HubSpot owner id. Prefer `owner` (accepts name/email). Honored only when `owner` is empty.',
+        },
+        follow_up_user: {
+          type: 'string',
+          description:
+            'Follow-up user (usuario de seguimiento) by name, email, or owner id. Requires the follow-up property configured in the HubSpot integration settings. Templated.',
+        },
+        due_date: {
+          type: 'string',
+          description:
+            'Due date (fecha de vencimiento) as YYYY-MM-DD or ISO. Requires the due-date property configured in the HubSpot integration settings. Templated.',
+        },
         properties: {
           type: 'object',
           additionalProperties: { type: 'string' },
-          description: 'Escape hatch: HubSpot internal property name → value for any other (including custom) ticket property. Merged last, so it overrides the named fields on conflict.',
+          description:
+            'Escape hatch: HubSpot internal property name → value for any other (including custom) ticket property. Merged last, so it overrides the named fields on conflict.',
         },
       },
       required: ['subject'],
@@ -104,10 +136,24 @@ export function createHubSpotCreateTicketAction(deps: {
         created: { type: 'boolean' },
         contact_id: { type: ['string', 'null'] },
         contact_associated: { type: 'boolean' },
-        owner_resolved: { type: ['string', 'null'], description: 'Owner id written, when an owner was resolved.' },
-        follow_up_resolved: { type: ['string', 'null'], description: 'Follow-up owner id written, when one was resolved.' },
-        due_date_set: { type: ['string', 'null'], description: 'Normalized due-date value written, when set.' },
-        warnings: { type: 'array', items: { type: 'string' }, description: 'Non-fatal issues, e.g. an owner name that could not be resolved or an unconfigured property.' },
+        owner_resolved: {
+          type: ['string', 'null'],
+          description: 'Owner id written, when an owner was resolved.',
+        },
+        follow_up_resolved: {
+          type: ['string', 'null'],
+          description: 'Follow-up owner id written, when one was resolved.',
+        },
+        due_date_set: {
+          type: ['string', 'null'],
+          description: 'Normalized due-date value written, when set.',
+        },
+        warnings: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Non-fatal issues, e.g. an owner name that could not be resolved or an unconfigured property.',
+        },
         error: { type: ['string', 'null'] },
       },
       required: ['created'],
@@ -116,7 +162,9 @@ export function createHubSpotCreateTicketAction(deps: {
     execute: async (input: ActionInput): Promise<ActionOutput> => {
       const channel = deps.getChannel();
       if (!channel) {
-        throw new Error('HubSpot: Create Ticket — HubSpot is not configured. Connect HubSpot in Integrations first.');
+        throw new Error(
+          'HubSpot: Create Ticket — HubSpot is not configured. Connect HubSpot in Integrations first.',
+        );
       }
       const token = channel.getAccessToken();
       if (!token) {
@@ -128,9 +176,13 @@ export function createHubSpotCreateTicketAction(deps: {
 
       const subject = renderTemplate(params.subject ?? '', vars).trim();
       const content = renderTemplate(params.content ?? '', vars).trim();
-      const pipeline = renderTemplate(params.pipeline ?? '', vars).trim() || channel.getDefaultPipeline() || '';
-      const stage = renderTemplate(params.stage ?? '', vars).trim() || channel.getDefaultStage() || '';
-      const priorityRaw = renderTemplate(params.priority ?? '', vars).trim().toUpperCase();
+      const pipeline =
+        renderTemplate(params.pipeline ?? '', vars).trim() || channel.getDefaultPipeline() || '';
+      const stage =
+        renderTemplate(params.stage ?? '', vars).trim() || channel.getDefaultStage() || '';
+      const priorityRaw = renderTemplate(params.priority ?? '', vars)
+        .trim()
+        .toUpperCase();
       const priority = priorityRaw && VALID_PRIORITIES.has(priorityRaw) ? priorityRaw : null;
       const sourceType = renderTemplate(params.source_type ?? '', vars).trim();
       const explicitContactId = renderTemplate(params.contact_id ?? '', vars).trim();
@@ -140,7 +192,9 @@ export function createHubSpotCreateTicketAction(deps: {
         throw new Error('HubSpot: Create Ticket — subject is empty.');
       }
       if (!pipeline || !stage) {
-        throw new Error('HubSpot: Create Ticket — pipeline and stage are required. Set defaults in the HubSpot integration panel.');
+        throw new Error(
+          'HubSpot: Create Ticket — pipeline and stage are required. Set defaults in the HubSpot integration panel.',
+        );
       }
 
       // Resolve the contact to associate. An explicit contact_id wins; otherwise
@@ -159,7 +213,9 @@ export function createHubSpotCreateTicketAction(deps: {
         if (resolved.contactId) {
           contactId = resolved.contactId;
         } else {
-          input.context.log(`HubSpot create_ticket: could not resolve contact for ${contactEmail}: ${resolved.error ?? 'unknown'}`);
+          input.context.log(
+            `HubSpot create_ticket: could not resolve contact for ${contactEmail}: ${resolved.error ?? 'unknown'}`,
+          );
         }
       }
 
@@ -235,12 +291,13 @@ export function createHubSpotCreateTicketAction(deps: {
       }
       const ticketId = res.data && typeof res.data.id === 'string' ? res.data.id : null;
       const portal = channel.getPortalId();
-      const ticketUrl = ticketId && portal
-        ? `https://app.hubspot.com/contacts/${portal}/ticket/${ticketId}`
-        : null;
+      const ticketUrl =
+        ticketId && portal ? `https://app.hubspot.com/contacts/${portal}/ticket/${ticketId}` : null;
       const contactAssociated = Boolean(contactId);
 
-      input.context.log(`HubSpot ticket created: ${ticketId}${contactAssociated ? ` (contact ${contactId})` : ''}`);
+      input.context.log(
+        `HubSpot ticket created: ${ticketId}${contactAssociated ? ` (contact ${contactId})` : ''}`,
+      );
       for (const w of warnings) input.context.log(`HubSpot create_ticket: ${w}`);
       const baseSummary = contactAssociated
         ? `Created HubSpot ticket ${ticketId ?? '(unknown id)'} associated with contact ${contactId}`

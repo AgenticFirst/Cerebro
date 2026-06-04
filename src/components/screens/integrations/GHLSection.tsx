@@ -40,9 +40,12 @@ export default function GHLSection() {
     void loadConfig();
   }, [loadConfig]);
 
-  useEffect(() => () => {
-    if (flashRef.current) clearTimeout(flashRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (flashRef.current) clearTimeout(flashRef.current);
+    },
+    [],
+  );
 
   const handleSave = useCallback(async () => {
     if (!apiKey.trim() || !locationId.trim()) return;
@@ -96,7 +99,9 @@ export default function GHLSection() {
     <div className="space-y-4">
       {/* API Key */}
       <div>
-        <label className="text-xs font-medium text-text-secondary">{t('ghlSection.apiKeyLabel')}</label>
+        <label className="text-xs font-medium text-text-secondary">
+          {t('ghlSection.apiKeyLabel')}
+        </label>
         <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
           {t('ghlSection.apiKeyHelp')}
         </p>
@@ -125,7 +130,10 @@ export default function GHLSection() {
             {configured && (
               <button
                 type="button"
-                onClick={() => { setEditing(false); setApiKey(''); }}
+                onClick={() => {
+                  setEditing(false);
+                  setApiKey('');
+                }}
                 className="px-3 py-2 text-sm rounded-md font-medium text-text-tertiary hover:text-text-secondary"
               >
                 {t('common.cancel')}
@@ -139,7 +147,10 @@ export default function GHLSection() {
             </div>
             <button
               type="button"
-              onClick={() => { setEditing(true); setTestState({ kind: 'idle' }); }}
+              onClick={() => {
+                setEditing(true);
+                setTestState({ kind: 'idle' });
+              }}
               className="px-3 py-2 text-sm rounded-md font-medium bg-accent/15 text-accent hover:bg-accent/25"
             >
               {t('ghlSection.replaceKey')}
@@ -150,7 +161,9 @@ export default function GHLSection() {
 
       {/* Location ID */}
       <div>
-        <label className="text-xs font-medium text-text-secondary">{t('ghlSection.locationIdLabel')}</label>
+        <label className="text-xs font-medium text-text-secondary">
+          {t('ghlSection.locationIdLabel')}
+        </label>
         <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
           {t('ghlSection.locationIdHelp')}
         </p>

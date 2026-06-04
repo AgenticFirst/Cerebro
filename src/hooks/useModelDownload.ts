@@ -61,7 +61,11 @@ export function useModelDownload(onComplete?: () => void): UseModelDownloadResul
             const data: DownloadProgress = JSON.parse(event.data);
             setProgress(data);
 
-            if (data.status === 'completed' || data.status === 'cancelled' || data.status === 'error') {
+            if (
+              data.status === 'completed' ||
+              data.status === 'cancelled' ||
+              data.status === 'error'
+            ) {
               setIsActive(false);
               if (data.status === 'completed') {
                 onComplete?.();
@@ -74,9 +78,7 @@ export function useModelDownload(onComplete?: () => void): UseModelDownloadResul
           setIsActive(false);
         } else if (event.event === 'error') {
           setIsActive(false);
-          setProgress((prev) =>
-            prev ? { ...prev, status: 'error', error: event.data } : null,
-          );
+          setProgress((prev) => (prev ? { ...prev, status: 'error', error: event.data } : null));
         }
       });
 

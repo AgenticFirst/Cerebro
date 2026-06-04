@@ -44,7 +44,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     try {
       const saved = localStorage.getItem(STORAGE_KEY) as Theme | null;
       if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
-    } catch { /* private mode */ }
+    } catch {
+      /* private mode */
+    }
     return 'system';
   });
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolve(theme));
@@ -59,7 +61,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setThemeState((prev) => (prev === v ? prev : v));
       }
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Keep resolvedTheme + <html> class in sync with theme and OS preference.
@@ -78,7 +82,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
-    try { localStorage.setItem(STORAGE_KEY, next); } catch { /* private mode */ }
+    try {
+      localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      /* private mode */
+    }
     saveSetting(SETTING_KEY, next);
   }, []);
 

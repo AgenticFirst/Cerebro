@@ -36,7 +36,7 @@ export function normalizeHubSpotDate(input: string): NormalizeDateResult {
     return { value: null, warning: `Unparseable due date "${raw}" — skipped` };
   }
   // Truncate to midnight UTC so a "date" property gets a clean day boundary.
-  const midnight = ms - ((ms % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY;
+  const midnight = ms - (((ms % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY);
   return { value: String(midnight) };
 }
 
@@ -87,7 +87,9 @@ export interface BuildTicketExtrasResult {
  * name, missing owners scope) or whose target custom property isn't configured
  * is skipped and reported in `warnings`, never thrown.
  */
-export async function buildTicketExtras(in_: BuildTicketExtrasInput): Promise<BuildTicketExtrasResult> {
+export async function buildTicketExtras(
+  in_: BuildTicketExtrasInput,
+): Promise<BuildTicketExtrasResult> {
   const { channel, token, signal, log } = in_;
   const props: Record<string, string> = {};
   const warnings: string[] = [];

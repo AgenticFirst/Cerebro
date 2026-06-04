@@ -28,7 +28,6 @@ export default function NewsScreen() {
   // the freshness guard). Switching tabs is handled by setActiveCategory.
   useEffect(() => {
     setActiveCategory(activeCategory);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const showSkeletons = isLoading && articles.length === 0;
@@ -91,7 +90,9 @@ export default function NewsScreen() {
             <div className="w-16 h-16 rounded-xl border-2 border-dashed border-red-500/30 flex items-center justify-center mb-4">
               <AlertCircle size={24} className="text-red-400" />
             </div>
-            <h3 className="text-sm font-medium text-text-primary mb-1.5">{t('news.failedToLoad')}</h3>
+            <h3 className="text-sm font-medium text-text-primary mb-1.5">
+              {t('news.failedToLoad')}
+            </h3>
             <button
               onClick={() => void retry()}
               className="mt-2 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-accent bg-accent/10 hover:bg-accent/20 border border-accent/20 rounded-lg transition-colors cursor-pointer"

@@ -36,7 +36,10 @@ import { IPC_CHANNELS, TEAM_MEMBER_STATUSES, type TeamMemberStatus } from '../ty
  * the right code instead of treating malformed input as a server fault.
  */
 class HttpError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
     super(message);
     this.name = 'HttpError';
   }
@@ -207,11 +210,15 @@ export class ChatActionServer {
     });
 
     const httpStatus =
-      result.status === 'succeeded' ? 200 :
-        result.status === 'unavailable' ? 409 :
-          result.status === 'denied' ? 403 :
-            result.status === 'cancelled' ? 409 :
-              500;
+      result.status === 'succeeded'
+        ? 200
+        : result.status === 'unavailable'
+          ? 409
+          : result.status === 'denied'
+            ? 403
+            : result.status === 'cancelled'
+              ? 409
+              : 500;
     this.respondJson(res, httpStatus, result);
   }
 
@@ -229,7 +236,9 @@ export class ChatActionServer {
     }
     const triggerPayloadRaw = (body as { trigger_payload?: unknown }).trigger_payload;
     const triggerPayload =
-      triggerPayloadRaw && typeof triggerPayloadRaw === 'object' && !Array.isArray(triggerPayloadRaw)
+      triggerPayloadRaw &&
+      typeof triggerPayloadRaw === 'object' &&
+      !Array.isArray(triggerPayloadRaw)
         ? (triggerPayloadRaw as Record<string, unknown>)
         : undefined;
 
@@ -351,7 +360,10 @@ export class ChatActionServer {
     if (!memberId) return this.respondJson(res, 400, { error: 'missing_member_id' });
 
     const statusRaw = (body as { status?: unknown }).status;
-    if (typeof statusRaw !== 'string' || !(TEAM_MEMBER_STATUSES as readonly string[]).includes(statusRaw)) {
+    if (
+      typeof statusRaw !== 'string' ||
+      !(TEAM_MEMBER_STATUSES as readonly string[]).includes(statusRaw)
+    ) {
       return this.respondJson(res, 400, { error: 'invalid_status' });
     }
     const status = statusRaw as TeamMemberStatus;

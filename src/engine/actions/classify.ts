@@ -79,7 +79,6 @@ ${renderedPrompt}`;
       model: params.model?.trim() || undefined,
     });
 
-
     let result: { category: string; confidence?: string; reasoning?: string } | null = null;
 
     // Try every {...} block in the response, preferring the LAST valid parse.
@@ -96,7 +95,9 @@ ${renderedPrompt}`;
           result = parsed;
           break;
         }
-      } catch { /* try the next candidate */ }
+      } catch {
+        /* try the next candidate */
+      }
     }
 
     if (!result) {
@@ -108,7 +109,9 @@ ${renderedPrompt}`;
         new RegExp(`\\b${c.label.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i').test(response),
       );
       if (!matched) {
-        context.log(`Warning: Could not parse classification result; defaulting to "${params.categories[0].label}"`);
+        context.log(
+          `Warning: Could not parse classification result; defaulting to "${params.categories[0].label}"`,
+        );
       }
       result = {
         category: matched?.label ?? params.categories[0].label,

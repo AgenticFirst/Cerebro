@@ -10,7 +10,12 @@ import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { expandEventsForWindow, type CalendarOccurrence } from '../../../calendar/recurrence';
 import type { CalendarAccountInfo, CalendarEventDTO } from '../../../types/calendar';
-import { startOfDay, sameDay, buildColorByAccount, colorForEvent } from '../../../calendar/cal-utils';
+import {
+  startOfDay,
+  sameDay,
+  buildColorByAccount,
+  colorForEvent,
+} from '../../../calendar/cal-utils';
 
 const DAY_MS = 86_400_000;
 const MAX_CHIPS = 3;
@@ -61,7 +66,10 @@ export default function CalendarMonthView({
       {/* Weekday header */}
       <div className="grid grid-cols-7 border-b border-border-subtle">
         {WEEKDAYS.map((w) => (
-          <div key={w} className="text-center text-[11px] uppercase tracking-wide text-text-tertiary py-2">
+          <div
+            key={w}
+            className="text-center text-[11px] uppercase tracking-wide text-text-tertiary py-2"
+          >
             {w}
           </div>
         ))}
@@ -79,7 +87,9 @@ export default function CalendarMonthView({
           return (
             <div
               key={i}
-              onClick={() => onCreateAt(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0))}
+              onClick={() =>
+                onCreateAt(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0))
+              }
               className={clsx(
                 'group relative border-b border-r border-border-subtle/60 p-1 overflow-hidden cursor-pointer transition-colors hover:bg-bg-hover/40',
                 (i + 1) % 7 === 0 && 'border-r-0',
@@ -88,10 +98,17 @@ export default function CalendarMonthView({
             >
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onPickDay(day); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPickDay(day);
+                }}
                 className={clsx(
                   'ml-auto flex items-center justify-center w-6 h-6 rounded-full text-[12px] transition-colors',
-                  isToday ? 'bg-accent text-black font-semibold' : inMonth ? 'text-text-secondary hover:bg-bg-hover' : 'text-text-tertiary/50 hover:bg-bg-hover',
+                  isToday
+                    ? 'bg-accent text-black font-semibold'
+                    : inMonth
+                      ? 'text-text-secondary hover:bg-bg-hover'
+                      : 'text-text-tertiary/50 hover:bg-bg-hover',
                 )}
               >
                 {day.getDate()}
@@ -104,24 +121,40 @@ export default function CalendarMonthView({
                   return (
                     <button
                       key={o.key}
-                      onClick={(e) => { e.stopPropagation(); onSelectEvent(o, (e.currentTarget as HTMLElement).getBoundingClientRect()); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectEvent(o, (e.currentTarget as HTMLElement).getBoundingClientRect());
+                      }}
                       className="flex items-center gap-1 w-full text-left truncate rounded px-1 py-0.5 text-[10px] hover:brightness-110"
                       style={{ background: allDay ? `${color}40` : 'transparent' }}
                     >
-                      {!allDay && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />}
+                      {!allDay && (
+                        <span
+                          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                          style={{ background: color }}
+                        />
+                      )}
                       {!allDay && (
                         <span className="text-text-tertiary tabular-nums flex-shrink-0">
-                          {new Date(o.startMs).toLocaleTimeString(undefined, { hour: 'numeric', minute: o.startMs % 3600000 ? '2-digit' : undefined })}
+                          {new Date(o.startMs).toLocaleTimeString(undefined, {
+                            hour: 'numeric',
+                            minute: o.startMs % 3600000 ? '2-digit' : undefined,
+                          })}
                         </span>
                       )}
-                      <span className="text-text-primary truncate">{o.event.title || '(no title)'}</span>
+                      <span className="text-text-primary truncate">
+                        {o.event.title || '(no title)'}
+                      </span>
                     </button>
                   );
                 })}
                 {extra > 0 && (
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); onPickDay(day); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPickDay(day);
+                    }}
                     className="block w-full text-left px-1 text-[10px] text-text-tertiary hover:text-text-secondary"
                   >
                     {t('calendar.more', { count: extra })}

@@ -24,6 +24,11 @@ import type {
   AssistantRunRequest,
   SupabaseStatus,
   SupabaseConnectInput,
+  ClaudeCodeLoginMode,
+  ClaudeCodeLoginSnapshot,
+  CodexLoginSnapshot,
+  UpdateAsset,
+  UpdateActionResult,
 } from './types/ipc';
 import { AgentRuntime } from './agents';
 import type { AgentRunRequest } from './agents';
@@ -51,7 +56,6 @@ import { detectCodex, getCachedCodexInfo } from './engines/codex/detector';
 import { probeCodexAuth } from './engines/codex/auth-probe';
 import { getCodexLoginOrchestrator } from './engines/codex/login-orchestrator';
 import { backendGetSetting } from './shared/backend-settings';
-import type { ClaudeCodeLoginMode, ClaudeCodeLoginSnapshot, CodexLoginSnapshot } from './types/ipc';
 import { generateConversationTitle } from './claude-code/generate-title';
 import { VoiceSessionManager } from './voice/session';
 import { TelegramBridge } from './telegram/bridge';
@@ -78,7 +82,6 @@ import {
   autoUpdatesDisabled,
   toErrorEvent,
 } from './updater';
-import type { UpdateAsset, UpdateActionResult } from './types/ipc';
 import { applyPendingRestore, consumeCompletionFlag } from './backup/swap';
 import { IntegrationStaging } from './files/staging';
 
@@ -110,22 +113,44 @@ function getChatStaging(): IntegrationStaging {
 // allow on clipboard paste.
 function sniffImage(buf: Buffer, ext: string): boolean {
   if (ext === 'png') {
-    return buf.length >= 8
-      && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47
-      && buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a;
+    return (
+      buf.length >= 8 &&
+      buf[0] === 0x89 &&
+      buf[1] === 0x50 &&
+      buf[2] === 0x4e &&
+      buf[3] === 0x47 &&
+      buf[4] === 0x0d &&
+      buf[5] === 0x0a &&
+      buf[6] === 0x1a &&
+      buf[7] === 0x0a
+    );
   }
   if (ext === 'jpg') {
     return buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
   }
   if (ext === 'gif') {
-    return buf.length >= 6
-      && buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38
-      && (buf[4] === 0x37 || buf[4] === 0x39) && buf[5] === 0x61;
+    return (
+      buf.length >= 6 &&
+      buf[0] === 0x47 &&
+      buf[1] === 0x49 &&
+      buf[2] === 0x46 &&
+      buf[3] === 0x38 &&
+      (buf[4] === 0x37 || buf[4] === 0x39) &&
+      buf[5] === 0x61
+    );
   }
   if (ext === 'webp') {
-    return buf.length >= 12
-      && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
-      && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50;
+    return (
+      buf.length >= 12 &&
+      buf[0] === 0x52 &&
+      buf[1] === 0x49 &&
+      buf[2] === 0x46 &&
+      buf[3] === 0x46 &&
+      buf[8] === 0x57 &&
+      buf[9] === 0x45 &&
+      buf[10] === 0x42 &&
+      buf[11] === 0x50
+    );
   }
   return false;
 }
@@ -353,7 +378,9 @@ function resolvePythonPath(): string {
     if (fs.existsSync(bundled)) {
       return bundled;
     }
-    console.warn(`[Cerebro] Bundled Python missing at ${bundled} — falling back to system python (likely to fail)`);
+    console.warn(
+      `[Cerebro] Bundled Python missing at ${bundled} — falling back to system python (likely to fail)`,
+    );
   }
 
   const venvPython = isWin
@@ -460,11 +487,16 @@ async function startPythonBackend(): Promise<void> {
     pythonPath,
     [
       scriptPath,
-      '--port', String(port),
-      '--db-path', dbPath,
-      '--agent-memory-dir', agentMemoryDir,
-      '--voice-models-dir', voiceModelsDir,
-      '--files-dir', getFilesRoot(),
+      '--port',
+      String(port),
+      '--db-path',
+      dbPath,
+      '--agent-memory-dir',
+      agentMemoryDir,
+      '--voice-models-dir',
+      voiceModelsDir,
+      '--files-dir',
+      getFilesRoot(),
     ],
     {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -497,7 +529,10 @@ async function startPythonBackend(): Promise<void> {
   await initializeSandbox({
     cerebroDataDir: dataDir,
     fetchConfig: async () => {
-      const res = await makeBackendRequest<SandboxConfig>({ method: 'GET', path: '/sandbox/config' });
+      const res = await makeBackendRequest<SandboxConfig>({
+        method: 'GET',
+        path: '/sandbox/config',
+      });
       return res.ok ? res.data : null;
     },
   });
@@ -573,8 +608,11 @@ async function startPythonBackend(): Promise<void> {
   // GitHub bridge — credential lifecycle + per-repo polling for routine triggers.
   gitHubBridge = new GitHubBridge({ backendPort: port, executionEngine });
   executionEngine.setGitHubChannel(gitHubBridge);
-  gitHubBridge.init()
-    .then(() => { gitHubBridge?.start(); })
+  gitHubBridge
+    .init()
+    .then(() => {
+      gitHubBridge?.start();
+    })
     .catch((err) => {
       console.error('[Cerebro] GitHub bridge init failed:', err);
     });
@@ -584,8 +622,11 @@ async function startPythonBackend(): Promise<void> {
   // meeting accepted elsewhere shows up quickly.
   calendarBridge = new CalendarBridge({ backendPort: port });
   executionEngine.setCalendarChannel(calendarBridge);
-  calendarBridge.init()
-    .then(() => { calendarBridge?.start(); })
+  calendarBridge
+    .init()
+    .then(() => {
+      calendarBridge?.start();
+    })
     .catch((err) => {
       console.error('[Cerebro] Calendar bridge init failed:', err);
     });
@@ -646,13 +687,16 @@ async function startPythonBackend(): Promise<void> {
   }
 
   // Initial scheduler sync + start periodic re-sync
-  routineScheduler.sync().then(() => {
-    routineScheduler!.startPeriodicSync();
-  }).catch((err) => {
-    console.error('[Cerebro] Initial scheduler sync failed:', err);
-    // Start periodic sync anyway so it can self-heal
-    routineScheduler!.startPeriodicSync();
-  });
+  routineScheduler
+    .sync()
+    .then(() => {
+      routineScheduler!.startPeriodicSync();
+    })
+    .catch((err) => {
+      console.error('[Cerebro] Initial scheduler sync failed:', err);
+      // Start periodic sync anyway so it can self-heal
+      routineScheduler!.startPeriodicSync();
+    });
 
   // Start the live task reconciler: catches tasks stranded at in_progress
   // when the renderer-mediated run-event POST is dropped (destroyed window,
@@ -1003,11 +1047,19 @@ function registerIpcHandlers(): void {
       const sender = event.sender;
       const inputHandler = (_e: Electron.IpcMainEvent, key: string, data: string) => {
         if (key !== sessionKey) return;
-        try { proc.write(data); } catch { /* already dead */ }
+        try {
+          proc.write(data);
+        } catch {
+          /* already dead */
+        }
       };
       const resizeHandler = (_e: Electron.IpcMainEvent, key: string, c: number, r: number) => {
         if (key !== sessionKey) return;
-        try { proc.resize(Math.max(20, c), Math.max(10, r)); } catch { /* already dead */ }
+        try {
+          proc.resize(Math.max(20, c), Math.max(10, r));
+        } catch {
+          /* already dead */
+        }
       };
       ipcMain.on(IPC_CHANNELS.TASK_TERMINAL_INPUT, inputHandler);
       ipcMain.on(IPC_CHANNELS.TASK_TERMINAL_RESIZE, resizeHandler);
@@ -1018,7 +1070,11 @@ function registerIpcHandlers(): void {
       });
       proc.onExit(() => {
         shellSessions.delete(sessionKey);
-        try { dataDisposable.dispose(); } catch { /* noop */ }
+        try {
+          dataDisposable.dispose();
+        } catch {
+          /* noop */
+        }
         ipcMain.removeListener(IPC_CHANNELS.TASK_TERMINAL_INPUT, inputHandler);
         ipcMain.removeListener(IPC_CHANNELS.TASK_TERMINAL_RESIZE, resizeHandler);
       });
@@ -1030,7 +1086,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.SHELL_SESSION_STOP, async (_event, sessionKey: string) => {
     const proc = shellSessions.get(sessionKey);
     if (!proc) return;
-    try { proc.kill(); } catch { /* already dead */ }
+    try {
+      proc.kill();
+    } catch {
+      /* already dead */
+    }
     shellSessions.delete(sessionKey);
   });
 
@@ -1072,136 +1132,180 @@ function registerIpcHandlers(): void {
   // to detect a pre-migration folder we should rename in place. workspaceDir
   // is the actual on-disk folder name (slug-hex, or the legacy 32-hex for
   // tasks that haven't been backfilled yet).
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_CREATE, async (_event, args: { taskId: string; workspaceDir: string }): Promise<string> => {
-    const { taskId, workspaceDir } = args ?? { taskId: '', workspaceDir: '' };
-    if (!/^[a-z0-9]{32}$/i.test(taskId)) {
-      throw new Error(`Invalid taskId: ${taskId}`);
-    }
-    assertWorkspaceDir(workspaceDir);
-    const dataDir = app.getPath('userData');
-    const workspacePath = getTaskWorkspaceDir(workspaceDir);
-    // Lazy migration: if a legacy folder exists at <task-workspaces>/<taskId>
-    // and the new <workspace_dir> folder doesn't, rename it. Preserves any
-    // files the agent already wrote there.
-    if (workspaceDir !== taskId) {
-      const legacyPath = getTaskWorkspaceDir(taskId);
-      if (fs.existsSync(legacyPath) && !fs.existsSync(workspacePath)) {
-        fs.renameSync(legacyPath, workspacePath);
+  ipcMain.handle(
+    IPC_CHANNELS.TASK_WORKSPACE_CREATE,
+    async (_event, args: { taskId: string; workspaceDir: string }): Promise<string> => {
+      const { taskId, workspaceDir } = args ?? { taskId: '', workspaceDir: '' };
+      if (!/^[a-z0-9]{32}$/i.test(taskId)) {
+        throw new Error(`Invalid taskId: ${taskId}`);
       }
-    }
-    fs.mkdirSync(workspacePath, { recursive: true });
-    // Symlink .claude/ from parent so skills/agents are discoverable
-    const claudeSrc = path.join(dataDir, '.claude');
-    const claudeDst = path.join(workspacePath, '.claude');
-    if (fs.existsSync(claudeSrc) && !fs.existsSync(claudeDst)) {
-      try {
-        fs.symlinkSync(claudeSrc, claudeDst, 'dir');
-      } catch (err) {
-        console.warn('[workspace] Failed to symlink .claude:', err);
+      assertWorkspaceDir(workspaceDir);
+      const dataDir = app.getPath('userData');
+      const workspacePath = getTaskWorkspaceDir(workspaceDir);
+      // Lazy migration: if a legacy folder exists at <task-workspaces>/<taskId>
+      // and the new <workspace_dir> folder doesn't, rename it. Preserves any
+      // files the agent already wrote there.
+      if (workspaceDir !== taskId) {
+        const legacyPath = getTaskWorkspaceDir(taskId);
+        if (fs.existsSync(legacyPath) && !fs.existsSync(workspacePath)) {
+          fs.renameSync(legacyPath, workspacePath);
+        }
       }
-    }
-    return workspacePath;
-  });
+      fs.mkdirSync(workspacePath, { recursive: true });
+      // Symlink .claude/ from parent so skills/agents are discoverable
+      const claudeSrc = path.join(dataDir, '.claude');
+      const claudeDst = path.join(workspacePath, '.claude');
+      if (fs.existsSync(claudeSrc) && !fs.existsSync(claudeDst)) {
+        try {
+          fs.symlinkSync(claudeSrc, claudeDst, 'dir');
+        } catch (err) {
+          console.warn('[workspace] Failed to symlink .claude:', err);
+        }
+      }
+      return workspacePath;
+    },
+  );
 
   // Return the derived workspace path without creating it
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_PATH, async (_event, workspaceDir: string): Promise<string> => {
-    assertWorkspaceDir(workspaceDir);
-    return getTaskWorkspaceDir(workspaceDir);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.TASK_WORKSPACE_PATH,
+    async (_event, workspaceDir: string): Promise<string> => {
+      assertWorkspaceDir(workspaceDir);
+      return getTaskWorkspaceDir(workspaceDir);
+    },
+  );
 
   // List files in the workspace as a nested tree (excluding .claude symlink and node_modules).
   // `overridePath` (optional) routes the listing to an external project folder; the backend
   // sandbox validator already canonicalized and vetted the path at task create/update time.
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES, async (_event, workspaceDir: string, overridePath?: string) => {
-    if (!(overridePath && overridePath.trim() && path.isAbsolute(overridePath))) {
-      assertWorkspaceDir(workspaceDir);
-    }
-    const baseDir = overridePath && overridePath.trim() && path.isAbsolute(overridePath)
-      ? overridePath
-      : getTaskWorkspaceDir(workspaceDir);
-    if (!fs.existsSync(baseDir)) return [];
-
-    // `_work` is the convention the deliverable prompt asks experts to use for
-    // scratch/intermediates; keeping it out of the listing is what makes the
-    // expert's "keep workspace tidy" instruction actually visible. The rest
-    // are standard caches/tmp folders we never want to show as deliverables.
-    const SKIP_DIRS = new Set([
-      '.claude', 'node_modules', '.git', '.next', 'dist', 'build',
-      '.venv', '__pycache__', '_work', '.tmp', 'tmp', '.cache', '.pytest_cache',
-    ]);
-    const MAX_DEPTH = 6;
-
-    function walk(dir: string, depth: number): Array<{ name: string; path: string; type: 'dir' | 'file'; size?: number; mtime?: number; children?: unknown[] }> {
-      if (depth > MAX_DEPTH) return [];
-      let entries: fs.Dirent[];
-      try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
-      } catch {
-        return [];
+  ipcMain.handle(
+    IPC_CHANNELS.TASK_WORKSPACE_LIST_FILES,
+    async (_event, workspaceDir: string, overridePath?: string) => {
+      if (!(overridePath && overridePath.trim() && path.isAbsolute(overridePath))) {
+        assertWorkspaceDir(workspaceDir);
       }
-      const results: Array<{ name: string; path: string; type: 'dir' | 'file'; size?: number; mtime?: number; children?: unknown[] }> = [];
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') && entry.name !== '.env.example') continue;
-        if (SKIP_DIRS.has(entry.name)) continue;
-        const fullPath = path.join(dir, entry.name);
-        const relPath = path.relative(baseDir, fullPath);
-        if (entry.isSymbolicLink()) continue;
-        if (entry.isDirectory()) {
-          results.push({
-            name: entry.name,
-            path: relPath,
-            type: 'dir',
-            children: walk(fullPath, depth + 1),
-          });
-        } else if (entry.isFile()) {
-          try {
-            const stat = fs.statSync(fullPath);
+      const baseDir =
+        overridePath && overridePath.trim() && path.isAbsolute(overridePath)
+          ? overridePath
+          : getTaskWorkspaceDir(workspaceDir);
+      if (!fs.existsSync(baseDir)) return [];
+
+      // `_work` is the convention the deliverable prompt asks experts to use for
+      // scratch/intermediates; keeping it out of the listing is what makes the
+      // expert's "keep workspace tidy" instruction actually visible. The rest
+      // are standard caches/tmp folders we never want to show as deliverables.
+      const SKIP_DIRS = new Set([
+        '.claude',
+        'node_modules',
+        '.git',
+        '.next',
+        'dist',
+        'build',
+        '.venv',
+        '__pycache__',
+        '_work',
+        '.tmp',
+        'tmp',
+        '.cache',
+        '.pytest_cache',
+      ]);
+      const MAX_DEPTH = 6;
+
+      function walk(
+        dir: string,
+        depth: number,
+      ): Array<{
+        name: string;
+        path: string;
+        type: 'dir' | 'file';
+        size?: number;
+        mtime?: number;
+        children?: unknown[];
+      }> {
+        if (depth > MAX_DEPTH) return [];
+        let entries: fs.Dirent[];
+        try {
+          entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch {
+          return [];
+        }
+        const results: Array<{
+          name: string;
+          path: string;
+          type: 'dir' | 'file';
+          size?: number;
+          mtime?: number;
+          children?: unknown[];
+        }> = [];
+        for (const entry of entries) {
+          if (entry.name.startsWith('.') && entry.name !== '.env.example') continue;
+          if (SKIP_DIRS.has(entry.name)) continue;
+          const fullPath = path.join(dir, entry.name);
+          const relPath = path.relative(baseDir, fullPath);
+          if (entry.isSymbolicLink()) continue;
+          if (entry.isDirectory()) {
             results.push({
               name: entry.name,
               path: relPath,
-              type: 'file',
-              size: stat.size,
-              mtime: stat.mtimeMs,
+              type: 'dir',
+              children: walk(fullPath, depth + 1),
             });
-          } catch {
-            // skip
+          } else if (entry.isFile()) {
+            try {
+              const stat = fs.statSync(fullPath);
+              results.push({
+                name: entry.name,
+                path: relPath,
+                type: 'file',
+                size: stat.size,
+                mtime: stat.mtimeMs,
+              });
+            } catch {
+              // skip
+            }
           }
         }
+        results.sort((a, b) => {
+          if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+        return results;
       }
-      results.sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-      return results;
-    }
 
-    return walk(baseDir, 0);
-  });
+      return walk(baseDir, 0);
+    },
+  );
 
   // Read a file from the workspace as text (1MB cap)
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_READ_FILE, async (_event, workspaceDir: string, relativePath: string): Promise<string | null> => {
-    assertWorkspaceDir(workspaceDir);
-    const baseDir = getTaskWorkspaceDir(workspaceDir);
-    const filePath = path.normalize(path.join(baseDir, relativePath));
-    if (!filePath.startsWith(baseDir + path.sep) && filePath !== baseDir) return null;
-    if (!fs.existsSync(filePath)) return null;
-    try {
-      const stat = fs.statSync(filePath);
-      if (stat.size > 1024 * 1024) return '[file too large to display]';
-      return fs.readFileSync(filePath, 'utf8');
-    } catch {
-      return null;
-    }
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.TASK_WORKSPACE_READ_FILE,
+    async (_event, workspaceDir: string, relativePath: string): Promise<string | null> => {
+      assertWorkspaceDir(workspaceDir);
+      const baseDir = getTaskWorkspaceDir(workspaceDir);
+      const filePath = path.normalize(path.join(baseDir, relativePath));
+      if (!filePath.startsWith(baseDir + path.sep) && filePath !== baseDir) return null;
+      if (!fs.existsSync(filePath)) return null;
+      try {
+        const stat = fs.statSync(filePath);
+        if (stat.size > 1024 * 1024) return '[file too large to display]';
+        return fs.readFileSync(filePath, 'utf8');
+      } catch {
+        return null;
+      }
+    },
+  );
 
   // Remove the workspace directory (on task deletion)
-  ipcMain.handle(IPC_CHANNELS.TASK_WORKSPACE_REMOVE, async (_event, workspaceDir: string): Promise<void> => {
-    assertWorkspaceDir(workspaceDir);
-    const baseDir = getTaskWorkspaceDir(workspaceDir);
-    if (fs.existsSync(baseDir)) {
-      fs.rmSync(baseDir, { recursive: true, force: true });
-    }
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.TASK_WORKSPACE_REMOVE,
+    async (_event, workspaceDir: string): Promise<void> => {
+      assertWorkspaceDir(workspaceDir);
+      const baseDir = getTaskWorkspaceDir(workspaceDir);
+      if (fs.existsSync(baseDir)) {
+        fs.rmSync(baseDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   // --- Execution Engine ---
 
@@ -1362,9 +1466,12 @@ function registerIpcHandlers(): void {
 
   // Runtime auth probe. Delegates to the shared helper so other callers
   // (ClaudeCodeRunner, single-shot) can use the same cached result.
-  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH, async (_event, opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult> => {
-    return probeClaudeAuth(opts);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.CLAUDE_CODE_PROBE_AUTH,
+    async (_event, opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult> => {
+      return probeClaudeAuth(opts);
+    },
+  );
 
   // In-Cerebro login orchestrator — captures the OAuth URL from `claude
   // /login` (or `claude setup-token`) and surfaces it through the chat
@@ -1374,7 +1481,11 @@ function registerIpcHandlers(): void {
   const loginOrchestrator = getLoginOrchestrator();
   loginOrchestrator.on('update', (snap: ClaudeCodeLoginSnapshot) => {
     for (const win of BrowserWindow.getAllWindows()) {
-      try { win.webContents.send(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, snap); } catch { /* window closed */ }
+      try {
+        win.webContents.send(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, snap);
+      } catch {
+        /* window closed */
+      }
     }
   });
 
@@ -1395,14 +1506,20 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.CLAUDE_CODE_LOGIN_SUBMIT_CODE,
-    async (_event, payload: { loginId: string; code: string }): Promise<ClaudeCodeLoginSnapshot> => {
+    async (
+      _event,
+      payload: { loginId: string; code: string },
+    ): Promise<ClaudeCodeLoginSnapshot> => {
       return loginOrchestrator.submitCode(payload.loginId, payload.code);
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_LOGIN_CANCEL, async (_event, loginId?: string): Promise<void> => {
-    loginOrchestrator.cancel(loginId);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.CLAUDE_CODE_LOGIN_CANCEL,
+    async (_event, loginId?: string): Promise<void> => {
+      loginOrchestrator.cancel(loginId);
+    },
+  );
 
   // Open a terminal window running `claude` so the user can complete the
   // sign-in flow (browser handshake) and come back. We can't run the
@@ -1410,80 +1527,111 @@ function registerIpcHandlers(): void {
   // and binds a local callback — best handled by the OS terminal.
   // Renderer should call this from the auth-error recovery card, then
   // re-probe with `{ force: true }` once the user reports success.
-  ipcMain.handle(IPC_CHANNELS.CLAUDE_CODE_OPEN_LOGIN, async (): Promise<{ ok: boolean; reason?: string }> => {
-    const info = getCachedClaudeCodeInfo();
-    if (info.status !== 'available' || !info.path) {
-      return { ok: false, reason: 'Claude Code binary not found' };
-    }
-    const binary = info.path;
-    try {
-      if (process.platform === 'darwin') {
-        // AppleScript: open Terminal.app, run the binary at its full
-        // path so the user doesn't need it on PATH. Quoting the path
-        // protects against spaces (`/Application Support/...`).
-        const escaped = binary.replace(/"/g, '\\"');
-        const script = `tell application "Terminal" to do script "${escaped}"\ntell application "Terminal" to activate`;
-        const proc = spawn('osascript', ['-e', script], { stdio: 'ignore', detached: true });
-        proc.unref();
-        return { ok: true };
+  ipcMain.handle(
+    IPC_CHANNELS.CLAUDE_CODE_OPEN_LOGIN,
+    async (): Promise<{ ok: boolean; reason?: string }> => {
+      const info = getCachedClaudeCodeInfo();
+      if (info.status !== 'available' || !info.path) {
+        return { ok: false, reason: 'Claude Code binary not found' };
       }
-      if (process.platform === 'linux') {
-        // Try a few common terminal emulators; fall through to a hint
-        // if none are present.
-        for (const term of ['gnome-terminal', 'konsole', 'xterm']) {
-          try {
-            const args = term === 'gnome-terminal' ? ['--', binary] : ['-e', binary];
-            const proc = spawn(term, args, { stdio: 'ignore', detached: true });
-            proc.unref();
-            return { ok: true };
-          } catch {
-            /* try next */
-          }
+      const binary = info.path;
+      try {
+        if (process.platform === 'darwin') {
+          // AppleScript: open Terminal.app, run the binary at its full
+          // path so the user doesn't need it on PATH. Quoting the path
+          // protects against spaces (`/Application Support/...`).
+          const escaped = binary.replace(/"/g, '\\"');
+          const script = `tell application "Terminal" to do script "${escaped}"\ntell application "Terminal" to activate`;
+          const proc = spawn('osascript', ['-e', script], { stdio: 'ignore', detached: true });
+          proc.unref();
+          return { ok: true };
         }
-        return { ok: false, reason: 'No supported terminal emulator found. Open one manually and run `claude`.' };
+        if (process.platform === 'linux') {
+          // Try a few common terminal emulators; fall through to a hint
+          // if none are present.
+          for (const term of ['gnome-terminal', 'konsole', 'xterm']) {
+            try {
+              const args = term === 'gnome-terminal' ? ['--', binary] : ['-e', binary];
+              const proc = spawn(term, args, { stdio: 'ignore', detached: true });
+              proc.unref();
+              return { ok: true };
+            } catch {
+              /* try next */
+            }
+          }
+          return {
+            ok: false,
+            reason: 'No supported terminal emulator found. Open one manually and run `claude`.',
+          };
+        }
+        if (process.platform === 'win32') {
+          const proc = spawn('cmd.exe', ['/c', 'start', '""', 'cmd.exe', '/k', `"${binary}"`], {
+            stdio: 'ignore',
+            detached: true,
+            windowsHide: false,
+          });
+          proc.unref();
+          return { ok: true };
+        }
+        return { ok: false, reason: `Unsupported platform: ${process.platform}` };
+      } catch (err) {
+        return { ok: false, reason: (err as Error).message };
       }
-      if (process.platform === 'win32') {
-        const proc = spawn('cmd.exe', ['/c', 'start', '""', 'cmd.exe', '/k', `"${binary}"`], {
-          stdio: 'ignore',
-          detached: true,
-          windowsHide: false,
-        });
-        proc.unref();
-        return { ok: true };
-      }
-      return { ok: false, reason: `Unsupported platform: ${process.platform}` };
-    } catch (err) {
-      return { ok: false, reason: (err as Error).message };
-    }
-  });
+    },
+  );
 
   // --- Codex (alternative inference engine) ---
 
   ipcMain.handle(IPC_CHANNELS.CODEX_DETECT, async () => detectCodex());
   ipcMain.handle(IPC_CHANNELS.CODEX_STATUS, async () => getCachedCodexInfo());
-  ipcMain.handle(IPC_CHANNELS.CODEX_PROBE_AUTH, async (_event, opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult> => {
-    return probeCodexAuth(opts);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.CODEX_PROBE_AUTH,
+    async (_event, opts?: { force?: boolean }): Promise<ClaudeCodeProbeResult> => {
+      return probeCodexAuth(opts);
+    },
+  );
 
   // Install the Codex CLI via npm in a login shell (picks up the user's PATH).
   let activeCodexInstall: ChildProcess | null = null;
   ipcMain.handle(IPC_CHANNELS.CODEX_INSTALL, async (event) => {
     if (activeCodexInstall) {
-      return { ok: false, exitCode: -1, outputTail: 'Install already in progress.', info: getCachedCodexInfo() };
+      return {
+        ok: false,
+        exitCode: -1,
+        outputTail: 'Install already in progress.',
+        info: getCachedCodexInfo(),
+      };
     }
     const sender = event.sender;
-    const child = spawn('bash', ['-lc', 'npm install -g @openai/codex'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('bash', ['-lc', 'npm install -g @openai/codex'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     activeCodexInstall = child;
     let outputTail = '';
-    const appendTail = (chunk: string) => { outputTail = (outputTail + chunk).slice(-2048); };
-    const sendLine = (line: string) => { if (!sender.isDestroyed()) sender.send(IPC_CHANNELS.CODEX_INSTALL_LOG, line); };
+    const appendTail = (chunk: string) => {
+      outputTail = (outputTail + chunk).slice(-2048);
+    };
+    const sendLine = (line: string) => {
+      if (!sender.isDestroyed()) sender.send(IPC_CHANNELS.CODEX_INSTALL_LOG, line);
+    };
     child.stdout?.setEncoding('utf8');
     child.stderr?.setEncoding('utf8');
-    child.stdout?.on('data', (d: string) => { appendTail(d); for (const l of d.split('\n')) if (l) sendLine(l); });
-    child.stderr?.on('data', (d: string) => { appendTail(d); for (const l of d.split('\n')) if (l) sendLine(l); });
+    child.stdout?.on('data', (d: string) => {
+      appendTail(d);
+      for (const l of d.split('\n')) if (l) sendLine(l);
+    });
+    child.stderr?.on('data', (d: string) => {
+      appendTail(d);
+      for (const l of d.split('\n')) if (l) sendLine(l);
+    });
     const exitCode: number = await new Promise((resolve) => {
-      child.on('close', (code, signal) => resolve(typeof code === 'number' ? code : signal ? -1 : 0));
-      child.on('error', (err) => { appendTail(`spawn error: ${err.message}`); resolve(-1); });
+      child.on('close', (code, signal) =>
+        resolve(typeof code === 'number' ? code : signal ? -1 : 0),
+      );
+      child.on('error', (err) => {
+        appendTail(`spawn error: ${err.message}`);
+        resolve(-1);
+      });
     });
     activeCodexInstall = null;
     const info = await detectCodex();
@@ -1493,23 +1641,32 @@ function registerIpcHandlers(): void {
     if (!activeCodexInstall) return;
     const child = activeCodexInstall;
     child.kill('SIGTERM');
-    setTimeout(() => { if (!child.killed) child.kill('SIGKILL'); }, 2000);
+    setTimeout(() => {
+      if (!child.killed) child.kill('SIGKILL');
+    }, 2000);
   });
 
   // In-app `codex login` (ChatGPT OAuth) — captures the sign-in URL via PTY.
   const codexLoginOrchestrator = getCodexLoginOrchestrator();
   codexLoginOrchestrator.on('update', (snap: CodexLoginSnapshot) => {
     for (const win of BrowserWindow.getAllWindows()) {
-      try { win.webContents.send(IPC_CHANNELS.CODEX_LOGIN_EVENT, snap); } catch { /* window closed */ }
+      try {
+        win.webContents.send(IPC_CHANNELS.CODEX_LOGIN_EVENT, snap);
+      } catch {
+        /* window closed */
+      }
     }
   });
   ipcMain.handle(IPC_CHANNELS.CODEX_LOGIN_START, async (): Promise<CodexLoginSnapshot> => {
     if (codexLoginOrchestrator.current()) codexLoginOrchestrator.cancel();
     return codexLoginOrchestrator.start();
   });
-  ipcMain.handle(IPC_CHANNELS.CODEX_LOGIN_CANCEL, async (_event, loginId?: string): Promise<void> => {
-    codexLoginOrchestrator.cancel(loginId);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.CODEX_LOGIN_CANCEL,
+    async (_event, loginId?: string): Promise<void> => {
+      codexLoginOrchestrator.cancel(loginId);
+    },
+  );
 
   // --- Installer sync (called by renderer after expert CRUD) ---
 
@@ -1518,8 +1675,12 @@ function registerIpcHandlers(): void {
     const dataDir = app.getPath('userData');
     try {
       const res = await makeBackendRequest<{
-        id: string; name: string; slug: string | null; description: string;
-        system_prompt: string | null; is_enabled: boolean;
+        id: string;
+        name: string;
+        slug: string | null;
+        description: string;
+        system_prompt: string | null;
+        is_enabled: boolean;
       }>({ method: 'GET', path: `/experts/${expertId}` });
       if (!res.ok || !res.data) {
         return { ok: false, error: 'Expert not found' };
@@ -1568,13 +1729,10 @@ function registerIpcHandlers(): void {
     },
   );
 
-  ipcMain.handle(
-    IPC_CHANNELS.VOICE_DONE_SPEAKING,
-    async (_event, sessionId: string) => {
-      if (!voiceSession) return;
-      await voiceSession.doneSpeaking(sessionId);
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.VOICE_DONE_SPEAKING, async (_event, sessionId: string) => {
+    if (!voiceSession) return;
+    await voiceSession.doneSpeaking(sessionId);
+  });
 
   ipcMain.handle(IPC_CHANNELS.VOICE_MODEL_STATUS, async () => {
     if (!voiceSession) return null;
@@ -1587,140 +1745,115 @@ function registerIpcHandlers(): void {
     const [parent] = BrowserWindow.getAllWindows();
     const result = await dialog.showOpenDialog(parent, {
       title: 'Link a project directory',
-      ...(process.platform === 'darwin' ? { message: 'Cerebro will grant its agents access to this directory.' } : {}),
+      ...(process.platform === 'darwin'
+        ? { message: 'Cerebro will grant its agents access to this directory.' }
+        : {}),
       properties: ['openDirectory', 'createDirectory'],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
   });
 
-  ipcMain.handle(
-    IPC_CHANNELS.SANDBOX_REVEAL_WORKSPACE,
-    async (_event, workspacePath: string) => {
-      // Create on demand so the Finder reveal never hits a missing dir.
-      try {
-        fs.mkdirSync(workspacePath, { recursive: true });
-      } catch {
-        /* fall through — showItemInFolder will just focus the parent */
-      }
-      shell.showItemInFolder(workspacePath);
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.SANDBOX_REVEAL_WORKSPACE, async (_event, workspacePath: string) => {
+    // Create on demand so the Finder reveal never hits a missing dir.
+    try {
+      fs.mkdirSync(workspacePath, { recursive: true });
+    } catch {
+      /* fall through — showItemInFolder will just focus the parent */
+    }
+    shell.showItemInFolder(workspacePath);
+  });
 
-  ipcMain.handle(
-    IPC_CHANNELS.SHELL_OPEN_PATH,
-    async (_event, filePath: string) => {
-      await shell.openPath(filePath);
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_PATH, async (_event, filePath: string) => {
+    await shell.openPath(filePath);
+  });
 
-  ipcMain.handle(
-    IPC_CHANNELS.SHELL_OPEN_EXTERNAL,
-    async (_event, url: string) => {
-      // Hard-fail any non-http(s) scheme so a compromised renderer can't use
-      // this channel to launch arbitrary protocol handlers (file://, ssh://, …).
-      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
-        throw new Error('Refusing to open non-http(s) URL externally');
-      }
-      await shell.openExternal(url);
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, async (_event, url: string) => {
+    // Hard-fail any non-http(s) scheme so a compromised renderer can't use
+    // this channel to launch arbitrary protocol handlers (file://, ssh://, …).
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+      throw new Error('Refusing to open non-http(s) URL externally');
+    }
+    await shell.openExternal(url);
+  });
 
-  ipcMain.handle(
-    IPC_CHANNELS.SHELL_REVEAL_PATH,
-    async (_event, filePath: string) => {
-      shell.showItemInFolder(filePath);
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.SHELL_REVEAL_PATH, async (_event, filePath: string) => {
+    shell.showItemInFolder(filePath);
+  });
 
-  ipcMain.handle(
-    IPC_CHANNELS.SHELL_STAT_PATH,
-    async (_event, filePath: string) => {
-      try {
-        const stat = await fs.promises.stat(filePath);
-        return {
-          exists: true,
-          isDirectory: stat.isDirectory(),
-          size: stat.isDirectory() ? 0 : stat.size,
-        };
-      } catch {
-        return { exists: false, isDirectory: false, size: 0 };
-      }
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.SHELL_STAT_PATH, async (_event, filePath: string) => {
+    try {
+      const stat = await fs.promises.stat(filePath);
+      return {
+        exists: true,
+        isDirectory: stat.isDirectory(),
+        size: stat.isDirectory() ? 0 : stat.size,
+      };
+    } catch {
+      return { exists: false, isDirectory: false, size: 0 };
+    }
+  });
 
   // 2 MB limit keeps the renderer responsive — anything bigger should be
   // opened externally via SHELL_OPEN_PATH instead.
-  ipcMain.handle(
-    IPC_CHANNELS.SHELL_READ_TEXT_FILE,
-    async (_event, filePath: string) => {
-      const content = await fs.promises.readFile(filePath, 'utf8');
-      if (content.length > 2 * 1024 * 1024) {
-        throw new Error('File too large to preview (>2 MB)');
-      }
-      return content;
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.SHELL_READ_TEXT_FILE, async (_event, filePath: string) => {
+    const content = await fs.promises.readFile(filePath, 'utf8');
+    if (content.length > 2 * 1024 * 1024) {
+      throw new Error('File too large to preview (>2 MB)');
+    }
+    return content;
+  });
 
   // Cheap pre-check the chat preview hook uses to decide between the binary
   // body and the "outside previewable area" fallback.
-  ipcMain.handle(
-    IPC_CHANNELS.SHELL_IS_PATH_PREVIEWABLE,
-    async (_event, absolutePath: string) => {
-      if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
-        return false;
-      }
-      return isInsideSafeRoot(path.normalize(absolutePath));
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.SHELL_IS_PATH_PREVIEWABLE, async (_event, absolutePath: string) => {
+    if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
+      return false;
+    }
+    return isInsideSafeRoot(path.normalize(absolutePath));
+  });
 
   // Build a cerebro-chat:// URL for an arbitrary absolute path. The protocol
   // handler re-validates the path against the same safe-root list, so even a
   // forged URL can't escape the allowlist.
-  ipcMain.handle(
-    IPC_CHANNELS.SHELL_PREVIEW_URL_FOR_PATH,
-    async (_event, absolutePath: string) => {
-      if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
-        throw new Error('not-absolute');
-      }
-      const normalized = path.normalize(absolutePath);
-      if (!isInsideSafeRoot(normalized)) {
-        throw new Error('outside-safe-roots');
-      }
-      const encoded = Buffer.from(normalized, 'utf8').toString('base64url');
-      return `cerebro-chat://path/${encoded}`;
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.SHELL_PREVIEW_URL_FOR_PATH, async (_event, absolutePath: string) => {
+    if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
+      throw new Error('not-absolute');
+    }
+    const normalized = path.normalize(absolutePath);
+    if (!isInsideSafeRoot(normalized)) {
+      throw new Error('outside-safe-roots');
+    }
+    const encoded = Buffer.from(normalized, 'utf8').toString('base64url');
+    return `cerebro-chat://path/${encoded}`;
+  });
 
   // Copy a file emitted by an expert into the user's OS Downloads folder,
   // auto-deduping the destination name on collision. Returns the final path.
-  ipcMain.handle(
-    IPC_CHANNELS.SHELL_DOWNLOAD_TO_DOWNLOADS,
-    async (_event, sourcePath: string) => {
-      const src = await fs.promises.stat(sourcePath).catch(() => null);
-      if (!src || src.isDirectory()) {
-        throw new Error('Source is not a regular file');
+  ipcMain.handle(IPC_CHANNELS.SHELL_DOWNLOAD_TO_DOWNLOADS, async (_event, sourcePath: string) => {
+    const src = await fs.promises.stat(sourcePath).catch(() => null);
+    if (!src || src.isDirectory()) {
+      throw new Error('Source is not a regular file');
+    }
+    const downloads = app.getPath('downloads');
+    await fs.promises.mkdir(downloads, { recursive: true });
+    const base = path.basename(sourcePath);
+    const ext = path.extname(base);
+    const stem = path.basename(base, ext);
+    let dest = path.join(downloads, base);
+    let counter = 1;
+    while (true) {
+      try {
+        await fs.promises.access(dest);
+        dest = path.join(downloads, `${stem}-${counter}${ext}`);
+        counter++;
+      } catch {
+        break;
       }
-      const downloads = app.getPath('downloads');
-      await fs.promises.mkdir(downloads, { recursive: true });
-      const base = path.basename(sourcePath);
-      const ext = path.extname(base);
-      const stem = path.basename(base, ext);
-      let dest = path.join(downloads, base);
-      let counter = 1;
-      while (true) {
-        try {
-          await fs.promises.access(dest);
-          dest = path.join(downloads, `${stem}-${counter}${ext}`);
-          counter++;
-        } catch {
-          break;
-        }
-      }
-      await fs.promises.copyFile(sourcePath, dest);
-      return dest;
-    },
-  );
+    }
+    await fs.promises.copyFile(sourcePath, dest);
+    return dest;
+  });
 
   ipcMain.handle(IPC_CHANNELS.SANDBOX_GET_PROFILE, async () => {
     const config = getCachedSandboxConfig();
@@ -1755,7 +1888,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.FILES_IMPORT_TO_BUCKET,
-    async (_event, args: { sourcePath: string; bucketId: string; fileId: string; destExt: string }) => {
+    async (
+      _event,
+      args: { sourcePath: string; bucketId: string; fileId: string; destExt: string },
+    ) => {
       const { sourcePath, bucketId, fileId, destExt } = args;
       if (!path.isAbsolute(sourcePath)) {
         throw new Error('Source path must be absolute');
@@ -1766,7 +1902,10 @@ function registerIpcHandlers(): void {
       if (!/^[a-z0-9]{32}$/i.test(fileId)) {
         throw new Error(`Invalid fileId: ${fileId}`);
       }
-      const cleanExt = (destExt || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
+      const cleanExt = (destExt || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .slice(0, 16);
       const baseName = cleanExt ? `${fileId}.${cleanExt}` : fileId;
       const destDir = path.join(getFilesRoot(), bucketId);
       const destAbs = path.join(destDir, baseName);
@@ -1803,7 +1942,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.FILES_IMPORT_TO_TASK,
-    async (_event, args: { sourcePath: string; taskId: string; fileId: string; destExt: string }) => {
+    async (
+      _event,
+      args: { sourcePath: string; taskId: string; fileId: string; destExt: string },
+    ) => {
       const { sourcePath, taskId, fileId, destExt } = args;
       if (!path.isAbsolute(sourcePath)) {
         throw new Error('Source path must be absolute');
@@ -1822,7 +1964,10 @@ function registerIpcHandlers(): void {
         throw new Error(`File too large (${Math.round(srcStat.size / 1024 / 1024)} MB > 100 MB)`);
       }
 
-      const cleanExt = (destExt || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
+      const cleanExt = (destExt || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .slice(0, 16);
       const baseName = cleanExt ? `${fileId}.${cleanExt}` : fileId;
       const destDir = path.join(getFilesRoot(), 'task-attachments', taskId);
       const destAbs = path.join(destDir, baseName);
@@ -1856,7 +2001,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.FILES_COPY_MANAGED,
-    async (_event, args: { srcRelPath: string; destBucketId: string; destFileId: string; destExt: string }) => {
+    async (
+      _event,
+      args: { srcRelPath: string; destBucketId: string; destFileId: string; destExt: string },
+    ) => {
       const srcAbs = resolveManagedPath(args.srcRelPath);
       if (!/^[a-z0-9]{32}$/i.test(args.destBucketId)) {
         throw new Error(`Invalid destBucketId: ${args.destBucketId}`);
@@ -1864,7 +2012,10 @@ function registerIpcHandlers(): void {
       if (!/^[a-z0-9]{32}$/i.test(args.destFileId)) {
         throw new Error(`Invalid destFileId: ${args.destFileId}`);
       }
-      const cleanExt = (args.destExt || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16);
+      const cleanExt = (args.destExt || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .slice(0, 16);
       const baseName = cleanExt ? `${args.destFileId}.${cleanExt}` : args.destFileId;
       const destDir = path.join(getFilesRoot(), args.destBucketId);
       const destAbs = path.join(destDir, baseName);
@@ -1920,14 +2071,23 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.FILES_PREVIEW_URL,
-    async (_event, args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }) => {
+    async (
+      _event,
+      args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null },
+    ) => {
       if (args.storageKind === 'managed') {
-        const segments = args.storagePath.split('/').filter(Boolean).map((s) => encodeURIComponent(s));
+        const segments = args.storagePath
+          .split('/')
+          .filter(Boolean)
+          .map((s) => encodeURIComponent(s));
         return `cerebro-files://local/${segments.join('/')}`;
       }
       // workspace
       if (!args.taskId) throw new Error('taskId required for workspace previews');
-      const segments = args.storagePath.split('/').filter(Boolean).map((s) => encodeURIComponent(s));
+      const segments = args.storagePath
+        .split('/')
+        .filter(Boolean)
+        .map((s) => encodeURIComponent(s));
       return `cerebro-workspace://${args.taskId}/${segments.join('/')}`;
     },
   );
@@ -1935,7 +2095,11 @@ function registerIpcHandlers(): void {
   // For workspace files we accept either a relative path (resolved against the
   // task workspace dir) or an absolute path (an external project folder linked
   // to the task — already vetted by the sandbox validator at task create time).
-  function resolveStoragePath(args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }): string {
+  function resolveStoragePath(args: {
+    storageKind: 'managed' | 'workspace';
+    storagePath: string;
+    taskId?: string | null;
+  }): string {
     if (args.storageKind === 'managed') {
       return resolveManagedPath(args.storagePath);
     }
@@ -1946,7 +2110,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.FILES_REVEAL,
-    async (_event, args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }) => {
+    async (
+      _event,
+      args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null },
+    ) => {
       const abs = resolveStoragePath(args);
       shell.showItemInFolder(abs);
     },
@@ -1954,7 +2121,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.FILES_OPEN,
-    async (_event, args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }) => {
+    async (
+      _event,
+      args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null },
+    ) => {
       const abs = resolveStoragePath(args);
       await shell.openPath(abs);
     },
@@ -1962,7 +2132,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.FILES_DOWNLOAD,
-    async (_event, args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null }) => {
+    async (
+      _event,
+      args: { storageKind: 'managed' | 'workspace'; storagePath: string; taskId?: string | null },
+    ) => {
       const abs = resolveStoragePath(args);
       const src = await fs.promises.stat(abs).catch(() => null);
       if (!src || src.isDirectory()) throw new Error('Source is not a regular file');
@@ -1998,20 +2171,17 @@ function registerIpcHandlers(): void {
 
   // --- Backup & restore ---
 
-  ipcMain.handle(
-    IPC_CHANNELS.BACKUP_PICK_EXPORT_PATH,
-    async (_event, defaultName: string) => {
-      const [parent] = BrowserWindow.getAllWindows();
-      const downloads = app.getPath('downloads');
-      const result = await dialog.showSaveDialog(parent, {
-        title: 'Save Cerebro backup',
-        defaultPath: path.join(downloads, defaultName || 'cerebro-backup.cerebro-backup'),
-        filters: [{ name: 'Cerebro backup', extensions: ['cerebro-backup'] }],
-      });
-      if (result.canceled || !result.filePath) return null;
-      return result.filePath;
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.BACKUP_PICK_EXPORT_PATH, async (_event, defaultName: string) => {
+    const [parent] = BrowserWindow.getAllWindows();
+    const downloads = app.getPath('downloads');
+    const result = await dialog.showSaveDialog(parent, {
+      title: 'Save Cerebro backup',
+      defaultPath: path.join(downloads, defaultName || 'cerebro-backup.cerebro-backup'),
+      filters: [{ name: 'Cerebro backup', extensions: ['cerebro-backup'] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    return result.filePath;
+  });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_PICK_IMPORT_FILE, async () => {
     const [parent] = BrowserWindow.getAllWindows();
@@ -2024,29 +2194,26 @@ function registerIpcHandlers(): void {
     return result.filePaths[0];
   });
 
-  ipcMain.handle(
-    IPC_CHANNELS.BACKUP_APPLY_AND_RELAUNCH,
-    async (_event, backupPath: string) => {
-      if (typeof backupPath !== 'string' || !backupPath) {
-        throw new Error('Missing backup path');
-      }
-      // Ask the backend to snapshot + stage. It writes the pending marker;
-      // applyPendingRestore() picks it up on the next boot.
-      const res = await makeBackendRequest({
-        method: 'POST',
-        path: '/backup/apply',
-        body: { path: backupPath },
-        timeout: 120_000,
-      });
-      if (!res.ok) {
-        const detail = (res.data as { detail?: string } | null)?.detail ?? 'apply failed';
-        throw new Error(detail);
-      }
-      // Bow out cleanly so Python flushes its DB, then relaunch.
-      app.relaunch();
-      app.quit();
-    },
-  );
+  ipcMain.handle(IPC_CHANNELS.BACKUP_APPLY_AND_RELAUNCH, async (_event, backupPath: string) => {
+    if (typeof backupPath !== 'string' || !backupPath) {
+      throw new Error('Missing backup path');
+    }
+    // Ask the backend to snapshot + stage. It writes the pending marker;
+    // applyPendingRestore() picks it up on the next boot.
+    const res = await makeBackendRequest({
+      method: 'POST',
+      path: '/backup/apply',
+      body: { path: backupPath },
+      timeout: 120_000,
+    });
+    if (!res.ok) {
+      const detail = (res.data as { detail?: string } | null)?.detail ?? 'apply failed';
+      throw new Error(detail);
+    }
+    // Bow out cleanly so Python flushes its DB, then relaunch.
+    app.relaunch();
+    app.quit();
+  });
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_RELAUNCH, async () => {
     app.relaunch();
@@ -2088,7 +2255,10 @@ function registerIpcHandlers(): void {
       await telegramBridge.stop(); // stop first so a restart picks up fresh settings
       await telegramBridge.start();
       const status = telegramBridge.status();
-      return { ok: status.running, error: status.running ? undefined : status.lastError ?? 'Failed to start' };
+      return {
+        ok: status.running,
+        error: status.running ? undefined : (status.lastError ?? 'Failed to start'),
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -2134,13 +2304,16 @@ function registerIpcHandlers(): void {
 
   // --- Slack bridge (Bolt / Socket Mode) ---
 
-  ipcMain.handle(IPC_CHANNELS.SLACK_VERIFY, async (_event, args: { botToken: string; appToken: string }) => {
-    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
-    const bot = (args?.botToken ?? '').trim();
-    const app = (args?.appToken ?? '').trim();
-    if (!bot || !app) return { ok: false, error: 'Both bot token and app token are required.' };
-    return slackBridge.verifyTokens(bot, app);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.SLACK_VERIFY,
+    async (_event, args: { botToken: string; appToken: string }) => {
+      if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+      const bot = (args?.botToken ?? '').trim();
+      const app = (args?.appToken ?? '').trim();
+      if (!bot || !app) return { ok: false, error: 'Both bot token and app token are required.' };
+      return slackBridge.verifyTokens(bot, app);
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.SLACK_ENABLE, async () => {
     if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
@@ -2183,26 +2356,32 @@ function registerIpcHandlers(): void {
     return slackBridge.reloadSettings();
   });
 
-  ipcMain.handle(IPC_CHANNELS.SLACK_SET_TOKENS, async (_event, args: { botToken: string; appToken: string }) => {
-    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
-    const bot = (args?.botToken ?? '').trim();
-    const app = (args?.appToken ?? '').trim();
-    if (!bot || !app) return { ok: false, error: 'Both bot token and app token are required.' };
-    return slackBridge.setTokens({ botToken: bot, appToken: app });
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.SLACK_SET_TOKENS,
+    async (_event, args: { botToken: string; appToken: string }) => {
+      if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+      const bot = (args?.botToken ?? '').trim();
+      const app = (args?.appToken ?? '').trim();
+      if (!bot || !app) return { ok: false, error: 'Both bot token and app token are required.' };
+      return slackBridge.setTokens({ botToken: bot, appToken: app });
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.SLACK_CLEAR_TOKENS, async () => {
     if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
     return slackBridge.clearTokens();
   });
 
-  ipcMain.handle(IPC_CHANNELS.SLACK_SET_ALLOWLIST, async (_event, args: { channels: string[]; users: string[] }) => {
-    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
-    return slackBridge.setAllowlist({
-      channels: Array.isArray(args?.channels) ? args.channels : [],
-      users: Array.isArray(args?.users) ? args.users : [],
-    });
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.SLACK_SET_ALLOWLIST,
+    async (_event, args: { channels: string[]; users: string[] }) => {
+      if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+      return slackBridge.setAllowlist({
+        channels: Array.isArray(args?.channels) ? args.channels : [],
+        users: Array.isArray(args?.users) ? args.users : [],
+      });
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.SLACK_SET_OPERATOR_USER_ID, async (_event, userId: string | null) => {
     if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
@@ -2233,21 +2412,25 @@ function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.SLACK_SET_EXPERT_ACCESS, async (
-    _event,
-    args: {
-      defaultExpertAccess: string[] | null;
-      exceptions: Array<{ userId: string; expertIds: string[] }>;
+  ipcMain.handle(
+    IPC_CHANNELS.SLACK_SET_EXPERT_ACCESS,
+    async (
+      _event,
+      args: {
+        defaultExpertAccess: string[] | null;
+        exceptions: Array<{ userId: string; expertIds: string[] }>;
+      },
+    ) => {
+      if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
+      return slackBridge.setExpertAccessConfig({
+        defaultExpertAccess:
+          Array.isArray(args?.defaultExpertAccess) || args?.defaultExpertAccess === null
+            ? args.defaultExpertAccess
+            : null,
+        exceptions: Array.isArray(args?.exceptions) ? args.exceptions : [],
+      });
     },
-  ) => {
-    if (!slackBridge) return { ok: false, error: 'Bridge not initialized' };
-    return slackBridge.setExpertAccessConfig({
-      defaultExpertAccess: Array.isArray(args?.defaultExpertAccess) || args?.defaultExpertAccess === null
-        ? args.defaultExpertAccess
-        : null,
-      exceptions: Array.isArray(args?.exceptions) ? args.exceptions : [],
-    });
-  });
+  );
 
   // --- WhatsApp bridge ---
 
@@ -2380,25 +2563,35 @@ function registerIpcHandlers(): void {
     return { ok: true };
   });
 
-  ipcMain.handle(IPC_CHANNELS.HUBSPOT_SET_DEFAULTS, async (_event, defaults: {
-    pipeline: string | null;
-    stage: string | null;
-    followUpProperty?: string | null;
-    dueDateProperty?: string | null;
-  }) => {
-    if (!hubSpotHolder) return { ok: false, error: 'HubSpot holder not initialized' };
-    try {
-      await hubSpotHolder.setDefaults({
-        pipeline: defaults?.pipeline ?? null,
-        stage: defaults?.stage ?? null,
-        ...(defaults?.followUpProperty !== undefined ? { followUpProperty: defaults.followUpProperty } : {}),
-        ...(defaults?.dueDateProperty !== undefined ? { dueDateProperty: defaults.dueDateProperty } : {}),
-      });
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.HUBSPOT_SET_DEFAULTS,
+    async (
+      _event,
+      defaults: {
+        pipeline: string | null;
+        stage: string | null;
+        followUpProperty?: string | null;
+        dueDateProperty?: string | null;
+      },
+    ) => {
+      if (!hubSpotHolder) return { ok: false, error: 'HubSpot holder not initialized' };
+      try {
+        await hubSpotHolder.setDefaults({
+          pipeline: defaults?.pipeline ?? null,
+          stage: defaults?.stage ?? null,
+          ...(defaults?.followUpProperty !== undefined
+            ? { followUpProperty: defaults.followUpProperty }
+            : {}),
+          ...(defaults?.dueDateProperty !== undefined
+            ? { dueDateProperty: defaults.dueDateProperty }
+            : {}),
+        });
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
 
   // --- Calendar (Google + Outlook) ---
 
@@ -2427,10 +2620,13 @@ function registerIpcHandlers(): void {
     return calendarBridge.disconnect(accountId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.CALENDAR_SET_CALENDARS, async (_event, accountId: string, ids: string[]) => {
-    if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
-    return calendarBridge.setCalendars(accountId, ids);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.CALENDAR_SET_CALENDARS,
+    async (_event, accountId: string, ids: string[]) => {
+      if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
+      return calendarBridge.setCalendars(accountId, ids);
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.CALENDAR_SYNC_NOW, async () => {
     if (!calendarBridge) return { ok: false, error: 'Calendar bridge not initialized' };
@@ -2488,13 +2684,16 @@ function registerIpcHandlers(): void {
     return ghlHolder.status();
   });
 
-  ipcMain.handle(IPC_CHANNELS.GHL_SET_CREDENTIALS, async (_event, apiKey: string, locationId: string) => {
-    if (!ghlHolder) return { ok: false, error: 'GHL holder not initialized' };
-    if (typeof apiKey !== 'string' || typeof locationId !== 'string') {
-      return { ok: false, error: 'Invalid arguments' };
-    }
-    return ghlHolder.setCredentials(apiKey, locationId);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.GHL_SET_CREDENTIALS,
+    async (_event, apiKey: string, locationId: string) => {
+      if (!ghlHolder) return { ok: false, error: 'GHL holder not initialized' };
+      if (typeof apiKey !== 'string' || typeof locationId !== 'string') {
+        return { ok: false, error: 'Invalid arguments' };
+      }
+      return ghlHolder.setCredentials(apiKey, locationId);
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.GHL_CLEAR_CREDENTIALS, async () => {
     if (!ghlHolder) return { ok: false, error: 'GHL holder not initialized' };
@@ -2633,10 +2832,12 @@ const createWindow = () => {
     // Hide the native menu bar on Linux/Windows (Alt still reveals it). macOS
     // has no in-window menu, so this is a no-op there.
     autoHideMenuBar: process.platform !== 'darwin',
-    ...(process.platform === 'darwin' ? {
-      titleBarStyle: 'hiddenInset' as const,
-      trafficLightPosition: { x: 16, y: 12 },
-    } : {}),
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 16, y: 12 },
+        }
+      : {}),
     backgroundColor: '#09090b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -2773,7 +2974,9 @@ app.on('ready', async () => {
     try {
       const url = new URL(request.url);
       // Path = "/<bucketId>/<fileId>.<ext>"; hostname is empty for opaque hosts.
-      const parts = decodeURIComponent(url.pathname || '/').split('/').filter(Boolean);
+      const parts = decodeURIComponent(url.pathname || '/')
+        .split('/')
+        .filter(Boolean);
       // Some Chromium variants stuff the first segment into url.hostname for non-standard schemes.
       if (url.hostname) parts.unshift(url.hostname);
       const relPath = parts.join('/');
@@ -2819,7 +3022,9 @@ app.on('ready', async () => {
       if (url.hostname !== 'path') {
         return new Response('Bad host', { status: 400 });
       }
-      const segments = decodeURIComponent(url.pathname || '/').split('/').filter(Boolean);
+      const segments = decodeURIComponent(url.pathname || '/')
+        .split('/')
+        .filter(Boolean);
       if (segments.length !== 1) {
         return new Response('Bad path', { status: 400 });
       }
@@ -2871,7 +3076,9 @@ app.on('ready', async () => {
   try {
     const swap = applyPendingRestore(app.getPath('userData'));
     if (swap.applied) {
-      console.log(`[Cerebro] Applied pending restore (rollback ${swap.rollback_id}, undo=${Boolean(swap.is_undo)})`);
+      console.log(
+        `[Cerebro] Applied pending restore (rollback ${swap.rollback_id}, undo=${Boolean(swap.is_undo)})`,
+      );
     } else if (swap.error) {
       console.warn(`[Cerebro] Pending restore did not apply: ${swap.error}`);
     }
@@ -2885,7 +3092,9 @@ app.on('ready', async () => {
   // cached and the installer/runtime can spawn `claude` immediately on startup.
   try {
     const info = await detectClaudeCode();
-    console.log(`[Cerebro] Claude Code detection: ${info.status}${info.version ? ` v${info.version}` : ''}${info.path ? ` (${info.path})` : ''}`);
+    console.log(
+      `[Cerebro] Claude Code detection: ${info.status}${info.version ? ` v${info.version}` : ''}${info.path ? ` (${info.path})` : ''}`,
+    );
   } catch (err) {
     console.error('[Cerebro] Claude Code detection failed:', err);
   }
@@ -2893,7 +3102,9 @@ app.on('ready', async () => {
   // Detect Codex (the alternative engine) alongside Claude Code.
   try {
     const info = await detectCodex();
-    console.log(`[Cerebro] Codex detection: ${info.status}${info.version ? ` v${info.version}` : ''}${info.path ? ` (${info.path})` : ''}`);
+    console.log(
+      `[Cerebro] Codex detection: ${info.status}${info.version ? ` v${info.version}` : ''}${info.path ? ` (${info.path})` : ''}`,
+    );
   } catch (err) {
     console.error('[Cerebro] Codex detection failed:', err);
   }
@@ -2929,21 +3140,41 @@ app.on('before-quit', async () => {
     taskReconciler.stop();
   }
   if (whatsAppBridge) {
-    try { await whatsAppBridge.stop(); } catch { /* ignore */ }
+    try {
+      await whatsAppBridge.stop();
+    } catch {
+      /* ignore */
+    }
   }
   if (telegramBridge) {
-    try { await telegramBridge.stop(); } catch { /* ignore */ }
+    try {
+      await telegramBridge.stop();
+    } catch {
+      /* ignore */
+    }
     unregisterChannelSender('telegram');
   }
   if (slackBridge) {
-    try { await slackBridge.stop(); } catch { /* ignore */ }
+    try {
+      await slackBridge.stop();
+    } catch {
+      /* ignore */
+    }
     unregisterChannelSender('slack');
   }
   if (calendarBridge) {
-    try { calendarBridge.stop(); } catch { /* ignore */ }
+    try {
+      calendarBridge.stop();
+    } catch {
+      /* ignore */
+    }
   }
   if (chatActionServer) {
-    try { await chatActionServer.stop(); } catch { /* ignore */ }
+    try {
+      await chatActionServer.stop();
+    } catch {
+      /* ignore */
+    }
   }
   await stopPythonBackend();
 });

@@ -22,8 +22,8 @@ export const STT_MODEL_ID = 'faster-whisper-base';
 
 /** The "first voice note is slow" notice every bridge posts before a load. */
 export const STT_LOADING_NOTICE =
-  '🎙️ First voice note in this session — loading the transcription model. '
-  + 'Future voice notes will be instant. (~30–60s if downloading for the first time.)';
+  '🎙️ First voice note in this session — loading the transcription model. ' +
+  'Future voice notes will be instant. (~30–60s if downloading for the first time.)';
 
 export class SttLoader {
   private inFlight: Promise<boolean> | null = null;
@@ -39,14 +39,22 @@ export class SttLoader {
     const port = this.port();
 
     // Fast path: already loaded.
-    const status = await backendJsonRequest<{ stt: { is_loaded: boolean } }>(port, 'GET', '/voice/status');
+    const status = await backendJsonRequest<{ stt: { is_loaded: boolean } }>(
+      port,
+      'GET',
+      '/voice/status',
+    );
     if (status.ok && status.data?.stt?.is_loaded) return true;
 
     // Coalesce a burst of voice notes onto one load attempt.
     if (this.inFlight) return this.inFlight;
 
     const load = (async (): Promise<boolean> => {
-      try { await notifyLoading(); } catch { /* non-fatal */ }
+      try {
+        await notifyLoading();
+      } catch {
+        /* non-fatal */
+      }
 
       // 404 means the model isn't on disk → auto-download, then load.
       let loadRes = await backendJsonRequest(port, 'POST', '/voice/stt/load');
@@ -57,7 +65,9 @@ export class SttLoader {
       return loadRes.ok;
     })();
 
-    this.inFlight = load.finally(() => { this.inFlight = null; });
+    this.inFlight = load.finally(() => {
+      this.inFlight = null;
+    });
     return this.inFlight;
   }
 
@@ -73,12 +83,9 @@ export class SttLoader {
  * installed, false on any error or unexpected terminal state.
  */
 function downloadSttModel(port: number): Promise<boolean> {
-  return backendJsonRequest<{ state: { status: string } }>(
-    port,
-    'POST',
-    '/voice/download/start',
-    { model_id: STT_MODEL_ID },
-  ).then((start) => {
+  return backendJsonRequest<{ state: { status: string } }>(port, 'POST', '/voice/download/start', {
+    model_id: STT_MODEL_ID,
+  }).then((start) => {
     // 409 = already in progress — fine, we'll just attach to the stream.
     if (!start.ok && start.status !== 409) return false;
 
@@ -119,7 +126,9 @@ function downloadSttModel(port: number): Promise<boolean> {
                   finish(false);
                   return;
                 }
-              } catch { /* ignore malformed frame */ }
+              } catch {
+                /* ignore malformed frame */
+              }
             }
           });
           res.on('end', () => finish(false));

@@ -46,6 +46,11 @@ import type {
   UpdateErrorEvent,
   BackupCompletionFlag,
   CalendarOAuthInput,
+  ClaudeCodeInstallResult,
+  ClaudeCodeProbeResult,
+  ClaudeCodeLoginMode,
+  ClaudeCodeLoginSnapshot,
+  CodexLoginSnapshot,
 } from './types/ipc';
 import type {
   CalendarStatus,
@@ -55,13 +60,6 @@ import type {
 } from './types/calendar';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
-import type {
-  ClaudeCodeInstallResult,
-  ClaudeCodeProbeResult,
-  ClaudeCodeLoginMode,
-  ClaudeCodeLoginSnapshot,
-  CodexLoginSnapshot,
-} from './types/ipc';
 import type { VoiceSessionEvent } from './voice/types';
 
 const api: CerebroAPI = {
@@ -211,9 +209,12 @@ const api: CerebroAPI = {
         return ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_CODE_LOGIN_CANCEL, loginId);
       },
       onEvent(callback: (snapshot: ClaudeCodeLoginSnapshot) => void): () => void {
-        const listener = (_e: Electron.IpcRendererEvent, snap: ClaudeCodeLoginSnapshot) => callback(snap);
+        const listener = (_e: Electron.IpcRendererEvent, snap: ClaudeCodeLoginSnapshot) =>
+          callback(snap);
         ipcRenderer.on(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, listener);
-        return () => { ipcRenderer.removeListener(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, listener); };
+        return () => {
+          ipcRenderer.removeListener(IPC_CHANNELS.CLAUDE_CODE_LOGIN_EVENT, listener);
+        };
       },
     },
   },
@@ -246,9 +247,12 @@ const api: CerebroAPI = {
         return ipcRenderer.invoke(IPC_CHANNELS.CODEX_LOGIN_CANCEL, loginId);
       },
       onEvent(callback: (snapshot: CodexLoginSnapshot) => void): () => void {
-        const listener = (_e: Electron.IpcRendererEvent, snap: CodexLoginSnapshot) => callback(snap);
+        const listener = (_e: Electron.IpcRendererEvent, snap: CodexLoginSnapshot) =>
+          callback(snap);
         ipcRenderer.on(IPC_CHANNELS.CODEX_LOGIN_EVENT, listener);
-        return () => { ipcRenderer.removeListener(IPC_CHANNELS.CODEX_LOGIN_EVENT, listener); };
+        return () => {
+          ipcRenderer.removeListener(IPC_CHANNELS.CODEX_LOGIN_EVENT, listener);
+        };
       },
     },
   },
@@ -410,16 +414,13 @@ const api: CerebroAPI = {
     clearToken(): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.TELEGRAM_CLEAR_TOKEN);
     },
-    onConversationUpdated(
-      callback: (event: TelegramConversationUpdatedEvent) => void,
-    ): () => void {
+    onConversationUpdated(callback: (event: TelegramConversationUpdatedEvent) => void): () => void {
       const listener = (
         _event: Electron.IpcRendererEvent,
         data: TelegramConversationUpdatedEvent,
       ) => callback(data);
       ipcRenderer.on(IPC_CHANNELS.TELEGRAM_CONVERSATION_UPDATED, listener);
-      return () =>
-        ipcRenderer.removeListener(IPC_CHANNELS.TELEGRAM_CONVERSATION_UPDATED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.TELEGRAM_CONVERSATION_UPDATED, listener);
     },
   },
 
@@ -439,13 +440,19 @@ const api: CerebroAPI = {
     reload(): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.SLACK_RELOAD);
     },
-    setTokens(tokens: { botToken: string; appToken: string }): Promise<{ ok: boolean; error?: string }> {
+    setTokens(tokens: {
+      botToken: string;
+      appToken: string;
+    }): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.SLACK_SET_TOKENS, tokens);
     },
     clearTokens(): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.SLACK_CLEAR_TOKENS);
     },
-    setAllowlist(args: { channels: string[]; users: string[] }): Promise<{ ok: boolean; error?: string }> {
+    setAllowlist(args: {
+      channels: string[];
+      users: string[];
+    }): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.SLACK_SET_ALLOWLIST, args);
     },
     setOperatorUserId(userId: string | null): Promise<{ ok: boolean; error?: string }> {
@@ -463,16 +470,11 @@ const api: CerebroAPI = {
     setExpertAccess(config: SlackExpertAccessConfig): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.SLACK_SET_EXPERT_ACCESS, config);
     },
-    onConversationUpdated(
-      callback: (event: SlackConversationUpdatedEvent) => void,
-    ): () => void {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        data: SlackConversationUpdatedEvent,
-      ) => callback(data);
+    onConversationUpdated(callback: (event: SlackConversationUpdatedEvent) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, data: SlackConversationUpdatedEvent) =>
+        callback(data);
       ipcRenderer.on(IPC_CHANNELS.SLACK_CONVERSATION_UPDATED, listener);
-      return () =>
-        ipcRenderer.removeListener(IPC_CHANNELS.SLACK_CONVERSATION_UPDATED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.SLACK_CONVERSATION_UPDATED, listener);
     },
   },
 
@@ -499,24 +501,18 @@ const api: CerebroAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_DISABLE);
     },
     onStatusChanged(callback: (status: WhatsAppStatusResponse) => void): () => void {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        data: WhatsAppStatusResponse,
-      ) => callback(data);
+      const listener = (_event: Electron.IpcRendererEvent, data: WhatsAppStatusResponse) =>
+        callback(data);
       ipcRenderer.on(IPC_CHANNELS.WHATSAPP_STATUS_CHANGED, listener);
-      return () =>
-        ipcRenderer.removeListener(IPC_CHANNELS.WHATSAPP_STATUS_CHANGED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.WHATSAPP_STATUS_CHANGED, listener);
     },
-    onConversationUpdated(
-      callback: (event: WhatsAppConversationUpdatedEvent) => void,
-    ): () => void {
+    onConversationUpdated(callback: (event: WhatsAppConversationUpdatedEvent) => void): () => void {
       const listener = (
         _event: Electron.IpcRendererEvent,
         data: WhatsAppConversationUpdatedEvent,
       ) => callback(data);
       ipcRenderer.on(IPC_CHANNELS.WHATSAPP_CONVERSATION_UPDATED, listener);
-      return () =>
-        ipcRenderer.removeListener(IPC_CHANNELS.WHATSAPP_CONVERSATION_UPDATED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.WHATSAPP_CONVERSATION_UPDATED, listener);
     },
   },
 
@@ -524,10 +520,18 @@ const api: CerebroAPI = {
     verify(token: string): Promise<HubSpotVerifyResult> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_VERIFY, token);
     },
-    listPipelines(): Promise<{ ok: boolean; pipelines?: HubSpotPipelineSummary[]; error?: string }> {
+    listPipelines(): Promise<{
+      ok: boolean;
+      pipelines?: HubSpotPipelineSummary[];
+      error?: string;
+    }> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_LIST_PIPELINES);
     },
-    listTicketProperties(): Promise<{ ok: boolean; properties?: HubSpotTicketPropertySummary[]; error?: string }> {
+    listTicketProperties(): Promise<{
+      ok: boolean;
+      properties?: HubSpotTicketPropertySummary[];
+      error?: string;
+    }> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_LIST_TICKET_PROPERTIES);
     },
     status(): Promise<HubSpotStatusResponse> {
@@ -611,7 +615,11 @@ const api: CerebroAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_DISCONNECT, accountId);
     },
     setCalendars(accountId: string, selectedCalendarIds: string[]) {
-      return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_SET_CALENDARS, accountId, selectedCalendarIds);
+      return ipcRenderer.invoke(
+        IPC_CHANNELS.CALENDAR_SET_CALENDARS,
+        accountId,
+        selectedCalendarIds,
+      );
     },
     syncNow() {
       return ipcRenderer.invoke(IPC_CHANNELS.CALENDAR_SYNC_NOW);
@@ -671,17 +679,13 @@ const api: CerebroAPI = {
       ipcRenderer.on(IPC_CHANNELS.INTEGRATION_PROPOSAL, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.INTEGRATION_PROPOSAL, listener);
     },
-    onTeamRunAnnounced(
-      callback: (payload: TeamRunAnnouncedEventPayload) => void,
-    ): () => void {
+    onTeamRunAnnounced(callback: (payload: TeamRunAnnouncedEventPayload) => void): () => void {
       const listener = (_event: unknown, payload: TeamRunAnnouncedEventPayload) =>
         callback(payload);
       ipcRenderer.on(IPC_CHANNELS.TEAM_RUN_ANNOUNCED, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.TEAM_RUN_ANNOUNCED, listener);
     },
-    onTeamMemberUpdate(
-      callback: (payload: TeamMemberUpdateEventPayload) => void,
-    ): () => void {
+    onTeamMemberUpdate(callback: (payload: TeamMemberUpdateEventPayload) => void): () => void {
       const listener = (_event: unknown, payload: TeamMemberUpdateEventPayload) =>
         callback(payload);
       ipcRenderer.on(IPC_CHANNELS.TEAM_MEMBER_UPDATE, listener);

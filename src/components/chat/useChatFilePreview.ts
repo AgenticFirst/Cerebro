@@ -83,7 +83,8 @@ export function useChatFilePreview(attachment: AttachmentInfo | null): ChatFileP
             setParsedMarkdown(md);
           } catch (err) {
             if (cancelled) return;
-            const msg = err instanceof ParseError ? err.message : String((err as Error)?.message ?? err);
+            const msg =
+              err instanceof ParseError ? err.message : String((err as Error)?.message ?? err);
             setLoadError('parse-failed');
             setLoadErrorDetail(msg);
             setViewState('native'); // fall back to iframe
@@ -135,7 +136,8 @@ export function useChatFilePreview(attachment: AttachmentInfo | null): ChatFileP
           } catch (err) {
             if (cancelled) return;
             setParsing(false);
-            const msg = err instanceof ParseError ? err.message : String((err as Error)?.message ?? err);
+            const msg =
+              err instanceof ParseError ? err.message : String((err as Error)?.message ?? err);
             setLoadError('parse-failed');
             setLoadErrorDetail(msg);
             setLoading(false);
@@ -143,7 +145,13 @@ export function useChatFilePreview(attachment: AttachmentInfo | null): ChatFileP
           return;
         }
 
-        if (kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'html' || kind === 'pdf') {
+        if (
+          kind === 'image' ||
+          kind === 'video' ||
+          kind === 'audio' ||
+          kind === 'html' ||
+          kind === 'pdf'
+        ) {
           try {
             const url = await window.cerebro.shell.previewUrlForPath(attachment!.filePath);
             if (cancelled) return;
@@ -213,7 +221,8 @@ export function useChatFilePreview(attachment: AttachmentInfo | null): ChatFileP
     kind,
     effectiveKind,
     previewUrl,
-    textContent: effectiveKind === 'markdown' && parsedMarkdown !== null ? parsedMarkdown : textContent,
+    textContent:
+      effectiveKind === 'markdown' && parsedMarkdown !== null ? parsedMarkdown : textContent,
     parsedMarkdown,
     parsing,
     loading,

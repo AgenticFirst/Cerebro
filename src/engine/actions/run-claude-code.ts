@@ -34,8 +34,15 @@ const MODE_PREFIXES: Record<string, string> = {
 
 // Only pass a curated set of env vars to the subprocess
 const SAFE_ENV_KEYS = [
-  'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM',
-  'TMPDIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME',
+  'PATH',
+  'HOME',
+  'USER',
+  'SHELL',
+  'LANG',
+  'TERM',
+  'TMPDIR',
+  'XDG_CONFIG_HOME',
+  'XDG_DATA_HOME',
   'ANTHROPIC_API_KEY', // Claude Code needs this
 ];
 
@@ -91,7 +98,7 @@ export const runClaudeCodeAction: ActionDefinition = {
     const available = await isClaudeAvailable();
     if (!available) {
       throw new Error(
-        'Claude Code CLI not found. Install it: npm install -g @anthropic-ai/claude-code'
+        'Claude Code CLI not found. Install it: npm install -g @anthropic-ai/claude-code',
       );
     }
 
@@ -100,11 +107,7 @@ export const runClaudeCodeAction: ActionDefinition = {
     const prefix = MODE_PREFIXES[mode] ?? '';
     const fullPrompt = prefix + renderedPrompt;
 
-    const args = [
-      '--print',
-      '--output-format', 'text',
-      '--allowedTools', allowedTools,
-    ];
+    const args = ['--print', '--output-format', 'text', '--allowedTools', allowedTools];
 
     if (params.max_turns) {
       args.push('--max-turns', String(params.max_turns));
@@ -163,7 +166,7 @@ export const runClaudeCodeAction: ActionDefinition = {
         // Extract file paths from output (best-effort)
         const filePathRegex = /(?:^|\s)((?:\/[\w.-]+)+|(?:[\w.-]+\/)+[\w.-]+)/gm;
         const matches = stdout.match(filePathRegex) ?? [];
-        const filesModified = [...new Set(matches.map(m => m.trim()))].slice(0, 20);
+        const filesModified = [...new Set(matches.map((m) => m.trim()))].slice(0, 20);
 
         const response = stdout.trim();
         const exitCode = code ?? 0;

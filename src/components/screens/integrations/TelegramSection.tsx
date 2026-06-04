@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, ExternalLink, Eye, EyeOff, Lightbulb, Loader2, Lock, ShieldAlert, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Lightbulb,
+  Loader2,
+  Lock,
+  ShieldAlert,
+  XCircle,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { TelegramIcon } from '../../icons/BrandIcons';
 import { loadSetting, saveSetting } from '../../../lib/settings';
@@ -63,13 +73,13 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
     const s = await window.cerebro.telegram.status();
     setStatus((prev) => {
       if (
-        prev
-        && prev.running === s.running
-        && prev.lastPollAt === s.lastPollAt
-        && prev.lastError === s.lastError
-        && prev.botUsername === s.botUsername
-        && prev.hasToken === s.hasToken
-        && prev.tokenBackend === s.tokenBackend
+        prev &&
+        prev.running === s.running &&
+        prev.lastPollAt === s.lastPollAt &&
+        prev.lastError === s.lastError &&
+        prev.botUsername === s.botUsername &&
+        prev.hasToken === s.hasToken &&
+        prev.tokenBackend === s.tokenBackend
       ) {
         return prev;
       }
@@ -132,7 +142,16 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
     await refreshStatus();
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1_500);
-  }, [allowlistRaw, forwardAll, operatorChatId, parseAllowlist, persistTokenIfDraft, enabled, status?.running, refreshStatus]);
+  }, [
+    allowlistRaw,
+    forwardAll,
+    operatorChatId,
+    parseAllowlist,
+    persistTokenIfDraft,
+    enabled,
+    status?.running,
+    refreshStatus,
+  ]);
 
   const handleClearToken = useCallback(async () => {
     await window.cerebro.telegram.clearToken();
@@ -151,9 +170,9 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
   // only replies with sender IDs (rate-limited) so users can find their own.
   // We only require a verified token to flip the enable toggle.
   const canEnable =
-    (enabled && status?.running)
-    || (tokenConfigured && !editingToken)
-    || (draftReady && verify.kind === 'ok');
+    (enabled && status?.running) ||
+    (tokenConfigured && !editingToken) ||
+    (draftReady && verify.kind === 'ok');
 
   const handleToggleEnable = useCallback(async () => {
     setEnabling(true);
@@ -207,8 +226,8 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
       )}
 
       {/* Storage status banner — green when encrypted, amber when falling back to plaintext. */}
-      {status && (
-        usingKeychain ? (
+      {status &&
+        (usingKeychain ? (
           <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
             <Lock size={14} className="mt-0.5 flex-shrink-0" />
             <span className="leading-relaxed">{t('telegramSection.storageEncrypted')}</span>
@@ -218,12 +237,13 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
             <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
             <span className="leading-relaxed">{t('telegramSection.storagePlaintextFallback')}</span>
           </div>
-        )
-      )}
+        ))}
 
       {/* Token row */}
       <div className="mt-6">
-        <label className="text-xs font-medium text-text-secondary">{t('telegramSection.tokenLabel')}</label>
+        <label className="text-xs font-medium text-text-secondary">
+          {t('telegramSection.tokenLabel')}
+        </label>
 
         {showTokenInput ? (
           <>
@@ -232,7 +252,10 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
                 <input
                   type={showToken ? 'text' : 'password'}
                   value={tokenDraft}
-                  onChange={(e) => { setTokenDraft(e.target.value); setVerify({ kind: 'idle' }); }}
+                  onChange={(e) => {
+                    setTokenDraft(e.target.value);
+                    setVerify({ kind: 'idle' });
+                  }}
                   placeholder={t('telegramSection.tokenPlaceholder')}
                   className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                   autoComplete="off"
@@ -257,12 +280,19 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
                   'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
               >
-                {verify.kind === 'verifying' ? t('telegramSection.verifying') : t('telegramSection.verify')}
+                {verify.kind === 'verifying'
+                  ? t('telegramSection.verifying')
+                  : t('telegramSection.verify')}
               </button>
               {tokenConfigured && (
                 <button
                   type="button"
-                  onClick={() => { setTokenDraft(''); setEditingToken(false); setShowToken(false); setVerify({ kind: 'idle' }); }}
+                  onClick={() => {
+                    setTokenDraft('');
+                    setEditingToken(false);
+                    setShowToken(false);
+                    setVerify({ kind: 'idle' });
+                  }}
                   className="px-3 py-2 text-sm rounded-md font-medium text-text-tertiary hover:text-text-secondary"
                 >
                   {t('telegramSection.cancel')}
@@ -290,7 +320,10 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
             </div>
             <button
               type="button"
-              onClick={() => { setEditingToken(true); setVerify({ kind: 'idle' }); }}
+              onClick={() => {
+                setEditingToken(true);
+                setVerify({ kind: 'idle' });
+              }}
               className="px-3 py-2 text-sm rounded-md font-medium bg-accent/15 text-accent hover:bg-accent/25"
             >
               {t('telegramSection.replaceToken')}
@@ -308,7 +341,9 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
 
       {/* Allowlist */}
       <div className="mt-6">
-        <label className="text-xs font-medium text-text-secondary">{t('telegramSection.allowlistLabel')}</label>
+        <label className="text-xs font-medium text-text-secondary">
+          {t('telegramSection.allowlistLabel')}
+        </label>
         <input
           type="text"
           value={allowlistRaw}
@@ -323,7 +358,9 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
 
         {/* Operator chat id — receives Claude re-auth DMs */}
         <div className="mt-4">
-          <label className="text-xs font-medium text-text-secondary">{t('telegramSection.operatorChatIdLabel')}</label>
+          <label className="text-xs font-medium text-text-secondary">
+            {t('telegramSection.operatorChatIdLabel')}
+          </label>
           <input
             type="text"
             value={operatorChatId}
@@ -357,7 +394,9 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
                 </p>
                 <button
                   type="button"
-                  onClick={() => window.open('https://t.me/userinfobot', '_blank', 'noopener,noreferrer')}
+                  onClick={() =>
+                    window.open('https://t.me/userinfobot', '_blank', 'noopener,noreferrer')
+                  }
                   className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 text-xs font-medium transition-colors"
                 >
                   <ExternalLink size={11} />
@@ -415,7 +454,9 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
       <div className="mt-6 bg-bg-surface border border-border-subtle rounded-lg p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <div className="text-sm text-text-primary font-medium">{t('telegramSection.enableLabel')}</div>
+            <div className="text-sm text-text-primary font-medium">
+              {t('telegramSection.enableLabel')}
+            </div>
             {!canEnable && !enabled && (
               <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
                 {t('telegramSection.enableDisabledHint')}
@@ -435,7 +476,9 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
                 <XCircle size={13} className="text-text-tertiary" />
               )}
               <span className={status?.running ? 'text-emerald-400' : 'text-text-tertiary'}>
-                {status?.running ? t('telegramSection.statusRunning') : t('telegramSection.statusStopped')}
+                {status?.running
+                  ? t('telegramSection.statusRunning')
+                  : t('telegramSection.statusStopped')}
               </span>
               <span className="text-text-tertiary">•</span>
               <span className="text-text-tertiary">
@@ -445,7 +488,10 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
             {status?.botUsername && (
               <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-text-tertiary">
                 <TelegramIcon size={11} className="text-sky-400/70" />
-                <span>{t('telegramSection.botLabel')}: <span className="font-mono text-text-secondary">@{status.botUsername}</span></span>
+                <span>
+                  {t('telegramSection.botLabel')}:{' '}
+                  <span className="font-mono text-text-secondary">@{status.botUsername}</span>
+                </span>
               </div>
             )}
             {status?.lastError && (

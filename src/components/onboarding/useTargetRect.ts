@@ -47,9 +47,7 @@ export function useTargetRect(
 
     const measure = () => {
       if (cancelled) return;
-      const el = document.querySelector<HTMLElement>(
-        `[data-tour-id="${targetId}"]`,
-      );
+      const el = document.querySelector<HTMLElement>(`[data-tour-id="${targetId}"]`);
       if (!el) return;
       const r = el.getBoundingClientRect();
       // Skip zero-sized rects (element is mounted but invisible / layout pending).

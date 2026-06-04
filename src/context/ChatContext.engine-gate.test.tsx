@@ -118,9 +118,7 @@ describe('ChatContext engine availability gate', () => {
     // Bug: previously the Claude-Code-not-detected modal blocked the send.
     expect(errorTitle).not.toBe('Claude Code not detected');
     expect(screen.getByTestId('error').textContent).toBe('no-error');
-    expect(agentRun).toHaveBeenCalledWith(
-      expect.objectContaining({ engine: 'codex' }),
-    );
+    expect(agentRun).toHaveBeenCalledWith(expect.objectContaining({ engine: 'codex' }));
   });
 
   it('still blocks Claude Code chat when Claude Code is missing', async () => {

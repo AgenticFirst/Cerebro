@@ -9,10 +9,7 @@ import {
 } from 'react';
 import { useChat } from './ChatContext';
 import { useFeatureFlags } from './FeatureFlagsContext';
-import type {
-  VoiceSessionState,
-  VoiceSessionEvent,
-} from '../voice/types';
+import type { VoiceSessionState, VoiceSessionEvent } from '../voice/types';
 import { setPendingSettingsSection } from '../components/screens/settings/pending-section';
 
 // ── Catalog types (mirrors backend voice/schemas.py) ─────────────
@@ -101,8 +98,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Keep refs in sync
-  useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
-  useEffect(() => { sessionStateRef.current = sessionState; }, [sessionState]);
+  useEffect(() => {
+    activeSessionRef.current = activeSession;
+  }, [activeSession]);
+  useEffect(() => {
+    sessionStateRef.current = sessionState;
+  }, [sessionState]);
 
   // Clean up event listener on unmount
   useEffect(() => {
@@ -234,54 +235,57 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
         // Subscribe to voice events
         unsubscribeRef.current?.();
-        unsubscribeRef.current = window.cerebro.voice.onEvent(sessionId, (event: VoiceSessionEvent) => {
-          switch (event.type) {
-            case 'state_change':
-              setSessionState(event.state);
-              if (event.state === 'listening') {
-                // Response text stays visible until the next PTT press starts
-                // a new interaction (cleared on the next 'transcription' event).
+        unsubscribeRef.current = window.cerebro.voice.onEvent(
+          sessionId,
+          (event: VoiceSessionEvent) => {
+            switch (event.type) {
+              case 'state_change':
+                setSessionState(event.state);
+                if (event.state === 'listening') {
+                  // Response text stays visible until the next PTT press starts
+                  // a new interaction (cleared on the next 'transcription' event).
+                  setStatusMessage('');
+                  setCallError(null);
+                } else if (event.state === 'processing') {
+                  setCurrentResponse('');
+                  setStatusMessage('Thinking...');
+                } else if (event.state === 'speaking') {
+                  setStatusMessage('');
+                }
+                break;
+              case 'transcription':
+                // Only clear the coach's response when the user FINALIZES a new
+                // turn (releases PTT). Partial transcriptions fire repeatedly
+                // during PTT hold — and also when the mic picks up TTS audio
+                // playback after state transitioned to 'listening'. Clearing
+                // on partials was making the subtitles vanish mid-speech.
+                if (event.isFinal) {
+                  setCurrentResponse('');
+                }
+                setCurrentTranscription(event.text);
+                break;
+              case 'response_text':
+                setCurrentResponse((prev) => prev + event.delta);
+                break;
+              case 'response_done':
+                setCurrentResponse(event.fullText);
+                break;
+              case 'tts_done':
+                break;
+              case 'error':
+                console.error('[Voice] error:', event.error);
+                setCallError(event.error);
+                break;
+              case 'ended':
+                setSessionState('idle');
+                setActiveSession(null);
                 setStatusMessage('');
-                setCallError(null);
-              } else if (event.state === 'processing') {
-                setCurrentResponse('');
-                setStatusMessage('Thinking...');
-              } else if (event.state === 'speaking') {
-                setStatusMessage('');
-              }
-              break;
-            case 'transcription':
-              // Only clear the coach's response when the user FINALIZES a new
-              // turn (releases PTT). Partial transcriptions fire repeatedly
-              // during PTT hold — and also when the mic picks up TTS audio
-              // playback after state transitioned to 'listening'. Clearing
-              // on partials was making the subtitles vanish mid-speech.
-              if (event.isFinal) {
-                setCurrentResponse('');
-              }
-              setCurrentTranscription(event.text);
-              break;
-            case 'response_text':
-              setCurrentResponse((prev) => prev + event.delta);
-              break;
-            case 'response_done':
-              setCurrentResponse(event.fullText);
-              break;
-            case 'tts_done':
-              break;
-            case 'error':
-              console.error('[Voice] error:', event.error);
-              setCallError(event.error);
-              break;
-            case 'ended':
-              setSessionState('idle');
-              setActiveSession(null);
-              setStatusMessage('');
-              unsubscribeRef.current?.();
-              unsubscribeRef.current = null;
-              break;
-          }
-        });
+                unsubscribeRef.current?.();
+                unsubscribeRef.current = null;
+                break;
+            }
+          },
+        );
 
         setSessionState('listening');
         setStatusMessage('');

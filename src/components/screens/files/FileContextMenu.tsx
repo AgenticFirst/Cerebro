@@ -63,23 +63,120 @@ export default function FileContextMenu(props: FileContextMenuProps) {
 
   const actions: FileContextMenuAction[] = isTrashed
     ? [
-        { key: 'restore', label: t('files.actionRestore'), icon: <RotateCcw size={12} />, onClick: () => { props.onRestore(); onClose(); } },
-        { key: 'hard-delete', label: t('files.actionDeleteForever'), icon: <Trash2 size={12} />, onClick: () => { props.onHardDelete(); onClose(); }, danger: true, separator: true },
+        {
+          key: 'restore',
+          label: t('files.actionRestore'),
+          icon: <RotateCcw size={12} />,
+          onClick: () => {
+            props.onRestore();
+            onClose();
+          },
+        },
+        {
+          key: 'hard-delete',
+          label: t('files.actionDeleteForever'),
+          icon: <Trash2 size={12} />,
+          onClick: () => {
+            props.onHardDelete();
+            onClose();
+          },
+          danger: true,
+          separator: true,
+        },
       ]
     : [
-        { key: 'preview', label: t('files.actionPreview'), icon: <Eye size={12} />, onClick: () => { props.onPreview(item); onClose(); } },
-        { key: 'open', label: t('files.actionOpen'), icon: <ExternalLink size={12} />, onClick: () => { props.onOpen(item); onClose(); } },
-        { key: 'reveal', label: t('files.actionReveal'), icon: <FolderOpen size={12} />, onClick: () => { props.onReveal(item); onClose(); }, separator: true },
-        ...(item.storageKind === 'managed' ? [
-          { key: 'rename', label: t('files.actionRename'), icon: <Pencil size={12} />, onClick: () => { props.onRename(item); onClose(); } },
-          { key: 'move', label: t('files.actionMove'), icon: <ArrowRight size={12} />, onClick: () => { props.onMove(); onClose(); } },
-        ] : []),
-        { key: 'copy', label: t('files.actionCopy'), icon: <Copy size={12} />, onClick: () => { props.onCopy(); onClose(); } },
-        { key: 'star', label: item.starred ? t('files.actionUnstar') : t('files.actionStar'), icon: <Star size={12} />, onClick: () => { props.onStar(item); onClose(); } },
-        { key: 'download', label: t('files.actionDownload'), icon: <Download size={12} />, onClick: () => { props.onDownload(item); onClose(); }, separator: true },
-        ...(item.storageKind === 'managed' ? [
-          { key: 'delete', label: t('files.actionDelete'), icon: <Trash2 size={12} />, onClick: () => { props.onSoftDelete(); onClose(); }, danger: true },
-        ] : []),
+        {
+          key: 'preview',
+          label: t('files.actionPreview'),
+          icon: <Eye size={12} />,
+          onClick: () => {
+            props.onPreview(item);
+            onClose();
+          },
+        },
+        {
+          key: 'open',
+          label: t('files.actionOpen'),
+          icon: <ExternalLink size={12} />,
+          onClick: () => {
+            props.onOpen(item);
+            onClose();
+          },
+        },
+        {
+          key: 'reveal',
+          label: t('files.actionReveal'),
+          icon: <FolderOpen size={12} />,
+          onClick: () => {
+            props.onReveal(item);
+            onClose();
+          },
+          separator: true,
+        },
+        ...(item.storageKind === 'managed'
+          ? [
+              {
+                key: 'rename',
+                label: t('files.actionRename'),
+                icon: <Pencil size={12} />,
+                onClick: () => {
+                  props.onRename(item);
+                  onClose();
+                },
+              },
+              {
+                key: 'move',
+                label: t('files.actionMove'),
+                icon: <ArrowRight size={12} />,
+                onClick: () => {
+                  props.onMove();
+                  onClose();
+                },
+              },
+            ]
+          : []),
+        {
+          key: 'copy',
+          label: t('files.actionCopy'),
+          icon: <Copy size={12} />,
+          onClick: () => {
+            props.onCopy();
+            onClose();
+          },
+        },
+        {
+          key: 'star',
+          label: item.starred ? t('files.actionUnstar') : t('files.actionStar'),
+          icon: <Star size={12} />,
+          onClick: () => {
+            props.onStar(item);
+            onClose();
+          },
+        },
+        {
+          key: 'download',
+          label: t('files.actionDownload'),
+          icon: <Download size={12} />,
+          onClick: () => {
+            props.onDownload(item);
+            onClose();
+          },
+          separator: true,
+        },
+        ...(item.storageKind === 'managed'
+          ? [
+              {
+                key: 'delete',
+                label: t('files.actionDelete'),
+                icon: <Trash2 size={12} />,
+                onClick: () => {
+                  props.onSoftDelete();
+                  onClose();
+                },
+                danger: true,
+              },
+            ]
+          : []),
       ];
 
   return (

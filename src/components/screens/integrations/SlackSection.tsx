@@ -57,14 +57,14 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
     const s = await window.cerebro.slack.status();
     setStatus((prev) => {
       if (
-        prev
-        && prev.running === s.running
-        && prev.lastEventAt === s.lastEventAt
-        && prev.lastError === s.lastError
-        && prev.teamName === s.teamName
-        && prev.hasBotToken === s.hasBotToken
-        && prev.hasAppToken === s.hasAppToken
-        && prev.tokenBackend === s.tokenBackend
+        prev &&
+        prev.running === s.running &&
+        prev.lastEventAt === s.lastEventAt &&
+        prev.lastError === s.lastError &&
+        prev.teamName === s.teamName &&
+        prev.hasBotToken === s.hasBotToken &&
+        prev.hasAppToken === s.hasAppToken &&
+        prev.tokenBackend === s.tokenBackend
       ) {
         return prev;
       }
@@ -138,7 +138,16 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
     await refreshStatus();
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1_500);
-  }, [allowChans, allowUsers, operatorUserId, parseList, persistTokensIfDraft, enabled, status?.running, refreshStatus]);
+  }, [
+    allowChans,
+    allowUsers,
+    operatorUserId,
+    parseList,
+    persistTokensIfDraft,
+    enabled,
+    status?.running,
+    refreshStatus,
+  ]);
 
   const handleClearTokens = useCallback(async () => {
     await window.cerebro.slack.clearTokens();
@@ -154,9 +163,9 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
   const tokensConfigured = Boolean(status?.hasBotToken && status?.hasAppToken);
   const draftReady = botDraft.trim().length > 0 && appDraft.trim().length > 0;
   const canEnable =
-    (enabled && status?.running)
-    || (tokensConfigured && !editingTokens)
-    || (draftReady && verify.kind === 'ok');
+    (enabled && status?.running) ||
+    (tokensConfigured && !editingTokens) ||
+    (draftReady && verify.kind === 'ok');
 
   const handleToggleEnable = useCallback(async () => {
     setEnabling(true);
@@ -206,8 +215,8 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
       )}
 
       {/* Storage status banner */}
-      {status && (
-        usingKeychain ? (
+      {status &&
+        (usingKeychain ? (
           <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
             <Lock size={14} className="mt-0.5 flex-shrink-0" />
             <span className="leading-relaxed">{t('telegramSection.storageEncrypted')}</span>
@@ -217,20 +226,24 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
             <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
             <span className="leading-relaxed">{t('telegramSection.storagePlaintextFallback')}</span>
           </div>
-        )
-      )}
+        ))}
 
       {/* Tokens */}
       <div className="mt-6 space-y-3">
         {showTokenInputs ? (
           <>
             <div>
-              <label className="text-xs font-medium text-text-secondary">{t('slackSection.botTokenLabel')}</label>
+              <label className="text-xs font-medium text-text-secondary">
+                {t('slackSection.botTokenLabel')}
+              </label>
               <div className="mt-1.5 relative">
                 <input
                   type={showBot ? 'text' : 'password'}
                   value={botDraft}
-                  onChange={(e) => { setBotDraft(e.target.value); setVerify({ kind: 'idle' }); }}
+                  onChange={(e) => {
+                    setBotDraft(e.target.value);
+                    setVerify({ kind: 'idle' });
+                  }}
                   placeholder={t('slackSection.botTokenPlaceholder')}
                   className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                   autoComplete="off"
@@ -247,12 +260,17 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
               </div>
             </div>
             <div>
-              <label className="text-xs font-medium text-text-secondary">{t('slackSection.appTokenLabel')}</label>
+              <label className="text-xs font-medium text-text-secondary">
+                {t('slackSection.appTokenLabel')}
+              </label>
               <div className="mt-1.5 relative">
                 <input
                   type={showApp ? 'text' : 'password'}
                   value={appDraft}
-                  onChange={(e) => { setAppDraft(e.target.value); setVerify({ kind: 'idle' }); }}
+                  onChange={(e) => {
+                    setAppDraft(e.target.value);
+                    setVerify({ kind: 'idle' });
+                  }}
                   placeholder={t('slackSection.appTokenPlaceholder')}
                   className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                   autoComplete="off"
@@ -279,12 +297,21 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
                   'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
               >
-                {verify.kind === 'verifying' ? t('slackSection.verifying') : t('slackSection.verify')}
+                {verify.kind === 'verifying'
+                  ? t('slackSection.verifying')
+                  : t('slackSection.verify')}
               </button>
               {tokensConfigured && (
                 <button
                   type="button"
-                  onClick={() => { setBotDraft(''); setAppDraft(''); setEditingTokens(false); setShowBot(false); setShowApp(false); setVerify({ kind: 'idle' }); }}
+                  onClick={() => {
+                    setBotDraft('');
+                    setAppDraft('');
+                    setEditingTokens(false);
+                    setShowBot(false);
+                    setShowApp(false);
+                    setVerify({ kind: 'idle' });
+                  }}
                   className="px-3 py-2 text-sm rounded-md font-medium text-text-tertiary hover:text-text-secondary"
                 >
                   {t('telegramSection.cancel')}
@@ -312,7 +339,10 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
             </div>
             <button
               type="button"
-              onClick={() => { setEditingTokens(true); setVerify({ kind: 'idle' }); }}
+              onClick={() => {
+                setEditingTokens(true);
+                setVerify({ kind: 'idle' });
+              }}
               className="px-3 py-2 text-sm rounded-md font-medium bg-accent/15 text-accent hover:bg-accent/25"
             >
               {t('telegramSection.replaceToken')}
@@ -330,7 +360,9 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
 
       {/* Allowlist - channels */}
       <div className="mt-6">
-        <label className="text-xs font-medium text-text-secondary">{t('slackSection.allowlistChannelsLabel')}</label>
+        <label className="text-xs font-medium text-text-secondary">
+          {t('slackSection.allowlistChannelsLabel')}
+        </label>
         <input
           type="text"
           value={allowChans}
@@ -346,7 +378,9 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
 
       {/* Allowlist - users */}
       <div className="mt-6">
-        <label className="text-xs font-medium text-text-secondary">{t('slackSection.allowlistUsersLabel')}</label>
+        <label className="text-xs font-medium text-text-secondary">
+          {t('slackSection.allowlistUsersLabel')}
+        </label>
         <input
           type="text"
           value={allowUsers}
@@ -362,7 +396,9 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
 
       {/* Operator user id — receives Claude re-auth DMs */}
       <div className="mt-6">
-        <label className="text-xs font-medium text-text-secondary">{t('slackSection.operatorUserIdLabel')}</label>
+        <label className="text-xs font-medium text-text-secondary">
+          {t('slackSection.operatorUserIdLabel')}
+        </label>
         <input
           type="text"
           value={operatorUserId}
@@ -408,7 +444,9 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
       <div className="mt-6 bg-bg-surface border border-border-subtle rounded-lg p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <div className="text-sm text-text-primary font-medium">{t('slackSection.enableLabel')}</div>
+            <div className="text-sm text-text-primary font-medium">
+              {t('slackSection.enableLabel')}
+            </div>
             <div className="mt-2 flex items-center gap-2 text-xs">
               {enabling ? (
                 <ExternalLink size={13} className="text-amber-400 animate-spin" />

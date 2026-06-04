@@ -12,22 +12,14 @@ describe('pickApprovalRun', () => {
   });
 
   it('routes to the run whose conversationId matches — even with several in flight', () => {
-    const runs = [
-      run('A', 'conv-a', 100),
-      run('B', 'conv-b', 200),
-      run('C', 'conv-c', 300),
-    ];
+    const runs = [run('A', 'conv-a', 100), run('B', 'conv-b', 200), run('C', 'conv-c', 300)];
     // The old `size !== 1` heuristic would have dropped this; we route precisely.
     expect(pickApprovalRun(runs, 'conv-b')).toBe('B');
     expect(pickApprovalRun(runs, 'conv-a')).toBe('A');
   });
 
   it('falls back to the most recently started run when the conversationId does not match', () => {
-    const runs = [
-      run('A', 'conv-a', 100),
-      run('B', 'conv-b', 300),
-      run('C', 'conv-c', 200),
-    ];
+    const runs = [run('A', 'conv-a', 100), run('B', 'conv-b', 300), run('C', 'conv-c', 200)];
     // Never silently drop a chat-action approval — that would stall the engine.
     expect(pickApprovalRun(runs, 'conv-unknown')).toBe('B');
   });

@@ -93,13 +93,41 @@ interface WalkthroughScreen {
 // Screen order is fixed (matches screenshot filenames); caption + hint are
 // built from translation keys inside the component.
 const WALKTHROUGH_SCREENS: Array<{ imageFile: string; captionKey: string; hintKey: string }> = [
-  { imageFile: '01-private-apps-moved.png', captionKey: 'hubspotTour.walk1Caption', hintKey: 'hubspotTour.walk1Hint' },
-  { imageFile: '02-legacy-apps-empty.png',  captionKey: 'hubspotTour.walk2Caption', hintKey: 'hubspotTour.walk2Hint' },
-  { imageFile: '03-create-modal-private.png', captionKey: 'hubspotTour.walk3Caption', hintKey: 'hubspotTour.walk3Hint' },
-  { imageFile: '04-basic-info.png',         captionKey: 'hubspotTour.walk4Caption', hintKey: 'hubspotTour.walk4Hint' },
-  { imageFile: '05-scopes-add.png',         captionKey: 'hubspotTour.walk5Caption', hintKey: 'hubspotTour.walk5Hint' },
-  { imageFile: '06-confirm-create.png',     captionKey: 'hubspotTour.walk6Caption', hintKey: 'hubspotTour.walk6Hint' },
-  { imageFile: '07-auth-token.png',         captionKey: 'hubspotTour.walk7Caption', hintKey: 'hubspotTour.walk7Hint' },
+  {
+    imageFile: '01-private-apps-moved.png',
+    captionKey: 'hubspotTour.walk1Caption',
+    hintKey: 'hubspotTour.walk1Hint',
+  },
+  {
+    imageFile: '02-legacy-apps-empty.png',
+    captionKey: 'hubspotTour.walk2Caption',
+    hintKey: 'hubspotTour.walk2Hint',
+  },
+  {
+    imageFile: '03-create-modal-private.png',
+    captionKey: 'hubspotTour.walk3Caption',
+    hintKey: 'hubspotTour.walk3Hint',
+  },
+  {
+    imageFile: '04-basic-info.png',
+    captionKey: 'hubspotTour.walk4Caption',
+    hintKey: 'hubspotTour.walk4Hint',
+  },
+  {
+    imageFile: '05-scopes-add.png',
+    captionKey: 'hubspotTour.walk5Caption',
+    hintKey: 'hubspotTour.walk5Hint',
+  },
+  {
+    imageFile: '06-confirm-create.png',
+    captionKey: 'hubspotTour.walk6Caption',
+    hintKey: 'hubspotTour.walk6Hint',
+  },
+  {
+    imageFile: '07-auth-token.png',
+    captionKey: 'hubspotTour.walk7Caption',
+    hintKey: 'hubspotTour.walk7Hint',
+  },
 ];
 
 export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotConnectModalProps) {
@@ -109,11 +137,12 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
 
   // Localized walkthrough — rebuilt when language changes.
   const WALKTHROUGH = useMemo<WalkthroughScreen[]>(
-    () => WALKTHROUGH_SCREENS.map((s) => ({
-      imageFile: s.imageFile,
-      caption: t(s.captionKey),
-      hint: t(s.hintKey),
-    })),
+    () =>
+      WALKTHROUGH_SCREENS.map((s) => ({
+        imageFile: s.imageFile,
+        caption: t(s.captionKey),
+        hint: t(s.hintKey),
+      })),
     [t],
   );
 
@@ -137,7 +166,9 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
     if (s.defaultStage && !stageId) setStageId(s.defaultStage);
   }, [pipelineId, stageId]);
 
-  useEffect(() => { void refreshStatus(); }, [refreshStatus]);
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
 
   const loadPipelines = useCallback(async () => {
     setPipelinesLoading(true);
@@ -219,11 +250,16 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
 
   const stepIcon = useMemo(() => {
     switch (step) {
-      case 1: return <Sparkles size={20} />;
-      case 2: return <ExternalLink size={20} />;
-      case 3: return <Lock size={20} />;
-      case 4: return <Ticket size={20} />;
-      default: return <HubSpotIcon size={20} />;
+      case 1:
+        return <Sparkles size={20} />;
+      case 2:
+        return <ExternalLink size={20} />;
+      case 3:
+        return <Lock size={20} />;
+      case 4:
+        return <Ticket size={20} />;
+      default:
+        return <HubSpotIcon size={20} />;
     }
   }, [step]);
 
@@ -261,7 +297,10 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                 {t('hubspotTour.stepCounter', { current: step, total: STEP_COUNT })}
                 {step === 2 && (
                   <span className="ml-2 text-text-tertiary/70">
-                    {t('hubspotTour.screenCounter', { current: walkIndex + 1, total: WALKTHROUGH.length })}
+                    {t('hubspotTour.screenCounter', {
+                      current: walkIndex + 1,
+                      total: WALKTHROUGH.length,
+                    })}
                   </span>
                 )}
               </div>
@@ -421,8 +460,12 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                       <li key={s.slug} className="flex gap-2.5">
                         <CheckCircle2 size={12} className="text-accent/80 flex-shrink-0 mt-1" />
                         <div className="flex-1 min-w-0">
-                          <code className="text-[11px] font-mono text-text-primary break-all">{s.slug}</code>
-                          <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed">{t(s.reasonKey)}</p>
+                          <code className="text-[11px] font-mono text-text-primary break-all">
+                            {s.slug}
+                          </code>
+                          <p className="text-[11px] text-text-secondary mt-0.5 leading-relaxed">
+                            {t(s.reasonKey)}
+                          </p>
                         </div>
                       </li>
                     ))}
@@ -442,7 +485,9 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                   <div className="flex items-start gap-3 px-3 py-3 rounded-md border border-emerald-500/30 bg-emerald-500/10">
                     <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-400" />
                     <div className="text-sm flex-1 min-w-0">
-                      <div className="font-medium text-emerald-300">{t('hubspotTour.step3Connected')}</div>
+                      <div className="font-medium text-emerald-300">
+                        {t('hubspotTour.step3Connected')}
+                      </div>
                       {status?.portalId && (
                         <div className="text-xs text-emerald-300/80 mt-0.5 font-mono">
                           {t('hubspotTour.step3PortalLine', { portalId: status.portalId })}
@@ -451,7 +496,11 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                     </div>
                     <button
                       type="button"
-                      onClick={() => { setReplaceTokenMode(true); setTokenDraft(''); setVerify({ kind: 'idle' }); }}
+                      onClick={() => {
+                        setReplaceTokenMode(true);
+                        setTokenDraft('');
+                        setVerify({ kind: 'idle' });
+                      }}
                       className="text-xs font-medium text-text-tertiary hover:text-text-secondary px-2 py-1 rounded hover:bg-white/5"
                     >
                       {t('hubspotTour.step3ReplaceToken')}
@@ -465,18 +514,25 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                       i18nKey="hubspotTour.step3PasteBody"
                       components={{
                         bold: <strong className="text-text-primary" />,
-                        code: <code className="px-1 py-0.5 rounded bg-bg-elevated text-[10px] font-mono" />,
+                        code: (
+                          <code className="px-1 py-0.5 rounded bg-bg-elevated text-[10px] font-mono" />
+                        ),
                       }}
                     />
                   </p>
                   <div>
-                    <label className="text-xs font-medium text-text-secondary">{t('hubspotTour.step3TokenLabel')}</label>
+                    <label className="text-xs font-medium text-text-secondary">
+                      {t('hubspotTour.step3TokenLabel')}
+                    </label>
                     <div className="mt-1.5 flex items-center gap-2">
                       <div className="relative flex-1">
                         <input
                           type={showToken ? 'text' : 'password'}
                           value={tokenDraft}
-                          onChange={(e) => { setTokenDraft(e.target.value); setVerify({ kind: 'idle' }); }}
+                          onChange={(e) => {
+                            setTokenDraft(e.target.value);
+                            setVerify({ kind: 'idle' });
+                          }}
                           placeholder={t('hubspotTour.step3TokenPlaceholder')}
                           className="w-full bg-bg-elevated border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                           autoComplete="off"
@@ -487,7 +543,11 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                           type="button"
                           onClick={() => setShowToken((v) => !v)}
                           className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary"
-                          aria-label={showToken ? t('hubspotTour.step3HideToken') : t('hubspotTour.step3ShowToken')}
+                          aria-label={
+                            showToken
+                              ? t('hubspotTour.step3HideToken')
+                              : t('hubspotTour.step3ShowToken')
+                          }
                         >
                           {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
                         </button>
@@ -495,19 +555,27 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                       <button
                         type="button"
                         onClick={handleVerify}
-                        disabled={!draftReady || verify.kind === 'verifying' || verify.kind === 'ok'}
+                        disabled={
+                          !draftReady || verify.kind === 'verifying' || verify.kind === 'ok'
+                        }
                         className={clsx(
                           'px-3 py-2 text-sm rounded-md font-medium transition-colors',
                           'bg-accent/15 text-accent hover:bg-accent/25',
                           'disabled:opacity-50 disabled:cursor-not-allowed',
                         )}
                       >
-                        {verify.kind === 'verifying' ? t('hubspotTour.step3Verifying') : t('hubspotTour.step3Verify')}
+                        {verify.kind === 'verifying'
+                          ? t('hubspotTour.step3Verifying')
+                          : t('hubspotTour.step3Verify')}
                       </button>
                       {tokenAlreadyConfigured && (
                         <button
                           type="button"
-                          onClick={() => { setReplaceTokenMode(false); setTokenDraft(''); setVerify({ kind: 'idle' }); }}
+                          onClick={() => {
+                            setReplaceTokenMode(false);
+                            setTokenDraft('');
+                            setVerify({ kind: 'idle' });
+                          }}
                           className="px-2 py-2 text-xs text-text-tertiary hover:text-text-secondary"
                         >
                           {t('hubspotTour.step3Cancel')}
@@ -518,7 +586,9 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                       <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400">
                         <CheckCircle2 size={13} />
                         <span>
-                          {t('hubspotTour.step3VerifiedPortal', { portalId: verify.portalId ?? t('hubspotTour.step3PortalHidden') })}
+                          {t('hubspotTour.step3VerifiedPortal', {
+                            portalId: verify.portalId ?? t('hubspotTour.step3PortalHidden'),
+                          })}
                         </span>
                       </div>
                     )}
@@ -529,17 +599,18 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                       </div>
                     )}
                   </div>
-                  {status && (usingKeychain ? (
-                    <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
-                      <Lock size={14} className="mt-0.5 flex-shrink-0" />
-                      <span className="leading-relaxed">{t('hubspotTour.step3WillEncrypt')}</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-warning/30 bg-warning/10 text-xs text-warning-text">
-                      <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
-                      <span className="leading-relaxed">{t('hubspotTour.step3NoKeychain')}</span>
-                    </div>
-                  ))}
+                  {status &&
+                    (usingKeychain ? (
+                      <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
+                        <Lock size={14} className="mt-0.5 flex-shrink-0" />
+                        <span className="leading-relaxed">{t('hubspotTour.step3WillEncrypt')}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-warning/30 bg-warning/10 text-xs text-warning-text">
+                        <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
+                        <span className="leading-relaxed">{t('hubspotTour.step3NoKeychain')}</span>
+                      </div>
+                    ))}
                 </>
               )}
             </div>
@@ -560,24 +631,37 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                   <span className="leading-relaxed">
                     <Trans
                       i18nKey="hubspotTour.step4NoPipelinesPrefix"
-                      components={{ code: <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]" /> }}
-                    />
-                    {' '}
-                    <button type="button" onClick={loadPipelines} className="underline hover:no-underline">
+                      components={{
+                        code: (
+                          <code className="mx-1 px-1 py-0.5 rounded bg-bg-elevated text-[10px]" />
+                        ),
+                      }}
+                    />{' '}
+                    <button
+                      type="button"
+                      onClick={loadPipelines}
+                      className="underline hover:no-underline"
+                    >
                       {t('hubspotTour.step4TryAgain')}
-                    </button>.
+                    </button>
+                    .
                   </span>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
                   <select
                     value={pipelineId}
-                    onChange={(e) => { setPipelineId(e.target.value); setStageId(''); }}
+                    onChange={(e) => {
+                      setPipelineId(e.target.value);
+                      setStageId('');
+                    }}
                     className="w-full h-9 px-3 text-sm bg-bg-elevated border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
                   >
                     <option value="">{t('hubspotTour.step4PipelinePlaceholder')}</option>
                     {pipelines.map((p) => (
-                      <option key={p.id} value={p.id}>{p.label}</option>
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
                     ))}
                   </select>
                   <select
@@ -588,7 +672,9 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                   >
                     <option value="">{t('hubspotTour.step4StagePlaceholder')}</option>
                     {stagesForSelected.map((s) => (
-                      <option key={s.id} value={s.id}>{s.label}</option>
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -608,7 +694,9 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
           {step > 1 ? (
             <button
               type="button"
-              onClick={step === 2 ? goBackFromWalkthrough : () => setStep((s) => Math.max(1, s - 1))}
+              onClick={
+                step === 2 ? goBackFromWalkthrough : () => setStep((s) => Math.max(1, s - 1))
+              }
               className="px-3 py-1.5 text-xs font-medium rounded-md text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors flex items-center gap-1.5"
             >
               <ArrowLeft size={12} /> {t('hubspotTour.back')}
@@ -626,7 +714,10 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
           {step === 1 && (
             <button
               type="button"
-              onClick={() => { setWalkIndex(0); setStep(2); }}
+              onClick={() => {
+                setWalkIndex(0);
+                setStep(2);
+              }}
               className="px-4 py-1.5 text-xs font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 transition-colors flex items-center gap-1.5"
             >
               {t('hubspotTour.continue')} <ArrowRight size={12} />
@@ -638,7 +729,8 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
               onClick={advanceFromWalkthrough}
               className="px-4 py-1.5 text-xs font-medium rounded-md bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 transition-colors flex items-center gap-1.5"
             >
-              {isLastWalkScreen ? t('hubspotTour.iHaveToken') : t('hubspotTour.nextScreen')} <ArrowRight size={12} />
+              {isLastWalkScreen ? t('hubspotTour.iHaveToken') : t('hubspotTour.nextScreen')}{' '}
+              <ArrowRight size={12} />
             </button>
           )}
           {step === 3 && (
@@ -667,9 +759,13 @@ export default function HubSpotConnectModal({ onClose, onPersisted }: HubSpotCon
                 className="px-4 py-1.5 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {savingDefaults ? (
-                  <><Loader2 size={12} className="animate-spin" /> {t('hubspotTour.saving')}</>
+                  <>
+                    <Loader2 size={12} className="animate-spin" /> {t('hubspotTour.saving')}
+                  </>
                 ) : (
-                  <><CheckCircle2 size={12} /> {t('hubspotTour.saveAndFinish')}</>
+                  <>
+                    <CheckCircle2 size={12} /> {t('hubspotTour.saveAndFinish')}
+                  </>
                 )}
               </button>
             </div>

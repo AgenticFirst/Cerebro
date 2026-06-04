@@ -29,7 +29,10 @@ export function createHubSpotUpsertContactAction(deps: {
 
     chatExposable: true,
     chatGroup: 'hubspot',
-    chatLabel: { en: 'Add or update HubSpot contact', es: 'Crear o actualizar contacto de HubSpot' },
+    chatLabel: {
+      en: 'Add or update HubSpot contact',
+      es: 'Crear o actualizar contacto de HubSpot',
+    },
     chatDescription: {
       en: 'Find a HubSpot contact by email or phone, update them if they exist or create them otherwise.',
       es: 'Busca un contacto de HubSpot por correo o teléfono; lo actualiza si existe, lo crea si no.',
@@ -50,8 +53,14 @@ export function createHubSpotUpsertContactAction(deps: {
     inputSchema: {
       type: 'object',
       properties: {
-        email: { type: 'string', description: 'Customer email. Preferred key for lookup. Templated.' },
-        phone: { type: 'string', description: 'Customer phone. Used when email is missing. Templated.' },
+        email: {
+          type: 'string',
+          description: 'Customer email. Preferred key for lookup. Templated.',
+        },
+        phone: {
+          type: 'string',
+          description: 'Customer phone. Used when email is missing. Templated.',
+        },
         firstname: { type: 'string' },
         lastname: { type: 'string' },
         lifecyclestage: { type: 'string' },
@@ -107,7 +116,12 @@ export function createHubSpotUpsertContactAction(deps: {
       }
       if (result.matchedBy) {
         return {
-          data: { contact_id: result.contactId, created: false, matched_by: result.matchedBy, error: null },
+          data: {
+            contact_id: result.contactId,
+            created: false,
+            matched_by: result.matchedBy,
+            error: null,
+          },
           summary: `Matched HubSpot contact ${result.contactId}`,
         };
       }

@@ -40,7 +40,12 @@ const ARTIFACT_PRIORITY: ArtifactPreview['kind'][] = ['static', 'video', 'pdf', 
  * we now show the deliverable or the empty state, not an arbitrary file. */
 function pickArtifact(tree: WorkspaceFileNode[]): ArtifactPreview | null {
   const files = flattenFiles(tree);
-  const candidates: Array<{ kind: ArtifactPreview['kind']; relativePath: string; depth: number; mtime: number }> = [];
+  const candidates: Array<{
+    kind: ArtifactPreview['kind'];
+    relativePath: string;
+    depth: number;
+    mtime: number;
+  }> = [];
   for (const f of files) {
     const kind = kindForFile(f.name);
     if (!kind || kind === 'text') continue;
@@ -59,7 +64,11 @@ function pickArtifact(tree: WorkspaceFileNode[]): ArtifactPreview | null {
     if (a.depth !== b.depth) return a.depth - b.depth;
     return b.mtime - a.mtime;
   });
-  return { kind: candidates[0].kind, relativePath: candidates[0].relativePath, mtime: candidates[0].mtime };
+  return {
+    kind: candidates[0].kind,
+    relativePath: candidates[0].relativePath,
+    mtime: candidates[0].mtime,
+  };
 }
 
 /**
@@ -104,9 +113,8 @@ export default function LivePreview({
   // (live runs without a deliverable yet, or code_app/mixed deliverables that
   // surface a file alongside the markdown). For pure markdown deliverables we
   // skip it to avoid an unnecessary 3 s poll loop.
-  const needsArtifactProbe = !isExternalProject && (
-    !hasResult || resultKind === 'code_app' || resultKind === 'mixed'
-  );
+  const needsArtifactProbe =
+    !isExternalProject && (!hasResult || resultKind === 'code_app' || resultKind === 'mixed');
   useEffect(() => {
     if (!needsArtifactProbe) {
       setTree([]);
@@ -127,30 +135,39 @@ export default function LivePreview({
         const picked = pickArtifact(next);
         setAutoArtifact((prev) => {
           if (
-            prev?.kind === picked?.kind
-            && prev?.relativePath === picked?.relativePath
-            && prev?.mtime === picked?.mtime
-          ) return prev;
+            prev?.kind === picked?.kind &&
+            prev?.relativePath === picked?.relativePath &&
+            prev?.mtime === picked?.mtime
+          )
+            return prev;
           return picked;
         });
       } catch {
-        if (!cancelled) { setTree([]); setAutoArtifact(null); treeFpRef.current = ''; }
+        if (!cancelled) {
+          setTree([]);
+          setAutoArtifact(null);
+          treeFpRef.current = '';
+        }
       }
     };
     probe();
     if (isRunning) {
       const id = setInterval(probe, 3000);
-      return () => { cancelled = true; clearInterval(id); };
+      return () => {
+        cancelled = true;
+        clearInterval(id);
+      };
     }
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [taskId, isRunning, needsArtifactProbe, probeKey]);
 
   // Dev-server URL detection from streaming agent text (unchanged from before).
   const textBufferRef = useRef('');
   const hasDetectedRef = useRef(false);
   const detectUrlFromText = useCallback((text: string): string | null => {
-    const stripTrailingPunct = (url: string): string =>
-      url.replace(/[.,;:!?)"'>\]}]+$/, '');
+    const stripTrailingPunct = (url: string): string => url.replace(/[.,;:!?)"'>\]}]+$/, '');
     const runInfoMatch = text.match(/<run_info>\s*([\s\S]*?)\s*<\/run_info>/);
     if (runInfoMatch) {
       try {
@@ -160,7 +177,9 @@ export default function LivePreview({
           const m = text.match(pat);
           if (m) return stripTrailingPunct(m[1] || m[0]);
         }
-      } catch { /* ignore malformed run_info */ }
+      } catch {
+        /* ignore malformed run_info */
+      }
     }
     const patterns = [
       /Local:\s+(https?:\/\/[^\s]+)/,
@@ -208,9 +227,10 @@ export default function LivePreview({
       return;
     }
     const pathChanged = pathSeenRef.current !== autoArtifact.relativePath;
-    const mtimeChanged = mtimeSeenRef.current !== undefined
-      && autoArtifact.mtime !== undefined
-      && mtimeSeenRef.current !== autoArtifact.mtime;
+    const mtimeChanged =
+      mtimeSeenRef.current !== undefined &&
+      autoArtifact.mtime !== undefined &&
+      mtimeSeenRef.current !== autoArtifact.mtime;
     if (pathChanged) {
       pathSeenRef.current = autoArtifact.relativePath;
       mtimeSeenRef.current = autoArtifact.mtime;
@@ -268,37 +288,50 @@ export default function LivePreview({
     ? `cerebro-workspace://${taskId}/${autoArtifact.relativePath}`
     : '';
   const showDevServer = !!devServerUrl;
-  const showResultMarkdown = !showDevServer && hasResult && (resultKind === 'markdown' || resultKind === 'mixed');
-  const showResultArtifact = !showDevServer && hasResult && (resultKind === 'code_app' || resultKind === 'mixed') && !!autoArtifact;
+  const showResultMarkdown =
+    !showDevServer && hasResult && (resultKind === 'markdown' || resultKind === 'mixed');
+  const showResultArtifact =
+    !showDevServer &&
+    hasResult &&
+    (resultKind === 'code_app' || resultKind === 'mixed') &&
+    !!autoArtifact;
   const showLiveArtifact = !showDevServer && !hasResult && !!autoArtifact;
   const showEmpty = !showDevServer && !hasResult && !autoArtifact;
 
   const artifactLabel = (fallback: string): string => {
     switch (autoArtifact?.kind) {
-      case 'video': return t('tasks.previewVideo');
-      case 'image': return t('tasks.previewImage');
-      case 'pdf':   return t('tasks.previewPdf');
-      case 'audio': return t('tasks.previewAudio');
-      default:      return fallback;
+      case 'video':
+        return t('tasks.previewVideo');
+      case 'image':
+        return t('tasks.previewImage');
+      case 'pdf':
+        return t('tasks.previewPdf');
+      case 'audio':
+        return t('tasks.previewAudio');
+      default:
+        return fallback;
     }
   };
-  const badgeLabel =
-    showDevServer       ? t('tasks.previewLive')
-    : showResultMarkdown ? t('tasks.previewResultTitle')
-    : showResultArtifact ? artifactLabel(t('tasks.previewResultTitle'))
-    : showLiveArtifact   ? artifactLabel(t('tasks.previewLive'))
-    : t('tasks.previewResultTitle');
+  const badgeLabel = showDevServer
+    ? t('tasks.previewLive')
+    : showResultMarkdown
+      ? t('tasks.previewResultTitle')
+      : showResultArtifact
+        ? artifactLabel(t('tasks.previewResultTitle'))
+        : showLiveArtifact
+          ? artifactLabel(t('tasks.previewLive'))
+          : t('tasks.previewResultTitle');
 
   const badgeClass = showDevServer
     ? 'bg-emerald-500/15 text-emerald-400'
-    : (hasResult || showLiveArtifact)
+    : hasResult || showLiveArtifact
       ? 'bg-accent/15 text-accent'
       : 'bg-zinc-600/30 text-zinc-400';
 
   const subtitle = showDevServer
     ? devServerUrl!
     : showResultMarkdown
-      ? (resultTitle?.trim() || t('tasks.previewResultUntitled'))
+      ? resultTitle?.trim() || t('tasks.previewResultUntitled')
       : showResultArtifact || showLiveArtifact
         ? artifactUrl
         : isExternalProject
@@ -319,9 +352,7 @@ export default function LivePreview({
           >
             {badgeLabel}
           </span>
-          <span className="text-xs text-text-tertiary truncate font-mono">
-            {subtitle}
-          </span>
+          <span className="text-xs text-text-tertiary truncate font-mono">{subtitle}</span>
         </div>
         {showResultMarkdown && (
           <button
@@ -355,8 +386,12 @@ export default function LivePreview({
           <button
             onClick={handleOpenExternal}
             className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
-            title={showDevServer ? t('tasks.previewOpenExternal') : t('tasks.previewRevealWorkspace')}
-            aria-label={showDevServer ? t('tasks.previewOpenExternal') : t('tasks.previewRevealWorkspace')}
+            title={
+              showDevServer ? t('tasks.previewOpenExternal') : t('tasks.previewRevealWorkspace')
+            }
+            aria-label={
+              showDevServer ? t('tasks.previewOpenExternal') : t('tasks.previewRevealWorkspace')
+            }
           >
             {showDevServer ? <ExternalLink size={14} /> : <FolderOpen size={14} />}
           </button>
@@ -379,18 +414,29 @@ export default function LivePreview({
           <>
             <div className="flex-shrink-0 max-h-[45%] overflow-y-auto px-6 py-5 border-b border-border-subtle">
               {resultTitle?.trim() && (
-                <h2 className="text-sm font-semibold text-text-primary mb-3">{resultTitle.trim()}</h2>
+                <h2 className="text-sm font-semibold text-text-primary mb-3">
+                  {resultTitle.trim()}
+                </h2>
               )}
               <MarkdownContent content={resultMd!} />
             </div>
             <div className="flex-1 min-h-0 bg-white">
-              {renderArtifact(autoArtifact!, artifactUrl, iframeKey, iframeRef, mediaRef, t("tasks.previewResultTitle"))}
+              {renderArtifact(
+                autoArtifact!,
+                artifactUrl,
+                iframeKey,
+                iframeRef,
+                mediaRef,
+                t('tasks.previewResultTitle'),
+              )}
             </div>
           </>
         ) : showResultMarkdown ? (
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5">
             {resultTitle?.trim() && (
-              <h2 className="text-base font-semibold text-text-primary mb-4">{resultTitle.trim()}</h2>
+              <h2 className="text-base font-semibold text-text-primary mb-4">
+                {resultTitle.trim()}
+              </h2>
             )}
             <MarkdownContent content={resultMd!} />
             {hasFiles && onJumpToFiles && (
@@ -406,7 +452,14 @@ export default function LivePreview({
           </div>
         ) : showResultArtifact || showLiveArtifact ? (
           <div className="flex-1 min-h-0 bg-white">
-            {renderArtifact(autoArtifact!, artifactUrl, iframeKey, iframeRef, mediaRef, t("tasks.previewResultTitle"))}
+            {renderArtifact(
+              autoArtifact!,
+              artifactUrl,
+              iframeKey,
+              iframeRef,
+              mediaRef,
+              t('tasks.previewResultTitle'),
+            )}
           </div>
         ) : showEmpty ? (
           <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 text-text-tertiary p-10 text-center">

@@ -18,11 +18,14 @@ interface SendSlackParams {
   thread_ts?: string;
 }
 
-export function createSendSlackMessageAction(deps: { getChannel: () => SlackChannel | null }): ActionDefinition {
+export function createSendSlackMessageAction(deps: {
+  getChannel: () => SlackChannel | null;
+}): ActionDefinition {
   return {
     type: 'send_slack_message',
     name: 'Send Slack Message',
-    description: 'Send a message to a Slack channel or DM (in-thread when thread_ts is set). Allowlist-enforced.',
+    description:
+      'Send a message to a Slack channel or DM (in-thread when thread_ts is set). Allowlist-enforced.',
 
     chatExposable: true,
     chatGroup: 'slack',
@@ -53,7 +56,8 @@ export function createSendSlackMessageAction(deps: { getChannel: () => SlackChan
       properties: {
         channel: {
           type: 'string',
-          description: 'Slack channel id (C…/G…) or DM channel id (D…). Templated — use {{...}} from upstream steps.',
+          description:
+            'Slack channel id (C…/G…) or DM channel id (D…). Templated — use {{...}} from upstream steps.',
         },
         text: {
           type: 'string',

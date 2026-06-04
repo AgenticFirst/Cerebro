@@ -56,9 +56,7 @@ export function scheduleToCron(config: ScheduleConfig): string {
     throw new Error('scheduleToCron: days array must not be empty');
   }
 
-  const cronNums = config.days
-    .map((d) => DAY_TO_CRON[d])
-    .sort((a, b) => a - b);
+  const cronNums = config.days.map((d) => DAY_TO_CRON[d]).sort((a, b) => a - b);
 
   // Compress consecutive days into ranges
   const dayField = compressRanges(cronNums);
@@ -120,8 +118,20 @@ export function cronToSchedule(expr: string): ScheduleConfig | null {
 
 /** Map named days (case-insensitive) to cron numbers. */
 const NAMED_DAY_TO_NUM: Record<string, number> = {
-  sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
-  sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+  sun: 0,
+  mon: 1,
+  tue: 2,
+  wed: 3,
+  thu: 4,
+  fri: 5,
+  sat: 6,
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
 };
 
 /**
@@ -183,24 +193,15 @@ export function describeSchedule(config: ScheduleConfig): string {
     return `Every day at ${timeStr}`;
   }
 
-  const sortedDays = [...config.days].sort(
-    (a, b) => DAY_TO_CRON[a] - DAY_TO_CRON[b],
-  );
+  const sortedDays = [...config.days].sort((a, b) => DAY_TO_CRON[a] - DAY_TO_CRON[b]);
 
   // Check for weekdays
-  if (
-    sortedDays.length === 5 &&
-    WEEKDAYS.every((d) => sortedDays.includes(d))
-  ) {
+  if (sortedDays.length === 5 && WEEKDAYS.every((d) => sortedDays.includes(d))) {
     return `Weekdays at ${timeStr}`;
   }
 
   // Check for weekends
-  if (
-    sortedDays.length === 2 &&
-    sortedDays.includes('sat') &&
-    sortedDays.includes('sun')
-  ) {
+  if (sortedDays.length === 2 && sortedDays.includes('sat') && sortedDays.includes('sun')) {
     return `Weekends at ${timeStr}`;
   }
 

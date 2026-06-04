@@ -84,10 +84,14 @@ export default function AppLayout() {
       if (event.type !== 'approval_requested') return;
 
       if (!document.hasFocus()) {
-        notifyApprovalPending(t('approvals.newNotificationTitle'), t('approvals.newNotificationBody'), () => {
-          window.cerebro.focusWindow();
-          openApprovals();
-        });
+        notifyApprovalPending(
+          t('approvals.newNotificationTitle'),
+          t('approvals.newNotificationBody'),
+          () => {
+            window.cerebro.focusWindow();
+            openApprovals();
+          },
+        );
         return;
       }
 
@@ -178,7 +182,6 @@ export default function AppLayout() {
 
       <CommandPalette />
 
-
       {chatError && (
         <AlertModal
           icon={<AlertTriangle size={18} className="text-accent" />}
@@ -218,7 +221,9 @@ export default function AppLayout() {
               onClick: () => dismissFailurePrompt(activePrompt.taskId),
             },
             {
-              label: t('tasks.queueFailedSend', { expert: targetExpertName ?? t('tasks.drawerExpert') }),
+              label: t('tasks.queueFailedSend', {
+                expert: targetExpertName ?? t('tasks.drawerExpert'),
+              }),
               primary: true,
               onClick: () => confirmFailurePrompt(activePrompt.taskId),
             },

@@ -62,9 +62,7 @@ export default function RoutineList() {
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
-        (r) =>
-          r.name.toLowerCase().includes(q) ||
-          r.description.toLowerCase().includes(q),
+        (r) => r.name.toLowerCase().includes(q) || r.description.toLowerCase().includes(q),
       );
     }
 
@@ -94,12 +92,8 @@ export default function RoutineList() {
         <div className="w-16 h-16 rounded-xl border-2 border-dashed border-red-500/30 flex items-center justify-center mb-4">
           <AlertCircle size={24} className="text-red-400" />
         </div>
-        <h3 className="text-sm font-medium text-text-primary mb-1.5">
-          Failed to load routines
-        </h3>
-        <p className="text-xs text-text-tertiary mb-4 max-w-[280px] text-center">
-          {loadError}
-        </p>
+        <h3 className="text-sm font-medium text-text-primary mb-1.5">Failed to load routines</h3>
+        <p className="text-xs text-text-tertiary mb-4 max-w-[280px] text-center">{loadError}</p>
         <Tooltip label={t('routineTooltips.retry')}>
           <button
             onClick={() => loadRoutines()}
@@ -176,98 +170,120 @@ export default function RoutineList() {
         </div>
 
         {/* Filter pills + search — hidden on Templates tab */}
-        {tab === 'mine' && <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            {([
-              { key: 'all' as const, labelKey: 'routines.filterAll', tipKey: 'routineTooltips.filterAll', count: routines.length },
-              { key: 'enabled' as const, labelKey: 'routines.filterEnabled', tipKey: 'routineTooltips.filterEnabled', count: enabledCount },
-              { key: 'scheduled' as const, labelKey: 'routines.filterScheduled', tipKey: 'routineTooltips.filterScheduled', count: cronCount },
-              { key: 'manual' as const, labelKey: 'routines.filterManual', tipKey: 'routineTooltips.filterManual', count: manualCount },
-            ]).map((pill) => (
-              <Tooltip key={pill.key} label={t(pill.tipKey)}>
-                <button
-                  onClick={() => setFilter(pill.key)}
-                  className={clsx(
-                    'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors duration-150',
-                    filter === pill.key
-                      ? 'bg-accent/15 text-accent border border-accent/30'
-                      : 'bg-bg-surface/80 text-text-tertiary border border-transparent hover:text-text-secondary hover:bg-bg-hover',
-                  )}
-                >
-                  {t(pill.labelKey)} ({pill.count})
-                </button>
-              </Tooltip>
-            ))}
-          </div>
+        {tab === 'mine' && (
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              {[
+                {
+                  key: 'all' as const,
+                  labelKey: 'routines.filterAll',
+                  tipKey: 'routineTooltips.filterAll',
+                  count: routines.length,
+                },
+                {
+                  key: 'enabled' as const,
+                  labelKey: 'routines.filterEnabled',
+                  tipKey: 'routineTooltips.filterEnabled',
+                  count: enabledCount,
+                },
+                {
+                  key: 'scheduled' as const,
+                  labelKey: 'routines.filterScheduled',
+                  tipKey: 'routineTooltips.filterScheduled',
+                  count: cronCount,
+                },
+                {
+                  key: 'manual' as const,
+                  labelKey: 'routines.filterManual',
+                  tipKey: 'routineTooltips.filterManual',
+                  count: manualCount,
+                },
+              ].map((pill) => (
+                <Tooltip key={pill.key} label={t(pill.tipKey)}>
+                  <button
+                    onClick={() => setFilter(pill.key)}
+                    className={clsx(
+                      'px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors duration-150',
+                      filter === pill.key
+                        ? 'bg-accent/15 text-accent border border-accent/30'
+                        : 'bg-bg-surface/80 text-text-tertiary border border-transparent hover:text-text-secondary hover:bg-bg-hover',
+                    )}
+                  >
+                    {t(pill.labelKey)} ({pill.count})
+                  </button>
+                </Tooltip>
+              ))}
+            </div>
 
-          <div className="flex-1" />
+            <div className="flex-1" />
 
-          <div className="relative">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary"
-            />
-            <Tooltip label={t('routineTooltips.search')} side="bottom">
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('common.search')}
-                className="w-48 bg-bg-surface border border-border-subtle rounded-lg pl-8 pr-3 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors"
+            <div className="relative">
+              <Search
+                size={13}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary"
               />
-            </Tooltip>
+              <Tooltip label={t('routineTooltips.search')} side="bottom">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('common.search')}
+                  className="w-48 bg-bg-surface border border-border-subtle rounded-lg pl-8 pr-3 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors"
+                />
+              </Tooltip>
+            </div>
           </div>
-        </div>}
+        )}
       </div>
 
       {/* Content */}
       {tab === 'templates' ? (
         <TemplatesView />
       ) : (
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {routines.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center py-20">
-            <div className="w-16 h-16 rounded-xl border-2 border-dashed border-border-default flex items-center justify-center mb-4">
-              <RefreshCw size={24} className="text-text-tertiary" />
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
+          {routines.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-20">
+              <div className="w-16 h-16 rounded-xl border-2 border-dashed border-border-default flex items-center justify-center mb-4">
+                <RefreshCw size={24} className="text-text-tertiary" />
+              </div>
+              <h3 className="text-sm font-medium text-text-primary mb-1.5">
+                {t('routines.noRoutinesYet')}
+              </h3>
+              <p className="text-xs text-text-tertiary mb-4 max-w-[240px] text-center">
+                {t('routines.noRoutinesDescription')}
+              </p>
+              <Tooltip label={t('routineTooltips.newRoutine')}>
+                <button
+                  onClick={() => setShowCreate(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-bg-base bg-accent hover:bg-accent-hover rounded-lg transition-colors"
+                >
+                  <Plus size={14} />
+                  {t('routines.createFirst')}
+                </button>
+              </Tooltip>
             </div>
-            <h3 className="text-sm font-medium text-text-primary mb-1.5">
-              {t('routines.noRoutinesYet')}
-            </h3>
-            <p className="text-xs text-text-tertiary mb-4 max-w-[240px] text-center">
-              {t('routines.noRoutinesDescription')}
-            </p>
-            <Tooltip label={t('routineTooltips.newRoutine')}>
-              <button
-                onClick={() => setShowCreate(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-bg-base bg-accent hover:bg-accent-hover rounded-lg transition-colors"
-              >
-                <Plus size={14} />
-                {t('routines.createFirst')}
-              </button>
-            </Tooltip>
-          </div>
-        ) : filteredRoutines.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <p className="text-xs text-text-tertiary">
-              {search ? t('routines.noMatchSearch') : t('routines.noMatchFilter')}
-            </p>
-          </div>
-        ) : (
-          <div className="p-6 space-y-2">
-            {filteredRoutines.map((routine, i) => (
-              <RoutineCard
-                key={routine.id}
-                routine={routine}
-                index={i}
-                onClick={() => setEditingRoutineId(routine.id)}
-                onToggle={() => toggleEnabled(routine)}
-                onRun={() => runRoutine(routine.id)}
-                onDelete={() => setDeleteTarget({ id: routine.id, name: routine.name })}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+          ) : filteredRoutines.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <p className="text-xs text-text-tertiary">
+                {search ? t('routines.noMatchSearch') : t('routines.noMatchFilter')}
+              </p>
+            </div>
+          ) : (
+            <div className="p-6 space-y-2">
+              {filteredRoutines.map((routine, i) => (
+                <RoutineCard
+                  key={routine.id}
+                  routine={routine}
+                  index={i}
+                  onClick={() => setEditingRoutineId(routine.id)}
+                  onToggle={() => toggleEnabled(routine)}
+                  onRun={() => runRoutine(routine.id)}
+                  onDelete={() => setDeleteTarget({ id: routine.id, name: routine.name })}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Create Dialog */}

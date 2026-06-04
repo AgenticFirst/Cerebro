@@ -245,7 +245,13 @@ export async function resolveTicketAssociations(
   if (allContactIds.length > 0) {
     const [cc, cp] = await Promise.all([
       batchReadAssociations(token, 'contacts', 'companies', allContactIds, signal),
-      batchReadObjects(token, 'contacts', allContactIds, ['email', 'firstname', 'lastname'], signal),
+      batchReadObjects(
+        token,
+        'contacts',
+        allContactIds,
+        ['email', 'firstname', 'lastname'],
+        signal,
+      ),
     ]);
     if (cc.ok) {
       contactCompanies = cc.map;
@@ -262,7 +268,13 @@ export async function resolveTicketAssociations(
   ]);
   let companyProps = new Map<string, BatchObject>();
   if (allCompanyIds.length > 0) {
-    const cp = await batchReadObjects(token, 'companies', allCompanyIds, ['name', 'domain'], signal);
+    const cp = await batchReadObjects(
+      token,
+      'companies',
+      allCompanyIds,
+      ['name', 'domain'],
+      signal,
+    );
     if (cp.ok) {
       companyProps = cp.map;
     } else if (cp.status === 403) {

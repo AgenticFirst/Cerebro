@@ -259,9 +259,8 @@ function makeMediaAction(
         throw new Error(`${spec.name}: ${msg}`);
       }
 
-      const caption = spec.acceptsCaption && params.caption
-        ? renderTemplate(params.caption, vars)
-        : undefined;
+      const caption =
+        spec.acceptsCaption && params.caption ? renderTemplate(params.caption, vars) : undefined;
 
       const fn = channel[spec.channelMethod].bind(channel) as (
         chatId: string,
@@ -363,26 +362,46 @@ export function createSendTelegramLocationAction(deps: {
       const chatId = renderTemplate(params.chat_id ?? '', vars).trim();
       if (!chatId) throw new Error('Send Telegram Location: chat_id is empty.');
       if (!channel.isAllowlisted(chatId)) {
-        throw new Error(`Send Telegram Location: chat_id ${chatId} is not in the Telegram allowlist.`);
+        throw new Error(
+          `Send Telegram Location: chat_id ${chatId} is not in the Telegram allowlist.`,
+        );
       }
-      const lat = Number(typeof params.latitude === 'string'
-        ? renderTemplate(params.latitude, vars)
-        : params.latitude);
-      const lon = Number(typeof params.longitude === 'string'
-        ? renderTemplate(params.longitude, vars)
-        : params.longitude);
+      const lat = Number(
+        typeof params.latitude === 'string'
+          ? renderTemplate(params.latitude, vars)
+          : params.latitude,
+      );
+      const lon = Number(
+        typeof params.longitude === 'string'
+          ? renderTemplate(params.longitude, vars)
+          : params.longitude,
+      );
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
         throw new Error('Send Telegram Location: latitude/longitude must be numeric.');
       }
       const { messageId, error } = await channel.sendLocationActionMessage(chatId, lat, lon);
       if (error) {
         return {
-          data: { sent: false, message_id: messageId, chat_id: chatId, latitude: lat, longitude: lon, error },
+          data: {
+            sent: false,
+            message_id: messageId,
+            chat_id: chatId,
+            latitude: lat,
+            longitude: lon,
+            error,
+          },
           summary: `Send Telegram location failed: ${error}`,
         };
       }
       return {
-        data: { sent: true, message_id: messageId, chat_id: chatId, latitude: lat, longitude: lon, error: null },
+        data: {
+          sent: true,
+          message_id: messageId,
+          chat_id: chatId,
+          latitude: lat,
+          longitude: lon,
+          error: null,
+        },
         summary: `Sent location (${lat}, ${lon}) to Telegram chat ${chatId}`,
       };
     },

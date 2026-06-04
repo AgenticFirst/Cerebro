@@ -15,7 +15,11 @@
 
 import { BrowserWindow, type WebContents } from 'electron';
 import { encryptForStorage, decryptFromStorage } from '../secure-token';
-import { backendGetSetting, backendPutSetting, backendJsonRequest } from '../shared/backend-settings';
+import {
+  backendGetSetting,
+  backendPutSetting,
+  backendJsonRequest,
+} from '../shared/backend-settings';
 import { IPC_CHANNELS } from '../types/ipc';
 import type {
   CalendarAccountInfo,
@@ -133,20 +137,31 @@ export class CalendarBridge implements CalendarChannel {
 
   private async loadAccount(id: string): Promise<Account | null> {
     const port = this.deps.backendPort;
-    const [provider, email, displayName, clientId, encSecret, encAccess, encRefresh, expiry, calendars, primary, status] =
-      await Promise.all([
-        backendGetSetting<string>(port, settingKey(id, 'provider')),
-        backendGetSetting<string>(port, settingKey(id, 'email')),
-        backendGetSetting<string>(port, settingKey(id, 'display_name')),
-        backendGetSetting<string>(port, settingKey(id, 'client_id')),
-        backendGetSetting<string>(port, settingKey(id, 'client_secret')),
-        backendGetSetting<string>(port, settingKey(id, 'access_token')),
-        backendGetSetting<string>(port, settingKey(id, 'refresh_token')),
-        backendGetSetting<number>(port, settingKey(id, 'token_expiry')),
-        backendGetSetting<RemoteCalendar[]>(port, settingKey(id, 'calendars')),
-        backendGetSetting<string>(port, settingKey(id, 'primary_calendar_id')),
-        backendGetSetting<string>(port, settingKey(id, 'status')),
-      ]);
+    const [
+      provider,
+      email,
+      displayName,
+      clientId,
+      encSecret,
+      encAccess,
+      encRefresh,
+      expiry,
+      calendars,
+      primary,
+      status,
+    ] = await Promise.all([
+      backendGetSetting<string>(port, settingKey(id, 'provider')),
+      backendGetSetting<string>(port, settingKey(id, 'email')),
+      backendGetSetting<string>(port, settingKey(id, 'display_name')),
+      backendGetSetting<string>(port, settingKey(id, 'client_id')),
+      backendGetSetting<string>(port, settingKey(id, 'client_secret')),
+      backendGetSetting<string>(port, settingKey(id, 'access_token')),
+      backendGetSetting<string>(port, settingKey(id, 'refresh_token')),
+      backendGetSetting<number>(port, settingKey(id, 'token_expiry')),
+      backendGetSetting<RemoteCalendar[]>(port, settingKey(id, 'calendars')),
+      backendGetSetting<string>(port, settingKey(id, 'primary_calendar_id')),
+      backendGetSetting<string>(port, settingKey(id, 'status')),
+    ]);
     if (!provider || !clientId || !encSecret || !encAccess) return null;
     const clientSecret = decryptFromStorage(encSecret);
     const accessToken = decryptFromStorage(encAccess);
@@ -175,8 +190,16 @@ export class CalendarBridge implements CalendarChannel {
       backendPutSetting(port, settingKey(acc.id, 'email'), acc.email),
       backendPutSetting(port, settingKey(acc.id, 'display_name'), acc.displayName ?? ''),
       backendPutSetting(port, settingKey(acc.id, 'client_id'), acc.clientId),
-      backendPutSetting(port, settingKey(acc.id, 'client_secret'), encryptForStorage(acc.clientSecret)),
-      backendPutSetting(port, settingKey(acc.id, 'access_token'), encryptForStorage(acc.tokens.accessToken)),
+      backendPutSetting(
+        port,
+        settingKey(acc.id, 'client_secret'),
+        encryptForStorage(acc.clientSecret),
+      ),
+      backendPutSetting(
+        port,
+        settingKey(acc.id, 'access_token'),
+        encryptForStorage(acc.tokens.accessToken),
+      ),
       backendPutSetting(
         port,
         settingKey(acc.id, 'refresh_token'),
@@ -184,7 +207,11 @@ export class CalendarBridge implements CalendarChannel {
       ),
       backendPutSetting(port, settingKey(acc.id, 'token_expiry'), acc.tokens.expiresAt),
       backendPutSetting(port, settingKey(acc.id, 'calendars'), acc.calendars),
-      backendPutSetting(port, settingKey(acc.id, 'primary_calendar_id'), acc.primaryCalendarId ?? ''),
+      backendPutSetting(
+        port,
+        settingKey(acc.id, 'primary_calendar_id'),
+        acc.primaryCalendarId ?? '',
+      ),
       backendPutSetting(port, settingKey(acc.id, 'status'), acc.status),
     ]);
   }
@@ -192,7 +219,11 @@ export class CalendarBridge implements CalendarChannel {
   private async persistTokens(acc: Account): Promise<void> {
     const port = this.deps.backendPort;
     await Promise.all([
-      backendPutSetting(port, settingKey(acc.id, 'access_token'), encryptForStorage(acc.tokens.accessToken)),
+      backendPutSetting(
+        port,
+        settingKey(acc.id, 'access_token'),
+        encryptForStorage(acc.tokens.accessToken),
+      ),
       backendPutSetting(
         port,
         settingKey(acc.id, 'refresh_token'),
@@ -212,7 +243,11 @@ export class CalendarBridge implements CalendarChannel {
 
   private async removeFromIndex(id: string): Promise<void> {
     const index = (await backendGetSetting<string[]>(this.deps.backendPort, INDEX_KEY)) ?? [];
-    await backendPutSetting(this.deps.backendPort, INDEX_KEY, index.filter((x) => x !== id));
+    await backendPutSetting(
+      this.deps.backendPort,
+      INDEX_KEY,
+      index.filter((x) => x !== id),
+    );
   }
 
   private async patchBackendAccount(acc: Account): Promise<void> {
@@ -228,7 +263,11 @@ export class CalendarBridge implements CalendarChannel {
 
   // ── Connect / reconnect / disconnect ──────────────────────────────────────
 
-  async startOAuth(input: { provider: CalendarProviderId; clientId: string; clientSecret: string }): Promise<{
+  async startOAuth(input: {
+    provider: CalendarProviderId;
+    clientId: string;
+    clientSecret: string;
+  }): Promise<{
     ok: boolean;
     account?: CalendarAccountInfo;
     error?: string;
@@ -241,13 +280,18 @@ export class CalendarBridge implements CalendarChannel {
       const primary = calendars.find((c) => c.id === 'primary') ?? calendars[0] ?? null;
 
       // Create the backend (synced) account row; it owns the id.
-      const created = await backendJsonRequest<{ id: string }>(this.deps.backendPort, 'POST', '/calendar/accounts', {
-        provider: input.provider,
-        email: userInfo.email,
-        display_name: userInfo.name ?? null,
-        primary_calendar_id: primary?.id ?? null,
-        calendars,
-      });
+      const created = await backendJsonRequest<{ id: string }>(
+        this.deps.backendPort,
+        'POST',
+        '/calendar/accounts',
+        {
+          provider: input.provider,
+          email: userInfo.email,
+          display_name: userInfo.name ?? null,
+          primary_calendar_id: primary?.id ?? null,
+          calendars,
+        },
+      );
       if (!created.ok || !created.data?.id) {
         return { ok: false, error: 'Failed to create account record' };
       }
@@ -277,18 +321,22 @@ export class CalendarBridge implements CalendarChannel {
     }
   }
 
-  async reconnect(accountId: string): Promise<{ ok: boolean; account?: CalendarAccountInfo; error?: string }> {
+  async reconnect(
+    accountId: string,
+  ): Promise<{ ok: boolean; account?: CalendarAccountInfo; error?: string }> {
     const acc = this.accounts.get(accountId);
     if (!acc) return { ok: false, error: 'Account not found' };
-    return this.startOAuth({ provider: acc.provider, clientId: acc.clientId, clientSecret: acc.clientSecret }).then(
-      async (res) => {
-        if (res.ok) {
-          // OAuth created a fresh account row; retire the stale one.
-          await this.disconnect(accountId);
-        }
-        return res;
-      },
-    );
+    return this.startOAuth({
+      provider: acc.provider,
+      clientId: acc.clientId,
+      clientSecret: acc.clientSecret,
+    }).then(async (res) => {
+      if (res.ok) {
+        // OAuth created a fresh account row; retire the stale one.
+        await this.disconnect(accountId);
+      }
+      return res;
+    });
   }
 
   async disconnect(accountId: string): Promise<{ ok: boolean; error?: string }> {
@@ -303,13 +351,25 @@ export class CalendarBridge implements CalendarChannel {
   private async clearAccountSettings(id: string): Promise<void> {
     const port = this.deps.backendPort;
     const fields = [
-      'provider', 'email', 'display_name', 'client_id', 'client_secret',
-      'access_token', 'refresh_token', 'token_expiry', 'calendars', 'primary_calendar_id', 'status',
+      'provider',
+      'email',
+      'display_name',
+      'client_id',
+      'client_secret',
+      'access_token',
+      'refresh_token',
+      'token_expiry',
+      'calendars',
+      'primary_calendar_id',
+      'status',
     ];
     await Promise.all(fields.map((f) => backendPutSetting(port, settingKey(id, f), '')));
   }
 
-  async setCalendars(accountId: string, selectedCalendarIds: string[]): Promise<{ ok: boolean; error?: string }> {
+  async setCalendars(
+    accountId: string,
+    selectedCalendarIds: string[],
+  ): Promise<{ ok: boolean; error?: string }> {
     const acc = this.accounts.get(accountId);
     if (!acc) return { ok: false, error: 'Account not found' };
     const selected = new Set(selectedCalendarIds);
@@ -362,7 +422,9 @@ export class CalendarBridge implements CalendarChannel {
     this.syncing = true;
     try {
       // Accounts are independent (different providers + rows) — sync in parallel.
-      const results = await Promise.all([...this.accounts.values()].map((acc) => this.syncAccount(acc)));
+      const results = await Promise.all(
+        [...this.accounts.values()].map((acc) => this.syncAccount(acc)),
+      );
       if (results.some(Boolean)) this.emitChanged();
     } finally {
       this.syncing = false;
@@ -383,7 +445,14 @@ export class CalendarBridge implements CalendarChannel {
       // Fetch all sync cursors for this account once, not once per calendar.
       const cursors = await this.getSyncCursors(acc.id);
       for (const cal of cals) {
-        changed = (await this.pullCalendar(acc, provider, accessToken, cal.id, cursors.get(cal.id) ?? null)) || changed;
+        changed =
+          (await this.pullCalendar(
+            acc,
+            provider,
+            accessToken,
+            cal.id,
+            cursors.get(cal.id) ?? null,
+          )) || changed;
       }
 
       acc.status = 'connected';
@@ -414,10 +483,22 @@ export class CalendarBridge implements CalendarChannel {
     const timeMin = new Date(now - WINDOW_PAST_DAYS * 86_400_000).toISOString();
     const timeMax = new Date(now + WINDOW_FUTURE_DAYS * 86_400_000).toISOString();
 
-    let result = await provider.pullEvents({ accessToken, calendarId, syncCursor, timeMin, timeMax });
+    let result = await provider.pullEvents({
+      accessToken,
+      calendarId,
+      syncCursor,
+      timeMin,
+      timeMax,
+    });
     if (result.cursorExpired) {
       // Stored cursor rejected — full windowed resync.
-      result = await provider.pullEvents({ accessToken, calendarId, syncCursor: null, timeMin, timeMax });
+      result = await provider.pullEvents({
+        accessToken,
+        calendarId,
+        syncCursor: null,
+        timeMin,
+        timeMax,
+      });
     }
 
     const hasChanges = result.events.length > 0 || result.deletions.length > 0;
@@ -464,7 +545,9 @@ export class CalendarBridge implements CalendarChannel {
 
   /** All persisted sync cursors for an account, keyed by calendar id. */
   private async getSyncCursors(accountId: string): Promise<Map<string, string | null>> {
-    const res = await backendJsonRequest<{ states: Array<{ calendar_id: string; sync_cursor: string | null }> }>(
+    const res = await backendJsonRequest<{
+      states: Array<{ calendar_id: string; sync_cursor: string | null }>;
+    }>(
       this.deps.backendPort,
       'GET',
       `/calendar/sync-state?account_id=${encodeURIComponent(accountId)}`,
@@ -487,7 +570,11 @@ export class CalendarBridge implements CalendarChannel {
       try {
         if (ev.sync_status === 'pending_delete') {
           if (ev.provider_event_id) {
-            await provider.deleteEvent({ accessToken, calendarId: ev.calendar_id, providerEventId: ev.provider_event_id });
+            await provider.deleteEvent({
+              accessToken,
+              calendarId: ev.calendar_id,
+              providerEventId: ev.provider_event_id,
+            });
           }
           await backendJsonRequest(this.deps.backendPort, 'DELETE', `/calendar/events/${ev.id}`);
         } else if (ev.provider_event_id) {
@@ -499,7 +586,11 @@ export class CalendarBridge implements CalendarChannel {
           });
           await this.markPushed(ev.id, w.providerEventId, w.etag);
         } else {
-          const w = await provider.createEvent({ accessToken, calendarId: ev.calendar_id, event: dtoToWrite(ev) });
+          const w = await provider.createEvent({
+            accessToken,
+            calendarId: ev.calendar_id,
+            event: dtoToWrite(ev),
+          });
           await this.markPushed(ev.id, w.providerEventId, w.etag);
         }
       } catch (err) {
@@ -509,18 +600,29 @@ export class CalendarBridge implements CalendarChannel {
     return true;
   }
 
-  private async markPushed(eventId: string, providerEventId: string, etag: string | null): Promise<void> {
+  private async markPushed(
+    eventId: string,
+    providerEventId: string,
+    etag: string | null,
+  ): Promise<void> {
     const q = new URLSearchParams({ provider_event_id: providerEventId });
     if (etag) q.set('etag', etag);
-    await backendJsonRequest(this.deps.backendPort, 'POST', `/calendar/events/${eventId}/pushed?${q.toString()}`);
+    await backendJsonRequest(
+      this.deps.backendPort,
+      'POST',
+      `/calendar/events/${eventId}/pushed?${q.toString()}`,
+    );
   }
 
   // ── Direct UI mutations (CalendarChannel + IPC) ─────────────────────────────
 
-  async createEvent(input: CalendarEventInput): Promise<{ ok: boolean; event?: CalendarEventDTO; error?: string }> {
+  async createEvent(
+    input: CalendarEventInput,
+  ): Promise<{ ok: boolean; event?: CalendarEventDTO; error?: string }> {
     // Local calendar (explicit or because no provider is connected): store on
     // device, never push to a provider.
-    const acc = input.account_id === LOCAL_CALENDAR_ACCOUNT_ID ? null : this.resolveAccount(input.account_id);
+    const acc =
+      input.account_id === LOCAL_CALENDAR_ACCOUNT_ID ? null : this.resolveAccount(input.account_id);
     if (!acc) {
       return this.createLocalEvent(input);
     }
@@ -538,7 +640,9 @@ export class CalendarBridge implements CalendarChannel {
     }
   }
 
-  private async createLocalEvent(input: CalendarEventInput): Promise<{ ok: boolean; error?: string }> {
+  private async createLocalEvent(
+    input: CalendarEventInput,
+  ): Promise<{ ok: boolean; error?: string }> {
     const tz = input.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
     const body = {
       calendar_id: input.calendar_id ?? LOCAL_CALENDAR_ID,
@@ -567,7 +671,12 @@ export class CalendarBridge implements CalendarChannel {
       const ev = await this.fetchEvent(eventId);
       if (!ev) return { ok: false, error: 'Event not found' };
       if (isLocalEvent(ev)) {
-        const r = await backendJsonRequest(this.deps.backendPort, 'PATCH', `/calendar/events/${eventId}`, patchToBackend(patch));
+        const r = await backendJsonRequest(
+          this.deps.backendPort,
+          'PATCH',
+          `/calendar/events/${eventId}`,
+          patchToBackend(patch),
+        );
         this.emitChanged();
         return r.ok ? { ok: true } : { ok: false, error: 'Failed to update local event' };
       }
@@ -599,7 +708,11 @@ export class CalendarBridge implements CalendarChannel {
         if (acc) {
           const accessToken = await this.getValidAccessToken(acc);
           const provider = this.getProvider(acc.provider);
-          await provider.deleteEvent({ accessToken, calendarId: ev.calendar_id, providerEventId: ev.provider_event_id });
+          await provider.deleteEvent({
+            accessToken,
+            calendarId: ev.calendar_id,
+            providerEventId: ev.provider_event_id,
+          });
         }
       }
       await backendJsonRequest(this.deps.backendPort, 'DELETE', `/calendar/events/${eventId}`);
@@ -652,13 +765,20 @@ export class CalendarBridge implements CalendarChannel {
   // ── Command bar + AI ─────────────────────────────────────────────────────
 
   /** Parse a natural-language command into a calendar action via Claude Code. */
-  async parseCommand(text: string): Promise<{ ok: boolean; command?: CalendarParsedCommand; error?: string }> {
+  async parseCommand(
+    text: string,
+  ): Promise<{ ok: boolean; command?: CalendarParsedCommand; error?: string }> {
     return parseCalendarCommand(text, { queryEvents: (o) => this.queryEvents(o) });
   }
 
   /** Summarize the user's day/week via Claude Code. */
-  async aiSummary(input: { range: 'day' | 'week' | 'month'; startISO: string }): Promise<{ ok: boolean; text?: string; error?: string }> {
-    return summarizeCalendar(input.range, input.startISO, { queryEvents: (o) => this.queryEvents(o) });
+  async aiSummary(input: {
+    range: 'day' | 'week' | 'month';
+    startISO: string;
+  }): Promise<{ ok: boolean; text?: string; error?: string }> {
+    return summarizeCalendar(input.range, input.startISO, {
+      queryEvents: (o) => this.queryEvents(o),
+    });
   }
 
   // ── Read queries (CalendarChannel) ──────────────────────────────────────────
@@ -683,8 +803,14 @@ export class CalendarBridge implements CalendarChannel {
   }): Promise<FreeSlot[]> {
     const events = await this.queryEvents({ startISO: opts.startISO, endISO: opts.endISO });
     const busy = events
-      .filter((e) => e.transparency !== 'transparent' && e.status !== 'cancelled' && e.start_utc && e.end_utc)
-      .map((e) => ({ start: new Date(e.start_utc!).getTime(), end: new Date(e.end_utc!).getTime() }))
+      .filter(
+        (e) =>
+          e.transparency !== 'transparent' && e.status !== 'cancelled' && e.start_utc && e.end_utc,
+      )
+      .map((e) => ({
+        start: new Date(e.start_utc!).getTime(),
+        end: new Date(e.end_utc!).getTime(),
+      }))
       .sort((a, b) => a.start - b.start);
 
     const dayStart = opts.workdayStartHour ?? 9;
@@ -704,12 +830,18 @@ export class CalendarBridge implements CalendarChannel {
       const dayBusy = busy.filter((b) => b.end > cursor && b.start < end);
       for (const b of dayBusy) {
         if (b.start - cursor >= durationMs) {
-          slots.push({ startISO: new Date(cursor).toISOString(), endISO: new Date(cursor + durationMs).toISOString() });
+          slots.push({
+            startISO: new Date(cursor).toISOString(),
+            endISO: new Date(cursor + durationMs).toISOString(),
+          });
         }
         cursor = Math.max(cursor, b.end);
       }
       if (end - cursor >= durationMs) {
-        slots.push({ startISO: new Date(cursor).toISOString(), endISO: new Date(cursor + durationMs).toISOString() });
+        slots.push({
+          startISO: new Date(cursor).toISOString(),
+          endISO: new Date(cursor + durationMs).toISOString(),
+        });
       }
       if (slots.length >= 10) break;
     }
@@ -755,7 +887,10 @@ function toAccountInfo(acc: Account): CalendarAccountInfo {
 
 /** A local (on-device) event — stored in the backend, never pushed to a provider. */
 function isLocalEvent(ev: CalendarEventDTO): boolean {
-  return ev.account_id === LOCAL_CALENDAR_ACCOUNT_ID || (!ev.provider_event_id && ev.origin === 'cerebro');
+  return (
+    ev.account_id === LOCAL_CALENDAR_ACCOUNT_ID ||
+    (!ev.provider_event_id && ev.origin === 'cerebro')
+  );
 }
 
 /** Map a UI patch to the backend CalendarEventUpdate body. */
@@ -816,7 +951,8 @@ function applyPatch(ev: CalendarEventDTO, patch: Partial<CalendarEventInput>): C
     end_utc: patch.end ? new Date(patch.end).toISOString() : ev.end_utc,
     start_tz: patch.tz ?? ev.start_tz,
     all_day: patch.all_day ?? ev.all_day,
-    transparency: patch.busy === undefined ? ev.transparency : patch.busy ? 'opaque' : 'transparent',
+    transparency:
+      patch.busy === undefined ? ev.transparency : patch.busy ? 'opaque' : 'transparent',
     visibility: patch.visibility ?? ev.visibility,
   };
 }

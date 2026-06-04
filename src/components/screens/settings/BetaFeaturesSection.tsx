@@ -35,21 +35,15 @@ export default function BetaFeaturesSection() {
 
   return (
     <div>
-      <h2 className="text-base font-semibold text-text-primary mb-1">
-        {t('betaFeatures.title')}
-      </h2>
-      <p className="text-xs text-text-secondary mb-5">
-        {t('betaFeatures.description')}
-      </p>
+      <h2 className="text-base font-semibold text-text-primary mb-1">{t('betaFeatures.title')}</h2>
+      <p className="text-xs text-text-secondary mb-5">{t('betaFeatures.description')}</p>
 
       <div className="px-4 py-3 rounded-lg border border-warning/30 bg-warning/10 text-sm text-warning-text mb-6">
         <div className="flex items-start gap-2">
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <div className="font-medium">{t('betaFeatures.warningTitle')}</div>
-            <div className="text-xs text-warning-text/80 mt-1">
-              {t('betaFeatures.warningBody')}
-            </div>
+            <div className="text-xs text-warning-text/80 mt-1">{t('betaFeatures.warningBody')}</div>
             <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2.5">
               <BetaLink href={DISCORD_URL}>{t('betaFeatures.discordLink')}</BetaLink>
               <BetaLink href={GITHUB_ISSUES_URL}>{t('betaFeatures.githubLink')}</BetaLink>
@@ -73,14 +67,9 @@ export default function BetaFeaturesSection() {
           >
             <div>
               <p className="text-sm text-text-primary">{t(feature.labelKey)}</p>
-              <p className="text-xs text-text-secondary mt-0.5">
-                {t(feature.descriptionKey)}
-              </p>
+              <p className="text-xs text-text-secondary mt-0.5">{t(feature.descriptionKey)}</p>
             </div>
-            <Toggle
-              checked={flags[feature.key]}
-              onChange={() => handleToggle(feature.key)}
-            />
+            <Toggle checked={flags[feature.key]} onChange={() => handleToggle(feature.key)} />
           </div>
         ))
       )}

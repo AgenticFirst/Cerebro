@@ -52,24 +52,34 @@ function queue(...rs: Responder[]): void {
 }
 
 /** v4 batch associations response from a fromId → toIds map. */
-const assoc = (map: Record<string, string[]>): Responder => () => ({
-  status: 200,
-  json: {
-    results: Object.entries(map).map(([from, tos]) => ({
-      from: { id: from },
-      to: tos.map((toObjectId) => ({ toObjectId })),
-    })),
-  },
-});
+const assoc =
+  (map: Record<string, string[]>): Responder =>
+  () => ({
+    status: 200,
+    json: {
+      results: Object.entries(map).map(([from, tos]) => ({
+        from: { id: from },
+        to: tos.map((toObjectId) => ({ toObjectId })),
+      })),
+    },
+  });
 /** v3 batch object read response from an id → properties map. */
-const batchObjects = (objs: Record<string, Record<string, string>>): Responder => () => ({
-  status: 200,
-  json: { results: Object.entries(objs).map(([id, properties]) => ({ id, properties })) },
-});
-const fail = (code: number, message = 'err'): Responder => () => ({ status: code, json: { message } });
+const batchObjects =
+  (objs: Record<string, Record<string, string>>): Responder =>
+  () => ({
+    status: 200,
+    json: { results: Object.entries(objs).map(([id, properties]) => ({ id, properties })) },
+  });
+const fail =
+  (code: number, message = 'err'): Responder =>
+  () => ({ status: code, json: { message } });
 
-beforeEach(() => { mockFetch(); });
-afterEach(() => { vi.unstubAllGlobals(); });
+beforeEach(() => {
+  mockFetch();
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const urlCount = (fragment: string): number => calls.filter((c) => c.url.includes(fragment)).length;
 
@@ -94,8 +104,12 @@ function buildActionInput(params: Record<string, unknown>): ActionInput {
     stepId: 'test-step',
     backendPort: 0,
     signal: new AbortController().signal,
-    log: () => { /* no-op */ },
-    emitEvent: () => { /* no-op */ },
+    log: () => {
+      /* no-op */
+    },
+    emitEvent: () => {
+      /* no-op */
+    },
   };
   return {
     params,
@@ -117,15 +131,17 @@ describe('resolveTicketAssociations', () => {
 
   it('resolves a direct ticket→company link as source "ticket"', async () => {
     queue(
-      assoc({ T1: ['C1'] }),                 // tickets → contacts
-      assoc({ T1: ['K1'] }),                 // tickets → companies (direct)
-      assoc({ C1: ['K9'] }),                 // contacts → companies (ignored — direct wins)
+      assoc({ T1: ['C1'] }), // tickets → contacts
+      assoc({ T1: ['K1'] }), // tickets → companies (direct)
+      assoc({ C1: ['K9'] }), // contacts → companies (ignored — direct wins)
       batchObjects({ C1: { email: 'c1@x.com', firstname: 'Ana', lastname: 'Ruiz' } }),
       batchObjects({ K1: { name: 'Argos', domain: 'argos.com' }, K9: { name: 'Other' } }),
     );
     const res = await resolveTicketAssociations(TOKEN, ['T1']);
     const t1 = res.byTicket.get('T1')!;
-    expect(t1.contacts).toEqual([{ id: 'C1', email: 'c1@x.com', firstname: 'Ana', lastname: 'Ruiz' }]);
+    expect(t1.contacts).toEqual([
+      { id: 'C1', email: 'c1@x.com', firstname: 'Ana', lastname: 'Ruiz' },
+    ]);
     expect(t1.companies).toEqual([
       { id: 'K1', name: 'Argos', domain: 'argos.com', source: 'ticket', via_contact_id: null },
     ]);
@@ -134,9 +150,9 @@ describe('resolveTicketAssociations', () => {
 
   it('derives the company from the contact when the ticket has no direct company', async () => {
     queue(
-      assoc({ T1: ['C1'] }),                 // tickets → contacts
-      assoc({}),                             // tickets → companies (none)
-      assoc({ C1: ['K1'] }),                 // contacts → companies (the fallback)
+      assoc({ T1: ['C1'] }), // tickets → contacts
+      assoc({}), // tickets → companies (none)
+      assoc({ C1: ['K1'] }), // contacts → companies (the fallback)
       batchObjects({ C1: { email: 'c1@x.com' } }),
       batchObjects({ K1: { name: 'Keralty', domain: 'keralty.com' } }),
     );
@@ -149,8 +165,8 @@ describe('resolveTicketAssociations', () => {
 
   it('returns empty arrays for a ticket with no contact and no company', async () => {
     queue(
-      assoc({}),                             // tickets → contacts (none)
-      assoc({}),                             // tickets → companies (none)
+      assoc({}), // tickets → contacts (none)
+      assoc({}), // tickets → companies (none)
     );
     const res = await resolveTicketAssociations(TOKEN, ['T1']);
     expect(res.byTicket.get('T1')).toEqual({ contacts: [], companies: [] });
@@ -161,9 +177,9 @@ describe('resolveTicketAssociations', () => {
 
   it('keeps the contact but no company when the contact has no company', async () => {
     queue(
-      assoc({ T1: ['C1'] }),                 // tickets → contacts
-      assoc({}),                             // tickets → companies (none)
-      assoc({}),                             // contacts → companies (none)
+      assoc({ T1: ['C1'] }), // tickets → contacts
+      assoc({}), // tickets → companies (none)
+      assoc({}), // contacts → companies (none)
       batchObjects({ C1: { email: 'c1@x.com' } }),
     );
     const res = await resolveTicketAssociations(TOKEN, ['T1']);
@@ -174,9 +190,9 @@ describe('resolveTicketAssociations', () => {
 
   it('degrades gracefully when the companies scope is missing (403)', async () => {
     queue(
-      assoc({ T1: ['C1'] }),                 // tickets → contacts (ok)
-      fail(403, 'missing scope'),            // tickets → companies (403)
-      fail(403, 'missing scope'),            // contacts → companies (403)
+      assoc({ T1: ['C1'] }), // tickets → contacts (ok)
+      fail(403, 'missing scope'), // tickets → companies (403)
+      fail(403, 'missing scope'), // contacts → companies (403)
       batchObjects({ C1: { email: 'c1@x.com', firstname: 'Ana' } }),
     );
     const res = await resolveTicketAssociations(TOKEN, ['T1']);
@@ -188,7 +204,7 @@ describe('resolveTicketAssociations', () => {
   });
 
   it('propagates a hard failure of the contacts path', async () => {
-    queue(fail(401, 'invalid token'));       // tickets → contacts fails
+    queue(fail(401, 'invalid token')); // tickets → contacts fails
     const res = await resolveTicketAssociations(TOKEN, ['T1']);
     expect(res.error).toBe('invalid token');
     expect(calls).toHaveLength(1);
@@ -211,9 +227,9 @@ describe('hubspot_get_ticket', () => {
   it('returns the ticket plus its contact and contact-derived company', async () => {
     queue(
       () => ({ status: 200, json: { id: 'T1', properties: { subject: 'Login broken' } } }), // GET ticket
-      assoc({ T1: ['C1'] }),                 // tickets → contacts
-      assoc({}),                             // tickets → companies (none)
-      assoc({ C1: ['K1'] }),                 // contacts → companies
+      assoc({ T1: ['C1'] }), // tickets → contacts
+      assoc({}), // tickets → companies (none)
+      assoc({ C1: ['K1'] }), // contacts → companies
       batchObjects({ C1: { email: 'c1@x.com', firstname: 'Ana' } }),
       batchObjects({ K1: { name: 'Keralty' } }),
     );
@@ -233,9 +249,9 @@ describe('hubspot_get_ticket', () => {
   it('flags companies_scope_missing while still returning the contact', async () => {
     queue(
       () => ({ status: 200, json: { id: 'T1', properties: { subject: 'S' } } }), // GET ticket
-      assoc({ T1: ['C1'] }),                 // tickets → contacts (ok)
-      fail(403, 'missing scope'),            // tickets → companies (403)
-      fail(403, 'missing scope'),            // contacts → companies (403)
+      assoc({ T1: ['C1'] }), // tickets → contacts (ok)
+      fail(403, 'missing scope'), // tickets → companies (403)
+      fail(403, 'missing scope'), // contacts → companies (403)
       batchObjects({ C1: { email: 'c1@x.com' } }),
     );
     const out = await action.execute(buildActionInput({ ticket_id: 'T1' }));
@@ -262,10 +278,13 @@ describe('hubspot_search_tickets include_associations', () => {
 
   it('attaches contacts/companies in one batched lookup when requested', async () => {
     queue(
-      () => ({ status: 200, json: { results: [{ id: 'T1', properties: { subject: 'S' } }], total: 1 } }), // search
-      assoc({ T1: ['C1'] }),                 // tickets → contacts
-      assoc({ T1: ['K1'] }),                 // tickets → companies (direct)
-      assoc({ C1: ['K9'] }),                 // contacts → companies
+      () => ({
+        status: 200,
+        json: { results: [{ id: 'T1', properties: { subject: 'S' } }], total: 1 },
+      }), // search
+      assoc({ T1: ['C1'] }), // tickets → contacts
+      assoc({ T1: ['K1'] }), // tickets → companies (direct)
+      assoc({ C1: ['K9'] }), // contacts → companies
       batchObjects({ C1: { email: 'c1@x.com' } }),
       batchObjects({ K1: { name: 'Argos' }, K9: { name: 'Other' } }),
     );

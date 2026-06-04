@@ -113,9 +113,7 @@ export const httpRequestAction: ActionDefinition = {
     }
 
     // Auth
-    const authValue = params.auth_value
-      ? renderTemplate(params.auth_value, vars)
-      : '';
+    const authValue = params.auth_value ? renderTemplate(params.auth_value, vars) : '';
     if (params.auth_type === 'bearer' && authValue) {
       headers['Authorization'] = `Bearer ${authValue}`;
     } else if (params.auth_type === 'basic' && authValue) {
@@ -155,7 +153,9 @@ export const httpRequestAction: ActionDefinition = {
             byteCount += chunk.length;
             if (byteCount > MAX_RESPONSE_BYTES) {
               res.destroy();
-              reject(new Error(`Response body exceeds ${MAX_RESPONSE_BYTES / 1024 / 1024}MB limit`));
+              reject(
+                new Error(`Response body exceeds ${MAX_RESPONSE_BYTES / 1024 / 1024}MB limit`),
+              );
               return;
             }
             data += chunk.toString();
@@ -178,7 +178,9 @@ export const httpRequestAction: ActionDefinition = {
               responseBody = data;
             }
 
-            context.log(`${params.method.toUpperCase()} ${renderedUrl} -> ${res.statusCode} (${durationMs}ms)`);
+            context.log(
+              `${params.method.toUpperCase()} ${renderedUrl} -> ${res.statusCode} (${durationMs}ms)`,
+            );
 
             resolve({
               data: {

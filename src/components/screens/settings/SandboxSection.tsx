@@ -18,10 +18,7 @@ import { useSandbox } from '../../../context/SandboxContext';
 import Toggle from '../../ui/Toggle';
 import type { LinkMode, LinkedProject } from '../../../sandbox/types';
 
-const ABSOLUTE_FORBIDDEN_ZONES_PATHS: readonly string[] = [
-  '/System',
-  '/usr',
-];
+const ABSOLUTE_FORBIDDEN_ZONES_PATHS: readonly string[] = ['/System', '/usr'];
 
 function ModeBadge({ mode }: { mode: LinkMode }) {
   const { t } = useTranslation();
@@ -103,7 +100,9 @@ function LinkRow({
         <button
           onClick={handleToggle}
           className="px-2 py-1 rounded-md text-[11px] text-text-secondary hover:text-text-primary hover:bg-white/[0.04] transition-colors cursor-pointer"
-          title={link.mode === 'read' ? t('sandbox.promoteToReadWrite') : t('sandbox.revertToReadOnly')}
+          title={
+            link.mode === 'read' ? t('sandbox.promoteToReadWrite') : t('sandbox.revertToReadOnly')
+          }
         >
           {link.mode === 'read' ? t('sandbox.allowWrites') : t('sandbox.makeReadOnly')}
         </button>
@@ -144,7 +143,9 @@ export default function SandboxSection() {
     fetchProfile().then((text) => {
       if (!cancelled) setProfileText(text);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [profileOpen, config?.linked_projects, config?.workspace_path, config?.enabled, fetchProfile]);
 
   const enabled = config?.enabled ?? false;
@@ -184,9 +185,7 @@ export default function SandboxSection() {
   };
 
   if (isLoading || !config) {
-    return (
-      <div className="text-sm text-text-tertiary">{t('common.loading')}</div>
-    );
+    return <div className="text-sm text-text-tertiary">{t('common.loading')}</div>;
   }
 
   return (
@@ -210,7 +209,9 @@ export default function SandboxSection() {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-text-primary">{t('sandbox.enableSandbox')}</span>
+            <span className="text-sm font-medium text-text-primary">
+              {t('sandbox.enableSandbox')}
+            </span>
             {statusPill}
             {!platformSupported && (
               <span className="text-[10px] text-text-tertiary bg-bg-elevated border border-border-subtle px-2 py-0.5 rounded-full">
@@ -219,9 +220,7 @@ export default function SandboxSection() {
             )}
           </div>
           <div className="text-xs text-text-secondary mt-0.5">
-            {activeEnforcement
-              ? t('sandbox.activeDesc')
-              : t('sandbox.inactiveDesc')}
+            {activeEnforcement ? t('sandbox.activeDesc') : t('sandbox.inactiveDesc')}
           </div>
         </div>
         <Toggle checked={enabled} onChange={handleToggle} />
@@ -282,7 +281,9 @@ export default function SandboxSection() {
             <FolderOpen size={15} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-text-primary">{t('sandbox.cerebroWorkspace')}</div>
+            <div className="text-sm font-medium text-text-primary">
+              {t('sandbox.cerebroWorkspace')}
+            </div>
             <div className="text-xs text-text-tertiary font-mono truncate mt-0.5">
               {config.workspace_path}
             </div>
@@ -356,9 +357,7 @@ export default function SandboxSection() {
               {zone}
             </span>
           ))}
-          <span
-            className="text-[11px] font-mono text-text-secondary bg-bg-elevated border border-border-subtle px-2 py-0.5 rounded"
-          >
+          <span className="text-[11px] font-mono text-text-secondary bg-bg-elevated border border-border-subtle px-2 py-0.5 rounded">
             {t('sandbox.cerebroDataDir')}
           </span>
         </div>

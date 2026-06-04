@@ -76,7 +76,8 @@ function buildVoiceSystemPrompt(expert: ExpertSummary, skills: VoiceSkill[]): st
   }
 
   if (skills.length > 0) {
-    body += '\n\n## Skills\n\nYou have the following skills. Follow their instructions when relevant:\n';
+    body +=
+      '\n\n## Skills\n\nYou have the following skills. Follow their instructions when relevant:\n';
     for (const skill of skills) {
       body += `\n### ${skill.name}\n\n${skill.instructions.trimEnd()}\n`;
     }
@@ -294,7 +295,8 @@ export class VoiceSessionManager {
     if (!this.session) return;
     if (this.session.partialTimer || this.session.partialInFlight) return;
 
-    const delay = this.session.audioBuffer.length <= 1 ? PARTIAL_FIRST_DELAY_MS : PARTIAL_NEXT_DELAY_MS;
+    const delay =
+      this.session.audioBuffer.length <= 1 ? PARTIAL_FIRST_DELAY_MS : PARTIAL_NEXT_DELAY_MS;
     this.session.partialTimer = setTimeout(() => {
       this.runPartialTranscription();
     }, delay);
@@ -483,10 +485,14 @@ export class VoiceSessionManager {
     let audioReceived = false;
 
     try {
-      const response = this.backendPostStream('/voice/tts/synthesize', {
-        text,
-        speaker: 'tara',
-      }, controller.signal);
+      const response = this.backendPostStream(
+        '/voice/tts/synthesize',
+        {
+          text,
+          speaker: 'tara',
+        },
+        controller.signal,
+      );
 
       // Parse SSE stream
       let buffer = '';
@@ -576,13 +582,22 @@ export class VoiceSessionManager {
           return;
         }
         let data = '';
-        res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        res.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         res.on('end', () => {
-          try { resolve(JSON.parse(data) as T); } catch { resolve(null); }
+          try {
+            resolve(JSON.parse(data) as T);
+          } catch {
+            resolve(null);
+          }
         });
       });
       req.on('error', () => resolve(null));
-      req.setTimeout(30_000, () => { req.destroy(); resolve(null); });
+      req.setTimeout(30_000, () => {
+        req.destroy();
+        resolve(null);
+      });
     });
   }
 
@@ -603,14 +618,20 @@ export class VoiceSessionManager {
         },
         (res) => {
           let data = '';
-          res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+          res.on('data', (chunk: Buffer) => {
+            data += chunk.toString();
+          });
           res.on('end', () => {
             if (res.statusCode && res.statusCode >= 400) {
               console.error(`[Voice] POST ${path} → ${res.statusCode}: ${data.slice(0, 200)}`);
               resolve(null);
               return;
             }
-            try { resolve(JSON.parse(data) as T); } catch { resolve(null); }
+            try {
+              resolve(JSON.parse(data) as T);
+            } catch {
+              resolve(null);
+            }
           });
         },
       );
@@ -654,11 +675,17 @@ export class VoiceSessionManager {
 
       signal.addEventListener(
         'abort',
-        () => { req.destroy(); resolve(null); },
+        () => {
+          req.destroy();
+          resolve(null);
+        },
         { once: true },
       );
       req.on('error', () => resolve(null));
-      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(null);
+      });
       req.write(bodyStr);
       req.end();
     });

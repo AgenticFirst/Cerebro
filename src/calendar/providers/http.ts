@@ -9,7 +9,10 @@ import { TokenExpiredError, type TokenSet } from './types';
 
 /** Non-2xx response from a provider API (carries the status for 410/expiry checks). */
 export class ProviderHttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
     this.name = 'ProviderHttpError';
   }
@@ -24,7 +27,11 @@ interface TokenJson {
 }
 
 /** Exchange an OAuth form body for a token set. `label` prefixes error messages. */
-export async function oauthTokenRequest(tokenUrl: string, body: URLSearchParams, label: string): Promise<TokenSet> {
+export async function oauthTokenRequest(
+  tokenUrl: string,
+  body: URLSearchParams,
+  label: string,
+): Promise<TokenSet> {
   let res: Response;
   try {
     res = await fetch(tokenUrl, {
@@ -33,7 +40,9 @@ export async function oauthTokenRequest(tokenUrl: string, body: URLSearchParams,
       body: body.toString(),
     });
   } catch (err) {
-    throw new Error(`${label} token request failed: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(
+      `${label} token request failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
   const json = (await res.json().catch(() => ({}))) as TokenJson;
   if (!res.ok || !json.access_token) {

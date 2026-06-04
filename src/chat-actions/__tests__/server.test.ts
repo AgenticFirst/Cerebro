@@ -21,9 +21,13 @@ interface FetchOptions {
   rawBody?: string;
 }
 
-async function request(port: number, opts: FetchOptions): Promise<{ status: number; body: unknown }> {
+async function request(
+  port: number,
+  opts: FetchOptions,
+): Promise<{ status: number; body: unknown }> {
   return new Promise((resolve, reject) => {
-    const data = opts.rawBody !== undefined ? opts.rawBody : opts.body ? JSON.stringify(opts.body) : '';
+    const data =
+      opts.rawBody !== undefined ? opts.rawBody : opts.body ? JSON.stringify(opts.body) : '';
     const req = http.request(
       {
         hostname: '127.0.0.1',
@@ -32,15 +36,26 @@ async function request(port: number, opts: FetchOptions): Promise<{ status: numb
         method: opts.method ?? 'GET',
         headers: {
           ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
-          ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data).toString() } : {}),
+          ...(data
+            ? {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(data).toString(),
+              }
+            : {}),
         },
       },
       (res) => {
         let raw = '';
-        res.on('data', (chunk: Buffer) => { raw += chunk.toString(); });
+        res.on('data', (chunk: Buffer) => {
+          raw += chunk.toString();
+        });
         res.on('end', () => {
           let parsed: unknown = raw;
-          try { parsed = JSON.parse(raw); } catch { /* keep raw */ }
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            /* keep raw */
+          }
           resolve({ status: res.statusCode ?? 0, body: parsed });
         });
       },
@@ -72,7 +87,13 @@ describe('ChatActionServer', () => {
       ok: true,
       runId: 'preview-1',
       steps: [
-        { stepId: 's1', stepName: 'Step 1', actionType: 'ask_ai', status: 'completed', summary: 'ok' },
+        {
+          stepId: 's1',
+          stepName: 'Step 1',
+          actionType: 'ask_ai',
+          status: 'completed',
+          summary: 'ok',
+        },
       ],
     });
     mockEngine = {
@@ -95,12 +116,26 @@ describe('ChatActionServer', () => {
         data: { sent: true },
       }),
       dryRunRoutine: mockEngineDryRun,
-      autoApprovalSupported: vi.fn((t: string) => t === 'send_slack_message' || t === 'send_slack_file'),
-      addAutoApprovalRule: vi.fn(async (action_type: string, target_key: string, target_label?: string) => ({
-        id: 'rule1', action_type, target_key, target_label: target_label ?? null, created_at: '2026-01-01T00:00:00Z',
-      })),
+      autoApprovalSupported: vi.fn(
+        (t: string) => t === 'send_slack_message' || t === 'send_slack_file',
+      ),
+      addAutoApprovalRule: vi.fn(
+        async (action_type: string, target_key: string, target_label?: string) => ({
+          id: 'rule1',
+          action_type,
+          target_key,
+          target_label: target_label ?? null,
+          created_at: '2026-01-01T00:00:00Z',
+        }),
+      ),
       listAutoApprovalRules: vi.fn(async () => [
-        { id: 'rule1', action_type: 'send_slack_message', target_key: 'C123', target_label: '#general', created_at: '2026-01-01T00:00:00Z' },
+        {
+          id: 'rule1',
+          action_type: 'send_slack_message',
+          target_key: 'C123',
+          target_label: '#general',
+          created_at: '2026-01-01T00:00:00Z',
+        },
       ]),
       removeAutoApprovalRulesByTarget: vi.fn(async () => 2),
     };
@@ -109,7 +144,7 @@ describe('ChatActionServer', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       engine: mockEngine as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      getMainWebContents: () => ({ isDestroyed: () => false, send: mockSend } as any),
+      getMainWebContents: () => ({ isDestroyed: () => false, send: mockSend }) as any,
     });
     const info = await server.start();
     port = info.port;
@@ -229,7 +264,22 @@ describe('ChatActionServer', () => {
       method: 'POST',
       path: '/chat-actions/dry-run-routine',
       token,
-      body: { dag: { steps: [{ id: 's1', name: 'Step 1', actionType: 'ask_ai', params: {}, dependsOn: [], inputMappings: [], requiresApproval: false, onError: 'fail' }] } },
+      body: {
+        dag: {
+          steps: [
+            {
+              id: 's1',
+              name: 'Step 1',
+              actionType: 'ask_ai',
+              params: {},
+              dependsOn: [],
+              inputMappings: [],
+              requiresApproval: false,
+              onError: 'fail',
+            },
+          ],
+        },
+      },
     });
     expect(res.status).toBe(200);
     expect(mockEngineDryRun).toHaveBeenCalled();
@@ -384,14 +434,35 @@ describe('ChatActionServer', () => {
       error: 'something broke',
       failedStepId: 's1',
       steps: [
-        { stepId: 's1', stepName: 'Step 1', actionType: 'ask_ai', status: 'failed', error: 'something broke' },
+        {
+          stepId: 's1',
+          stepName: 'Step 1',
+          actionType: 'ask_ai',
+          status: 'failed',
+          error: 'something broke',
+        },
       ],
     });
     const res = await request(port, {
       method: 'POST',
       path: '/chat-actions/dry-run-routine',
       token,
-      body: { dag: { steps: [{ id: 's1', name: 'Step 1', actionType: 'ask_ai', params: {}, dependsOn: [], inputMappings: [], requiresApproval: false, onError: 'fail' }] } },
+      body: {
+        dag: {
+          steps: [
+            {
+              id: 's1',
+              name: 'Step 1',
+              actionType: 'ask_ai',
+              params: {},
+              dependsOn: [],
+              inputMappings: [],
+              requiresApproval: false,
+              onError: 'fail',
+            },
+          ],
+        },
+      },
     });
     expect(res.status).toBe(200);
     const body = res.body as { ok: boolean; failedStepId?: string };
@@ -409,7 +480,11 @@ describe('ChatActionServer', () => {
       body: { action_type: 'send_slack_message', target_key: 'C123', target_label: '#general' },
     });
     expect(res.status).toBe(200);
-    expect(mockEngine.addAutoApprovalRule).toHaveBeenCalledWith('send_slack_message', 'C123', '#general');
+    expect(mockEngine.addAutoApprovalRule).toHaveBeenCalledWith(
+      'send_slack_message',
+      'C123',
+      '#general',
+    );
     const body = res.body as { ok: boolean; rule: { target_key: string } };
     expect(body.ok).toBe(true);
     expect(body.rule.target_key).toBe('C123');
@@ -454,7 +529,10 @@ describe('ChatActionServer', () => {
       body: { action_type: 'send_slack_message', target_key: 'C123' },
     });
     expect(res.status).toBe(200);
-    expect(mockEngine.removeAutoApprovalRulesByTarget).toHaveBeenCalledWith('send_slack_message', 'C123');
+    expect(mockEngine.removeAutoApprovalRulesByTarget).toHaveBeenCalledWith(
+      'send_slack_message',
+      'C123',
+    );
     expect((res.body as { deleted: number }).deleted).toBe(2);
   });
 

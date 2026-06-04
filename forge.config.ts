@@ -35,9 +35,12 @@ function notarytoolCredentialArgs(): string[] {
   const { APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID } = process.env;
   if (APPLE_ID && APPLE_APP_SPECIFIC_PASSWORD && APPLE_TEAM_ID) {
     return [
-      '--apple-id', APPLE_ID,
-      '--password', APPLE_APP_SPECIFIC_PASSWORD,
-      '--team-id', APPLE_TEAM_ID,
+      '--apple-id',
+      APPLE_ID,
+      '--password',
+      APPLE_APP_SPECIFIC_PASSWORD,
+      '--team-id',
+      APPLE_TEAM_ID,
     ];
   }
   return ['--keychain-profile', NOTARIZE_KEYCHAIN_PROFILE];
@@ -94,10 +97,7 @@ const config: ForgeConfig = {
     // are produced by scripts/bundle-python.sh and end up at
     // Cerebro.app/Contents/Resources/python-dist/ and .../backend/.
     // src/main.ts resolves them via process.resourcesPath when packaged.
-    extraResource: [
-      'build-resources/python-dist',
-      'build-resources/backend',
-    ],
+    extraResource: ['build-resources/python-dist', 'build-resources/backend'],
     // forge-vite only places its bundled output in the build dir — it
     // does NOT include node_modules of externals like node-pty. We
     // copy them in here so they end up packed into app.asar; the
@@ -111,7 +111,9 @@ const config: ForgeConfig = {
           for (const moduleName of NATIVE_MODULES_TO_BUNDLE) {
             const src = path.join(__dirname, 'node_modules', moduleName);
             if (!fs.existsSync(src)) {
-              console.warn(`[afterCopy] WARN native module ${moduleName} missing from node_modules — skipping`);
+              console.warn(
+                `[afterCopy] WARN native module ${moduleName} missing from node_modules — skipping`,
+              );
               continue;
             }
             const dest = path.join(buildPath, 'node_modules', moduleName);
@@ -246,12 +248,17 @@ const config: ForgeConfig = {
             .update(asarLib.getRawHeader(asarPath).headerString)
             .digest('hex');
           execFileSync('/usr/libexec/PlistBuddy', [
-            '-c', `Set :ElectronAsarIntegrity:Resources/app.asar:hash ${newHash}`,
+            '-c',
+            `Set :ElectronAsarIntegrity:Resources/app.asar:hash ${newHash}`,
             infoPlist,
           ]);
-          console.log(`[postPackage] re-packed asar (unpack='${ASAR_UNPACK_GLOB}') + patched Info.plist hash → ${newHash.slice(0, 12)}…`);
+          console.log(
+            `[postPackage] re-packed asar (unpack='${ASAR_UNPACK_GLOB}') + patched Info.plist hash → ${newHash.slice(0, 12)}…`,
+          );
         } else {
-          console.log(`[postPackage] re-packed asar (unpack='${ASAR_UNPACK_GLOB}') for ${options.platform}`);
+          console.log(
+            `[postPackage] re-packed asar (unpack='${ASAR_UNPACK_GLOB}') for ${options.platform}`,
+          );
         }
       }
 
@@ -286,7 +293,8 @@ const config: ForgeConfig = {
       for (const outputPath of options.outputPaths) {
         const { appPath, infoPlist } = resolveBundle(outputPath);
         execFileSync('/usr/libexec/PlistBuddy', [
-          '-c', 'Set :CFBundleDisplayName Cerebro',
+          '-c',
+          'Set :CFBundleDisplayName Cerebro',
           infoPlist!,
         ]);
 
@@ -309,11 +317,9 @@ const config: ForgeConfig = {
         } else {
           // Local-dev fallback: ad-hoc deep sign so the .app launches
           // (no notarization possible without Developer ID).
-          execFileSync(
-            'codesign',
-            ['--sign', '-', '--force', '--deep', appPath],
-            { stdio: 'inherit' },
-          );
+          execFileSync('codesign', ['--sign', '-', '--force', '--deep', appPath], {
+            stdio: 'inherit',
+          });
         }
 
         if (!isDeveloperId) {
@@ -333,11 +339,7 @@ const config: ForgeConfig = {
         console.log('[postPackage] submitting to notarytool (this takes a few minutes)…');
         execFileSync(
           'xcrun',
-          [
-            'notarytool', 'submit', zipPath,
-            ...notarytoolCredentialArgs(),
-            '--wait',
-          ],
+          ['notarytool', 'submit', zipPath, ...notarytoolCredentialArgs(), '--wait'],
           { stdio: 'inherit' },
         );
         console.log('[postPackage] stapling notarization ticket to .app');
@@ -364,19 +366,13 @@ const config: ForgeConfig = {
         for (const artifactPath of result.artifacts) {
           if (!artifactPath.endsWith('.dmg')) continue;
           console.log(`[postMake] signing DMG: ${artifactPath}`);
-          execFileSync(
-            'codesign',
-            ['--sign', identity, '--force', '--timestamp', artifactPath],
-            { stdio: 'inherit' },
-          );
+          execFileSync('codesign', ['--sign', identity, '--force', '--timestamp', artifactPath], {
+            stdio: 'inherit',
+          });
           console.log('[postMake] submitting DMG to notarytool (a few more minutes)…');
           execFileSync(
             'xcrun',
-            [
-              'notarytool', 'submit', artifactPath,
-              ...notarytoolCredentialArgs(),
-              '--wait',
-            ],
+            ['notarytool', 'submit', artifactPath, ...notarytoolCredentialArgs(), '--wait'],
             { stdio: 'inherit' },
           );
           console.log('[postMake] stapling notarization ticket to DMG');

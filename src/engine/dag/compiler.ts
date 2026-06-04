@@ -47,14 +47,10 @@ export function compileLinearDAG(options: CompileOptions): DAGDefinition {
         ? {
             prompt: stepText,
             expertId: defaultRunnerId,
-            additionalContext: prevId
-              ? `Previous step output: {{${prevVar}}}`
-              : undefined,
+            additionalContext: prevId ? `Previous step output: {{${prevVar}}}` : undefined,
           }
         : {
-            prompt: prevId
-              ? `${stepText}\n\nPrevious step output:\n{{${prevVar}}}`
-              : stepText,
+            prompt: prevId ? `${stepText}\n\nPrevious step output:\n{{${prevVar}}}` : stepText,
             system_prompt: 'You are executing a step in a routine. Complete the task described.',
             agent: 'cerebro',
           };

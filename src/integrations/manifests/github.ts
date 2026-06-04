@@ -21,7 +21,8 @@ export const githubManifest: IntegrationManifest = {
     'integrations.github.steps.copyToken',
     'integrations.github.steps.pasteHere',
   ],
-  docsUrl: 'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens',
+  docsUrl:
+    'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens',
   ipc: {
     verify: async (fields) => {
       const r = await window.cerebro.github.verify(fields.personalAccessToken);

@@ -85,9 +85,7 @@ function BlockEditor({ page }: { page: KbPage }) {
     };
   }, []);
 
-  return (
-    <BlockNoteView editor={editor} theme={kbTheme(resolvedTheme)} onChange={handleChange} />
-  );
+  return <BlockNoteView editor={editor} theme={kbTheme(resolvedTheme)} onChange={handleChange} />;
 }
 
 /**

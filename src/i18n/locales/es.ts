@@ -67,7 +67,8 @@ const es: TranslationKeys = {
     welcomeCapPlan: 'Planifica tareas',
     welcomeCapPlanDesc: 'Divide cualquier objetivo en un plan antes de ejecutar un paso',
     welcomeCapDelegate: 'Delega a expertos',
-    welcomeCapDelegateDesc: 'Deriva el trabajo al especialista adecuado, o coord\u00ednalos como equipo',
+    welcomeCapDelegateDesc:
+      'Deriva el trabajo al especialista adecuado, o coord\u00ednalos como equipo',
     welcomeCapRoutines: 'Propone rutinas',
     welcomeCapRoutinesDesc: 'Detecta el trabajo repetitivo y propone guardarlo como rutina',
     welcomeCapMemory: 'Recuerda lo importante',
@@ -77,7 +78,8 @@ const es: TranslationKeys = {
     send: 'Enviar',
     stop: 'Detener',
     stoppedMarker: '_(detenido)_',
-    busyRetry: 'Todavía estoy terminando tu mensaje anterior. Dale un momento e inténtalo de nuevo.',
+    busyRetry:
+      'Todavía estoy terminando tu mensaje anterior. Dale un momento e inténtalo de nuevo.',
     startFailed: 'Algo salió mal de mi lado. Por favor, inténtalo de nuevo en un momento.',
     claudeNotDetectedTitle: 'Claude Code no detectado',
     claudeNotDetectedMessage:
@@ -169,7 +171,8 @@ const es: TranslationKeys = {
   // \u2500\u2500 Modal de capacidades \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   capabilitiesModal: {
     title: 'Lo que Cerebro puede hacer',
-    subtitle: 'P\u00eddelo en espa\u00f1ol o ingl\u00e9s \u2014 Cerebro elige la herramienta correcta, te pide los datos que falten y se pausa para que apruebes cualquier acci\u00f3n que afecte al exterior.',
+    subtitle:
+      'P\u00eddelo en espa\u00f1ol o ingl\u00e9s \u2014 Cerebro elige la herramienta correcta, te pide los datos que falten y se pausa para que apruebes cualquier acci\u00f3n que afecte al exterior.',
     sections: {
       actions: 'Acciones de integraci\u00f3n',
       skills: 'Habilidades',
@@ -181,7 +184,8 @@ const es: TranslationKeys = {
       notConnected: 'Sin conectar',
       setUp: 'Configurar',
     },
-    emptyActions: 'A\u00fan no hay integraciones conectadas. Abre Conexiones para vincular HubSpot, Telegram, WhatsApp o cualquier otro servicio compatible.',
+    emptyActions:
+      'A\u00fan no hay integraciones conectadas. Abre Conexiones para vincular HubSpot, Telegram, WhatsApp o cualquier otro servicio compatible.',
     emptySkills: 'A\u00fan no hay habilidades instaladas.',
     emptyExperts: 'A\u00fan no hay expertos.',
     examplesIntro: 'Prueba diciendo cualquiera de estas:',
@@ -329,7 +333,8 @@ const es: TranslationKeys = {
     title: 'Tareas',
     newTask: 'Nueva tarea',
     emptyTitle: 'A\u00fan no hay tareas',
-    emptyDescription: 'Crea una tarea y as\u00edgnala a un Experto. La ejecutar\u00e1 de forma aut\u00f3noma mientras observas.',
+    emptyDescription:
+      'Crea una tarea y as\u00edgnala a un Experto. La ejecutar\u00e1 de forma aut\u00f3noma mientras observas.',
     column_backlog: 'Pendientes',
     column_in_progress: 'En Progreso',
     column_to_review: 'Por Revisar',
@@ -360,10 +365,12 @@ const es: TranslationKeys = {
     taskRunningLive: 'Esta tarea se est\u00e1 ejecutando en vivo',
     viewLiveConsole: 'Ver consola',
     viewLiveConsoleTitle: 'Abrir la consola en vivo de esta tarea',
-    consolePlaceholder: 'La salida del terminal del Experto aparecer\u00e1 aqu\u00ed cuando la tarea est\u00e9 en ejecuci\u00f3n.',
+    consolePlaceholder:
+      'La salida del terminal del Experto aparecer\u00e1 aqu\u00ed cuando la tarea est\u00e9 en ejecuci\u00f3n.',
     deleteTask: 'Eliminar tarea',
     deleteTaskTitle: '\u00bfEliminar esta tarea?',
-    deleteTaskMessage: 'Se eliminar\u00e1n \u00ab{{title}}\u00bb junto con sus comentarios, la lista de verificaci\u00f3n y los archivos del espacio de trabajo. Esta acci\u00f3n no se puede deshacer.',
+    deleteTaskMessage:
+      'Se eliminar\u00e1n \u00ab{{title}}\u00bb junto con sus comentarios, la lista de verificaci\u00f3n y los archivos del espacio de trabajo. Esta acci\u00f3n no se puede deshacer.',
     cancelTask: 'Cancelar tarea',
     addDescription: 'A\u00f1adir una descripci\u00f3n\u2026',
     checklist: 'Lista de verificaci\u00f3n',
@@ -386,12 +393,14 @@ const es: TranslationKeys = {
     retryTask: 'Reintentar',
     resumeTask: 'Reanudar',
     interruptedBadge: 'Interrumpida',
-    interruptedHint: 'Cerebro se cerró mientras esta tarea estaba en ejecución. Haz clic en Reanudar para continuar.',
+    interruptedHint:
+      'Cerebro se cerró mientras esta tarea estaba en ejecución. Haz clic en Reanudar para continuar.',
     startNeedsExpert: 'Asigna un Experto antes de iniciar esta tarea',
     startFailed: 'No se pudo iniciar al Experto. Revisa la tarea e inténtalo de nuevo.',
     moveTo: 'Mover a',
     previewWaiting: 'Esperando archivos',
-    previewWaitingHint: 'La vista previa aparecer\u00e1 cuando el Experto cree archivos en el workspace, o cuando se detecte una URL de servidor de desarrollo.',
+    previewWaitingHint:
+      'La vista previa aparecer\u00e1 cuando el Experto cree archivos en el workspace, o cuando se detecte una URL de servidor de desarrollo.',
     previewLive: 'En vivo',
     previewFiles: 'Archivos',
     previewVideo: 'V\u00eddeo',
@@ -400,8 +409,10 @@ const es: TranslationKeys = {
     previewAudio: 'Audio',
     previewRevealWorkspace: 'Abrir carpeta del workspace',
     previewNoArtifact: 'A\u00fan no hay archivo previsualizable',
-    previewExternalHint: 'Proyecto externo \u2014 la vista previa solo aparece cuando se detecta una URL de servidor de desarrollo',
-    previewBrowserHint: 'El agente escribi\u00f3 {{count}} archivos \u2014 haz clic en cualquier archivo para verlo aqu\u00ed',
+    previewExternalHint:
+      'Proyecto externo \u2014 la vista previa solo aparece cuando se detecta una URL de servidor de desarrollo',
+    previewBrowserHint:
+      'El agente escribi\u00f3 {{count}} archivos \u2014 haz clic en cualquier archivo para verlo aqu\u00ed',
     previewPickFile: 'Previsualizar este archivo',
     previewCode: 'C\u00f3digo',
     previewLoadingFile: 'Cargando\u2026',
@@ -460,18 +471,22 @@ const es: TranslationKeys = {
     previewResultUntitled: 'Resultado de la tarea',
     previewResultCopy: 'Copiar resultado',
     previewResultCopied: 'Copiado',
-    previewResultEmpty: 'Esperando la entrega del experto. Mientras tanto, revisa la **Consola** para ver lo que est\u00e1 haciendo.',
-    previewResultRunning: 'El experto a\u00fan est\u00e1 trabajando \u2014 abre la **Consola** para seguir el progreso.',
+    previewResultEmpty:
+      'Esperando la entrega del experto. Mientras tanto, revisa la **Consola** para ver lo que est\u00e1 haciendo.',
+    previewResultRunning:
+      'El experto a\u00fan est\u00e1 trabajando \u2014 abre la **Consola** para seguir el progreso.',
     previewSeeAllFiles: 'Ver todos los archivos \u2192',
     filesEmpty: 'El experto a\u00fan no ha escrito archivos.',
-    filesEmptyHint: 'Cuando el experto guarde un archivo en su espacio de trabajo, aparecer\u00e1 aqu\u00ed.',
+    filesEmptyHint:
+      'Cuando el experto guarde un archivo en su espacio de trabajo, aparecer\u00e1 aqu\u00ed.',
     filesRecent: 'Recientes',
     filesAll: 'Todos los archivos',
     filesCount_one: '{{count}} archivo en el espacio de trabajo',
     filesCount_other: '{{count}} archivos en el espacio de trabajo',
     filesRevealWorkspace: 'Abrir carpeta en Finder',
     filesBack: 'Volver al listado',
-    filesPreviewUnavailable: 'Este archivo no se puede previsualizar aqu\u00ed. \u00c1brelo en Finder.',
+    filesPreviewUnavailable:
+      'Este archivo no se puede previsualizar aqu\u00ed. \u00c1brelo en Finder.',
     // Menciones + Actividad
     mentionPlaceholder: 'Menciona un experto\u2026',
     mentionNoResults: 'No hay expertos coincidentes',
@@ -484,7 +499,8 @@ const es: TranslationKeys = {
     queuedWaitingBadge: 'Esperando la ejecuci\u00f3n actual',
     queuedAlreadyPending: 'Ya hay una instrucci\u00f3n en cola para esta tarea.',
     queueFailedPromptTitle: 'Instrucci\u00f3n en cola',
-    queueFailedPromptMessage: 'La ejecuci\u00f3n anterior no termin\u00f3 ({{reason}}). \u00bfEnviar igualmente la instrucci\u00f3n en cola a {{expert}}?',
+    queueFailedPromptMessage:
+      'La ejecuci\u00f3n anterior no termin\u00f3 ({{reason}}). \u00bfEnviar igualmente la instrucci\u00f3n en cola a {{expert}}?',
     queueFailedSend: 'Enviar a {{expert}}',
     queueFailedDiscard: 'Descartar',
     // Adjuntos
@@ -522,11 +538,14 @@ const es: TranslationKeys = {
     sourceUnfiled: 'Sin clasificar',
     bucketDefault: 'Predeterminado',
     emptyTitle: 'Aún no hay archivos',
-    emptyHint: 'Arrastra archivos aquí o haz clic en Subir. Lo que guardes desde el chat aparecerá en Predeterminado.',
+    emptyHint:
+      'Arrastra archivos aquí o haz clic en Subir. Lo que guardes desde el chat aparecerá en Predeterminado.',
     emptyTrash: 'Papelera vac\u00eda',
-    emptyTrashHint: 'Los archivos eliminados aparecen aqu\u00ed durante 30 d\u00edas y luego se eliminan permanentemente.',
+    emptyTrashHint:
+      'Los archivos eliminados aparecen aqu\u00ed durante 30 d\u00edas y luego se eliminan permanentemente.',
     emptyWorkspacesTitle: 'A\u00fan no hay archivos de workspace',
-    emptyWorkspacesHint: 'Cuando una tarea cree archivos en su workspace aislado, gu\u00e1rdalos en un grupo desde el men\u00fa.',
+    emptyWorkspacesHint:
+      'Cuando una tarea cree archivos en su workspace aislado, gu\u00e1rdalos en un grupo desde el men\u00fa.',
     workspacesPickTask: 'Elige una tarea para explorar su workspace',
     workspacesEmptyFiles: 'No hay archivos en este workspace',
     workspacesSaveAction: 'Guardar en grupo\u2026',
@@ -558,7 +577,8 @@ const es: TranslationKeys = {
     createBucketCreate: 'Crear grupo',
     createBucketColor: 'Color',
     deleteBucketTitle: 'Eliminar grupo',
-    deleteBucketBody: 'Los archivos del grupo se mover\u00e1n a Predeterminado. Esta acci\u00f3n no se puede deshacer.',
+    deleteBucketBody:
+      'Los archivos del grupo se mover\u00e1n a Predeterminado. Esta acci\u00f3n no se puede deshacer.',
     refresh: 'Actualizar',
     openInFinder: 'Abrir en Finder',
     selectFileHint: 'Selecciona un archivo para previsualizar',
@@ -602,8 +622,10 @@ const es: TranslationKeys = {
     notifyViaTelegram: 'v\u00eda Telegram',
     notifyCount: '{{count}} v\u00eda Telegram',
     notifyCount_one: '{{count}} v\u00eda Telegram',
-    notifyNoAllowlist: 'Primero conecta Telegram en Integraciones y a\u00f1ade IDs a la lista de permitidos.',
-    notifyHint: 'Elige uno o m\u00e1s destinatarios de Telegram. Recibir\u00e1n un mensaje cuando esta rutina termine o falle.',
+    notifyNoAllowlist:
+      'Primero conecta Telegram en Integraciones y a\u00f1ade IDs a la lista de permitidos.',
+    notifyHint:
+      'Elige uno o m\u00e1s destinatarios de Telegram. Recibir\u00e1n un mensaje cuando esta rutina termine o falle.',
     notifyClear: 'Limpiar notificaciones',
     notifyChannelTelegram: 'Telegram',
   },
@@ -620,8 +642,7 @@ const es: TranslationKeys = {
     zoomOut: 'Alejar',
     resetView: 'Restablecer vista',
     leadExpert: 'EXPERTO PRINCIPAL',
-    alwaysAvailable:
-      'Siempre disponible. Planifica, delega, aprende y resuelve.',
+    alwaysAvailable: 'Siempre disponible. Planifica, delega, aprende y resuelve.',
     capabilities: 'CAPACIDADES',
     capResponds: 'Responde directamente',
     capRoutes: 'Dirige a expertos',
@@ -634,7 +655,8 @@ const es: TranslationKeys = {
     pinned: '{{count}} fijados',
     verified: 'Verificado',
     verifiedTooltip: 'Verificado por Cerebro — experto curado con patrones probados',
-    verifiedReadOnly: 'Este experto lo mantiene Cerebro y no se puede editar ni eliminar. A\u00fan puedes activarlo, desactivarlo o fijarlo.',
+    verifiedReadOnly:
+      'Este experto lo mantiene Cerebro y no se puede editar ni eliminar. A\u00fan puedes activarlo, desactivarlo o fijarlo.',
     nodeId: 'ID DE NODO',
     details: 'DETALLES',
     name: 'Nombre',
@@ -695,12 +717,16 @@ const es: TranslationKeys = {
     teamMembersHeader: 'Miembros',
     teamCoordinatorHeader: 'Instrucciones del coordinador',
     teamStrategyHeader: 'Estrategia',
-    teamStrategySequentialHelp: 'Los miembros act\u00faan en orden; cada uno recibe el resultado del anterior.',
-    teamStrategyParallelHelp: 'Los miembros act\u00faan en paralelo; el \u00faltimo sintetiza el resultado.',
-    teamStrategyAutoHelp: 'La estrategia se elige seg\u00fan la tarea y las dependencias entre miembros.',
+    teamStrategySequentialHelp:
+      'Los miembros act\u00faan en orden; cada uno recibe el resultado del anterior.',
+    teamStrategyParallelHelp:
+      'Los miembros act\u00faan en paralelo; el \u00faltimo sintetiza el resultado.',
+    teamStrategyAutoHelp:
+      'La estrategia se elige seg\u00fan la tarea y las dependencias entre miembros.',
     teamVerifiedNote: 'Verificado \u2014 mantenido por Cerebro.',
     teamsDisabledTitle: 'Los grupos est\u00e1n en beta',
-    teamsDisabledBody: 'Activa Equipos de expertos en Ajustes \u2192 Funciones beta para usar este grupo.',
+    teamsDisabledBody:
+      'Activa Equipos de expertos en Ajustes \u2192 Funciones beta para usar este grupo.',
     openSettings: 'Abrir Ajustes',
     noThreadsYet: 'Sin hilos todav\u00eda. Saluda para empezar.',
     newThread: 'Nuevo hilo',
@@ -731,8 +757,7 @@ const es: TranslationKeys = {
     descPlaceholderExpert: '\u00bfQu\u00e9 hace este experto?',
     descPlaceholderTeam: '\u00bfQu\u00e9 maneja este equipo?',
     membersSelected: '({{count}} seleccionados)',
-    membersEmpty:
-      'Crea expertos individuales primero y luego agr\u00e9galos a un equipo.',
+    membersEmpty: 'Crea expertos individuales primero y luego agr\u00e9galos a un equipo.',
     createExpert: 'Crear experto',
     createTeam: 'Crear equipo',
   },
@@ -776,8 +801,7 @@ const es: TranslationKeys = {
     runs: 'Ejecuciones',
     runNow: 'Ejecutar ahora',
     deleteRoutine: 'Eliminar rutina',
-    deleteConfirm:
-      '\u00bfEliminar "{{name}}"? Esta acci\u00f3n no se puede deshacer.',
+    deleteConfirm: '\u00bfEliminar "{{name}}"? Esta acci\u00f3n no se puede deshacer.',
     issuesOne: '1 ajuste necesario antes de ejecutar',
     issuesOther: '{{count}} ajustes necesarios antes de ejecutar',
     issueOpenEditor: 'Abrir editor',
@@ -795,7 +819,8 @@ const es: TranslationKeys = {
     triggerScheduledDesc: 'Ejecutar con programaci\u00f3n',
     triggerWebhookDesc: 'Ejecutar v\u00eda webhook',
     triggerTelegramDesc: 'Ejecutar cuando llega un mensaje de Telegram',
-    triggerGithubIssueOpenedDesc: 'Ejecutar cuando se abre un nuevo issue en un repo vigilado de GitHub',
+    triggerGithubIssueOpenedDesc:
+      'Ejecutar cuando se abre un nuevo issue en un repo vigilado de GitHub',
     triggerGithubPrReviewDesc: 'Ejecutar cuando se solicita una revisión de PR en GitHub',
     schedule: 'Programaci\u00f3n',
     createRoutine: 'Crear rutina',
@@ -843,8 +868,10 @@ const es: TranslationKeys = {
     triggerScheduled: 'Ejecutar esta rutina en un horario',
     triggerWebhook: 'Iniciar esta rutina desde una llamada HTTP externa',
     triggerTelegram: 'Iniciar esta rutina cuando un mensaje de Telegram coincida con el filtro',
-    triggerGithubIssueOpened: 'Iniciar esta rutina cuando se abre un nuevo issue en un repo vigilado de GitHub',
-    triggerGithubPrReview: 'Iniciar esta rutina cuando alguien solicita una revisión en un PR de GitHub',
+    triggerGithubIssueOpened:
+      'Iniciar esta rutina cuando se abre un nuevo issue en un repo vigilado de GitHub',
+    triggerGithubPrReview:
+      'Iniciar esta rutina cuando alguien solicita una revisión en un PR de GitHub',
     cancel: 'Cancelar sin crear',
     create: 'Crear esta rutina y abrir el editor',
     addAction: 'Agregar un nuevo paso al lienzo',
@@ -881,8 +908,10 @@ const es: TranslationKeys = {
     stepTitle: 'T\u00edtulo visible de este paso',
     stepItemsField: 'Campo a iterar en pasos de bucle',
     fieldSystemPrompt: 'Persona o instrucciones opcionales enviadas antes del prompt',
-    fieldAgent: 'Qué subagente de Claude Code ejecuta este paso — por defecto, el generalista Cerebro',
-    fieldModel: 'Qué modelo de Claude ejecuta este paso — los más rápidos son más baratos, los más capaces razonan mejor',
+    fieldAgent:
+      'Qué subagente de Claude Code ejecuta este paso — por defecto, el generalista Cerebro',
+    fieldModel:
+      'Qué modelo de Claude ejecuta este paso — los más rápidos son más baratos, los más capaces razonan mejor',
     fieldTemperature: 'Aleatoriedad del muestreo \u2014 0 es determinista, 1+ es m\u00e1s creativo',
     fieldMaxTokens: 'M\u00e1ximo de tokens que el modelo puede generar',
     fieldExpertId: 'ID del experto que ejecutar\u00e1 este paso',
@@ -924,7 +953,8 @@ const es: TranslationKeys = {
     fieldApprovalSummary: 'Resumen mostrado al aprobador antes de continuar la rutina',
     fieldLoopItemsField: 'Ruta con puntos al arreglo sobre el que quieres iterar',
     fieldScriptTimeout: 'Cancela el script si tarda más de estos segundos',
-    fieldWebhookDescription: 'Nota que aparece en el historial para recordar para qué es el callback',
+    fieldWebhookDescription:
+      'Nota que aparece en el historial para recordar para qué es el callback',
     fieldNotifyTarget: 'Destinatario o canal que recibe el mensaje',
     fieldNotifyBody: 'Cuerpo del texto incluido en la notificaci\u00f3n',
     fieldNotifyUrgency: 'Nivel de urgencia usado por el canal de notificaci\u00f3n',
@@ -934,7 +964,8 @@ const es: TranslationKeys = {
     triggerWebhookUrl: 'Haz POST a esta URL para disparar la rutina',
     triggerWebhookSecret: 'Secreto HMAC usado para verificar peticiones entrantes del webhook',
     triggerWebhookCopy: 'Copiar URL del webhook al portapapeles',
-    notifyTelegramRecipient: 'Env\u00eda un DM a este usuario de Telegram cuando la rutina termine o falle',
+    notifyTelegramRecipient:
+      'Env\u00eda un DM a este usuario de Telegram cuando la rutina termine o falle',
     notifyClearAll: 'Quitar todos los destinatarios de notificaci\u00f3n',
   },
 
@@ -943,7 +974,8 @@ const es: TranslationKeys = {
     fieldLabel: 'Variables disponibles',
     helpButton: '\u00bfC\u00f3mo funcionan las variables?',
     title: 'C\u00f3mo funcionan las variables',
-    introBefore: 'Una variable lleva un valor de un paso al siguiente. La referencias con dobles llaves, por ejemplo',
+    introBefore:
+      'Una variable lleva un valor de un paso al siguiente. La referencias con dobles llaves, por ejemplo',
     introAfter: 'y se reemplaza por el valor real cuando la rutina se ejecuta.',
     exampleLabel: 'Ejemplo',
     step1Title: 'Paso 1 \u2014 Preguntar a la IA (llamado "Resumir correo")',
@@ -955,12 +987,15 @@ const es: TranslationKeys = {
     step2BodyLabel: 'Mensaje',
     step2BodyPrefix: 'La IA dijo:',
     step2RuntimeLabel: 'Lo que se muestra en pantalla',
-    exampleCaption: 'El nombre de la variable proviene del nombre del primer paso \u2014 al renombrarlo, Cerebro actualiza el chip y las plantillas que lo usan.',
+    exampleCaption:
+      'El nombre de la variable proviene del nombre del primer paso \u2014 al renombrarlo, Cerebro actualiza el chip y las plantillas que lo usan.',
     howLabel: 'C\u00f3mo usarlas',
     tip1Title: 'Conecta los pasos',
-    tip1Body: 'Arrastra una l\u00ednea desde el paso anterior hasta este. Cerebro conecta su salida autom\u00e1ticamente para que puedas referenciarla al instante.',
+    tip1Body:
+      'Arrastra una l\u00ednea desde el paso anterior hasta este. Cerebro conecta su salida autom\u00e1ticamente para que puedas referenciarla al instante.',
     tip2Title: 'Haz clic en un chip para insertarlo',
-    tip2BodyBefore: 'Cada variable que puedes usar aparece como un chip arriba. Al hacer clic se inserta',
+    tip2BodyBefore:
+      'Cada variable que puedes usar aparece como un chip arriba. Al hacer clic se inserta',
     tip2BodyAfter: 'en tu prompt o mensaje, as\u00ed no tienes que escribir las llaves.',
     tip3Title: 'Cerebro la reemplaza al ejecutar',
     tip3BodyBefore: 'Cuando la rutina se ejecuta, cada',
@@ -1077,7 +1112,8 @@ const es: TranslationKeys = {
     hungTitle: 'Este paso lleva silencioso más de lo normal.',
     hungBody: 'Claude sigue trabajando. Puedes esperar o cancelar y reintentar.',
     escalationNotice: 'Cambiado a {{model}} ({{tier}}) para una mejor respuesta.',
-    authRequired: 'Inicia sesión en Claude Code en tu terminal (ejecuta `claude`), luego reintenta.',
+    authRequired:
+      'Inicia sesión en Claude Code en tu terminal (ejecuta `claude`), luego reintenta.',
   },
 
   // ── Pantalla de aprobaciones ────────────────────────────────
@@ -1088,7 +1124,8 @@ const es: TranslationKeys = {
     pendingTabCount: 'Pendientes ({{count}})',
     historyTab: 'Historial',
     autoTab: 'Auto-aprobados',
-    autoSubtitle: 'Estos destinos se envían sin preguntar. Revoca cualquiera para volver a exigir aprobación.',
+    autoSubtitle:
+      'Estos destinos se envían sin preguntar. Revoca cualquiera para volver a exigir aprobación.',
     noAuto: 'No hay destinos auto-aprobados',
     noAutoDescription:
       'Dile a Cerebro en el chat que deje de pedir aprobación para un canal de Slack específico y aparecerá aquí.',
@@ -1097,8 +1134,7 @@ const es: TranslationKeys = {
     noPendingDescription:
       'Cuando un paso de rutina requiera tu autorizaci\u00f3n, aparecer\u00e1 aqu\u00ed.',
     noHistory: 'A\u00fan no hay historial de aprobaciones',
-    noHistoryDescription:
-      'Las aprobaciones resueltas aparecer\u00e1n aqu\u00ed.',
+    noHistoryDescription: 'Las aprobaciones resueltas aparecer\u00e1n aqu\u00ed.',
     parameters: 'Par\u00e1metros',
     requested: 'Solicitada {{time}}',
     reason: 'Raz\u00f3n: ',
@@ -1159,7 +1195,8 @@ const es: TranslationKeys = {
       steps: {
         openBotFather: 'Abre Telegram e inicia un chat con @BotFather.',
         runNewbot: 'Env\u00eda /newbot y sigue las indicaciones para nombrar tu bot.',
-        copyToken: 'Copia el token que BotFather te env\u00eda \u2014 luce as\u00ed: 123456789:AA\u2026',
+        copyToken:
+          'Copia el token que BotFather te env\u00eda \u2014 luce as\u00ed: 123456789:AA\u2026',
         pasteHere: 'Pega el token en el siguiente paso. Cerebro lo verifica y lo guarda cifrado.',
       },
     },
@@ -1172,15 +1209,21 @@ const es: TranslationKeys = {
       },
       hints: {
         botToken: 'Empieza con xoxb-\u2026 (de Install App \u2192 Bot User OAuth Token)',
-        appToken: 'Empieza con xapp-\u2026 (de Basic Information \u2192 App-Level Tokens, scope connections:write)',
+        appToken:
+          'Empieza con xapp-\u2026 (de Basic Information \u2192 App-Level Tokens, scope connections:write)',
       },
       steps: {
-        copyManifest: 'Copia el manifiesto YAML de Slack que Cerebro te muestra \u2014 ya trae los scopes, eventos y el slash command /cerebro configurados.',
-        createApp: 'En Slack, abre api.slack.com/apps \u2192 Create New App \u2192 From an app manifest. Pega el YAML y elige tu workspace.',
-        installWorkspace: 'En la app reci\u00e9n creada, abre Install App en la barra lateral y haz click en Install to Workspace.',
+        copyManifest:
+          'Copia el manifiesto YAML de Slack que Cerebro te muestra \u2014 ya trae los scopes, eventos y el slash command /cerebro configurados.',
+        createApp:
+          'En Slack, abre api.slack.com/apps \u2192 Create New App \u2192 From an app manifest. Pega el YAML y elige tu workspace.',
+        installWorkspace:
+          'En la app reci\u00e9n creada, abre Install App en la barra lateral y haz click en Install to Workspace.',
         copyBotToken: 'En Install App, copia el Bot User OAuth Token (empieza con xoxb-).',
-        generateAppToken: 'En Basic Information \u2192 App-Level Tokens, dale a Generate. Ponle un nombre (por ejemplo socket), a\u00f1ade el scope connections:write y copia el token xapp-.',
-        pasteHere: 'Pega ambos tokens en el siguiente paso. Cerebro los verifica con auth.test y los guarda cifrados.',
+        generateAppToken:
+          'En Basic Information \u2192 App-Level Tokens, dale a Generate. Ponle un nombre (por ejemplo socket), a\u00f1ade el scope connections:write y copia el token xapp-.',
+        pasteHere:
+          'Pega ambos tokens en el siguiente paso. Cerebro los verifica con auth.test y los guarda cifrados.',
       },
     },
     hubspot: {
@@ -1189,16 +1232,19 @@ const es: TranslationKeys = {
       fields: { accessToken: 'Token de aplicaci\u00f3n privada' },
       hints: { accessToken: 'pat-na1-\u2026 (token de aplicaci\u00f3n privada de HubSpot)' },
       steps: {
-        openSettings: 'En HubSpot, abre Configuraci\u00f3n \u2192 Integraciones \u2192 Aplicaciones privadas.',
+        openSettings:
+          'En HubSpot, abre Configuraci\u00f3n \u2192 Integraciones \u2192 Aplicaciones privadas.',
         createPrivateApp: 'Pulsa Crear aplicaci\u00f3n privada y dale un nombre.',
-        grantScopes: 'En Permisos, habilita tickets y pipelines, además de contacts, companies, deals y lists (leer + escribir) para que Cerebro pueda gestionar tus registros y segmentos del CRM.',
+        grantScopes:
+          'En Permisos, habilita tickets y pipelines, además de contacts, companies, deals y lists (leer + escribir) para que Cerebro pueda gestionar tus registros y segmentos del CRM.',
         copyToken: 'Pulsa Crear aplicaci\u00f3n, luego Mostrar token y c\u00f3pialo.',
         pasteHere: 'Pega el token en el siguiente paso.',
       },
     },
     calendar: {
       name: 'Calendario',
-      description: 'Sincroniza Google Calendar y Outlook en un calendario unificado y bidireccional.',
+      description:
+        'Sincroniza Google Calendar y Outlook en un calendario unificado y bidireccional.',
       fields: {
         clientId: 'ID de cliente OAuth',
         clientSecret: 'Secreto de cliente OAuth',
@@ -1222,13 +1268,15 @@ const es: TranslationKeys = {
       hints: {},
       steps: {
         openWhatsApp: 'Abre WhatsApp en tu tel\u00e9fono.',
-        linkedDevices: 'Ve a Ajustes \u2192 Dispositivos vinculados \u2192 Vincular un dispositivo.',
+        linkedDevices:
+          'Ve a Ajustes \u2192 Dispositivos vinculados \u2192 Vincular un dispositivo.',
         scanQr: 'Escanea el c\u00f3digo QR que Cerebro muestra en el siguiente paso.',
       },
     },
     ghl: {
       name: 'GoHighLevel',
-      description: 'Sincroniza contactos y env\u00eda informes de inteligencia a tu CRM de GoHighLevel.',
+      description:
+        'Sincroniza contactos y env\u00eda informes de inteligencia a tu CRM de GoHighLevel.',
       fields: {
         apiKey: 'Clave de API de Integraci\u00f3n Privada',
         locationId: 'ID de ubicaci\u00f3n',
@@ -1238,16 +1286,21 @@ const es: TranslationKeys = {
         locationId: 'El id de la subcuenta (ubicaci\u00f3n), por ejemplo abc123\u2026',
       },
       steps: {
-        openSettings: 'En GoHighLevel, abre Configuraci\u00f3n \u2192 Integraciones \u2192 Integraciones privadas.',
-        createPrivateApp: 'Crea una integraci\u00f3n privada con los permisos de contactos y notas (lectura + escritura).',
+        openSettings:
+          'En GoHighLevel, abre Configuraci\u00f3n \u2192 Integraciones \u2192 Integraciones privadas.',
+        createPrivateApp:
+          'Crea una integraci\u00f3n privada con los permisos de contactos y notas (lectura + escritura).',
         copyApiKey: 'Copia la clave de API que aparece tras crearla \u2014 empieza con pit-\u2026.',
-        copyLocationId: 'Toma el id de ubicaci\u00f3n desde la URL de GHL de la subcuenta que quieres sincronizar.',
-        pasteHere: 'Pega ambos valores en el siguiente paso. Cerebro los verifica llamando a la API de contactos de GHL.',
+        copyLocationId:
+          'Toma el id de ubicaci\u00f3n desde la URL de GHL de la subcuenta que quieres sincronizar.',
+        pasteHere:
+          'Pega ambos valores en el siguiente paso. Cerebro los verifica llamando a la API de contactos de GHL.',
       },
     },
     github: {
       name: 'GitHub',
-      description: 'Gestiona issues, pull requests y revisiones de c\u00f3digo desde el chat y las rutinas.',
+      description:
+        'Gestiona issues, pull requests y revisiones de c\u00f3digo desde el chat y las rutinas.',
       fields: {
         personalAccessToken: 'Token de acceso personal',
       },
@@ -1255,9 +1308,11 @@ const es: TranslationKeys = {
         personalAccessToken: 'ghp_\u2026 (cl\u00e1sico) o github_pat_\u2026 (de grano fino)',
       },
       steps: {
-        openSettings: 'En GitHub, abre Settings \u2192 Developer settings \u2192 Personal access tokens.',
+        openSettings:
+          'En GitHub, abre Settings \u2192 Developer settings \u2192 Personal access tokens.',
         createPersonalAccessToken: 'Genera un nuevo token (cl\u00e1sico o de grano fino).',
-        grantScopes: 'Concede el scope repo (cl\u00e1sico) o Issues, Pull Requests y Contents (lectura + escritura) en los repositorios donde Cerebro deba actuar.',
+        grantScopes:
+          'Concede el scope repo (cl\u00e1sico) o Issues, Pull Requests y Contents (lectura + escritura) en los repositorios donde Cerebro deba actuar.',
         copyToken: 'Copia el token \u2014 GitHub solo lo muestra una vez.',
         pasteHere: 'P\u00e9galo en el siguiente paso. Cerebro lo verifica llamando a /user.',
       },
@@ -1283,13 +1338,11 @@ const es: TranslationKeys = {
     error: 'Error',
     version: 'Versi\u00f3n',
     path: 'Ruta',
-    notFoundMessage:
-      'Cerebro no pudo encontrar este CLI en tu sistema.',
+    notFoundMessage: 'Cerebro no pudo encontrar este CLI en tu sistema.',
     notFoundError: '({{error}})',
     installGuide: 'Inst\u00e1lalo desde',
     installGuideLink: 'la gu\u00eda oficial de configuraci\u00f3n',
-    installGuideAfter:
-      'y haz clic en Re-detectar una vez instalado.',
+    installGuideAfter: 'y haz clic en Re-detectar una vez instalado.',
     redetect: 'Re-detectar',
   },
 
@@ -1309,9 +1362,11 @@ const es: TranslationKeys = {
     ghl: 'GoHighLevel',
     ghlDesc: 'Sincroniza contactos y envía informes de inteligencia a tu CRM de GHL.',
     github: 'GitHub',
-    githubDesc: 'Gestiona issues, pull requests y revisiones de código desde el chat y las rutinas.',
+    githubDesc:
+      'Gestiona issues, pull requests y revisiones de código desde el chat y las rutinas.',
     supabase: 'Supabase',
-    supabaseDesc: 'Sincroniza tus chats, base de conocimiento, expertos y tareas entre dispositivos con tu propio proyecto de Supabase.',
+    supabaseDesc:
+      'Sincroniza tus chats, base de conocimiento, expertos y tareas entre dispositivos con tu propio proyecto de Supabase.',
   },
 
   // ── Sincronización con Supabase (multidispositivo) ──────────
@@ -1319,19 +1374,24 @@ const es: TranslationKeys = {
     title: 'Sincronización con Supabase',
     description:
       'Conecta tu propio proyecto de Supabase para mantener Cerebro sincronizado en todos tus dispositivos. Tus chats, base de conocimiento, expertos, rutinas y tareas se reflejan en una base de datos que es tuya. Cerebro sigue funcionando sin conexión y se pone al día en cuanto vuelves a conectarte.',
-    storageEncrypted: 'Tu cadena de conexión se cifra en reposo con el llavero de tu sistema operativo.',
+    storageEncrypted:
+      'Tu cadena de conexión se cifra en reposo con el llavero de tu sistema operativo.',
     storagePlaintextFallback:
       'Llavero del sistema no disponible: tu cadena de conexión se guarda con un método alternativo sin cifrado del sistema. Cualquiera con acceso a este dispositivo podría leerla.',
     perDeviceNote:
       'Las apps conectadas (Telegram, HubSpot, GitHub, …) permanecen en este dispositivo por seguridad y se reconectan en cada máquina. Todo lo demás se sincroniza.',
     dbUrlLabel: 'Cadena de conexión de Postgres',
-    dbUrlHelp: 'Supabase → Project Settings → Database → Connection string (URI). Usa el prefijo postgresql+psycopg://.',
+    dbUrlHelp:
+      'Supabase → Project Settings → Database → Connection string (URI). Usa el prefijo postgresql+psycopg://.',
     projectUrlLabel: 'URL del proyecto',
-    projectUrlHelp: 'Supabase → Project Settings → API → Project URL. Se usa para sincronizar archivos adjuntos con Storage.',
+    projectUrlHelp:
+      'Supabase → Project Settings → API → Project URL. Se usa para sincronizar archivos adjuntos con Storage.',
     keyLabel: 'Clave service_role',
-    keyHelp: 'Supabase → Project Settings → API → clave service_role. Cifrada en reposo; solo se usa para subir archivos a Storage.',
+    keyHelp:
+      'Supabase → Project Settings → API → clave service_role. Cifrada en reposo; solo se usa para subir archivos a Storage.',
     bucketLabel: 'Bucket de Storage',
-    bucketHelp: 'Nombre del bucket de Storage para los archivos sincronizados. Se crea automáticamente si no existe.',
+    bucketHelp:
+      'Nombre del bucket de Storage para los archivos sincronizados. Se crea automáticamente si no existe.',
     seedExisting: 'Subir ahora mis datos locales existentes a este proyecto',
     connect: 'Conectar',
     connecting: 'Conectando…',
@@ -1353,13 +1413,15 @@ const es: TranslationKeys = {
   // ── Sección de GoHighLevel ──────────────────────────────────
   ghlSection: {
     apiKeyLabel: 'Clave API',
-    apiKeyHelp: 'Tu clave de API de integración privada de GoHighLevel. Se encuentra en Configuración → Integraciones → Claves de API.',
+    apiKeyHelp:
+      'Tu clave de API de integración privada de GoHighLevel. Se encuentra en Configuración → Integraciones → Claves de API.',
     apiKeyPlaceholder: 'ey…',
     showKey: 'Mostrar clave API',
     hideKey: 'Ocultar clave API',
     replaceKey: 'Reemplazar clave',
     locationIdLabel: 'ID de ubicación',
-    locationIdHelp: 'El ID de la subcuenta (ubicación) donde sincronizar los contactos. Encuéntralo en la URL de tu ubicación en GHL.',
+    locationIdHelp:
+      'El ID de la subcuenta (ubicación) donde sincronizar los contactos. Encuéntralo en la URL de tu ubicación en GHL.',
     locationIdPlaceholder: 'abc123…',
     testConnection: 'Probar conexión',
     disconnect: 'Desconectar',
@@ -1375,7 +1437,8 @@ const es: TranslationKeys = {
       'Controla GitHub desde el chat ("revisa el PR #42", "abre un issue") y dispara rutinas con eventos entrantes (nuevo issue, revisión solicitada). Cerebro consulta los repositorios vigilados cada minuto — no hace falta una URL pública para webhooks.',
     tokenLabel: 'Token de acceso personal',
     tokenPlaceholder: 'ghp_… o github_pat_…',
-    tokenHelp: 'El token se cifra en disco. Permisos requeridos: repo (clásico) o Issues + Pull Requests + Contents (de grano fino).',
+    tokenHelp:
+      'El token se cifra en disco. Permisos requeridos: repo (clásico) o Issues + Pull Requests + Contents (de grano fino).',
     verify: 'Verificar',
     verifying: 'Verificando…',
     verified: 'Verificado',
@@ -1449,8 +1512,10 @@ const es: TranslationKeys = {
       'Los bots de Telegram se crean con @BotFather, el bot oficial para administrar bots. S\u00f3lo toma un minuto.',
     step1Item1: 'Abre Telegram e inicia un chat con @BotFather.',
     step1Item2: 'Env\u00eda /newbot y elige un nombre p\u00fablico.',
-    step1Item3: 'Elige un nombre de usuario que termine en \u00abbot\u00bb (p. ej. cerebro_helper_bot).',
-    step1Item4: 'Copia el token que BotFather te env\u00ede \u2014 se ve as\u00ed: 123456789:AA\u2026',
+    step1Item3:
+      'Elige un nombre de usuario que termine en \u00abbot\u00bb (p. ej. cerebro_helper_bot).',
+    step1Item4:
+      'Copia el token que BotFather te env\u00ede \u2014 se ve as\u00ed: 123456789:AA\u2026',
     openBotFather: 'Abrir @BotFather en Telegram',
 
     step2Title: 'Pega tu token',
@@ -1525,7 +1590,8 @@ const es: TranslationKeys = {
     step5Title: 'Verifica y activa',
     step5Body:
       'Cerebro va a llamar a auth.test con tu bot token y abrir una conexión rápida con tu app token para verificar que Socket Mode funciona.',
-    step5VerifyFailed: 'No se pudieron verificar los tokens. Revisa que el manifiesto se instaló bien y que ambos tokens se copiaron sin espacios al final.',
+    step5VerifyFailed:
+      'No se pudieron verificar los tokens. Revisa que el manifiesto se instaló bien y que ambos tokens se copiaron sin espacios al final.',
     verify: 'Verificar',
     verifying: 'Verificando…',
     step6Title: 'Listo',
@@ -1582,12 +1648,16 @@ const es: TranslationKeys = {
     expertAccessExample:
       'Ejemplo: por defecto, todo tu equipo solo ve al Sales Coach. Después añades a tu admin como excepción con acceso completo y a los becarios como excepciones limitadas a un único experto. El resto sigue el ajuste por defecto.',
     expertAccessDefaultTitle: 'Acceso por defecto',
-    expertAccessDefaultHelp: 'Se aplica a todos los de Slack que no estén en la lista de excepciones de abajo.',
+    expertAccessDefaultHelp:
+      'Se aplica a todos los de Slack que no estén en la lista de excepciones de abajo.',
     expertAccessDefaultAll: 'Todos los expertos',
-    expertAccessDefaultAllHint: 'Cualquiera en Slack puede usar cualquier experto. (Comportamiento actual.)',
+    expertAccessDefaultAllHint:
+      'Cualquiera en Slack puede usar cualquier experto. (Comportamiento actual.)',
     expertAccessDefaultCustom: 'Solo los expertos que elija',
-    expertAccessDefaultCustomHint: 'Define el baseline. Lo eliges una vez — se aplica a todo el equipo.',
-    expertAccessDefaultCustomEmpty: 'Elige al menos un experto abajo, o nadie tendrá acceso a nada.',
+    expertAccessDefaultCustomHint:
+      'Define el baseline. Lo eliges una vez — se aplica a todo el equipo.',
+    expertAccessDefaultCustomEmpty:
+      'Elige al menos un experto abajo, o nadie tendrá acceso a nada.',
     expertAccessExceptionsTitle: 'Excepciones',
     expertAccessExceptionsHelp:
       'Personas con un acceso distinto al por defecto — admins que necesitan todo, externos que tienen que estar más limitados, etc.',
@@ -1598,12 +1668,15 @@ const es: TranslationKeys = {
     expertAccessModeCustom: 'Solo expertos concretos',
     userExpertAccessLoading: 'Cargando…',
     userExpertAccessLoadingPeople: 'Cargando miembros del workspace…',
-    userExpertAccessTapRefresh: 'Pulsa el icono de refrescar para cargar a los miembros de tu workspace de Slack.',
-    userExpertAccessBridgeOffline: 'Activa el puente de Slack abajo para cargar a los miembros del workspace.',
+    userExpertAccessTapRefresh:
+      'Pulsa el icono de refrescar para cargar a los miembros de tu workspace de Slack.',
+    userExpertAccessBridgeOffline:
+      'Activa el puente de Slack abajo para cargar a los miembros del workspace.',
     userExpertAccessAddExperts: 'Añadir expertos',
     userExpertAccessRemovePerson: 'Quitar de la lista',
     userExpertAccessRemoveExpert: 'Quitar {{name}}',
-    userExpertAccessNoneAssigned: 'Aún no se han elegido expertos — esta persona no puede usar ninguno.',
+    userExpertAccessNoneAssigned:
+      'Aún no se han elegido expertos — esta persona no puede usar ninguno.',
     userExpertAccessSearchPlaceholder: 'Buscar por nombre o email…',
     userExpertAccessRefresh: 'Refrescar',
     userExpertAccessNoMatch: 'Nadie coincide con esa búsqueda.',
@@ -1620,7 +1693,8 @@ const es: TranslationKeys = {
     verifying: 'Verificando...',
     verified: 'Verificado',
     allowlistLabel: 'IDs de usuario permitidos',
-    allowlistHelp: 'Solo estos IDs de usuario de Telegram pueden chatear con el bot. Separa varios IDs con comas.',
+    allowlistHelp:
+      'Solo estos IDs de usuario de Telegram pueden chatear con el bot. Separa varios IDs con comas.',
     operatorChatIdLabel: 'ID del operador',
     operatorChatIdHelp:
       'ID de chat de Telegram que recibe el enlace de inicio de sesión de Claude cuando el CLI pierde la autenticación. Déjalo en blanco para usar el primer usuario permitido.',
@@ -1628,7 +1702,8 @@ const es: TranslationKeys = {
       'Activa el puente abajo \u2014 incluso sin IDs funciona en modo descubrimiento. Env\u00eda cualquier mensaje a tu bot desde Telegram y te responder\u00e1 con tu ID num\u00e9rico, que podr\u00e1s pegar arriba.',
     allowlistPlaceholder: '123456789, 987654321',
     forwardAllLabel: 'Reenviar todas las aprobaciones a Telegram',
-    forwardAllHelp: 'Desactivado por defecto: solo se env\u00edan las aprobaciones de ejecuciones iniciadas desde Telegram. Act\u00edvalo si tambi\u00e9n quieres recibir en el tel\u00e9fono las aprobaciones iniciadas desde el escritorio.',
+    forwardAllHelp:
+      'Desactivado por defecto: solo se env\u00edan las aprobaciones de ejecuciones iniciadas desde Telegram. Act\u00edvalo si tambi\u00e9n quieres recibir en el tel\u00e9fono las aprobaciones iniciadas desde el escritorio.',
     enableLabel: 'Activar puente',
     enableDisabledHint: 'Verifica el token para activar el puente.',
     discoveryModeHint:
@@ -1678,8 +1753,7 @@ const es: TranslationKeys = {
     importFailed: 'Error al importar',
     fetchingSkill: 'Obteniendo habilidad...',
     import: 'Importar',
-    importSuccess:
-      'Importada exitosamente. Revisa los detalles a continuaci\u00f3n y guarda.',
+    importSuccess: 'Importada exitosamente. Revisa los detalles a continuaci\u00f3n y guarda.',
     supportedFormats: 'FORMATOS SOPORTADOS',
     formatNpx: 'comando npx',
     formatGithubShort: 'atajo de GitHub',
@@ -1831,7 +1905,8 @@ const es: TranslationKeys = {
     languageDesc:
       'Elige el idioma de la interfaz de Cerebro. Las respuestas de la IA tambi\u00e9n se adaptar\u00e1n al idioma seleccionado.',
     takeTourTitle: 'Repetir el recorrido',
-    takeTourDesc: 'Vuelve a hacer el recorrido de bienvenida cuando quieras \u2014 un paseo guiado de 90 segundos por cada pantalla.',
+    takeTourDesc:
+      'Vuelve a hacer el recorrido de bienvenida cuando quieras \u2014 un paseo guiado de 90 segundos por cada pantalla.',
     takeTourCta: 'Iniciar recorrido',
   },
 
@@ -1849,8 +1924,7 @@ const es: TranslationKeys = {
     selectFile: 'Selecciona un archivo o crea uno nuevo.',
     selectAgent: 'Selecciona un agente para ver su memoria.',
     lastUpdated: '\u00daltima actualizaci\u00f3n: {{time}}',
-    editorPlaceholder:
-      'Escribe markdown que el agente deber\u00eda leer en cada turno...',
+    editorPlaceholder: 'Escribe markdown que el agente deber\u00eda leer en cada turno...',
   },
 
   // ── Secci\u00f3n de sandbox ──────────────────────────────────────
@@ -1860,10 +1934,8 @@ const es: TranslationKeys = {
       'Restringe lo que los agentes de Cerebro pueden leer y escribir en tu Mac. El sandbox es un perfil Seatbelt de macOS envuelto alrededor del subproceso de Claude Code \u2014 las operaciones denegadas fallan con un error de permiso en lugar de tocar tus archivos.',
     enableSandbox: 'Activar sandbox',
     macOsOnly: 'Solo macOS (v1)',
-    activeDesc:
-      'Los agentes solo pueden acceder al espacio de trabajo y los proyectos vinculados.',
-    inactiveDesc:
-      'Los agentes tienen acceso sin restricciones a tus archivos.',
+    activeDesc: 'Los agentes solo pueden acceder al espacio de trabajo y los proyectos vinculados.',
+    inactiveDesc: 'Los agentes tienen acceso sin restricciones a tus archivos.',
     disableSandbox: 'Desactivar sandbox',
     disableConfirmTitle: '\u00bfDesactivar sandbox?',
     disableConfirmDesc:
@@ -1888,10 +1960,8 @@ const es: TranslationKeys = {
     promoteToReadWrite: 'Promover a lectura-escritura',
     revertToReadOnly: 'Revertir a solo lectura',
     unlinkProject: 'Desvincular proyecto',
-    confirmWriteTitle:
-      '\u00bfPermitir a Cerebro escribir en este directorio?',
-    confirmWriteDesc:
-      'Los agentes podr\u00e1n crear, modificar y eliminar archivos en {{path}}.',
+    confirmWriteTitle: '\u00bfPermitir a Cerebro escribir en este directorio?',
+    confirmWriteDesc: 'Los agentes podr\u00e1n crear, modificar y eliminar archivos en {{path}}.',
     yesAllowWrites: 'S\u00ed, permitir escritura',
     alwaysBlocked: 'Siempre bloqueados',
     blockedDescription:
@@ -2026,11 +2096,9 @@ const es: TranslationKeys = {
     step1Body:
       'Cerebro se vincula a la app de WhatsApp Business como un dispositivo vinculado — igual que WhatsApp Web. Puedes usarlo con un número de teléfono dedicado para tu negocio y dejar que Cerebro responda automáticamente los mensajes entrantes de tus clientes.',
     step1ChoiceYesTitle: 'Sí, ya la tengo',
-    step1ChoiceYesDesc:
-      'Ya instalé WhatsApp Business y me registré con un número dedicado.',
+    step1ChoiceYesDesc: 'Ya instalé WhatsApp Business y me registré con un número dedicado.',
     step1ChoiceNoTitle: 'Todavía no — muéstrame cómo',
-    step1ChoiceNoDesc:
-      'Guíame para crear primero una cuenta de WhatsApp Business.',
+    step1ChoiceNoDesc: 'Guíame para crear primero una cuenta de WhatsApp Business.',
     step1AlreadyPairedTitle: 'Ya está vinculado',
     step1AlreadyPairedDesc:
       'Omite la configuración y ve directo a la lista de remitentes permitidos.',
@@ -2069,8 +2137,7 @@ const es: TranslationKeys = {
     step2YesChecklistTitle: 'En tu teléfono, ten listo lo siguiente',
     step2YesChecklist1: 'La app de WhatsApp Business abierta y con sesión iniciada',
     step2YesChecklist2: 'Toca Ajustes → Dispositivos vinculados → Vincular un dispositivo',
-    step2YesChecklist3:
-      'Puede aparecer un aviso de desbloqueo con rostro o huella — apruébalo',
+    step2YesChecklist3: 'Puede aparecer un aviso de desbloqueo con rostro o huella — apruébalo',
     step2YesContinue: 'Abrir el código QR',
 
     step3Title: 'Escanea esto en tu teléfono',
@@ -2132,8 +2199,7 @@ const es: TranslationKeys = {
     goToIntegrations: 'Ir a Integraciones',
 
     customizeHeader: 'Personalizar',
-    customizeBody:
-      'Completa los detalles que la plantilla usa para este flujo específico.',
+    customizeBody: 'Completa los detalles que la plantilla usa para este flujo específico.',
 
     reviewHeader: 'Revisar',
     reviewBody: 'Cerebro creará una nueva rutina con lo siguiente:',
@@ -2148,8 +2214,7 @@ const es: TranslationKeys = {
       'No vinculado — abre la pantalla de Integraciones para vincular un dispositivo.',
     hsLabel: 'HubSpot CRM',
     hsConnected: 'Conectado al portal {{portal}}',
-    hsNotConnected:
-      'No conectado — pega un token de Private App en la pantalla de Integraciones.',
+    hsNotConnected: 'No conectado — pega un token de Private App en la pantalla de Integraciones.',
     tgLabel: 'Telegram',
     tgConnected: 'Conectado como @{{username}}',
     tgNotConnected: 'No conectado.',
@@ -2167,8 +2232,7 @@ const es: TranslationKeys = {
     title: 'HubSpot CRM',
     description:
       'Crea, edita, lista y elimina tickets, contactos, empresas, negocios y listas en HubSpot desde el chat o una rutina.',
-    keychainEncrypted:
-      'El token de acceso se cifra en el llavero de tu sistema operativo.',
+    keychainEncrypted: 'El token de acceso se cifra en el llavero de tu sistema operativo.',
     keychainFallback:
       'Llavero del SO no disponible — el token se guarda con codificación de respaldo.',
     tokenLabel: 'Token de acceso de la Private App',
@@ -2219,11 +2283,9 @@ const es: TranslationKeys = {
     step1WarningTitle: 'No uses el portal de Developer',
     step1WarningBody:
       'Las páginas que digan "Developer" / "Projects" / "MCP Auth Apps" son para apps de marketplace y no te darán un token que Cerebro pueda usar. El botón del siguiente paso abre la página correcta directamente.',
-    step1Bullet1:
-      'Se queda dentro de tu portal — sin envío público ni revisión.',
+    step1Bullet1: 'Se queda dentro de tu portal — sin envío público ni revisión.',
     step1Bullet2: 'Tú eliges exactamente qué scopes puede usar Cerebro.',
-    step1Bullet3:
-      'El token se almacena cifrado en el llavero de tu sistema operativo.',
+    step1Bullet3: 'El token se almacena cifrado en el llavero de tu sistema operativo.',
 
     openInBrowser: 'Abrir en el navegador',
     copy: 'Copiar',
@@ -2256,18 +2318,13 @@ const es: TranslationKeys = {
       'Leer tus pipelines de tickets y abrir nuevos tickets de soporte desde una rutina.',
     scopeReasonContactsRead:
       'Buscar un cliente existente por email o teléfono antes de crear un ticket.',
-    scopeReasonContactsWrite:
-      'Crear o actualizar el registro de contacto del cliente.',
+    scopeReasonContactsWrite: 'Crear o actualizar el registro de contacto del cliente.',
     scopeReasonCompaniesRead:
       'Listar y leer empresas, y saber a qué empresa pertenece un ticket o contacto.',
-    scopeReasonCompaniesWrite:
-      'Crear, editar y eliminar empresas desde el chat o una rutina.',
-    scopeReasonDealsRead:
-      'Listar y leer negocios en todos tus pipelines.',
-    scopeReasonDealsWrite:
-      'Crear, editar y eliminar negocios desde el chat o una rutina.',
-    scopeReasonListsRead:
-      'Listar y leer tus listas (segmentos).',
+    scopeReasonCompaniesWrite: 'Crear, editar y eliminar empresas desde el chat o una rutina.',
+    scopeReasonDealsRead: 'Listar y leer negocios en todos tus pipelines.',
+    scopeReasonDealsWrite: 'Crear, editar y eliminar negocios desde el chat o una rutina.',
+    scopeReasonListsRead: 'Listar y leer tus listas (segmentos).',
     scopeReasonListsWrite:
       'Crear, renombrar y eliminar listas, y añadir o quitar registros de ellas.',
     scopeReasonOwnersRead:
@@ -2288,8 +2345,7 @@ const es: TranslationKeys = {
     step3VerifiedPortal: 'Verificado — portal {{portalId}}',
     step3PortalHidden: '(oculto)',
     step3CouldNotStoreToken: 'No se pudo guardar el token',
-    step3WillEncrypt:
-      'Una vez guardado, el token se cifra en el llavero de tu sistema operativo.',
+    step3WillEncrypt: 'Una vez guardado, el token se cifra en el llavero de tu sistema operativo.',
     step3NoKeychain:
       'Llavero del SO no disponible — Cerebro guardará el token con codificación de respaldo.',
     step3UnknownError: 'Error desconocido',
@@ -2497,7 +2553,8 @@ const es: TranslationKeys = {
     askAiSearchingWeb: 'Buscando en la web…',
     askAiError: 'Algo salió mal. Inténtalo de nuevo.',
     askAiEmptyTitle: 'Pregunta sobre esta página',
-    askAiEmptySubtitle: 'Haz una pregunta — el asistente responde con esta página y busca en la web cuando ayuda.',
+    askAiEmptySubtitle:
+      'Haz una pregunta — el asistente responde con esta página y busca en la web cuando ayuda.',
     emptyTreeTitle: 'Aún no hay páginas',
     emptyTreeSubtitle: 'Crea tu primera página para empezar a construir tu base de conocimiento.',
     emptyStateTitle: 'Selecciona una página',
@@ -2510,7 +2567,8 @@ const es: TranslationKeys = {
     deletePermanently: 'Eliminar permanentemente',
     trashEmpty: 'La papelera está vacía',
     confirmDeleteTitle: '¿Eliminar página?',
-    confirmDeleteMessage: 'Esta página y todas sus subpáginas se eliminarán permanentemente. Esto no se puede deshacer.',
+    confirmDeleteMessage:
+      'Esta página y todas sus subpáginas se eliminarán permanentemente. Esto no se puede deshacer.',
     confirmDelete: 'Eliminar',
     cancel: 'Cancelar',
   },
@@ -2628,7 +2686,8 @@ const es: TranslationKeys = {
     },
     section: {
       title: 'Calendarios',
-      description: 'Conecta Google Calendar y Outlook. La sincronización bidireccional lo mantiene todo al día.',
+      description:
+        'Conecta Google Calendar y Outlook. La sincronización bidireccional lo mantiene todo al día.',
       addAccount: 'Agregar cuenta',
       reconnect: 'Reconectar',
       disconnect: 'Desconectar',
@@ -2650,8 +2709,10 @@ const es: TranslationKeys = {
       success: '{{email}} conectado',
       error: 'No se pudo conectar: {{error}}',
       redirectHint: 'Agrega http://127.0.0.1 a las URI de redirección permitidas de tu app.',
-      googleHelp: 'Crea un cliente OAuth (app de escritorio) en Google Cloud Console con la API de Calendar habilitada.',
-      outlookHelp: 'Registra una app en el portal de Azure con Calendars.ReadWrite y redirección de escritorio/móvil.',
+      googleHelp:
+        'Crea un cliente OAuth (app de escritorio) en Google Cloud Console con la API de Calendar habilitada.',
+      outlookHelp:
+        'Registra una app en el portal de Azure con Calendars.ReadWrite y redirección de escritorio/móvil.',
     },
   },
 } as const;

@@ -41,7 +41,9 @@ function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
       if (predicate()) return resolve();
       if (Date.now() - start > timeoutMs) {
         return reject(
-          new Error(`Timed out. Captured: ${JSON.stringify(captured.map((r) => `${r.method} ${r.path}`))}`),
+          new Error(
+            `Timed out. Captured: ${JSON.stringify(captured.map((r) => `${r.method} ${r.path}`))}`,
+          ),
         );
       }
       setTimeout(tick, 15);
@@ -74,10 +76,16 @@ function makeMockSlackChannel() {
 beforeAll(async () => {
   mockServer = http.createServer((req, res) => {
     let body = '';
-    req.on('data', (c) => { body += c; });
+    req.on('data', (c) => {
+      body += c;
+    });
     req.on('end', () => {
       let parsed: any = null;
-      try { parsed = JSON.parse(body); } catch { parsed = body; }
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        parsed = body;
+      }
       const url = req.url || '/';
       const method = req.method || 'GET';
       captured.push({ method, path: url, body: parsed });
@@ -114,16 +122,35 @@ beforeAll(async () => {
       // Run / step / event persistence.
       if (method === 'POST' && url === '/engine/runs') {
         return json(201, {
-          id: parsed?.id || 'test', status: 'running', run_type: 'chat_action',
-          trigger: 'chat', total_steps: parsed?.total_steps || 0, completed_steps: 0,
-          started_at: new Date().toISOString(), routine_id: null, expert_id: null,
-          conversation_id: null, dag_json: null, error: null, failed_step_id: null,
-          completed_at: null, duration_ms: null, steps: null,
+          id: parsed?.id || 'test',
+          status: 'running',
+          run_type: 'chat_action',
+          trigger: 'chat',
+          total_steps: parsed?.total_steps || 0,
+          completed_steps: 0,
+          started_at: new Date().toISOString(),
+          routine_id: null,
+          expert_id: null,
+          conversation_id: null,
+          dag_json: null,
+          error: null,
+          failed_step_id: null,
+          completed_at: null,
+          duration_ms: null,
+          steps: null,
         });
       }
       if (method === 'POST' && url.includes('/steps')) {
         const steps = Array.isArray(parsed)
-          ? parsed.map((s: any) => ({ ...s, run_id: 'test', summary: null, error: null, started_at: null, completed_at: null, duration_ms: null }))
+          ? parsed.map((s: any) => ({
+              ...s,
+              run_id: 'test',
+              summary: null,
+              error: null,
+              started_at: null,
+              completed_at: null,
+              duration_ms: null,
+            }))
           : [];
         return json(201, steps);
       }
@@ -186,7 +213,9 @@ describe('runChatAction auto-approval bypass', () => {
     expect(lookup!.path).toContain('target_key=C123');
 
     // ...and never created an approval (no gate, no pause).
-    const approvalPost = captured.find((r) => r.method === 'POST' && r.path === '/engine/approvals');
+    const approvalPost = captured.find(
+      (r) => r.method === 'POST' && r.path === '/engine/approvals',
+    );
     expect(approvalPost).toBeUndefined();
   });
 
@@ -200,8 +229,12 @@ describe('runChatAction auto-approval bypass', () => {
     });
 
     // The gate fires: an approval row is created and the run pauses.
-    await waitFor(() => captured.some((r) => r.method === 'POST' && r.path === '/engine/approvals'));
-    const approvalPost = captured.find((r) => r.method === 'POST' && r.path === '/engine/approvals');
+    await waitFor(() =>
+      captured.some((r) => r.method === 'POST' && r.path === '/engine/approvals'),
+    );
+    const approvalPost = captured.find(
+      (r) => r.method === 'POST' && r.path === '/engine/approvals',
+    );
     expect(approvalPost).toBeDefined();
 
     // Unblock so the test doesn't hang, then confirm completion.
@@ -218,7 +251,9 @@ describe('auto-approval target resolution', () => {
     const engine = makeEngine();
     expect(engine.autoApprovalSupported('send_slack_message')).toBe(true);
     expect(engine.autoApprovalSupported('send_slack_file')).toBe(true);
-    expect(engine.resolveAutoApprovalTarget('send_slack_message', { channel: 'C123' })).toBe('C123');
+    expect(engine.resolveAutoApprovalTarget('send_slack_message', { channel: 'C123' })).toBe(
+      'C123',
+    );
     // Missing/empty target → null (always gates).
     expect(engine.resolveAutoApprovalTarget('send_slack_message', {})).toBeNull();
     expect(engine.resolveAutoApprovalTarget('send_slack_message', { channel: '  ' })).toBeNull();
@@ -252,14 +287,18 @@ describe('auto-approval rule management', () => {
     const engine = makeEngine();
     const rules = await engine.listAutoApprovalRules();
     expect(rules).toHaveLength(2);
-    expect(captured.some((r) => r.method === 'GET' && r.path === '/engine/auto-approvals')).toBe(true);
+    expect(captured.some((r) => r.method === 'GET' && r.path === '/engine/auto-approvals')).toBe(
+      true,
+    );
   });
 
   it('removeAutoApprovalRulesByTarget DELETEs by exact target', async () => {
     const engine = makeEngine();
     const deleted = await engine.removeAutoApprovalRulesByTarget('send_slack_file', 'C123');
     expect(deleted).toBe(1);
-    const del = captured.find((r) => r.method === 'DELETE' && r.path.startsWith('/engine/auto-approvals'));
+    const del = captured.find(
+      (r) => r.method === 'DELETE' && r.path.startsWith('/engine/auto-approvals'),
+    );
     expect(del!.path).toContain('action_type=send_slack_file');
     expect(del!.path).toContain('target_key=C123');
   });

@@ -15,7 +15,14 @@ interface RunCardProps {
   onNavigateApprovals?: () => void;
 }
 
-export default function RunCard({ run, index, routineName, isSelected, onClick, onNavigateApprovals }: RunCardProps) {
+export default function RunCard({
+  run,
+  index,
+  routineName,
+  isSelected,
+  onClick,
+  onNavigateApprovals,
+}: RunCardProps) {
   const { t } = useTranslation();
   const cfg = STATUS_CONFIG[run.status] ?? STATUS_CONFIG.created;
   const isRunning = run.status === 'running';
@@ -28,7 +35,10 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
   const [elapsed, setElapsed] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!isRunning) { setElapsed(null); return; }
+    if (!isRunning) {
+      setElapsed(null);
+      return;
+    }
     const start = parseServerTimestamp(run.started_at);
     const tick = () => setElapsed(Math.max(0, Date.now() - start));
     tick();
@@ -36,7 +46,8 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
     return () => clearInterval(id);
   }, [isRunning, run.started_at]);
 
-  const displayName = routineName ?? t(`activity.filter.${run.run_type}`, { defaultValue: run.run_type });
+  const displayName =
+    routineName ?? t(`activity.filter.${run.run_type}`, { defaultValue: run.run_type });
   const duration = isRunning ? formatDuration(elapsed) : formatDuration(run.duration_ms);
 
   return (
@@ -58,9 +69,7 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
         <div className="flex-1 min-w-0">
           {/* Top row */}
           <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-sm font-medium text-text-primary truncate">
-              {displayName}
-            </span>
+            <span className="text-sm font-medium text-text-primary truncate">{displayName}</span>
             {isOrchestration && (
               <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent/10 text-accent border border-accent/20 flex-shrink-0">
                 {t('activity.filter.orchestration')}
@@ -78,7 +87,10 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
             <span>{timeAgo(run.started_at, t)}</span>
             <span className="flex items-center gap-1">
               {isRunning && <Loader2 size={10} className="animate-spin text-yellow-500" />}
-              {t('activity.stepsProgress', { completed: run.completed_steps, total: run.total_steps })}
+              {t('activity.stepsProgress', {
+                completed: run.completed_steps,
+                total: run.total_steps,
+              })}
             </span>
             <span>{t(`triggers.${run.trigger}`, { defaultValue: run.trigger })}</span>
           </div>
@@ -86,7 +98,10 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
           {/* Paused indicator — links to Approvals screen */}
           {isPaused && (
             <button
-              onClick={(e) => { e.stopPropagation(); onNavigateApprovals?.(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigateApprovals?.();
+              }}
               className="mt-1.5 text-[11px] text-amber-400 font-medium hover:text-amber-300 transition-colors text-left"
             >
               {t('activity.awaitingApproval')} &rarr;
@@ -95,16 +110,16 @@ export default function RunCard({ run, index, routineName, isSelected, onClick, 
 
           {/* Failed error */}
           {isFailed && run.error && (
-            <p className="mt-1.5 text-[11px] text-red-400 line-clamp-1">
-              {run.error}
-            </p>
+            <p className="mt-1.5 text-[11px] text-red-400 line-clamp-1">{run.error}</p>
           )}
         </div>
 
         {/* Duration + status label */}
         <div className="flex flex-col items-end gap-1 flex-shrink-0">
           <span className="text-xs tabular-nums text-text-secondary">{duration}</span>
-          <span className={clsx('text-[10px] font-medium', cfg.text)}>{t(`status.${run.status}`, { defaultValue: run.status })}</span>
+          <span className={clsx('text-[10px] font-medium', cfg.text)}>
+            {t(`status.${run.status}`, { defaultValue: run.status })}
+          </span>
         </div>
       </div>
     </div>

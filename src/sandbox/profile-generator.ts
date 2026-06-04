@@ -130,9 +130,8 @@ export function generateProfile(inputs: ProfileInputs): string {
 
   // Empty deny-blocks are a Seatbelt syntax error. Guarantee at least one entry
   // so the template can always emit a valid (deny file-read* ...) form.
-  const forbiddenPaths = inputs.forbiddenHomeSubpaths.length > 0
-    ? inputs.forbiddenHomeSubpaths
-    : ['.ssh'];
+  const forbiddenPaths =
+    inputs.forbiddenHomeSubpaths.length > 0 ? inputs.forbiddenHomeSubpaths : ['.ssh'];
 
   // Library/Keychains is in the forbidden list to prevent linking, but must
   // NOT be denied in the sandbox — Claude Code needs keychain access for OAuth.

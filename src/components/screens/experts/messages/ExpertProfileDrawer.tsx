@@ -1,6 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BadgeCheck, ChevronDown, ChevronRight, Lock, Pencil, Power, Star, Users, X } from 'lucide-react';
+import {
+  BadgeCheck,
+  ChevronDown,
+  ChevronRight,
+  Lock,
+  Pencil,
+  Power,
+  Star,
+  Users,
+  X,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useExperts, type Expert } from '../../../../context/ExpertContext';
 import ExpertAvatar from './ExpertAvatar';
@@ -12,7 +22,11 @@ interface ExpertProfileDrawerProps {
   onSelectMember?: (expertId: string) => void;
 }
 
-export default function ExpertProfileDrawer({ expert, onClose, onSelectMember }: ExpertProfileDrawerProps) {
+export default function ExpertProfileDrawer({
+  expert,
+  onClose,
+  onSelectMember,
+}: ExpertProfileDrawerProps) {
   const { t } = useTranslation();
   const { experts: allExperts, toggleEnabled, togglePinned, openExpertInHierarchy } = useExperts();
   const [coordinatorOpen, setCoordinatorOpen] = useState(false);
@@ -26,16 +40,18 @@ export default function ExpertProfileDrawer({ expert, onClose, onSelectMember }:
     return ordered.map((m) => ({ role: m.role, expert: byId.get(m.expertId) ?? null }));
   }, [isTeam, expert.teamMembers, allExperts]);
 
-  const strategyKey = expert.strategy === 'parallel'
-    ? 'experts.teamStrategyParallel'
-    : expert.strategy === 'auto'
-      ? 'experts.teamStrategyAuto'
-      : 'experts.teamStrategySequential';
-  const strategyHelpKey = expert.strategy === 'parallel'
-    ? 'experts.teamStrategyParallelHelp'
-    : expert.strategy === 'auto'
-      ? 'experts.teamStrategyAutoHelp'
-      : 'experts.teamStrategySequentialHelp';
+  const strategyKey =
+    expert.strategy === 'parallel'
+      ? 'experts.teamStrategyParallel'
+      : expert.strategy === 'auto'
+        ? 'experts.teamStrategyAuto'
+        : 'experts.teamStrategySequential';
+  const strategyHelpKey =
+    expert.strategy === 'parallel'
+      ? 'experts.teamStrategyParallelHelp'
+      : expert.strategy === 'auto'
+        ? 'experts.teamStrategyAutoHelp'
+        : 'experts.teamStrategySequentialHelp';
 
   const handleEdit = () => {
     openExpertInHierarchy(expert.id);
@@ -45,11 +61,7 @@ export default function ExpertProfileDrawer({ expert, onClose, onSelectMember }:
   return (
     <>
       {/* Backdrop (captures outside clicks) */}
-      <div
-        className="absolute inset-0 z-20 bg-black/30"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+      <div className="absolute inset-0 z-20 bg-black/30" onClick={onClose} aria-hidden="true" />
       <aside
         className={clsx(
           'absolute top-0 right-0 bottom-0 z-30 w-[380px]',
@@ -258,9 +270,7 @@ export default function ExpertProfileDrawer({ expert, onClose, onSelectMember }:
                 <Star size={13} strokeWidth={expert.isPinned ? 2.5 : 1.8} />
                 {t('experts.starred')}
               </span>
-              <span className="text-[11px] text-text-tertiary">
-                {expert.isPinned ? '✓' : ''}
-              </span>
+              <span className="text-[11px] text-text-tertiary">{expert.isPinned ? '✓' : ''}</span>
             </button>
             <button
               onClick={() => toggleEnabled(expert)}
@@ -276,9 +286,7 @@ export default function ExpertProfileDrawer({ expert, onClose, onSelectMember }:
                 <Power size={13} />
                 {t('experts.enabled')}
               </span>
-              <span className="text-[11px] text-text-tertiary">
-                {expert.isEnabled ? '✓' : ''}
-              </span>
+              <span className="text-[11px] text-text-tertiary">{expert.isEnabled ? '✓' : ''}</span>
             </button>
           </div>
         </div>

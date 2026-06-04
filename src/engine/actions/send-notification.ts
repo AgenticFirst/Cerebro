@@ -42,7 +42,8 @@ export const sendNotificationAction: ActionDefinition = {
     properties: {
       title: {
         type: 'string',
-        description: 'Short headline shown at the top of the notification. Use {{variable}} to insert values from upstream steps.',
+        description:
+          'Short headline shown at the top of the notification. Use {{variable}} to insert values from upstream steps.',
       },
       body: {
         type: 'string',
@@ -75,7 +76,9 @@ export const sendNotificationAction: ActionDefinition = {
     const body = renderTemplate(params.body ?? '', vars);
 
     if (!title) {
-      throw new Error('Send Notification: title is empty. Enter a headline or wire one in from an upstream step.');
+      throw new Error(
+        'Send Notification: title is empty. Enter a headline or wire one in from an upstream step.',
+      );
     }
 
     const { Notification } = await import('electron');

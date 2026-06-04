@@ -48,6 +48,8 @@ export const connectorAction: ActionDefinition = {
 
   execute: async (input: ActionInput): Promise<ActionOutput> => {
     const params = input.params as unknown as ConnectorParams;
-    throw new Error(`Connector '${params.service}' is not yet available. Connector support is coming in a future update.`);
+    throw new Error(
+      `Connector '${params.service}' is not yet available. Connector support is coming in a future update.`,
+    );
   },
 };

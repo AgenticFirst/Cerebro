@@ -98,7 +98,10 @@ export default function ActionSidebar({ isOpen, onClose, onOpen }: ActionSidebar
         {/* Search */}
         <div className="px-3 py-2 border-b border-border-subtle">
           <div className="relative">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary" />
+            <Search
+              size={13}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary"
+            />
             <Tooltip label={t('routineTooltips.searchActions')} side="bottom">
               <input
                 ref={searchRef}
@@ -117,11 +120,7 @@ export default function ActionSidebar({ isOpen, onClose, onOpen }: ActionSidebar
         <div className="flex-1 overflow-y-auto py-1">
           {filteredCategories.length > 0 ? (
             filteredCategories.map(({ category, actions }) => (
-              <ActionCategoryGroup
-                key={category.id}
-                category={category}
-                actions={actions}
-              />
+              <ActionCategoryGroup key={category.id} category={category} actions={actions} />
             ))
           ) : (
             <div className="px-4 py-8 text-center">

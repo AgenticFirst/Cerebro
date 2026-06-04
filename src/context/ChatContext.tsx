@@ -69,7 +69,12 @@ interface ChatActions {
   startNewChat: () => void;
   renameConversation: (id: string, title: string) => void;
   setActiveConversation: (id: string | null) => void;
-  addMessage: (conversationId: string, role: Message['role'], content: string, metadata?: Record<string, unknown>) => string;
+  addMessage: (
+    conversationId: string,
+    role: Message['role'],
+    content: string,
+    metadata?: Record<string, unknown>,
+  ) => string;
   updateMessage: (conversationId: string, messageId: string, partial: Partial<Message>) => void;
   deleteConversation: (id: string) => void;
   setActiveScreen: (screen: Screen) => void;
@@ -115,7 +120,14 @@ function apiCreateConversation(
 
 function apiCreateMessage(
   convId: string,
-  msg: { id: string; role: string; content: string; expert_id?: string; agent_run_id?: string; metadata?: Record<string, unknown> },
+  msg: {
+    id: string;
+    role: string;
+    content: string;
+    expert_id?: string;
+    agent_run_id?: string;
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<unknown> {
   return window.cerebro.invoke({
     method: 'POST',
@@ -148,9 +160,7 @@ function sweepOpenMembers(
   toStatus: 'completed' | 'error',
 ): TeamRunMember[] {
   return members.map((mem) =>
-    mem.status === 'completed' || mem.status === 'error'
-      ? mem
-      : { ...mem, status: toStatus },
+    mem.status === 'completed' || mem.status === 'error' ? mem : { ...mem, status: toStatus },
   );
 }
 
@@ -246,23 +256,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // both reference conversation_id), producing FK violations and 404s.
   const writeChainRef = useRef<Map<string, Promise<unknown>>>(new Map());
 
-  const chainWrite = useCallback(
-    <T,>(convId: string, fn: () => Promise<T>): Promise<T> => {
-      const prev = writeChainRef.current.get(convId) ?? Promise.resolve();
-      const next = prev.catch(() => undefined).then(() => fn());
-      writeChainRef.current.set(
-        convId,
-        next.catch(() => undefined),
-      );
-      return next;
-    },
-    [],
-  );
+  const chainWrite = useCallback(<T,>(convId: string, fn: () => Promise<T>): Promise<T> => {
+    const prev = writeChainRef.current.get(convId) ?? Promise.resolve();
+    const next = prev.catch(() => undefined).then(() => fn());
+    writeChainRef.current.set(
+      convId,
+      next.catch(() => undefined),
+    );
+    return next;
+  }, []);
 
   const waitForConversation = useCallback(async (convId: string) => {
     const pending = writeChainRef.current.get(convId);
     if (pending) {
-      try { await pending; } catch { /* swallow — caller decides what to do */ }
+      try {
+        await pending;
+      } catch {
+        /* swallow — caller decides what to do */
+      }
     }
   }, []);
 
@@ -324,10 +335,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             const local = prev.find((p) => p.id === fresh.id);
             // Preserve the local copy while a reply is mid-stream — replacing
             // it with server state would discard accumulated deltas.
-            if (
-              local
-              && local.messages.some((m) => m.isThinking || m.isStreaming)
-            ) {
+            if (local && local.messages.some((m) => m.isThinking || m.isStreaming)) {
               return local;
             }
             return fresh;
@@ -335,9 +343,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           return [...inFlight, ...merged];
         });
 
-        if (event.kind === 'created'
-            && activeScreenRef.current === 'chat'
-            && !isStreamingRef.current) {
+        if (
+          event.kind === 'created' &&
+          activeScreenRef.current === 'chat' &&
+          !isStreamingRef.current
+        ) {
           setActiveConversationIdState(event.conversationId);
         }
       } catch (err) {
@@ -422,7 +432,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addMessage = useCallback(
-    (conversationId: string, role: Message['role'], content: string, metadata?: Record<string, unknown>) => {
+    (
+      conversationId: string,
+      role: Message['role'],
+      content: string,
+      metadata?: Record<string, unknown>,
+    ) => {
       const message: Message = {
         id: generateId(),
         conversationId,
@@ -487,13 +502,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setConversations((prev) => {
         const target = prev.find((c) => c.id === id);
         if (!target || target.title === trimmed) return prev;
-        return prev.map((c) =>
-          c.id === id ? { ...c, title: trimmed, updatedAt: new Date() } : c,
-        );
+        return prev.map((c) => (c.id === id ? { ...c, title: trimmed, updatedAt: new Date() } : c));
       });
-      chainWrite(id, () => apiPatchConversation(id, { title: trimmed })).catch(
-        console.error,
-      );
+      chainWrite(id, () => apiPatchConversation(id, { title: trimmed })).catch(console.error);
     },
     [chainWrite],
   );
@@ -559,29 +570,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           // conversationsRef, and including it would duplicate the prompt
           // in the seed-recovery path AND wrongly mark this conversation
           // as "having prior turns" before the assistant has responded.
-          const realMessages = allMessages
-            .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isThinking);
+          const realMessages = allMessages.filter(
+            (m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.isThinking,
+          );
           const lastReal = realMessages[realMessages.length - 1];
           const priorMessages =
             lastReal && lastReal.role === 'user' && lastReal.content === userContent
               ? realMessages.slice(0, -1)
               : realMessages;
-          const recentMessages = priorMessages
-            .map((m) => {
-              let enrichedContent = m.content;
-              // Enrich assistant messages with successful tool call outputs
-              if (m.role === 'assistant' && m.toolCalls?.length) {
-                for (const tc of m.toolCalls) {
-                  if (tc.status === 'success' && tc.output) {
-                    const truncatedOutput = tc.output.length > 200
-                      ? tc.output.slice(0, 200) + '...'
-                      : tc.output;
-                    enrichedContent += `\n[Used ${tc.name}: ${truncatedOutput}]`;
-                  }
+          const recentMessages = priorMessages.map((m) => {
+            let enrichedContent = m.content;
+            // Enrich assistant messages with successful tool call outputs
+            if (m.role === 'assistant' && m.toolCalls?.length) {
+              for (const tc of m.toolCalls) {
+                if (tc.status === 'success' && tc.output) {
+                  const truncatedOutput =
+                    tc.output.length > 200 ? tc.output.slice(0, 200) + '...' : tc.output;
+                  enrichedContent += `\n[Used ${tc.name}: ${truncatedOutput}]`;
                 }
               }
-              return { role: m.role as 'user' | 'assistant', content: enrichedContent };
-            });
+            }
+            return { role: m.role as 'user' | 'assistant', content: enrichedContent };
+          });
 
           // Routine proposal snapshots — so the LLM knows what it proposed and what happened.
           const routineProposals = allMessages
@@ -697,7 +707,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         routineProposal: accRoutineProposal,
                       });
                     }
-                  } catch { /* not valid JSON, treat as normal result */ }
+                  } catch {
+                    /* not valid JSON, treat as normal result */
+                  }
                 }
                 // Detect propose_expert tool result and attach proposal to message
                 if (resolvedToolName === 'propose_expert' && !event.isError) {
@@ -717,7 +729,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         expertProposal: accExpertProposal,
                       });
                     }
-                  } catch { /* not valid JSON, treat as normal result */ }
+                  } catch {
+                    /* not valid JSON, treat as normal result */
+                  }
                 }
                 // Agent tool finishing means a team (or single subagent)
                 // returned. If the announce listener pre-populated a teamRun,
@@ -729,7 +743,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   const msg = conv?.messages.find((m) => m.id === assistantId);
                   const teamRun = msg?.teamRun;
                   if (teamRun && teamRun.status === 'running') {
-                    const sweptMembers = sweepOpenMembers(teamRun.members, event.isError ? 'error' : 'completed');
+                    const sweptMembers = sweepOpenMembers(
+                      teamRun.members,
+                      event.isError ? 'error' : 'completed',
+                    );
                     updateMessage(convId, assistantId, {
                       teamRun: {
                         ...teamRun,
@@ -773,9 +790,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 // Build metadata for persistence
                 const doneMetadata: Record<string, unknown> = {};
                 if (accEngineRunId) doneMetadata.engine_run_id = accEngineRunId;
-                if (accRoutineProposal) doneMetadata.routine_proposal = toApiProposal(accRoutineProposal);
-                if (accExpertProposal) doneMetadata.expert_proposal = toApiExpertProposal(accExpertProposal);
-                if (accTeamProposal) doneMetadata.team_proposal = toApiTeamProposal(accTeamProposal);
+                if (accRoutineProposal)
+                  doneMetadata.routine_proposal = toApiProposal(accRoutineProposal);
+                if (accExpertProposal)
+                  doneMetadata.expert_proposal = toApiExpertProposal(accExpertProposal);
+                if (accTeamProposal)
+                  doneMetadata.team_proposal = toApiTeamProposal(accTeamProposal);
                 {
                   // Preserve escalation history on the persisted message so the
                   // "Switched to …" chips survive a reload.
@@ -890,11 +910,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 // lose what the agent already produced — append the error
                 // below a separator instead of overwriting the body.
                 const partial = state.accumulated.trim();
-                const content = buildAgentErrorContent(
-                  partial,
-                  event.error,
-                  event.errorClass,
-                );
+                const content = buildAgentErrorContent(partial, event.error, event.errorClass);
                 updateMessage(convId, assistantId, {
                   content,
                   isThinking: false,
@@ -1044,9 +1060,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     const stoppedMarker = i18n.t('chat.stoppedMarker');
     const partial = active.state.accumulated;
-    const finalContent = partial
-      ? `${partial.trimEnd()}\n\n${stoppedMarker}`
-      : stoppedMarker;
+    const finalContent = partial ? `${partial.trimEnd()}\n\n${stoppedMarker}` : stoppedMarker;
 
     updateMessage(active.conversationId, active.assistantId, {
       content: finalContent,
@@ -1126,9 +1140,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           // setState so the placeholder doesn't render against stale messages.
           const pivotIdx = c.messages.findIndex((m) => m.id === messageId);
           if (pivotIdx === -1) return c;
-          const kept = c.messages.slice(0, pivotIdx + 1).map((m) =>
-            m.id === messageId && contentChanged ? { ...m, content: trimmed } : m,
-          );
+          const kept = c.messages
+            .slice(0, pivotIdx + 1)
+            .map((m) => (m.id === messageId && contentChanged ? { ...m, content: trimmed } : m));
           return {
             ...c,
             messages: [...kept, thinkingMessage],
@@ -1145,32 +1159,29 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // ── Run routine from UI (triggered via "Run Now" button) ────────
   // Navigates to Activity and opens the new run's detail panel. No chat
   // conversation is created — those are reserved for LLM-driven runs.
-  const runRoutineFromUi = useCallback(
-    (info: { id: string; name: string; dagJson: string }) => {
-      let dag: DAGDefinition;
-      try {
-        dag = JSON.parse(info.dagJson);
-      } catch (err) {
-        console.error(`Failed to parse DAG for routine "${info.name}":`, err);
-        return;
-      }
+  const runRoutineFromUi = useCallback((info: { id: string; name: string; dagJson: string }) => {
+    let dag: DAGDefinition;
+    try {
+      dag = JSON.parse(info.dagJson);
+    } catch (err) {
+      console.error(`Failed to parse DAG for routine "${info.name}":`, err);
+      return;
+    }
 
-      setActiveScreen('activity');
+    setActiveScreen('activity');
 
-      window.cerebro.engine
-        .run({ dag, routineId: info.id, triggerSource: 'manual' })
-        .then((runId) => {
-          setPendingActivityRunId(runId);
-          window.cerebro
-            .invoke({ method: 'POST', path: `/routines/${info.id}/run` })
-            .catch(console.error);
-        })
-        .catch((err) => {
-          console.error(`Failed to run routine "${info.name}":`, err);
-        });
-    },
-    [],
-  );
+    window.cerebro.engine
+      .run({ dag, routineId: info.id, triggerSource: 'manual' })
+      .then((runId) => {
+        setPendingActivityRunId(runId);
+        window.cerebro
+          .invoke({ method: 'POST', path: `/routines/${info.id}/run` })
+          .catch(console.error);
+      })
+      .catch((err) => {
+        console.error(`Failed to run routine "${info.name}":`, err);
+      });
+  }, []);
 
   const consumePendingActivityRunId = useCallback(() => {
     setPendingActivityRunId(null);

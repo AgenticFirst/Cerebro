@@ -5,14 +5,7 @@
  * preview without threading modal state through every screen.
  */
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { AttachmentInfo } from '../types/attachments';
 import ChatFilePreviewModal from '../components/chat/ChatFilePreviewModal';
 
@@ -69,7 +62,6 @@ export function ChatFilePreviewProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useChatFilePreviewModal(): ChatFilePreviewContextValue {
   const ctx = useContext(ChatFilePreviewContext);
   if (!ctx) {

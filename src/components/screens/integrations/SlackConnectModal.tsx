@@ -139,7 +139,10 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
   const usingKeychain = status?.tokenBackend === 'os-keychain';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+      onClick={onClose}
+    >
       <div
         className="bg-bg-base border border-border-subtle rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -151,7 +154,9 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
               <SlackIcon size={18} />
             </div>
             <div>
-              <div className="text-sm font-semibold text-text-primary">{t('slackSection.title')}</div>
+              <div className="text-sm font-semibold text-text-primary">
+                {t('slackSection.title')}
+              </div>
               <div className="text-[11px] text-text-tertiary">
                 {t('slackConnect.stepLabel', { current: step, total: STEP_COUNT })}
               </div>
@@ -191,7 +196,9 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
             ) : (
               <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-warning/30 bg-warning/10 text-xs text-warning-text">
                 <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
-                <span className="leading-relaxed">{t('telegramSection.storagePlaintextFallback')}</span>
+                <span className="leading-relaxed">
+                  {t('telegramSection.storagePlaintextFallback')}
+                </span>
               </div>
             )}
           </div>
@@ -201,8 +208,12 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
           {step === 1 && (
             <>
-              <h3 className="text-base font-semibold text-text-primary">{t('slackConnect.step1Title')}</h3>
-              <p className="text-sm text-text-secondary leading-relaxed">{t('slackConnect.step1Body')}</p>
+              <h3 className="text-base font-semibold text-text-primary">
+                {t('slackConnect.step1Title')}
+              </h3>
+              <p className="text-sm text-text-secondary leading-relaxed">
+                {t('slackConnect.step1Body')}
+              </p>
               <ol className="text-sm text-text-secondary space-y-1.5 list-decimal list-inside">
                 <li>{t('slackConnect.step1Item1')}</li>
                 <li>{t('slackConnect.step1Item2')}</li>
@@ -218,7 +229,9 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
                     className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md font-medium bg-accent/15 text-accent hover:bg-accent/25"
                   >
                     {manifestCopied ? <CheckCircle2 size={12} /> : <Copy size={12} />}
-                    {manifestCopied ? t('slackConnect.copyManifestDone') : t('slackConnect.copyManifest')}
+                    {manifestCopied
+                      ? t('slackConnect.copyManifestDone')
+                      : t('slackConnect.copyManifest')}
                   </button>
                 </div>
                 <textarea
@@ -244,22 +257,35 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
 
           {step === 2 && (
             <>
-              <h3 className="text-base font-semibold text-text-primary">{t('slackConnect.step2Title')}</h3>
-              <p className="text-sm text-text-secondary leading-relaxed">{t('slackConnect.step2Body')}</p>
+              <h3 className="text-base font-semibold text-text-primary">
+                {t('slackConnect.step2Title')}
+              </h3>
+              <p className="text-sm text-text-secondary leading-relaxed">
+                {t('slackConnect.step2Body')}
+              </p>
             </>
           )}
 
           {step === 3 && (
             <>
-              <h3 className="text-base font-semibold text-text-primary">{t('slackConnect.step3Title')}</h3>
-              <p className="text-sm text-text-secondary leading-relaxed">{t('slackConnect.step3Body')}</p>
+              <h3 className="text-base font-semibold text-text-primary">
+                {t('slackConnect.step3Title')}
+              </h3>
+              <p className="text-sm text-text-secondary leading-relaxed">
+                {t('slackConnect.step3Body')}
+              </p>
               <div>
-                <label className="text-xs font-medium text-text-secondary">{t('slackConnect.botTokenLabel')}</label>
+                <label className="text-xs font-medium text-text-secondary">
+                  {t('slackConnect.botTokenLabel')}
+                </label>
                 <div className="mt-1.5 relative">
                   <input
                     type={showBot ? 'text' : 'password'}
                     value={botDraft}
-                    onChange={(e) => { setBotDraft(e.target.value); setVerify({ kind: 'idle' }); }}
+                    onChange={(e) => {
+                      setBotDraft(e.target.value);
+                      setVerify({ kind: 'idle' });
+                    }}
                     placeholder={t('slackConnect.botTokenPlaceholder')}
                     className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                     autoComplete="off"
@@ -280,15 +306,24 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
 
           {step === 4 && (
             <>
-              <h3 className="text-base font-semibold text-text-primary">{t('slackConnect.step4Title')}</h3>
-              <p className="text-sm text-text-secondary leading-relaxed">{t('slackConnect.step4Body')}</p>
+              <h3 className="text-base font-semibold text-text-primary">
+                {t('slackConnect.step4Title')}
+              </h3>
+              <p className="text-sm text-text-secondary leading-relaxed">
+                {t('slackConnect.step4Body')}
+              </p>
               <div>
-                <label className="text-xs font-medium text-text-secondary">{t('slackConnect.appTokenLabel')}</label>
+                <label className="text-xs font-medium text-text-secondary">
+                  {t('slackConnect.appTokenLabel')}
+                </label>
                 <div className="mt-1.5 relative">
                   <input
                     type={showApp ? 'text' : 'password'}
                     value={appDraft}
-                    onChange={(e) => { setAppDraft(e.target.value); setVerify({ kind: 'idle' }); }}
+                    onChange={(e) => {
+                      setAppDraft(e.target.value);
+                      setVerify({ kind: 'idle' });
+                    }}
                     placeholder={t('slackConnect.appTokenPlaceholder')}
                     className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                     autoComplete="off"
@@ -309,8 +344,12 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
 
           {step === 5 && (
             <>
-              <h3 className="text-base font-semibold text-text-primary">{t('slackConnect.step5Title')}</h3>
-              <p className="text-sm text-text-secondary leading-relaxed">{t('slackConnect.step5Body')}</p>
+              <h3 className="text-base font-semibold text-text-primary">
+                {t('slackConnect.step5Title')}
+              </h3>
+              <p className="text-sm text-text-secondary leading-relaxed">
+                {t('slackConnect.step5Body')}
+              </p>
               <button
                 type="button"
                 onClick={handleVerifyAndSave}
@@ -322,8 +361,14 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
                   'inline-flex items-center gap-1.5',
                 )}
               >
-                {verify.kind === 'verifying' ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                {verify.kind === 'verifying' ? t('slackConnect.verifying') : t('slackConnect.verify')}
+                {verify.kind === 'verifying' ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Sparkles size={13} />
+                )}
+                {verify.kind === 'verifying'
+                  ? t('slackConnect.verifying')
+                  : t('slackConnect.verify')}
               </button>
               {verify.kind === 'ok' && (
                 <div className="flex items-center gap-1.5 text-sm text-emerald-400">
@@ -342,9 +387,15 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
 
           {step === 6 && (
             <>
-              <h3 className="text-base font-semibold text-text-primary">{t('slackConnect.step6Title')}</h3>
-              <p className="text-sm text-text-secondary leading-relaxed">{t('slackConnect.step6Body')}</p>
-              <p className="text-sm text-text-tertiary leading-relaxed">{t('slackConnect.setAllowlistLater')}</p>
+              <h3 className="text-base font-semibold text-text-primary">
+                {t('slackConnect.step6Title')}
+              </h3>
+              <p className="text-sm text-text-secondary leading-relaxed">
+                {t('slackConnect.step6Body')}
+              </p>
+              <p className="text-sm text-text-tertiary leading-relaxed">
+                {t('slackConnect.setAllowlistLater')}
+              </p>
               {enableError && (
                 <div className="flex items-start gap-1.5 text-sm text-red-400">
                   <XCircle size={14} className="mt-0.5" />
@@ -389,7 +440,11 @@ export default function SlackConnectModal({ onClose, onPersisted }: SlackConnect
                 disabled={enabling}
                 className="px-4 py-2 text-sm rounded-md font-medium bg-accent text-white hover:bg-accent-hover shadow-sm inline-flex items-center gap-1.5 disabled:opacity-50"
               >
-                {enabling ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                {enabling ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <CheckCircle2 size={14} />
+                )}
                 {enabling ? t('slackConnect.enabling') : t('slackConnect.enableAndFinish')}
               </button>
             )}

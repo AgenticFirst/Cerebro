@@ -17,7 +17,9 @@ interface SendTelegramParams {
   parse_mode?: 'HTML' | 'MarkdownV2' | 'none';
 }
 
-export function createSendTelegramAction(deps: { getChannel: () => TelegramChannel | null }): ActionDefinition {
+export function createSendTelegramAction(deps: {
+  getChannel: () => TelegramChannel | null;
+}): ActionDefinition {
   return {
     type: 'send_telegram_message',
     name: 'Send Telegram Message',
@@ -48,7 +50,8 @@ export function createSendTelegramAction(deps: { getChannel: () => TelegramChann
       properties: {
         chat_id: {
           type: 'string',
-          description: 'Numeric Telegram chat id to send to. Templated — use {{...}} to insert values from upstream steps.',
+          description:
+            'Numeric Telegram chat id to send to. Templated — use {{...}} to insert values from upstream steps.',
         },
         message: {
           type: 'string',
@@ -97,10 +100,16 @@ export function createSendTelegramAction(deps: { getChannel: () => TelegramChann
         throw new Error('Send Telegram Message: message is empty.');
       }
       if (!channel.isAllowlisted(chatId)) {
-        throw new Error(`Send Telegram Message: chat_id ${chatId} is not in the Telegram allowlist.`);
+        throw new Error(
+          `Send Telegram Message: chat_id ${chatId} is not in the Telegram allowlist.`,
+        );
       }
 
-      const { messageId, error } = await channel.sendActionMessage(chatId, message, params.parse_mode);
+      const { messageId, error } = await channel.sendActionMessage(
+        chatId,
+        message,
+        params.parse_mode,
+      );
 
       if (error) {
         // Surface a friendlier error in the step output but also throw so the

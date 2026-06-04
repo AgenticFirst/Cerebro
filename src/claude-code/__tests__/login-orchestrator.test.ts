@@ -15,12 +15,24 @@ class FakePty extends EventEmitter {
   written: string[] = [];
   private dataListeners: Array<(d: string) => void> = [];
   private exitListeners: Array<(e: { exitCode: number; signal?: number }) => void> = [];
-  onData(cb: (d: string) => void): void { this.dataListeners.push(cb); }
-  onExit(cb: (e: { exitCode: number; signal?: number }) => void): void { this.exitListeners.push(cb); }
-  write(data: string): void { this.written.push(data); }
-  kill(): void { this.killed = true; }
-  emitData(d: string): void { for (const cb of this.dataListeners) cb(d); }
-  emitExit(exitCode: number, signal?: number): void { for (const cb of this.exitListeners) cb({ exitCode, signal }); }
+  onData(cb: (d: string) => void): void {
+    this.dataListeners.push(cb);
+  }
+  onExit(cb: (e: { exitCode: number; signal?: number }) => void): void {
+    this.exitListeners.push(cb);
+  }
+  write(data: string): void {
+    this.written.push(data);
+  }
+  kill(): void {
+    this.killed = true;
+  }
+  emitData(d: string): void {
+    for (const cb of this.dataListeners) cb(d);
+  }
+  emitExit(exitCode: number, signal?: number): void {
+    for (const cb of this.exitListeners) cb({ exitCode, signal });
+  }
 }
 
 let currentPty: FakePty | null = null;
@@ -63,7 +75,9 @@ describe('ClaudeCodeLoginOrchestrator', () => {
   it('resolves start() with the captured claude.ai URL', async () => {
     const startPromise = orchestrator.start('setup-token');
     await Promise.resolve();
-    currentPty!.emitData('Open the following URL in your browser:\nhttps://claude.ai/oauth/authorize?code=abc123 \n');
+    currentPty!.emitData(
+      'Open the following URL in your browser:\nhttps://claude.ai/oauth/authorize?code=abc123 \n',
+    );
     const snap = await startPromise;
     expect(snap.url).toBe('https://claude.ai/oauth/authorize?code=abc123');
     expect(snap.status).toBe('awaiting-user');
@@ -126,7 +140,9 @@ describe('ClaudeCodeLoginOrchestrator', () => {
     await Promise.resolve();
     currentPty!.emitData('https://claude.ai/oauth?x=1');
     const snap = await startPromise;
-    await expect(orchestrator.submitCode(snap.loginId, 'code')).rejects.toThrow(/only valid for setup-token/);
+    await expect(orchestrator.submitCode(snap.loginId, 'code')).rejects.toThrow(
+      /only valid for setup-token/,
+    );
     currentPty!.emitExit(0);
   });
 

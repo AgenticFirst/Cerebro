@@ -28,7 +28,10 @@ export function createGitHubCloneWorktreeAction(deps: {
       type: 'object',
       properties: {
         repo: { type: 'string' },
-        base_branch: { type: 'string', description: 'Branch to start from. Defaults to the repo default branch.' },
+        base_branch: {
+          type: 'string',
+          description: 'Branch to start from. Defaults to the repo default branch.',
+        },
       },
       required: ['repo'],
     },
@@ -63,9 +66,16 @@ export function createGitHubCloneWorktreeAction(deps: {
           token,
           baseBranch: baseBranch || undefined,
         });
-        input.context.log(`Cloned ${repo} into ${result.worktreePath} (base: ${result.baseBranch})`);
+        input.context.log(
+          `Cloned ${repo} into ${result.worktreePath} (base: ${result.baseBranch})`,
+        );
         return {
-          data: { worktree_path: result.worktreePath, base_branch: result.baseBranch, ok: true, error: null },
+          data: {
+            worktree_path: result.worktreePath,
+            base_branch: result.baseBranch,
+            ok: true,
+            error: null,
+          },
           summary: `Cloned ${repo} (base: ${result.baseBranch})`,
         };
       } catch (err) {

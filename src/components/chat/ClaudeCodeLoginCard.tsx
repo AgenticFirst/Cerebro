@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { KeyRound, ExternalLink, Loader2, AlertTriangle, CheckCircle2, RotateCw } from 'lucide-react';
+import {
+  KeyRound,
+  ExternalLink,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  RotateCw,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useChat } from '../../context/ChatContext';
 import type { ClaudeCodeLoginSnapshot } from '../../types/ipc';
@@ -21,7 +28,10 @@ interface ClaudeCodeLoginCardProps {
  * never have to drop to a shell, which is the whole point of fixing the
  * "run `claude` in a terminal" message that used to leak into Slack.
  */
-export default function ClaudeCodeLoginCard({ conversationId, messageId }: ClaudeCodeLoginCardProps) {
+export default function ClaudeCodeLoginCard({
+  conversationId,
+  messageId,
+}: ClaudeCodeLoginCardProps) {
   const { t } = useTranslation();
   const { conversations, regenerateFromUserMessage } = useChat();
 
@@ -71,7 +81,11 @@ export default function ClaudeCodeLoginCard({ conversationId, messageId }: Claud
 
   const handleOpenUrl = useCallback(async () => {
     if (!snapshot?.url) return;
-    try { await window.cerebro.shell.openExternal(snapshot.url); } catch { /* noop */ }
+    try {
+      await window.cerebro.shell.openExternal(snapshot.url);
+    } catch {
+      /* noop */
+    }
   }, [snapshot]);
 
   const handleSubmitCode = useCallback(async () => {
@@ -96,7 +110,11 @@ export default function ClaudeCodeLoginCard({ conversationId, messageId }: Claud
     setSnapshot(null);
     setCode('');
     retryFiredRef.current = false;
-    try { await window.cerebro.claudeCode.login.cancel(); } catch { /* noop */ }
+    try {
+      await window.cerebro.claudeCode.login.cancel();
+    } catch {
+      /* noop */
+    }
     await handleStart();
   }, [handleStart]);
 
@@ -112,24 +130,26 @@ export default function ClaudeCodeLoginCard({ conversationId, messageId }: Claud
     <div
       className={clsx(
         'mb-2 rounded-xl border px-3.5 py-3',
-        isDone ? 'border-emerald-500/40 bg-emerald-500/[0.06]' : 'border-amber-500/40 bg-amber-500/[0.06]',
+        isDone
+          ? 'border-emerald-500/40 bg-emerald-500/[0.06]'
+          : 'border-amber-500/40 bg-amber-500/[0.06]',
       )}
       data-testid="claude-code-login-card"
     >
       <div className="flex items-start gap-2.5">
         <div className="flex-shrink-0 mt-0.5">
-          {isDone
-            ? <CheckCircle2 size={16} className="text-emerald-400" strokeWidth={2} />
-            : <KeyRound size={16} className="text-amber-400" strokeWidth={2} />}
+          {isDone ? (
+            <CheckCircle2 size={16} className="text-emerald-400" strokeWidth={2} />
+          ) : (
+            <KeyRound size={16} className="text-amber-400" strokeWidth={2} />
+          )}
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-medium text-text-primary">
             {isDone ? t('chat.claudeCodeLogin.successTitle') : t('chat.claudeCodeLogin.title')}
           </h3>
           <p className="mt-0.5 text-xs text-text-secondary leading-relaxed">
-            {isDone
-              ? t('chat.claudeCodeLogin.successBody')
-              : t('chat.claudeCodeLogin.body')}
+            {isDone ? t('chat.claudeCodeLogin.successBody') : t('chat.claudeCodeLogin.body')}
           </p>
 
           {/* Initial state — no login started yet */}
@@ -145,7 +165,11 @@ export default function ClaudeCodeLoginCard({ conversationId, messageId }: Claud
                   'disabled:opacity-40 disabled:cursor-not-allowed',
                 )}
               >
-                {starting ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} strokeWidth={2} />}
+                {starting ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <ExternalLink size={12} strokeWidth={2} />
+                )}
                 <span>{t('chat.claudeCodeLogin.startButton')}</span>
               </button>
             </div>
@@ -165,7 +189,9 @@ export default function ClaudeCodeLoginCard({ conversationId, messageId }: Claud
                 <ExternalLink size={12} strokeWidth={2} />
                 <span>{t('chat.claudeCodeLogin.openLinkButton')}</span>
               </button>
-              <div className="mt-1.5 break-all text-[11px] text-text-tertiary font-mono">{snapshot.url}</div>
+              <div className="mt-1.5 break-all text-[11px] text-text-tertiary font-mono">
+                {snapshot.url}
+              </div>
             </div>
           )}
 
@@ -191,7 +217,9 @@ export default function ClaudeCodeLoginCard({ conversationId, messageId }: Claud
                   'focus:outline-none focus:border-accent/60',
                 )}
                 disabled={submittingCode}
-                onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmitCode(); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleSubmitCode();
+                }}
               />
               <button
                 type="button"

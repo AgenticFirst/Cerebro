@@ -50,7 +50,9 @@ export default function ActivityScreen() {
   }, [routines]);
 
   // Ensure routines are loaded for name resolution
-  useEffect(() => { loadRoutines(); }, [loadRoutines]);
+  useEffect(() => {
+    loadRoutines();
+  }, [loadRoutines]);
 
   // Build query params
   const buildQuery = useCallback(
@@ -111,7 +113,9 @@ export default function ActivityScreen() {
       setSelectedRunId(pendingActivityRunId);
       consumePendingActivityRunId();
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [pendingActivityRunId, fetchRuns, consumePendingActivityRunId]);
 
   // Load more
@@ -143,7 +147,9 @@ export default function ActivityScreen() {
           });
           setTotal(res.data.total);
         }
-      } catch { /* silent */ }
+      } catch {
+        /* silent */
+      }
     }, 5000);
     return () => clearInterval(id);
   }, [buildQuery]);
@@ -197,9 +203,7 @@ export default function ActivityScreen() {
         <h3 className="text-sm font-medium text-text-primary mb-1.5">
           {t('activity.failedToLoad')}
         </h3>
-        <p className="text-xs text-text-tertiary mb-4 max-w-[280px] text-center">
-          {loadError}
-        </p>
+        <p className="text-xs text-text-tertiary mb-4 max-w-[280px] text-center">{loadError}</p>
         <button
           onClick={() => {
             setIsLoading(true);
@@ -237,7 +241,10 @@ export default function ActivityScreen() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {total === 0 && statusFilter === 'all' && typeFilter === 'all' && triggerFilter === 'all' ? (
+        {total === 0 &&
+        statusFilter === 'all' &&
+        typeFilter === 'all' &&
+        triggerFilter === 'all' ? (
           /* Empty state — no runs ever */
           <div className="flex-1 flex flex-col items-center justify-center py-20">
             <div className="w-16 h-16 rounded-xl border-2 border-dashed border-border-default flex items-center justify-center mb-4">
@@ -302,9 +309,7 @@ export default function ActivityScreen() {
         <RunDetailPanel
           runId={selectedRunId}
           routineName={
-            selectedRun?.routine_id
-              ? routineNameMap.get(selectedRun.routine_id)
-              : undefined
+            selectedRun?.routine_id ? routineNameMap.get(selectedRun.routine_id) : undefined
           }
           onClose={() => setSelectedRunId(null)}
           onSelectRun={setSelectedRunId}

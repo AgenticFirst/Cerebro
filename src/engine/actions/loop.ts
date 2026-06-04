@@ -51,7 +51,7 @@ export const loopAction: ActionDefinition = {
     if (!Array.isArray(items)) {
       throw new Error(
         `Field "${items_field}" is not an array (got ${typeof items}). ` +
-        'Loop requires an array to iterate over.'
+          'Loop requires an array to iterate over.',
       );
     }
 

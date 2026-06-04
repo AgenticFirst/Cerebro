@@ -57,9 +57,7 @@ describe('assertHostAllowed — DNS-name SSRF guard (issue #19)', () => {
   });
 
   it('rejects an IP-literal that is itself private without resolving', async () => {
-    await expect(assertHostAllowed('127.0.0.1')).rejects.toThrow(
-      /private\/internal addresses/,
-    );
+    await expect(assertHostAllowed('127.0.0.1')).rejects.toThrow(/private\/internal addresses/);
     expect(mockedLookup).not.toHaveBeenCalled();
   });
 });

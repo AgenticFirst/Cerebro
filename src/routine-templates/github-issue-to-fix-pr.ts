@@ -77,15 +77,23 @@ const WRITE_PROMPT =
 
 const STEPS: Step[] = [
   step({
-    id: 'fetch_issue', name: 'Fetch issue + comments', actionType: 'github_fetch_issue',
-    params: { repo: '{{repo_full_name}}', issue_number: '{{issue_number}}', include_comments: true },
+    id: 'fetch_issue',
+    name: 'Fetch issue + comments',
+    actionType: 'github_fetch_issue',
+    params: {
+      repo: '{{repo_full_name}}',
+      issue_number: '{{issue_number}}',
+      include_comments: true,
+    },
     wire: [
       '__trigger__.repo_full_name -> repo_full_name',
       '__trigger__.issue_number -> issue_number',
     ],
   }),
   step({
-    id: 'plan_fix', name: 'Plan the fix', actionType: 'run_expert',
+    id: 'plan_fix',
+    name: 'Plan the fix',
+    actionType: 'run_expert',
     params: {
       expertId: '%%expert_id%%',
       prompt: PLAN_PROMPT,
@@ -101,12 +109,16 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'clone', name: 'Clone repo into worktree', actionType: 'github_clone_worktree',
+    id: 'clone',
+    name: 'Clone repo into worktree',
+    actionType: 'github_clone_worktree',
     params: { repo: '{{repo_full_name}}', base_branch: '%%base_branch%%' },
     wire: ['__trigger__.repo_full_name -> repo_full_name'],
   }),
   step({
-    id: 'apply_fix', name: 'Apply fix in worktree', actionType: 'run_expert',
+    id: 'apply_fix',
+    name: 'Apply fix in worktree',
+    actionType: 'run_expert',
     params: {
       expertId: '%%expert_id%%',
       prompt: WRITE_PROMPT,
@@ -121,7 +133,9 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'commit_push', name: 'Commit + push branch', actionType: 'github_commit_and_push',
+    id: 'commit_push',
+    name: 'Commit + push branch',
+    actionType: 'github_commit_and_push',
     params: {
       worktree_path: '{{worktree_path}}',
       branch: '%%branch_prefix%%-{{issue_number}}',
@@ -136,7 +150,9 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'open_pr', name: 'Open pull request', actionType: 'github_open_pr',
+    id: 'open_pr',
+    name: 'Open pull request',
+    actionType: 'github_open_pr',
     params: {
       repo: '{{repo_full_name}}',
       base: '%%base_branch%%',

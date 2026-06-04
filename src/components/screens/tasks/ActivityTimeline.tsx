@@ -59,9 +59,7 @@ export default function ActivityTimeline({ taskId }: ActivityTimelineProps) {
 
   if (comments.length === 0) {
     return (
-      <p className="text-xs text-text-tertiary text-center py-6">
-        {t('tasks.activityEmpty')}
-      </p>
+      <p className="text-xs text-text-tertiary text-center py-6">{t('tasks.activityEmpty')}</p>
     );
   }
 

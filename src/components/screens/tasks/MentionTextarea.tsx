@@ -69,21 +69,16 @@ export default function MentionTextarea({
     if (!mention) return [];
     const q = mention.query.trim().toLowerCase();
     if (!q) return experts.slice(0, 8);
-    return experts
-      .filter((e) => e.name.toLowerCase().includes(q))
-      .slice(0, 8);
+    return experts.filter((e) => e.name.toLowerCase().includes(q)).slice(0, 8);
   }, [experts, mention]);
 
   useEffect(() => {
     setSelectedIndex(0);
   }, [mention?.query]);
 
-  const updateMention = useCallback(
-    (text: string, caret: number) => {
-      setMention(findMentionTrigger(text, caret));
-    },
-    [],
-  );
+  const updateMention = useCallback((text: string, caret: number) => {
+    setMention(findMentionTrigger(text, caret));
+  }, []);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -114,11 +109,7 @@ export default function MentionTextarea({
       if (!textarea) return;
       const caret = textarea.selectionStart;
       const token = `@${expert.name}`;
-      const next =
-        value.slice(0, mention.triggerIndex) +
-        token +
-        ' ' +
-        value.slice(caret);
+      const next = value.slice(0, mention.triggerIndex) + token + ' ' + value.slice(caret);
       onChange(next);
       setMention(null);
       const newCaret = mention.triggerIndex + token.length + 1;
@@ -214,7 +205,8 @@ export default function MentionTextarea({
         autoFocus={autoFocus}
         className={className}
       />
-      {popupOpen && position &&
+      {popupOpen &&
+        position &&
         createPortal(
           <div
             style={{

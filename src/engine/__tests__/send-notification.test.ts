@@ -110,10 +110,7 @@ describe('sendNotificationAction: baseline', () => {
 
 describe('sendNotificationAction: variable templating', () => {
   it('renders {{variable}} in the title using wiredInputs', async () => {
-    await runNotify(
-      { title: 'Done: {{task_name}}', body: '' },
-      { task_name: 'Refresh cache' },
-    );
+    await runNotify({ title: 'Done: {{task_name}}', body: '' }, { task_name: 'Refresh cache' });
     expect(shownNotifications.at(-1)?.title).toBe('Done: Refresh cache');
   });
 
@@ -136,10 +133,7 @@ describe('sendNotificationAction: variable templating', () => {
   });
 
   it('does not HTML-escape angle brackets or ampersands (desktop banner is plain text)', async () => {
-    await runNotify(
-      { title: '<alert>', body: 'Bold & bright' },
-      {},
-    );
+    await runNotify({ title: '<alert>', body: 'Bold & bright' }, {});
     expect(shownNotifications.at(-1)?.title).toBe('<alert>');
     expect(shownNotifications.at(-1)?.body).toBe('Bold & bright');
   });
@@ -158,9 +152,9 @@ describe('sendNotificationAction: input guards', () => {
   });
 
   it('throws when {{variable}} renders to nothing and leaves title empty', async () => {
-    await expect(
-      runNotify({ title: '{{missing}}', body: 'body' }, {}),
-    ).rejects.toThrow(/title is empty/);
+    await expect(runNotify({ title: '{{missing}}', body: 'body' }, {})).rejects.toThrow(
+      /title is empty/,
+    );
   });
 
   it('does not throw when body is empty — body is optional', async () => {
@@ -180,8 +174,6 @@ describe('sendNotificationAction: platform fallback', () => {
     expect(result.data.sent).toBe(false);
     expect(result.summary).toMatch(/not supported/i);
     expect(shownNotifications).toHaveLength(0);
-    expect(ctx.log).toHaveBeenCalledWith(
-      expect.stringMatching(/not supported/i),
-    );
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringMatching(/not supported/i));
   });
 });

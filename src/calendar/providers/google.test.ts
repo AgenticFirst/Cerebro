@@ -2,7 +2,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { GoogleCalendarProvider } from './google';
 
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 const provider = new GoogleCalendarProvider();
@@ -80,7 +83,10 @@ describe('GoogleCalendarProvider.pullEvents', () => {
   });
 
   it('reports cursorExpired on a 410 from an expired syncToken', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('Sync token expired', { status: 410 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('Sync token expired', { status: 410 })),
+    );
     const res = await provider.pullEvents({
       accessToken: 'a',
       calendarId: 'primary',
@@ -97,12 +103,26 @@ describe('GoogleCalendarProvider.pullEvents', () => {
       'fetch',
       vi.fn(async () =>
         jsonResponse({
-          items: [{ id: 'allday', status: 'confirmed', summary: 'Holiday', start: { date: '2026-06-04' }, end: { date: '2026-06-05' } }],
+          items: [
+            {
+              id: 'allday',
+              status: 'confirmed',
+              summary: 'Holiday',
+              start: { date: '2026-06-04' },
+              end: { date: '2026-06-05' },
+            },
+          ],
           nextSyncToken: 'TOK',
         }),
       ),
     );
-    const res = await provider.pullEvents({ accessToken: 'a', calendarId: 'primary', syncCursor: null, timeMin: '', timeMax: '' });
+    const res = await provider.pullEvents({
+      accessToken: 'a',
+      calendarId: 'primary',
+      syncCursor: null,
+      timeMin: '',
+      timeMax: '',
+    });
     expect(res.events[0].allDay).toBe(true);
     expect(res.events[0].startUtc).toBe('2026-06-04T00:00:00.000Z');
   });

@@ -4,12 +4,14 @@ import type { DAGDefinition } from '../engine/dag/types';
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function dag(steps: Array<{
-  id?: string;
-  name?: string;
-  actionType: string;
-  params?: Record<string, unknown>;
-}>): DAGDefinition {
+function dag(
+  steps: Array<{
+    id?: string;
+    name?: string;
+    actionType: string;
+    params?: Record<string, unknown>;
+  }>,
+): DAGDefinition {
   return {
     steps: steps.map((s, i) => ({
       id: s.id ?? `step-${i}`,
@@ -24,7 +26,9 @@ function dag(steps: Array<{
   } as DAGDefinition;
 }
 
-const expert = (overrides: Partial<{ id: string; isEnabled: boolean; requiredConnections: string[] | null }> = {}) => ({
+const expert = (
+  overrides: Partial<{ id: string; isEnabled: boolean; requiredConnections: string[] | null }> = {},
+) => ({
   id: 'expert-1',
   isEnabled: true,
   requiredConnections: null,
@@ -35,17 +39,25 @@ const expert = (overrides: Partial<{ id: string; isEnabled: boolean; requiredCon
 
 describe('validateDagParams: run_expert', () => {
   it('flags blank expertId', () => {
-    const issues = validateDagParams(dag([{ actionType: 'run_expert', params: { expertId: '', prompt: 'hi' } }]));
-    expect(issues.some((i) => i.field === 'expertId' && i.message.includes('pick an expert'))).toBe(true);
+    const issues = validateDagParams(
+      dag([{ actionType: 'run_expert', params: { expertId: '', prompt: 'hi' } }]),
+    );
+    expect(issues.some((i) => i.field === 'expertId' && i.message.includes('pick an expert'))).toBe(
+      true,
+    );
   });
 
   it('flags blank prompt', () => {
-    const issues = validateDagParams(dag([{ actionType: 'run_expert', params: { expertId: 'x', prompt: '' } }]));
+    const issues = validateDagParams(
+      dag([{ actionType: 'run_expert', params: { expertId: 'x', prompt: '' } }]),
+    );
     expect(issues.some((i) => i.field === 'prompt')).toBe(true);
   });
 
   it('flags whitespace-only fields as blank', () => {
-    const issues = validateDagParams(dag([{ actionType: 'run_expert', params: { expertId: '  ', prompt: '   \n  ' } }]));
+    const issues = validateDagParams(
+      dag([{ actionType: 'run_expert', params: { expertId: '  ', prompt: '   \n  ' } }]),
+    );
     expect(issues.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -80,7 +92,12 @@ describe('validateDagParams: run_expert', () => {
 
   it('passes when expert exists, enabled, connections satisfied, prompt set', () => {
     const issues = validateDagParams(
-      dag([{ actionType: 'run_expert', params: { expertId: 'e1', prompt: 'hi', model: 'claude-sonnet-4-6' } }]),
+      dag([
+        {
+          actionType: 'run_expert',
+          params: { expertId: 'e1', prompt: 'hi', model: 'claude-sonnet-4-6' },
+        },
+      ]),
       {
         experts: [expert({ id: 'e1', requiredConnections: ['hubspot'] })],
         hubspotConnected: true,
@@ -92,14 +109,18 @@ describe('validateDagParams: run_expert', () => {
 
   it('flags unknown model when knownModels is provided', () => {
     const issues = validateDagParams(
-      dag([{ actionType: 'run_expert', params: { expertId: 'e1', prompt: 'hi', model: 'gpt-99' } }]),
+      dag([
+        { actionType: 'run_expert', params: { expertId: 'e1', prompt: 'hi', model: 'gpt-99' } },
+      ]),
       { experts: [expert({ id: 'e1' })], knownModels: ['claude-sonnet-4-6'] },
     );
     expect(issues.some((i) => i.field === 'model')).toBe(true);
   });
 
   it('catches the legacy expert_step alias', () => {
-    const issues = validateDagParams(dag([{ actionType: 'expert_step', params: { expertId: '', prompt: '' } }]));
+    const issues = validateDagParams(
+      dag([{ actionType: 'expert_step', params: { expertId: '', prompt: '' } }]),
+    );
     expect(issues.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -107,8 +128,18 @@ describe('validateDagParams: run_expert', () => {
     // This is the failing routine from the bug report — every required field blank.
     const issues = validateDagParams(
       dag([
-        { id: 'a', name: 'New Run Expert', actionType: 'run_expert', params: { expertId: '', prompt: '' } },
-        { id: 'b', name: 'New HubSpot: Create Ticket', actionType: 'hubspot_create_ticket', params: { subject: '' } },
+        {
+          id: 'a',
+          name: 'New Run Expert',
+          actionType: 'run_expert',
+          params: { expertId: '', prompt: '' },
+        },
+        {
+          id: 'b',
+          name: 'New HubSpot: Create Ticket',
+          actionType: 'hubspot_create_ticket',
+          params: { subject: '' },
+        },
       ]),
       { experts: [], hubspotConnected: true },
     );
@@ -123,7 +154,9 @@ describe('validateDagParams: run_expert', () => {
 
 describe('validateDagParams: hubspot_*', () => {
   it('flags blank hubspot_create_ticket subject', () => {
-    const issues = validateDagParams(dag([{ actionType: 'hubspot_create_ticket', params: { subject: '' } }]));
+    const issues = validateDagParams(
+      dag([{ actionType: 'hubspot_create_ticket', params: { subject: '' } }]),
+    );
     expect(issues.some((i) => i.message.includes('subject'))).toBe(true);
   });
 
@@ -161,7 +194,9 @@ describe('validateDagParams: other action types', () => {
   });
 
   it('flags blank send_notification title', () => {
-    const issues = validateDagParams(dag([{ actionType: 'send_notification', params: { title: '' } }]));
+    const issues = validateDagParams(
+      dag([{ actionType: 'send_notification', params: { title: '' } }]),
+    );
     expect(issues.some((i) => i.field === 'title')).toBe(true);
   });
 
@@ -189,10 +224,15 @@ describe('validateDagParams: claude code auth', () => {
   it('flags unauthenticated Claude Code when DAG uses run_expert', () => {
     const issues = validateDagParams(
       dag([{ actionType: 'run_expert', params: { expertId: 'e1', prompt: 'hi' } }]),
-      { experts: [expert({ id: 'e1' })], claudeCodeAuthChecked: true, claudeCodeAuthOk: false, claudeCodeAuthReason: 'timed out' },
+      {
+        experts: [expert({ id: 'e1' })],
+        claudeCodeAuthChecked: true,
+        claudeCodeAuthOk: false,
+        claudeCodeAuthReason: 'timed out',
+      },
     );
     expect(issues.some((i) => i.field === 'auth')).toBe(true);
-    expect(issues.some((i) => i.message.includes("Run `claude`"))).toBe(true);
+    expect(issues.some((i) => i.message.includes('Run `claude`'))).toBe(true);
     expect(issues.some((i) => i.message.includes('timed out'))).toBe(true);
   });
 
@@ -252,15 +292,27 @@ describe('validateDagParams: multi-step', () => {
 
 describe('validateDagParams: edge cases', () => {
   it('handles missing params object', () => {
-    const issues = validateDagParams(
-      { steps: [{ id: 'a', name: 'X', actionType: 'run_expert', dependsOn: [], inputMappings: [], requiresApproval: false, onError: 'fail' }] } as unknown as DAGDefinition,
-    );
+    const issues = validateDagParams({
+      steps: [
+        {
+          id: 'a',
+          name: 'X',
+          actionType: 'run_expert',
+          dependsOn: [],
+          inputMappings: [],
+          requiresApproval: false,
+          onError: 'fail',
+        },
+      ],
+    } as unknown as DAGDefinition);
     expect(issues.length).toBeGreaterThan(0);
   });
 
   it('handles non-string param values gracefully (treated as blank)', () => {
     const issues = validateDagParams(
-      dag([{ actionType: 'run_expert', params: { expertId: 123 as unknown, prompt: null as unknown } }]),
+      dag([
+        { actionType: 'run_expert', params: { expertId: 123 as unknown, prompt: null as unknown } },
+      ]),
     );
     expect(issues.some((i) => i.field === 'expertId')).toBe(true);
     expect(issues.some((i) => i.field === 'prompt')).toBe(true);
@@ -273,7 +325,14 @@ describe('validateDagParams: edge cases', () => {
 
   it('preserves stepId and stepName so the toast can name the offender', () => {
     const issues = validateDagParams(
-      dag([{ id: 'abc-123', name: 'Pick Customer', actionType: 'run_expert', params: { expertId: '', prompt: '' } }]),
+      dag([
+        {
+          id: 'abc-123',
+          name: 'Pick Customer',
+          actionType: 'run_expert',
+          params: { expertId: '', prompt: '' },
+        },
+      ]),
     );
     expect(issues.every((i) => i.stepId === 'abc-123')).toBe(true);
     expect(issues.every((i) => i.stepName === 'Pick Customer')).toBe(true);

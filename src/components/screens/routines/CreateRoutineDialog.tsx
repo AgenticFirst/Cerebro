@@ -43,9 +43,7 @@ export default function CreateRoutineDialog({
   if (!isOpen) return null;
 
   const canSubmit =
-    name.trim() &&
-    !isSubmitting &&
-    (triggerType !== 'cron' || scheduleDays.length > 0);
+    name.trim() && !isSubmitting && (triggerType !== 'cron' || scheduleDays.length > 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,13 +65,55 @@ export default function CreateRoutineDialog({
     }
   };
 
-  const triggers: Array<{ type: TriggerType; icon: typeof Hand; label: string; desc: string; tipKey: string }> = [
-    { type: 'manual', icon: Hand, label: t('triggers.manual'), desc: t('createRoutine.triggerManualDesc'), tipKey: 'routineTooltips.triggerManual' },
-    { type: 'cron', icon: Clock, label: t('triggers.scheduled'), desc: t('createRoutine.triggerScheduledDesc'), tipKey: 'routineTooltips.triggerScheduled' },
-    { type: 'webhook', icon: Webhook, label: t('triggers.webhook'), desc: t('createRoutine.triggerWebhookDesc'), tipKey: 'routineTooltips.triggerWebhook' },
-    { type: 'telegram_message', icon: TelegramIcon as unknown as typeof Hand, label: t('triggers.telegramMessage'), desc: t('createRoutine.triggerTelegramDesc'), tipKey: 'routineTooltips.triggerTelegram' },
-    { type: 'github_issue_opened', icon: GitHubIcon as unknown as typeof Hand, label: t('triggers.githubIssueOpened'), desc: t('createRoutine.triggerGithubIssueOpenedDesc'), tipKey: 'routineTooltips.triggerGithubIssueOpened' },
-    { type: 'github_pr_review_requested', icon: GitHubIcon as unknown as typeof Hand, label: t('triggers.githubPrReviewRequested'), desc: t('createRoutine.triggerGithubPrReviewDesc'), tipKey: 'routineTooltips.triggerGithubPrReview' },
+  const triggers: Array<{
+    type: TriggerType;
+    icon: typeof Hand;
+    label: string;
+    desc: string;
+    tipKey: string;
+  }> = [
+    {
+      type: 'manual',
+      icon: Hand,
+      label: t('triggers.manual'),
+      desc: t('createRoutine.triggerManualDesc'),
+      tipKey: 'routineTooltips.triggerManual',
+    },
+    {
+      type: 'cron',
+      icon: Clock,
+      label: t('triggers.scheduled'),
+      desc: t('createRoutine.triggerScheduledDesc'),
+      tipKey: 'routineTooltips.triggerScheduled',
+    },
+    {
+      type: 'webhook',
+      icon: Webhook,
+      label: t('triggers.webhook'),
+      desc: t('createRoutine.triggerWebhookDesc'),
+      tipKey: 'routineTooltips.triggerWebhook',
+    },
+    {
+      type: 'telegram_message',
+      icon: TelegramIcon as unknown as typeof Hand,
+      label: t('triggers.telegramMessage'),
+      desc: t('createRoutine.triggerTelegramDesc'),
+      tipKey: 'routineTooltips.triggerTelegram',
+    },
+    {
+      type: 'github_issue_opened',
+      icon: GitHubIcon as unknown as typeof Hand,
+      label: t('triggers.githubIssueOpened'),
+      desc: t('createRoutine.triggerGithubIssueOpenedDesc'),
+      tipKey: 'routineTooltips.triggerGithubIssueOpened',
+    },
+    {
+      type: 'github_pr_review_requested',
+      icon: GitHubIcon as unknown as typeof Hand,
+      label: t('triggers.githubPrReviewRequested'),
+      desc: t('createRoutine.triggerGithubPrReviewDesc'),
+      tipKey: 'routineTooltips.triggerGithubPrReview',
+    },
   ];
 
   return (

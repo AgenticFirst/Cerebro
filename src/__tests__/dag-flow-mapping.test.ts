@@ -10,11 +10,7 @@ import {
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function stepNode(
-  id: string,
-  actionType: string,
-  overrides: Partial<RoutineStepData> = {},
-): Node {
+function stepNode(id: string, actionType: string, overrides: Partial<RoutineStepData> = {}): Node {
   return {
     id,
     type: 'routineStep',
@@ -54,11 +50,7 @@ describe('flowToDag', () => {
     const a = stepNode('a', 'ask_ai');
     const b = stepNode('b', 'send_notification');
     const trig = triggerNode();
-    const edges: Edge[] = [
-      edge(TRIGGER_NODE_ID, 'a'),
-      edge(TRIGGER_NODE_ID, 'b'),
-      edge('a', 'b'),
-    ];
+    const edges: Edge[] = [edge(TRIGGER_NODE_ID, 'a'), edge(TRIGGER_NODE_ID, 'b'), edge('a', 'b')];
 
     const dag = flowToDag([a, b], edges, trig, []);
 
@@ -159,9 +151,7 @@ describe('dagToFlow', () => {
       trigger: { triggerType: 'trigger_manual', config: {} },
     };
     const { edges } = dagToFlow(dag);
-    const triggerTargets = edges
-      .filter((e) => e.source === TRIGGER_NODE_ID)
-      .map((e) => e.target);
+    const triggerTargets = edges.filter((e) => e.source === TRIGGER_NODE_ID).map((e) => e.target);
     expect(triggerTargets).toEqual(['a']);
   });
 
@@ -317,8 +307,8 @@ describe('dagToFlow', () => {
     };
 
     const { nodes } = dagToFlow(dag);
-    const dataA = (nodes.find((n) => n.id === 'a')!.data as RoutineStepData);
-    const dataB = (nodes.find((n) => n.id === 'b')!.data as RoutineStepData);
+    const dataA = nodes.find((n) => n.id === 'a')!.data as RoutineStepData;
+    const dataB = nodes.find((n) => n.id === 'b')!.data as RoutineStepData;
     expect(dataA.dependsOn).toEqual([]);
     expect(dataB.dependsOn).toEqual(['a']);
   });
@@ -355,12 +345,7 @@ describe('round-trip (dagToFlow → flowToDag)', () => {
     };
 
     const flow = dagToFlow(original);
-    const roundTripped = flowToDag(
-      flow.nodes,
-      flow.edges,
-      flow.triggerNode,
-      flow.annotationNodes,
-    );
+    const roundTripped = flowToDag(flow.nodes, flow.edges, flow.triggerNode, flow.annotationNodes);
 
     // Steps survive with the same dependsOn shape (no __trigger__ leaks)
     const byId = new Map(roundTripped.steps.map((s) => [s.id, s]));
@@ -407,12 +392,7 @@ describe('round-trip (dagToFlow → flowToDag)', () => {
     };
 
     const flow = dagToFlow(original);
-    const roundTripped = flowToDag(
-      flow.nodes,
-      flow.edges,
-      flow.triggerNode,
-      flow.annotationNodes,
-    );
+    const roundTripped = flowToDag(flow.nodes, flow.edges, flow.triggerNode, flow.annotationNodes);
     const byId = new Map(roundTripped.steps.map((s) => [s.id, s]));
     expect(byId.get('root')!.dependsOn).toEqual([]);
     expect(byId.get('mid')!.dependsOn).toEqual(['root']);

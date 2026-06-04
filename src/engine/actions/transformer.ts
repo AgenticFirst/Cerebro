@@ -71,19 +71,22 @@ export const transformerAction: ActionDefinition = {
 
     switch (params.operation) {
       case 'format':
-        result = formatOp(params.template ?? '', data.data as Record<string, unknown> ?? {});
+        result = formatOp(params.template ?? '', (data.data as Record<string, unknown>) ?? {});
         break;
       case 'extract':
         result = extractOp(params.path ?? '', data.data);
         break;
       case 'filter':
-        result = filterOp(params.predicate ?? '', data.items as unknown[] ?? []);
+        result = filterOp(params.predicate ?? '', (data.items as unknown[]) ?? []);
         break;
       case 'merge':
-        result = mergeOp(data.sources as Record<string, unknown>[] ?? [], params.mergeStrategy ?? 'shallow');
+        result = mergeOp(
+          (data.sources as Record<string, unknown>[]) ?? [],
+          params.mergeStrategy ?? 'shallow',
+        );
         break;
       case 'template':
-        result = templateOp(params.template ?? '', data.data as Record<string, unknown> ?? {});
+        result = templateOp(params.template ?? '', (data.data as Record<string, unknown>) ?? {});
         break;
       default:
         throw new Error(`Unknown transformer operation: ${params.operation}`);
@@ -133,14 +136,20 @@ function filterOp(predicate: string, items: unknown[]): unknown[] {
 
 // ── merge: combine objects ──────────────────────────────────────
 
-function mergeOp(sources: Record<string, unknown>[], strategy: 'shallow' | 'deep'): Record<string, unknown> {
+function mergeOp(
+  sources: Record<string, unknown>[],
+  strategy: 'shallow' | 'deep',
+): Record<string, unknown> {
   if (strategy === 'deep') {
     return sources.reduce((acc, src) => deepMerge(acc, src), {} as Record<string, unknown>);
   }
   return Object.assign({}, ...sources);
 }
 
-function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+function deepMerge(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
   const result = { ...target };
 
   for (const key of Object.keys(source)) {
@@ -148,9 +157,12 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
     const sourceVal = source[key];
 
     if (
-      targetVal && sourceVal &&
-      typeof targetVal === 'object' && !Array.isArray(targetVal) &&
-      typeof sourceVal === 'object' && !Array.isArray(sourceVal)
+      targetVal &&
+      sourceVal &&
+      typeof targetVal === 'object' &&
+      !Array.isArray(targetVal) &&
+      typeof sourceVal === 'object' &&
+      !Array.isArray(sourceVal)
     ) {
       result[key] = deepMerge(
         targetVal as Record<string, unknown>,

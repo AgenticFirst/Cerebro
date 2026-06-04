@@ -26,10 +26,7 @@ export function getTemplateById(id: string): RoutineTemplate | null {
  * values. Unknown keys are replaced with empty strings so a missing variable
  * doesn't leak the placeholder syntax to end users.
  */
-export function applyTemplateVariables(
-  source: string,
-  values: Record<string, string>,
-): string {
+export function applyTemplateVariables(source: string, values: Record<string, string>): string {
   return source.replace(/%%(\w+)%%/g, (_, key) => {
     const v = values[key];
     return typeof v === 'string' ? v : '';

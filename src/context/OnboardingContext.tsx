@@ -152,9 +152,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
             const info = await window.cerebro.claudeCode.detect();
             if (cancelled) return;
             if (info.status !== 'available') {
-              const installCheckIdx = TOUR_STEPS.findIndex(
-                (s) => s.kind === 'install-check',
-              );
+              const installCheckIdx = TOUR_STEPS.findIndex((s) => s.kind === 'install-check');
               if (installCheckIdx >= 0) {
                 autoOpenTimer.current = setTimeout(() => {
                   if (cancelled) return;
@@ -208,17 +206,20 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setStepIndex((idx) => Math.max(idx - 1, 0));
   }, []);
 
-  const setLanguageAndAdvance = useCallback((lang: TourLanguage) => {
-    void i18n.changeLanguage(lang);
-    setLanguage(lang);
-    saveSetting('ui_language', lang);
-    try {
-      localStorage.setItem('cerebro_ui_language', lang);
-    } catch {
-      /* private browsing — ok */
-    }
-    setStepIndex(1);
-  }, [i18n]);
+  const setLanguageAndAdvance = useCallback(
+    (lang: TourLanguage) => {
+      void i18n.changeLanguage(lang);
+      setLanguage(lang);
+      saveSetting('ui_language', lang);
+      try {
+        localStorage.setItem('cerebro_ui_language', lang);
+      } catch {
+        /* private browsing — ok */
+      }
+      setStepIndex(1);
+    },
+    [i18n],
+  );
 
   const finish = useCallback(
     (opts?: { skipped?: boolean }) => {
@@ -293,11 +294,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return (
-    <OnboardingContext.Provider value={value}>
-      {children}
-    </OnboardingContext.Provider>
-  );
+  return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;
 }
 
 export function useOnboarding(): OnboardingContextValue {

@@ -200,9 +200,7 @@ export default function TeamProposalCard({
                 ) : (
                   <UserPlus size={10} className="text-purple-400 flex-shrink-0" />
                 )}
-                <span className="text-text-secondary">
-                  {member.name ?? member.role}
-                </span>
+                <span className="text-text-secondary">{member.name ?? member.role}</span>
                 <span className="text-text-tertiary">({member.role})</span>
                 {!member.expertId && (
                   <span className="text-[9px] text-purple-400 font-medium">{t('common.new')}</span>

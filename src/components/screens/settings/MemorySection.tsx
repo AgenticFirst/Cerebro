@@ -57,7 +57,7 @@ export default function MemorySection() {
   }, [selectedSlug, selectedFile, readFile]);
 
   const slugFiles = useMemo(
-    () => (selectedSlug ? files[selectedSlug] ?? [] : []),
+    () => (selectedSlug ? (files[selectedSlug] ?? []) : []),
     [files, selectedSlug],
   );
 
@@ -89,9 +89,7 @@ export default function MemorySection() {
     <div className="flex flex-col gap-6 flex-1 min-h-0">
       <div>
         <h2 className="text-lg font-medium text-text-primary mb-1">{t('memory.title')}</h2>
-        <p className="text-sm text-text-secondary">
-          {t('memory.description')}
-        </p>
+        <p className="text-sm text-text-secondary">{t('memory.description')}</p>
       </div>
 
       <div className="flex flex-1 min-h-0 rounded-lg border border-border-subtle bg-bg-surface overflow-hidden">
@@ -103,7 +101,9 @@ export default function MemorySection() {
             </div>
             <div className="space-y-px">
               {directories.length === 0 && (
-                <div className="text-xs text-text-tertiary px-2 py-3">{t('memory.noAgentsYet')}</div>
+                <div className="text-xs text-text-tertiary px-2 py-3">
+                  {t('memory.noAgentsYet')}
+                </div>
               )}
               {directories.map((dir) => {
                 const active = dir.slug === selectedSlug;
@@ -169,7 +169,9 @@ export default function MemorySection() {
 
               <div className="space-y-px">
                 {slugFiles.length === 0 && !creating && (
-                  <div className="text-xs text-text-tertiary px-2 py-2">{t('memory.noFilesYet')}</div>
+                  <div className="text-xs text-text-tertiary px-2 py-2">
+                    {t('memory.noFilesYet')}
+                  </div>
                 )}
                 {slugFiles.map((f) => {
                   const active = f.path === selectedFile;
@@ -261,9 +263,12 @@ export default function MemorySection() {
               </div>
               {directories.length > 0 && selectedSlug && (
                 <div className="text-xs text-text-tertiary mt-2">
-                  {t('memory.lastUpdated', { time: timeAgo(
-                    directories.find((d) => d.slug === selectedSlug)?.lastModified ?? null, t,
-                  ) })}
+                  {t('memory.lastUpdated', {
+                    time: timeAgo(
+                      directories.find((d) => d.slug === selectedSlug)?.lastModified ?? null,
+                      t,
+                    ),
+                  })}
                 </div>
               )}
             </div>

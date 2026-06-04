@@ -16,14 +16,31 @@ import AlertModal from '../../ui/AlertModal';
 
 function statusPill(status: CalendarAccountInfo['status'], t: (k: string) => string) {
   const map: Record<CalendarAccountInfo['status'], { cls: string; label: string }> = {
-    connected: { cls: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400', label: t('calendar.status.connected') },
-    token_expired: { cls: 'border-amber-500/30 bg-amber-500/10 text-amber-400', label: t('calendar.status.tokenExpired') },
-    error: { cls: 'border-red-500/30 bg-red-500/10 text-red-400', label: t('calendar.status.error') },
-    disconnected: { cls: 'border-border-subtle bg-bg-surface text-text-tertiary', label: t('calendar.status.disconnected') },
+    connected: {
+      cls: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+      label: t('calendar.status.connected'),
+    },
+    token_expired: {
+      cls: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+      label: t('calendar.status.tokenExpired'),
+    },
+    error: {
+      cls: 'border-red-500/30 bg-red-500/10 text-red-400',
+      label: t('calendar.status.error'),
+    },
+    disconnected: {
+      cls: 'border-border-subtle bg-bg-surface text-text-tertiary',
+      label: t('calendar.status.disconnected'),
+    },
   };
   const { cls, label } = map[status];
   return (
-    <span className={clsx('text-[10px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1', cls)}>
+    <span
+      className={clsx(
+        'text-[10px] font-medium px-2 py-0.5 rounded-full border flex items-center gap-1',
+        cls,
+      )}
+    >
       <span className="w-1.5 h-1.5 rounded-full bg-current" /> {label}
     </span>
   );
@@ -81,7 +98,11 @@ export default function CalendarSection() {
       {accounts.map((acc) => (
         <div key={acc.id} className="rounded-lg border border-border-subtle bg-bg-surface/40 p-3">
           <div className="flex items-center gap-2.5">
-            {acc.provider === 'google' ? <GoogleCalendarIcon size={18} /> : <OutlookIcon size={18} />}
+            {acc.provider === 'google' ? (
+              <GoogleCalendarIcon size={18} />
+            ) : (
+              <OutlookIcon size={18} />
+            )}
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-medium text-text-primary truncate">{acc.email}</div>
               <div className="text-[11px] text-text-tertiary">
@@ -113,7 +134,10 @@ export default function CalendarSection() {
                     onChange={(v) => void toggleCalendar(acc, c.id, v)}
                     label={
                       <span className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: c.color ?? '#06B6D4' }} />
+                        <span
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ background: c.color ?? '#06B6D4' }}
+                        />
                         {c.name}
                       </span>
                     }
@@ -158,7 +182,13 @@ export default function CalendarSection() {
       )}
 
       {showConnect && (
-        <CalendarConnectModal onClose={() => { setShowConnect(false); void refresh(); }} onPersisted={() => void refresh()} />
+        <CalendarConnectModal
+          onClose={() => {
+            setShowConnect(false);
+            void refresh();
+          }}
+          onPersisted={() => void refresh()}
+        />
       )}
 
       {pendingDisconnect && (
@@ -166,11 +196,19 @@ export default function CalendarSection() {
           iconTone="danger"
           icon={<Trash2 size={16} className="text-red-400" />}
           title={t('calendar.section.disconnect')}
-          message={t('calendar.section.disconnectConfirm').replace('{{email}}', pendingDisconnect.email)}
+          message={t('calendar.section.disconnectConfirm').replace(
+            '{{email}}',
+            pendingDisconnect.email,
+          )}
           onClose={() => setPendingDisconnect(null)}
           actions={[
             { label: t('calendar.event.cancel'), onClick: () => setPendingDisconnect(null) },
-            { label: t('calendar.section.disconnect'), primary: true, variant: 'danger', onClick: () => void disconnect(pendingDisconnect) },
+            {
+              label: t('calendar.section.disconnect'),
+              primary: true,
+              variant: 'danger',
+              onClick: () => void disconnect(pendingDisconnect),
+            },
           ]}
         />
       )}

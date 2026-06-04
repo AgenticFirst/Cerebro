@@ -10,9 +10,7 @@
  */
 
 export function stripAnsi(data: string): string {
-  return data
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-    .replace(/\x1b\][^\x07]*\x07/g, '');
+  return data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
 }
 
 export function stripAnsiFull(data: string): string {

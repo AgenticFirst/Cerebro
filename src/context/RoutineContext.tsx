@@ -63,10 +63,7 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
     runCallbackRef.current = cb;
   }, []);
 
-  const enabledCount = useMemo(
-    () => routines.filter((r) => r.isEnabled).length,
-    [routines],
-  );
+  const enabledCount = useMemo(() => routines.filter((r) => r.isEnabled).length, [routines]);
 
   const cronCount = useMemo(
     () => routines.filter((r) => r.triggerType === 'cron' && r.isEnabled).length,
@@ -143,22 +140,25 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
     [addToast],
   );
 
-  const deleteRoutine = useCallback(async (id: string) => {
-    try {
-      const res = await window.cerebro.invoke({
-        method: 'DELETE',
-        path: `/routines/${id}`,
-      });
-      if (res.ok || res.status === 204) {
-        setRoutines((prev) => prev.filter((r) => r.id !== id));
-        setTotal((prev) => Math.max(0, prev - 1));
-        window.cerebro.scheduler.sync().catch(console.error);
+  const deleteRoutine = useCallback(
+    async (id: string) => {
+      try {
+        const res = await window.cerebro.invoke({
+          method: 'DELETE',
+          path: `/routines/${id}`,
+        });
+        if (res.ok || res.status === 204) {
+          setRoutines((prev) => prev.filter((r) => r.id !== id));
+          setTotal((prev) => Math.max(0, prev - 1));
+          window.cerebro.scheduler.sync().catch(console.error);
+        }
+      } catch (e) {
+        console.error('Failed to delete routine:', e);
+        addToast('Failed to delete routine', 'error');
       }
-    } catch (e) {
-      console.error('Failed to delete routine:', e);
-      addToast('Failed to delete routine', 'error');
-    }
-  }, [addToast]);
+    },
+    [addToast],
+  );
 
   const toggleEnabled = useCallback(
     async (routine: Routine) => {
@@ -167,79 +167,84 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
     [updateRoutine],
   );
 
-  const runRoutine = useCallback(async (id: string) => {
-    const routine = routinesRef.current.find((r) => r.id === id);
-    if (!routine?.dagJson) return;
+  const runRoutine = useCallback(
+    async (id: string) => {
+      const routine = routinesRef.current.find((r) => r.id === id);
+      if (!routine?.dagJson) return;
 
-    let dag: DAGDefinition;
-    try {
-      dag = JSON.parse(routine.dagJson);
-    } catch {
-      addToast('Routine DAG is invalid JSON', 'error');
-      return;
-    }
-
-    // Build live-resource context. We only spend on async checks (IPC
-    // round-trips, subprocess probe) when the DAG actually has a step
-    // that benefits from them. Decide which connections need live status
-    // checks based on the union of action-type-implied connections plus
-    // every referenced expert's requiredConnections.
-    const connectionsToCheck = connectionsNeededForDag(dag, expertsRef.current);
-
-    const usesClaudeCode = dag.steps.some((s) => {
-      const r = resolveActionType(s.actionType);
-      return r === 'run_expert' || r === 'ask_ai' || r === 'run_claude_code';
-    });
-
-    const validationCtx: ValidationContext = {
-      experts: expertsRef.current.map((e) => ({
-        id: e.id,
-        isEnabled: e.isEnabled,
-        requiredConnections: e.requiredConnections,
-      })),
-      knownModels: CLAUDE_MODELS.map((m) => m.id),
-    };
-
-    if (connectionsToCheck.length > 0) {
-      const conns = await fetchConnectionStatus(connectionsToCheck);
-      validationCtx.hubspotConnected = conns.hubspot;
-      validationCtx.whatsappConnected = conns.whatsapp;
-      validationCtx.telegramConnected = conns.telegram;
-      validationCtx.githubConnected = conns.github;
-    }
-
-    if (usesClaudeCode) {
+      let dag: DAGDefinition;
       try {
-        const probe = await window.cerebro.claudeCode.probeAuth();
-        validationCtx.claudeCodeAuthChecked = true;
-        validationCtx.claudeCodeAuthOk = probe.ok;
-        validationCtx.claudeCodeAuthReason = probe.reason;
+        dag = JSON.parse(routine.dagJson);
       } catch {
-        // Probe IPC unavailable — skip; the engine's idle timeout still
-        // catches a hung subprocess in 60s.
+        addToast('Routine DAG is invalid JSON', 'error');
+        return;
       }
-    }
 
-    const issues = validateDagParams(dag, validationCtx);
-    if (issues.length > 0) {
-      let summary: string;
-      if (issues.length === 1) {
-        summary = issues[0].message;
-      } else if (issues.length <= 3) {
-        summary = issues.map((i) => i.message).join('; ');
+      // Build live-resource context. We only spend on async checks (IPC
+      // round-trips, subprocess probe) when the DAG actually has a step
+      // that benefits from them. Decide which connections need live status
+      // checks based on the union of action-type-implied connections plus
+      // every referenced expert's requiredConnections.
+      const connectionsToCheck = connectionsNeededForDag(dag, expertsRef.current);
+
+      const usesClaudeCode = dag.steps.some((s) => {
+        const r = resolveActionType(s.actionType);
+        return r === 'run_expert' || r === 'ask_ai' || r === 'run_claude_code';
+      });
+
+      const validationCtx: ValidationContext = {
+        experts: expertsRef.current.map((e) => ({
+          id: e.id,
+          isEnabled: e.isEnabled,
+          requiredConnections: e.requiredConnections,
+        })),
+        knownModels: CLAUDE_MODELS.map((m) => m.id),
+      };
+
+      if (connectionsToCheck.length > 0) {
+        const conns = await fetchConnectionStatus(connectionsToCheck);
+        validationCtx.hubspotConnected = conns.hubspot;
+        validationCtx.whatsappConnected = conns.whatsapp;
+        validationCtx.telegramConnected = conns.telegram;
+        validationCtx.githubConnected = conns.github;
+      }
+
+      if (usesClaudeCode) {
+        try {
+          const probe = await window.cerebro.claudeCode.probeAuth();
+          validationCtx.claudeCodeAuthChecked = true;
+          validationCtx.claudeCodeAuthOk = probe.ok;
+          validationCtx.claudeCodeAuthReason = probe.reason;
+        } catch {
+          // Probe IPC unavailable — skip; the engine's idle timeout still
+          // catches a hung subprocess in 60s.
+        }
+      }
+
+      const issues = validateDagParams(dag, validationCtx);
+      if (issues.length > 0) {
+        let summary: string;
+        if (issues.length === 1) {
+          summary = issues[0].message;
+        } else if (issues.length <= 3) {
+          summary = issues.map((i) => i.message).join('; ');
+        } else {
+          summary = `${issues.length} steps need attention: ${issues.map((i) => i.stepName).join(', ')}`;
+        }
+        addToast(`Can't run "${routine.name}" — ${summary}`, 'error');
+        return;
+      }
+
+      if (runCallbackRef.current) {
+        runCallbackRef.current({ id: routine.id, name: routine.name, dagJson: routine.dagJson });
       } else {
-        summary = `${issues.length} steps need attention: ${issues.map((i) => i.stepName).join(', ')}`;
+        console.warn(
+          'runRoutine called but no run callback registered (ChatProvider may not be mounted)',
+        );
       }
-      addToast(`Can't run "${routine.name}" — ${summary}`, 'error');
-      return;
-    }
-
-    if (runCallbackRef.current) {
-      runCallbackRef.current({ id: routine.id, name: routine.name, dagJson: routine.dagJson });
-    } else {
-      console.warn('runRoutine called but no run callback registered (ChatProvider may not be mounted)');
-    }
-  }, [addToast]);
+    },
+    [addToast],
+  );
 
   return (
     <RoutineContext.Provider

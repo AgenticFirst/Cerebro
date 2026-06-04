@@ -47,7 +47,11 @@ export default function EventBlock({ occurrence, color, style, onClick }: Props)
         {isPrivate && <Lock size={9} className="flex-shrink-0 text-text-tertiary" />}
         {occurrence.recurring && <Repeat size={9} className="flex-shrink-0 text-text-tertiary" />}
         {hasConflict && (
-          <AlertTriangle size={9} className="flex-shrink-0 text-amber-400" aria-label={t('calendar.conflictBadge')} />
+          <AlertTriangle
+            size={9}
+            className="flex-shrink-0 text-amber-400"
+            aria-label={t('calendar.conflictBadge')}
+          />
         )}
         <span className="text-[11px] font-semibold text-text-primary truncate">
           {isPrivate ? t('calendar.private') : ev.title || '(no title)'}

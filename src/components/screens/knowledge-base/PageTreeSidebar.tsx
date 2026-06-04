@@ -26,7 +26,11 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { useKnowledgeBase, type KbTreeNode, type KbSearchHit } from '../../../context/KnowledgeBaseContext';
+import {
+  useKnowledgeBase,
+  type KbTreeNode,
+  type KbSearchHit,
+} from '../../../context/KnowledgeBaseContext';
 import { PageIcon } from './PageIcon';
 import { TrashModal } from './TrashModal';
 import { SearchResults } from './SearchResults';
@@ -79,7 +83,12 @@ function TreeRow({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { setNodeRef: setDropRef } = useDroppable({ id: node.id });
-  const { setNodeRef: setDragRef, attributes, listeners, isDragging } = useDraggable({ id: node.id });
+  const {
+    setNodeRef: setDragRef,
+    attributes,
+    listeners,
+    isDragging,
+  } = useDraggable({ id: node.id });
 
   const isActive = activeId === node.id;
   const isOpen = expanded.has(node.id);
@@ -277,8 +286,17 @@ const NO_DRAG: DragInfo = { activeDragId: null, overId: null, position: null };
 
 export default function PageTreeSidebar() {
   const { t } = useTranslation();
-  const { tree, activePageId, loadTree, openPage, createPage, renamePage, archivePage, movePage, searchPages } =
-    useKnowledgeBase();
+  const {
+    tree,
+    activePageId,
+    loadTree,
+    openPage,
+    createPage,
+    renamePage,
+    archivePage,
+    movePage,
+    searchPages,
+  } = useKnowledgeBase();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [trashOpen, setTrashOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -331,9 +349,12 @@ export default function PageTreeSidebar() {
     const over = e.over;
     const overId = over ? String(over.id) : null;
     const rawPosition =
-      over && over.rect ? positionAtPointer(pointerY(e), over.rect.top, over.rect.height) : 'inside';
+      over && over.rect
+        ? positionAtPointer(pointerY(e), over.rect.top, over.rect.height)
+        : 'inside';
     // Only surface an indicator when the move is actually valid.
-    const valid = overId !== null && computeDropTarget(tree, activeDragId, overId, rawPosition) !== null;
+    const valid =
+      overId !== null && computeDropTarget(tree, activeDragId, overId, rawPosition) !== null;
     const nextOverId = valid ? overId : null;
     const nextPosition = valid ? rawPosition : null;
     // Fires every pointer-move; skip the state update (and re-render) when the

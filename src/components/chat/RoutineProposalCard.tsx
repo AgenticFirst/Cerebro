@@ -102,7 +102,10 @@ export default function RoutineProposalCard({
       });
     });
 
-    return () => { stale = true; unsubEvent?.(); };
+    return () => {
+      stale = true;
+      unsubEvent?.();
+    };
   }, [proposal.status, proposal.previewRunId, conversationId, messageId, updateMessage]);
 
   const handleSave = async () => {
@@ -235,9 +238,7 @@ export default function RoutineProposalCard({
               <span className="text-[10px] font-mono w-4 text-right flex-shrink-0 mt-0.5 text-accent/60">
                 {i + 1}
               </span>
-              <span className="text-xs leading-relaxed text-text-secondary">
-                {step}
-              </span>
+              <span className="text-xs leading-relaxed text-text-secondary">{step}</span>
             </div>
           ))}
         </div>
@@ -248,7 +249,9 @@ export default function RoutineProposalCard({
         <div className="border-t border-border-subtle px-3 py-1.5 flex items-center gap-3 flex-wrap">
           <span className="flex items-center gap-1 text-[10px] text-text-tertiary">
             <Clock size={10} />
-            {TRIGGER_LABEL_KEYS[proposal.triggerType] ? t(TRIGGER_LABEL_KEYS[proposal.triggerType]) : proposal.triggerType}
+            {TRIGGER_LABEL_KEYS[proposal.triggerType]
+              ? t(TRIGGER_LABEL_KEYS[proposal.triggerType])
+              : proposal.triggerType}
             {proposal.cronExpression && ` (${proposal.cronExpression})`}
           </span>
           {proposal.requiredConnections.length > 0 && (

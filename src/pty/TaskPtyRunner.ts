@@ -152,9 +152,15 @@ export class TaskPtyRunner extends EventEmitter {
         const BRACKETED_PASTE_END = '\x1b[201~';
         this.ptyProcess.write(BRACKETED_PASTE_START + options.prompt + BRACKETED_PASTE_END);
         setTimeout(() => {
-          try { this.ptyProcess?.write('\r'); } catch { /* noop */ }
+          try {
+            this.ptyProcess?.write('\r');
+          } catch {
+            /* noop */
+          }
         }, 300);
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     };
 
     // Safety net: if the TUI never shows the `> ` prompt indicator we detect
@@ -173,10 +179,15 @@ export class TaskPtyRunner extends EventEmitter {
     this.ptyProcess.onData((data: string) => {
       if (!trustHandled) {
         strippedAccum += stripAnsiFull(data);
-        if (/trust\s+this\s+folder/i.test(strippedAccum) || /Yes,\s*I\s*trust/i.test(strippedAccum)) {
+        if (
+          /trust\s+this\s+folder/i.test(strippedAccum) ||
+          /Yes,\s*I\s*trust/i.test(strippedAccum)
+        ) {
           trustHandled = true;
           strippedAccum = '';
-          setTimeout(() => { this.ptyProcess?.write('\r'); }, 300);
+          setTimeout(() => {
+            this.ptyProcess?.write('\r');
+          }, 300);
         }
       }
 
@@ -232,14 +243,22 @@ export class TaskPtyRunner extends EventEmitter {
 
   resize(cols: number, rows: number): void {
     if (this.ptyProcess) {
-      try { this.ptyProcess.resize(cols, rows); } catch { /* already dead */ }
+      try {
+        this.ptyProcess.resize(cols, rows);
+      } catch {
+        /* already dead */
+      }
     }
   }
 
   /** Write user keystrokes to the PTY's stdin. */
   write(data: string): void {
     if (this.ptyProcess) {
-      try { this.ptyProcess.write(data); } catch { /* already dead */ }
+      try {
+        this.ptyProcess.write(data);
+      } catch {
+        /* already dead */
+      }
     }
   }
 
@@ -253,7 +272,11 @@ export class TaskPtyRunner extends EventEmitter {
       this.ptyProcess.kill('SIGTERM');
       const forceTimer = setTimeout(() => {
         if (this.ptyProcess) {
-          try { this.ptyProcess.kill('SIGKILL'); } catch { /* already dead */ }
+          try {
+            this.ptyProcess.kill('SIGKILL');
+          } catch {
+            /* already dead */
+          }
         }
       }, 3000);
       this.ptyProcess.onExit(() => clearTimeout(forceTimer));

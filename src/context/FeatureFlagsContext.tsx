@@ -50,9 +50,9 @@ interface FeatureFlagsContextValue {
 // would fail to find a provider for.
 const GLOBAL_KEY = '__cerebro_feature_flags_context__';
 const FeatureFlagsContext: React.Context<FeatureFlagsContextValue | null> =
-  (globalThis as Record<string, unknown>)[GLOBAL_KEY] as
-    React.Context<FeatureFlagsContextValue | null> | undefined
-  ?? createContext<FeatureFlagsContextValue | null>(null);
+  ((globalThis as Record<string, unknown>)[GLOBAL_KEY] as
+    | React.Context<FeatureFlagsContextValue | null>
+    | undefined) ?? createContext<FeatureFlagsContextValue | null>(null);
 (globalThis as Record<string, unknown>)[GLOBAL_KEY] = FeatureFlagsContext;
 
 function settingKey(key: BetaFeatureKey): string {
@@ -94,10 +94,7 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
     saveSetting(settingKey(key), enabled);
   }, []);
 
-  const value = useMemo(
-    () => ({ flags, isLoading, setFlag }),
-    [flags, isLoading, setFlag],
-  );
+  const value = useMemo(() => ({ flags, isLoading, setFlag }), [flags, isLoading, setFlag]);
 
   return <FeatureFlagsContext.Provider value={value}>{children}</FeatureFlagsContext.Provider>;
 }

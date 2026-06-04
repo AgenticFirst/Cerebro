@@ -97,9 +97,7 @@ export function createExpertStepAction(deps: ExpertStepContext): ActionDefinitio
       // integration is already wired" — so it produces a draft instead
       // of asking for an API token. Empty string for trivial single-step
       // routines, in which case prompt assembly is unchanged.
-      const routinePreface = context.dag
-        ? buildRoutineContext(context.dag, context.stepId)
-        : '';
+      const routinePreface = context.dag ? buildRoutineContext(context.dag, context.stepId) : '';
 
       // Final prompt: [workflow context] + [user-supplied additional context] + [user prompt].
       const fullPrompt = [routinePreface, params.additionalContext, params.prompt]
@@ -108,7 +106,9 @@ export function createExpertStepAction(deps: ExpertStepContext): ActionDefinitio
         .join('\n\n');
 
       // Start the agent run
-      context.log(`Starting expert step${expertId ? ` (expert: ${expertId})` : ' (global Cerebro)'}...`);
+      context.log(
+        `Starting expert step${expertId ? ` (expert: ${expertId})` : ' (global Cerebro)'}...`,
+      );
 
       const agentRunId = await agentRuntime.startRun(webContents, {
         conversationId: `engine-run:${context.runId}`,
@@ -141,10 +141,12 @@ export function createExpertStepAction(deps: ExpertStepContext): ActionDefinitio
           (event: RendererAgentEvent) => {
             // First substantive event → cancel heartbeat (idle warnings
             // and stderr lines don't count — they ARE the wait signal).
-            if (!firstEventReceived &&
-                event.type !== 'agent_idle_warning' &&
-                event.type !== 'subprocess_stderr' &&
-                event.type !== 'run_start') {
+            if (
+              !firstEventReceived &&
+              event.type !== 'agent_idle_warning' &&
+              event.type !== 'subprocess_stderr' &&
+              event.type !== 'run_start'
+            ) {
               firstEventReceived = true;
             }
             // Forward agent events as engine execution events
@@ -157,7 +159,9 @@ export function createExpertStepAction(deps: ExpertStepContext): ActionDefinitio
             // open the Logs tab.
             if (event.type === 'agent_idle_warning') {
               const sec = Math.round(event.elapsedMs / 1000);
-              context.log(`No subprocess output in ${sec}s — Claude Code may not be authenticated. Try \`claude\` in a terminal.`);
+              context.log(
+                `No subprocess output in ${sec}s — Claude Code may not be authenticated. Try \`claude\` in a terminal.`,
+              );
             } else if (event.type === 'subprocess_stderr') {
               context.log(`[stderr] ${event.line}`);
             }
@@ -167,9 +171,8 @@ export function createExpertStepAction(deps: ExpertStepContext): ActionDefinitio
         clearInterval(heartbeat);
       }
 
-      const summary = result.response.length > 80
-        ? result.response.slice(0, 77) + '...'
-        : result.response;
+      const summary =
+        result.response.length > 80 ? result.response.slice(0, 77) + '...' : result.response;
 
       return {
         data: {
@@ -242,19 +245,20 @@ function collectAgentResults(
     };
 
     // Handle abort
-    signal.addEventListener('abort', () => {
-      cleanup();
-      reject(new Error('Aborted'));
-    }, { once: true });
+    signal.addEventListener(
+      'abort',
+      () => {
+        cleanup();
+        reject(new Error('Aborted'));
+      },
+      { once: true },
+    );
   });
 }
 
 // ── Event translation ───────────────────────────────────────────
 
-function translateAgentEvent(
-  event: RendererAgentEvent,
-  stepId: string,
-): ExecutionEvent | null {
+function translateAgentEvent(event: RendererAgentEvent, stepId: string): ExecutionEvent | null {
   switch (event.type) {
     case 'text_delta':
       return { type: 'action_text_delta', stepId, delta: event.delta };

@@ -153,7 +153,11 @@ export default function CreateExpertDialog({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={type === 'team' ? t('createExpert.namePlaceholderTeam') : t('createExpert.namePlaceholderExpert')}
+              placeholder={
+                type === 'team'
+                  ? t('createExpert.namePlaceholderTeam')
+                  : t('createExpert.namePlaceholderExpert')
+              }
               className="w-full bg-bg-surface border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/40 transition-colors"
             />
           </div>
@@ -179,7 +183,8 @@ export default function CreateExpertDialog({
           {/* Domain */}
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
-              {t('experts.domain')} <span className="text-text-tertiary font-normal">{t('common.optional')}</span>
+              {t('experts.domain')}{' '}
+              <span className="text-text-tertiary font-normal">{t('common.optional')}</span>
             </label>
             <select
               value={domain}
@@ -198,7 +203,8 @@ export default function CreateExpertDialog({
           {/* Avatar */}
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
-              {t('experts.avatar')} <span className="text-text-tertiary font-normal">{t('common.optional')}</span>
+              {t('experts.avatar')}{' '}
+              <span className="text-text-tertiary font-normal">{t('common.optional')}</span>
             </label>
             <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} />
           </div>
@@ -227,25 +233,19 @@ export default function CreateExpertDialog({
                         onClick={() => toggleMember(exp.id)}
                         className={clsx(
                           'w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors',
-                          isSelected
-                            ? 'bg-accent/5'
-                            : 'hover:bg-bg-hover',
+                          isSelected ? 'bg-accent/5' : 'hover:bg-bg-hover',
                         )}
                       >
                         <div
                           className={clsx(
                             'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors',
-                            isSelected
-                              ? 'bg-accent border-accent'
-                              : 'border-border-default',
+                            isSelected ? 'bg-accent border-accent' : 'border-border-default',
                           )}
                         >
                           {isSelected && <Check size={10} className="text-bg-base" />}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm text-text-primary truncate">
-                            {exp.name}
-                          </div>
+                          <div className="text-sm text-text-primary truncate">{exp.name}</div>
                           {exp.domain && (
                             <div className="text-[10px] text-text-tertiary capitalize">
                               {exp.domain}
@@ -276,7 +276,9 @@ export default function CreateExpertDialog({
             >
               {isSubmitting
                 ? t('common.creating')
-                : type === 'team' ? t('createExpert.createTeam') : t('createExpert.createExpert')}
+                : type === 'team'
+                  ? t('createExpert.createTeam')
+                  : t('createExpert.createExpert')}
             </button>
           </div>
         </form>

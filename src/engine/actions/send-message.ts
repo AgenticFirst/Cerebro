@@ -84,10 +84,12 @@ export const sendMessageAction: ActionDefinition = {
       context.signal,
     );
 
-    const logPreview = params.message.length > 50 ? params.message.slice(0, 50) + '...' : params.message;
+    const logPreview =
+      params.message.length > 50 ? params.message.slice(0, 50) + '...' : params.message;
     context.log(`Sent message: ${logPreview}`);
 
-    const summaryPreview = params.message.length > 40 ? params.message.slice(0, 40) + '...' : params.message;
+    const summaryPreview =
+      params.message.length > 40 ? params.message.slice(0, 40) + '...' : params.message;
     return {
       data: {
         sent: true,

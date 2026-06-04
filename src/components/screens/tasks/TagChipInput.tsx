@@ -14,7 +14,12 @@ function normalize(tag: string): string {
   return tag.trim().toLowerCase().replace(/\s+/g, '-');
 }
 
-export default function TagChipInput({ tags, onChange, suggestions = [], className }: TagChipInputProps) {
+export default function TagChipInput({
+  tags,
+  onChange,
+  suggestions = [],
+  className,
+}: TagChipInputProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -51,9 +56,7 @@ export default function TagChipInput({ tags, onChange, suggestions = [], classNa
   };
 
   const filteredSuggestions = draft
-    ? suggestions.filter(
-        (s) => s.includes(normalize(draft)) && !tags.includes(s),
-      )
+    ? suggestions.filter((s) => s.includes(normalize(draft)) && !tags.includes(s))
     : suggestions.filter((s) => !tags.includes(s));
 
   return (
@@ -70,7 +73,10 @@ export default function TagChipInput({ tags, onChange, suggestions = [], classNa
             {tag}
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); removeTag(tag); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeTag(tag);
+              }}
               className="text-accent/70 hover:text-accent cursor-pointer"
               title={t('tasks.drawerRemoveTag')}
             >
@@ -97,7 +103,10 @@ export default function TagChipInput({ tags, onChange, suggestions = [], classNa
             <button
               key={s}
               type="button"
-              onMouseDown={(e) => { e.preventDefault(); addTag(s); }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                addTag(s);
+              }}
               className="w-full text-left px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer"
             >
               {s}

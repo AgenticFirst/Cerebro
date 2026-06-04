@@ -67,20 +67,21 @@ const REVIEW_PROMPT =
 
 const STEPS: Step[] = [
   step({
-    id: 'fetch_pr', name: 'Fetch PR + diff', actionType: 'github_fetch_pr',
+    id: 'fetch_pr',
+    name: 'Fetch PR + diff',
+    actionType: 'github_fetch_pr',
     params: {
       repo: '{{repo_full_name}}',
       pr_number: '{{pr_number}}',
       include_diff: true,
       max_diff_bytes: 200000,
     },
-    wire: [
-      '__trigger__.repo_full_name -> repo_full_name',
-      '__trigger__.pr_number -> pr_number',
-    ],
+    wire: ['__trigger__.repo_full_name -> repo_full_name', '__trigger__.pr_number -> pr_number'],
   }),
   step({
-    id: 'draft_review', name: 'Draft review', actionType: 'run_expert',
+    id: 'draft_review',
+    name: 'Draft review',
+    actionType: 'run_expert',
     params: {
       expertId: '%%expert_id%%',
       prompt: REVIEW_PROMPT,
@@ -98,7 +99,9 @@ const STEPS: Step[] = [
     ],
   }),
   step({
-    id: 'submit_review', name: 'Submit review', actionType: 'github_review_pr',
+    id: 'submit_review',
+    name: 'Submit review',
+    actionType: 'github_review_pr',
     params: {
       repo: '{{repo_full_name}}',
       pr_number: '{{pr_number}}',
@@ -167,7 +170,8 @@ export const githubPrReviewTemplate: RoutineTemplate = {
     {
       key: 'default_event',
       label: 'Default review verdict',
-      description: 'Submission verdict if the expert is non-committal. The expert can override in its draft.',
+      description:
+        'Submission verdict if the expert is non-committal. The expert can override in its draft.',
       type: 'select',
       required: true,
       default: 'COMMENT',

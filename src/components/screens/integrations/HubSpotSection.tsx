@@ -3,7 +3,11 @@ import { CheckCircle2, Eye, EyeOff, Loader2, Lock, ShieldAlert, XCircle } from '
 import clsx from 'clsx';
 import { Trans, useTranslation } from 'react-i18next';
 import { HubSpotIcon } from '../../icons/BrandIcons';
-import type { HubSpotPipelineSummary, HubSpotStatusResponse, HubSpotTicketPropertySummary } from '../../../types/ipc';
+import type {
+  HubSpotPipelineSummary,
+  HubSpotStatusResponse,
+  HubSpotTicketPropertySummary,
+} from '../../../types/ipc';
 
 type VerifyState =
   | { kind: 'idle' }
@@ -125,9 +129,12 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
     flashTimerRef.current = setTimeout(() => setSavedFlash(false), 1_500);
   }, [selectedPipeline, selectedStage, followUpProp, dueDateProp, refreshStatus]);
 
-  useEffect(() => () => {
-    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    },
+    [],
+  );
 
   const tokenConfigured = Boolean(status?.hasToken);
   const showTokenInput = !tokenConfigured || editingToken;
@@ -151,8 +158,8 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
       )}
 
       {/* Storage backend banner */}
-      {status && (
-        usingKeychain ? (
+      {status &&
+        (usingKeychain ? (
           <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
             <Lock size={14} className="mt-0.5 flex-shrink-0" />
             <span className="leading-relaxed">{t('hubspotSection.keychainEncrypted')}</span>
@@ -162,12 +169,13 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
             <ShieldAlert size={14} className="mt-0.5 flex-shrink-0" />
             <span className="leading-relaxed">{t('hubspotSection.keychainFallback')}</span>
           </div>
-        )
-      )}
+        ))}
 
       {/* Token row */}
       <div className="mt-6">
-        <label className="text-xs font-medium text-text-secondary">{t('hubspotSection.tokenLabel')}</label>
+        <label className="text-xs font-medium text-text-secondary">
+          {t('hubspotSection.tokenLabel')}
+        </label>
         <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
           <Trans
             i18nKey="hubspotSection.tokenHelp"
@@ -185,7 +193,10 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                 <input
                   type={showToken ? 'text' : 'password'}
                   value={tokenDraft}
-                  onChange={(e) => { setTokenDraft(e.target.value); setVerify({ kind: 'idle' }); }}
+                  onChange={(e) => {
+                    setTokenDraft(e.target.value);
+                    setVerify({ kind: 'idle' });
+                  }}
                   placeholder={t('hubspotSection.tokenPlaceholder')}
                   className="w-full bg-bg-surface border border-border-subtle rounded-md px-3 py-2 pr-10 text-sm font-mono text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/50"
                   autoComplete="off"
@@ -194,7 +205,9 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                 <button
                   type="button"
                   onClick={() => setShowToken((v) => !v)}
-                  aria-label={showToken ? t('hubspotSection.hideToken') : t('hubspotSection.showToken')}
+                  aria-label={
+                    showToken ? t('hubspotSection.hideToken') : t('hubspotSection.showToken')
+                  }
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary"
                 >
                   {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -210,7 +223,9 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                   'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
               >
-                {verify.kind === 'verifying' ? t('hubspotSection.verifying') : t('hubspotSection.verify')}
+                {verify.kind === 'verifying'
+                  ? t('hubspotSection.verifying')
+                  : t('hubspotSection.verify')}
               </button>
               {verify.kind === 'ok' && (
                 <button
@@ -234,7 +249,11 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
             {verify.kind === 'ok' && (
               <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400">
                 <CheckCircle2 size={13} />
-                <span>{t('hubspotSection.portalIdLine', { portalId: verify.portalId ?? t('hubspotSection.portalIdHidden') })}</span>
+                <span>
+                  {t('hubspotSection.portalIdLine', {
+                    portalId: verify.portalId ?? t('hubspotSection.portalIdHidden'),
+                  })}
+                </span>
               </div>
             )}
             {verify.kind === 'err' && (
@@ -250,12 +269,17 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
               <Lock size={13} className="text-emerald-400/80 flex-shrink-0" />
               <span className="text-text-secondary">
                 {t('hubspotSection.connectedToPortal')}{' '}
-                <span className="font-mono">{status?.portalId ?? t('hubspotSection.unknownPortal')}</span>
+                <span className="font-mono">
+                  {status?.portalId ?? t('hubspotSection.unknownPortal')}
+                </span>
               </span>
             </div>
             <button
               type="button"
-              onClick={() => { setEditingToken(true); setVerify({ kind: 'idle' }); }}
+              onClick={() => {
+                setEditingToken(true);
+                setVerify({ kind: 'idle' });
+              }}
               className="px-3 py-2 text-sm rounded-md font-medium bg-accent/15 text-accent hover:bg-accent/25"
             >
               {t('hubspotSection.replaceToken')}
@@ -274,7 +298,9 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
       {/* Default ticket pipeline + stage */}
       {tokenConfigured && (
         <div className="mt-6">
-          <label className="text-xs font-medium text-text-secondary">{t('hubspotSection.defaultsLabel')}</label>
+          <label className="text-xs font-medium text-text-secondary">
+            {t('hubspotSection.defaultsLabel')}
+          </label>
           <p className="text-[11px] text-text-tertiary mt-1 leading-relaxed">
             {t('hubspotSection.defaultsHelp')}
           </p>
@@ -286,12 +312,17 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
             <div className="mt-2 grid grid-cols-2 gap-2">
               <select
                 value={selectedPipeline}
-                onChange={(e) => { setSelectedPipeline(e.target.value); setSelectedStage(''); }}
+                onChange={(e) => {
+                  setSelectedPipeline(e.target.value);
+                  setSelectedStage('');
+                }}
                 className="w-full h-9 px-3 text-sm bg-bg-surface border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-accent/50"
               >
                 <option value="">{t('hubspotSection.pipelinePlaceholder')}</option>
                 {pipelines.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
                 ))}
               </select>
               <select
@@ -302,7 +333,9 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
               >
                 <option value="">{t('hubspotSection.stagePlaceholder')}</option>
                 {stagesForSelected.map((s) => (
-                  <option key={s.id} value={s.id}>{s.label}</option>
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
                 ))}
               </select>
             </div>
@@ -314,7 +347,9 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
           </p>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[11px] text-text-tertiary">{t('hubspotSection.followUpPropertyLabel')}</label>
+              <label className="text-[11px] text-text-tertiary">
+                {t('hubspotSection.followUpPropertyLabel')}
+              </label>
               <select
                 value={followUpProp}
                 onChange={(e) => setFollowUpProp(e.target.value)}
@@ -322,12 +357,16 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
               >
                 <option value="">{t('hubspotSection.propertyNone')}</option>
                 {ticketProperties.map((p) => (
-                  <option key={p.name} value={p.name}>{p.label}</option>
+                  <option key={p.name} value={p.name}>
+                    {p.label}
+                  </option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-[11px] text-text-tertiary">{t('hubspotSection.dueDatePropertyLabel')}</label>
+              <label className="text-[11px] text-text-tertiary">
+                {t('hubspotSection.dueDatePropertyLabel')}
+              </label>
               <select
                 value={dueDateProp}
                 onChange={(e) => setDueDateProp(e.target.value)}
@@ -337,7 +376,9 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
                 {ticketProperties
                   .filter((p) => p.type === 'date' || p.type === 'datetime')
                   .map((p) => (
-                    <option key={p.name} value={p.name}>{p.label}</option>
+                    <option key={p.name} value={p.name}>
+                      {p.label}
+                    </option>
                   ))}
               </select>
             </div>

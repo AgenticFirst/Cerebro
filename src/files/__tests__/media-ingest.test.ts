@@ -23,55 +23,66 @@ class MockBackend {
   async start(): Promise<void> {
     this.server = http.createServer((req, res) => {
       let body = '';
-      req.on('data', (c) => { body += c; });
+      req.on('data', (c) => {
+        body += c;
+      });
       req.on('end', () => {
         const payload = body ? JSON.parse(body) : {};
         if (req.url === '/files/items/from-path') {
           this.fromPathCalls.push(payload);
           const stat = fs.statSync(payload.file_path);
           res.writeHead(201, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({
-            id: 'fid_' + Math.random().toString(36).slice(2, 8),
-            name: path.basename(payload.file_path),
-            ext: path.extname(payload.file_path).replace(/^\./, ''),
-            mime: 'application/octet-stream',
-            size_bytes: stat.size,
-            sha256: 'fakehash' + stat.size,
-            storage_path: payload.file_path,
-          }));
+          res.end(
+            JSON.stringify({
+              id: 'fid_' + Math.random().toString(36).slice(2, 8),
+              name: path.basename(payload.file_path),
+              ext: path.extname(payload.file_path).replace(/^\./, ''),
+              mime: 'application/octet-stream',
+              size_bytes: stat.size,
+              sha256: 'fakehash' + stat.size,
+              storage_path: payload.file_path,
+            }),
+          );
           return;
         }
         if (req.url === '/files/parse') {
           this.parseCalls.push(payload);
           if (this.parseFails) {
-            res.writeHead(422); res.end('parse failed'); return;
+            res.writeHead(422);
+            res.end('parse failed');
+            return;
           }
-          const parsedPath = this.parseResponse?.parsed_path
-            ?? path.join(os.tmpdir(), `parsed-${Date.now()}.md`);
+          const parsedPath =
+            this.parseResponse?.parsed_path ?? path.join(os.tmpdir(), `parsed-${Date.now()}.md`);
           fs.writeFileSync(parsedPath, '# parsed\n\ncontent');
           res.writeHead(200, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({
-            sha256: 'fakehash',
-            parsed_path: parsedPath,
-            char_count: 20,
-            parser: 'python-docx',
-            parser_version: '1.2.0',
-            truncated: this.parseResponse?.truncated ?? false,
-            warning: this.parseResponse?.warning ?? null,
-            cached: false,
-          }));
+          res.end(
+            JSON.stringify({
+              sha256: 'fakehash',
+              parsed_path: parsedPath,
+              char_count: 20,
+              parser: 'python-docx',
+              parser_version: '1.2.0',
+              truncated: this.parseResponse?.truncated ?? false,
+              warning: this.parseResponse?.warning ?? null,
+              cached: false,
+            }),
+          );
           return;
         }
         if (req.url === '/voice/stt/transcribe-file') {
           this.sttCalls.push(payload);
           if (!this.sttResponse) {
-            res.writeHead(500); res.end('boom'); return;
+            res.writeHead(500);
+            res.end('boom');
+            return;
           }
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify(this.sttResponse));
           return;
         }
-        res.writeHead(404); res.end();
+        res.writeHead(404);
+        res.end();
       });
     });
     await new Promise<void>((resolve) => this.server.listen(0, '127.0.0.1', () => resolve()));
@@ -265,10 +276,7 @@ describe('regression: .docx no longer reaches claude -p as binary', () => {
   // After resolveContent, the prompt that would reach `claude -p` must
   // reference a UTF-8 markdown sidecar — never the raw .docx.
   it('rewrites the user-attached .docx to a parsed markdown sidecar', async () => {
-    const docx = writeFile(
-      'Estructura-Documento-Manuales.docx',
-      Buffer.from('PKfake-zip-bytes'),
-    );
+    const docx = writeFile('Estructura-Documento-Manuales.docx', Buffer.from('PKfake-zip-bytes'));
     const userMessage = `@${docx}\n\nnecesito que el experto en crear manuales utilice siempre este documento como guia, tome en cuenta los titulos, subtitulos, estructura, fondos, cabecera, pie de pagina, etc y que siempre que me entregue manuales sea en ese formato.`;
 
     const out = await svc.resolveContent(userMessage, 'chat-upload');

@@ -39,7 +39,10 @@ export function createCalendarDeleteEventAction(deps: {
     inputSchema: {
       type: 'object',
       properties: {
-        event_id: { type: 'string', description: 'Id of the event to delete (from calendar_query_events).' },
+        event_id: {
+          type: 'string',
+          description: 'Id of the event to delete (from calendar_query_events).',
+        },
       },
       required: ['event_id'],
     },
@@ -60,7 +63,10 @@ export function createCalendarDeleteEventAction(deps: {
       const res = await channel.deleteEvent(eventId);
       if (!res.ok) {
         input.context.log(`Calendar delete failed: ${res.error}`);
-        return { data: { deleted: false, error: res.error ?? 'unknown' }, summary: `Calendar delete failed: ${res.error}` };
+        return {
+          data: { deleted: false, error: res.error ?? 'unknown' },
+          summary: `Calendar delete failed: ${res.error}`,
+        };
       }
       input.context.log(`Deleted calendar event ${eventId}`);
       return { data: { deleted: true, error: null }, summary: 'Deleted calendar event' };

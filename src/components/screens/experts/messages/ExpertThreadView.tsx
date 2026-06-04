@@ -51,7 +51,6 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
       setActiveConversation(threads[0]?.id ?? null);
     }
     // We only want to re-run when the expert or thread list shape changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expert?.id, threads.length]);
 
   if (!expert) {
@@ -63,9 +62,7 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
         <h2 className="text-[15px] font-semibold text-text-primary mb-1">
           {t('experts.messagesEmptyState')}
         </h2>
-        <p className="text-[12px] text-text-tertiary max-w-sm">
-          {t('experts.directMessages')}
-        </p>
+        <p className="text-[12px] text-text-tertiary max-w-sm">{t('experts.directMessages')}</p>
       </div>
     );
   }
@@ -90,8 +87,7 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
     sendMessage(content);
   };
 
-  const showEmptyThread =
-    !activeConversation || activeConversation.expertId !== expert.id;
+  const showEmptyThread = !activeConversation || activeConversation.expertId !== expert.id;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 relative" {...dropProps}>
@@ -110,15 +106,16 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
           <div className="w-12 h-12 rounded-full bg-bg-elevated flex items-center justify-center mb-3">
             <MessagesSquare size={20} className="text-text-tertiary" />
           </div>
-          <p className="text-[13px] text-text-secondary">
-            {t('experts.noThreadsYet')}
-          </p>
+          <p className="text-[13px] text-text-secondary">{t('experts.noThreadsYet')}</p>
           <p className="text-[11px] text-text-tertiary mt-1 max-w-sm">
             {t('chat.sendPlaceholder')}
           </p>
         </div>
       ) : (
-        <MessageList messages={activeConversation.messages} conversationId={activeConversation.id} />
+        <MessageList
+          messages={activeConversation.messages}
+          conversationId={activeConversation.id}
+        />
       )}
 
       <div className="px-4 pb-4 pt-2 bg-bg-base">

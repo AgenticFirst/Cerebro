@@ -9,7 +9,9 @@
 import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import type { SlackChannel } from './slack-channel';
 
-export function createListSlackChannelsAction(deps: { getChannel: () => SlackChannel | null }): ActionDefinition {
+export function createListSlackChannelsAction(deps: {
+  getChannel: () => SlackChannel | null;
+}): ActionDefinition {
   return {
     type: 'list_slack_channels',
     name: 'List Slack Channels',

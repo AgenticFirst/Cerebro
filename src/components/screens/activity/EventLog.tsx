@@ -11,9 +11,14 @@ const ERROR_TYPES = new Set(['run_failed', 'step_failed', 'run_cancelled', 'appr
 const TOOL_TYPES = new Set(['action_tool_start', 'action_tool_end', 'action_text_delta']);
 const LOG_TYPES = new Set(['step_log']);
 const LIFECYCLE_TYPES = new Set([
-  'run_started', 'run_completed',
-  'step_queued', 'step_started', 'step_completed', 'step_skipped',
-  'approval_requested', 'approval_granted',
+  'run_started',
+  'run_completed',
+  'step_queued',
+  'step_started',
+  'step_completed',
+  'step_skipped',
+  'approval_requested',
+  'approval_granted',
 ]);
 
 function isErrorEvent(evt: EventRecord): boolean {
@@ -22,14 +27,20 @@ function isErrorEvent(evt: EventRecord): boolean {
     try {
       const p = JSON.parse(evt.payload_json);
       return Boolean(p.isError);
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
   return false;
 }
 
 function describeEvent(evt: EventRecord): string {
   let payload: Record<string, unknown> = {};
-  try { payload = JSON.parse(evt.payload_json); } catch { /* empty */ }
+  try {
+    payload = JSON.parse(evt.payload_json);
+  } catch {
+    /* empty */
+  }
 
   switch (evt.event_type) {
     case 'run_started':
@@ -73,10 +84,12 @@ function describeEvent(evt: EventRecord): string {
 
 function eventColor(evt: EventRecord): string {
   if (isErrorEvent(evt)) return 'text-red-400';
-  if (evt.event_type.includes('completed') || evt.event_type === 'approval_granted') return 'text-green-500';
+  if (evt.event_type.includes('completed') || evt.event_type === 'approval_granted')
+    return 'text-green-500';
   if (evt.event_type === 'approval_requested') return 'text-amber-400';
   if (evt.event_type === 'action_tool_end') return 'text-cyan-500';
-  if (evt.event_type === 'action_tool_start' || evt.event_type === 'action_text_delta') return 'text-text-tertiary';
+  if (evt.event_type === 'action_tool_start' || evt.event_type === 'action_text_delta')
+    return 'text-text-tertiary';
   if (evt.event_type === 'step_log') return 'text-text-tertiary';
   return 'text-text-secondary';
 }
@@ -100,7 +113,13 @@ export default function EventLog({ events }: EventLogProps) {
 
   // Pre-compute counts so the chips can show how much each filter holds
   const counts = useMemo(() => {
-    const c: Record<FilterKey, number> = { all: events.length, errors: 0, tools: 0, logs: 0, lifecycle: 0 };
+    const c: Record<FilterKey, number> = {
+      all: events.length,
+      errors: 0,
+      tools: 0,
+      logs: 0,
+      lifecycle: 0,
+    };
     for (const evt of events) {
       if (isErrorEvent(evt)) c.errors += 1;
       if (TOOL_TYPES.has(evt.event_type)) c.tools += 1;
@@ -112,11 +131,16 @@ export default function EventLog({ events }: EventLogProps) {
 
   const filtered = useMemo(() => {
     switch (filter) {
-      case 'errors': return events.filter(isErrorEvent);
-      case 'tools': return events.filter((e) => TOOL_TYPES.has(e.event_type));
-      case 'logs': return events.filter((e) => LOG_TYPES.has(e.event_type));
-      case 'lifecycle': return events.filter((e) => LIFECYCLE_TYPES.has(e.event_type));
-      default: return events;
+      case 'errors':
+        return events.filter(isErrorEvent);
+      case 'tools':
+        return events.filter((e) => TOOL_TYPES.has(e.event_type));
+      case 'logs':
+        return events.filter((e) => LOG_TYPES.has(e.event_type));
+      case 'lifecycle':
+        return events.filter((e) => LIFECYCLE_TYPES.has(e.event_type));
+      default:
+        return events;
     }
   }, [events, filter]);
 
@@ -179,7 +203,12 @@ export default function EventLog({ events }: EventLogProps) {
                   <span className="text-[10px] font-mono tabular-nums text-text-tertiary flex-shrink-0 pt-px">
                     {formatEventTime(evt.timestamp)}
                   </span>
-                  <span className={clsx('text-[11px] leading-relaxed flex-1 min-w-0 break-words', eventColor(evt))}>
+                  <span
+                    className={clsx(
+                      'text-[11px] leading-relaxed flex-1 min-w-0 break-words',
+                      eventColor(evt),
+                    )}
+                  >
                     {describeEvent(evt)}
                   </span>
                 </button>

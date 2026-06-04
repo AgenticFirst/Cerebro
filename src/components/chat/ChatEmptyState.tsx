@@ -71,9 +71,7 @@ export default function ChatEmptyState() {
         })}
       </div>
 
-      <p className="mt-5 text-center text-[11px] text-text-tertiary">
-        {t('chat.welcomeHint')}
-      </p>
+      <p className="mt-5 text-center text-[11px] text-text-tertiary">{t('chat.welcomeHint')}</p>
     </div>
   );
 }

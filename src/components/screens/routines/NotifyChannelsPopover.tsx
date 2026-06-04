@@ -115,9 +115,7 @@ export default function NotifyChannelsPopover({ routine }: Props) {
           ) : (
             <div className="space-y-1">
               {allowlist.map((id) => {
-                const checked = current.some(
-                  (c) => c.channel === 'telegram' && c.recipient === id,
-                );
+                const checked = current.some((c) => c.channel === 'telegram' && c.recipient === id);
                 return (
                   <Tooltip
                     key={id}
@@ -131,7 +129,9 @@ export default function NotifyChannelsPopover({ routine }: Props) {
                         onChange={() => toggleRecipient(id)}
                         className="accent-sky-400"
                       />
-                      <span className="text-[11px] font-mono text-text-secondary">Telegram · {id}</span>
+                      <span className="text-[11px] font-mono text-text-secondary">
+                        Telegram · {id}
+                      </span>
                     </label>
                   </Tooltip>
                 );

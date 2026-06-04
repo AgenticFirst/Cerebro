@@ -81,7 +81,10 @@ export default function IntegrationCard({
           {primaryAction && (
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); primaryAction.onClick(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                primaryAction.onClick();
+              }}
               className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent/15 text-accent hover:bg-accent/25 transition-colors flex items-center gap-1.5"
             >
               <Sparkles size={12} />
@@ -91,19 +94,14 @@ export default function IntegrationCard({
           {expandable && (
             <ChevronDown
               size={16}
-              className={clsx(
-                'text-text-tertiary transition-transform',
-                expanded && 'rotate-180',
-              )}
+              className={clsx('text-text-tertiary transition-transform', expanded && 'rotate-180')}
             />
           )}
         </div>
       </div>
 
       {expandable && expanded && (
-        <div className="border-t border-border-subtle px-4 pt-4 pb-5">
-          {children}
-        </div>
+        <div className="border-t border-border-subtle px-4 pt-4 pb-5">{children}</div>
       )}
     </div>
   );

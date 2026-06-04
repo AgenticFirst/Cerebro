@@ -80,20 +80,37 @@ export function createGitHubFetchIssueAction(deps: {
       const vars = input.wiredInputs ?? {};
 
       const repo = renderTemplate(params.repo ?? '', vars).trim();
-      const number = Number.parseInt(renderTemplate(String(params.issue_number ?? ''), vars).trim(), 10);
-      const includeRaw = renderTemplate(String(params.include_comments ?? ''), vars).trim().toLowerCase();
+      const number = Number.parseInt(
+        renderTemplate(String(params.issue_number ?? ''), vars).trim(),
+        10,
+      );
+      const includeRaw = renderTemplate(String(params.include_comments ?? ''), vars)
+        .trim()
+        .toLowerCase();
       const includeComments = includeRaw === 'true' || includeRaw === '1' || includeRaw === 'yes';
       const parts = parseRepoFullName(repo);
       if (!parts) throw new Error(`GitHub: Fetch issue — invalid repo "${repo}".`);
-      if (!Number.isFinite(number) || number <= 0) throw new Error('GitHub: Fetch issue — issue_number is invalid.');
+      if (!Number.isFinite(number) || number <= 0)
+        throw new Error('GitHub: Fetch issue — issue_number is invalid.');
 
       const issueRes = await callGitHubApi<IssueDto>(
-        token, `/repos/${parts.owner}/${parts.repo}/issues/${number}`,
+        token,
+        `/repos/${parts.owner}/${parts.repo}/issues/${number}`,
         { signal: input.context.signal },
       );
       if (!issueRes.ok || !issueRes.data) {
         return {
-          data: { ok: false, error: issueRes.error, issue_number: null, title: '', body: '', author_login: '', labels: [], html_url: '', comments: [] },
+          data: {
+            ok: false,
+            error: issueRes.error,
+            issue_number: null,
+            title: '',
+            body: '',
+            author_login: '',
+            labels: [],
+            html_url: '',
+            comments: [],
+          },
           summary: `GitHub fetch_issue failed: ${issueRes.error}`,
         };
       }
@@ -103,7 +120,8 @@ export function createGitHubFetchIssueAction(deps: {
       let comments: Array<Record<string, unknown>> = [];
       if (includeComments) {
         const cRes = await callGitHubApi<CommentDto[]>(
-          token, `/repos/${parts.owner}/${parts.repo}/issues/${number}/comments`,
+          token,
+          `/repos/${parts.owner}/${parts.repo}/issues/${number}/comments`,
           { query: { per_page: 30 }, signal: input.context.signal },
         );
         if (cRes.ok && cRes.data) {

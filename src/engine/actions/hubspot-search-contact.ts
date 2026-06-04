@@ -22,7 +22,8 @@ export function createHubSpotSearchContactAction(deps: {
   return {
     type: 'hubspot_search_contact',
     name: 'HubSpot: Search Contact',
-    description: 'Find a HubSpot contact by email or phone. Read-only. Returns contact_id and identity.',
+    description:
+      'Find a HubSpot contact by email or phone. Read-only. Returns contact_id and identity.',
 
     chatExposable: true,
     chatGroup: 'hubspot',
@@ -52,7 +53,10 @@ export function createHubSpotSearchContactAction(deps: {
       type: 'object',
       properties: {
         email: { type: 'string', description: 'Contact email. Preferred lookup key. Templated.' },
-        phone: { type: 'string', description: 'Contact phone. Used when email is missing. Templated.' },
+        phone: {
+          type: 'string',
+          description: 'Contact phone. Used when email is missing. Templated.',
+        },
       },
     },
 
@@ -96,14 +100,28 @@ export function createHubSpotSearchContactAction(deps: {
       if (error) {
         input.context.log(`HubSpot contact search failed: ${error}`);
         return {
-          data: { found: false, contact_id: null, email: null, firstname: null, lastname: null, error },
+          data: {
+            found: false,
+            contact_id: null,
+            email: null,
+            firstname: null,
+            lastname: null,
+            error,
+          },
           summary: `HubSpot search_contact failed: ${error}`,
         };
       }
       if (!contact) {
         input.context.log(`HubSpot contact not found for ${property}=${value}`);
         return {
-          data: { found: false, contact_id: null, email: null, firstname: null, lastname: null, error: null },
+          data: {
+            found: false,
+            contact_id: null,
+            email: null,
+            firstname: null,
+            lastname: null,
+            error: null,
+          },
           summary: `No HubSpot contact found for ${value}`,
         };
       }

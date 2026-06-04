@@ -195,9 +195,7 @@ describe('executor: approval gate', () => {
           id: 'B',
           actionType: 'capture',
           dependsOn: ['A'],
-          inputMappings: [
-            { sourceStepId: 'A', sourceField: 'foo', targetField: 'foo' },
-          ],
+          inputMappings: [{ sourceStepId: 'A', sourceField: 'foo', targetField: 'foo' }],
         }),
       ],
     };
@@ -290,10 +288,13 @@ describe('executor: approval gate', () => {
     await expect(executor.execute()).rejects.toThrow('Approval denied');
 
     // onStepUpdate is called with failure status before the throw
-    expect(onStepUpdate).toHaveBeenCalledWith('A', expect.objectContaining({
-      status: 'failed',
-      error: 'Approval denied',
-    }));
+    expect(onStepUpdate).toHaveBeenCalledWith(
+      'A',
+      expect.objectContaining({
+        status: 'failed',
+        error: 'Approval denied',
+      }),
+    );
   });
 
   it('onStepUpdate called with failed status on denial', async () => {
@@ -316,11 +317,14 @@ describe('executor: approval gate', () => {
 
     await expect(executor.execute()).rejects.toThrow(StepFailedError);
 
-    expect(onStepUpdate).toHaveBeenCalledWith('A', expect.objectContaining({
-      status: 'failed',
-      error: 'Approval denied',
-      completed_at: expect.any(String),
-    }));
+    expect(onStepUpdate).toHaveBeenCalledWith(
+      'A',
+      expect.objectContaining({
+        status: 'failed',
+        error: 'Approval denied',
+        completed_at: expect.any(String),
+      }),
+    );
   });
 });
 
@@ -348,9 +352,9 @@ describe('validator: approval_gate consistency', () => {
     try {
       validateDAG(dag, makeRegistry());
     } catch (err) {
-      expect((err as DAGValidationError).details.some((d) =>
-        d.includes('requiresApproval'),
-      )).toBe(true);
+      expect((err as DAGValidationError).details.some((d) => d.includes('requiresApproval'))).toBe(
+        true,
+      );
     }
   });
 });

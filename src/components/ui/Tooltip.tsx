@@ -87,22 +87,34 @@ export default function Tooltip({
     setOpen(false);
   }, []);
 
-  const onMouseEnter = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    childHandlersRef.current.onMouseEnter?.(e);
-    show(false);
-  }, [show]);
-  const onMouseLeave = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    childHandlersRef.current.onMouseLeave?.(e);
-    hide();
-  }, [hide]);
-  const onFocus = useCallback((e: React.FocusEvent<HTMLElement>) => {
-    childHandlersRef.current.onFocus?.(e);
-    show(true);
-  }, [show]);
-  const onBlur = useCallback((e: React.FocusEvent<HTMLElement>) => {
-    childHandlersRef.current.onBlur?.(e);
-    hide();
-  }, [hide]);
+  const onMouseEnter = useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      childHandlersRef.current.onMouseEnter?.(e);
+      show(false);
+    },
+    [show],
+  );
+  const onMouseLeave = useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      childHandlersRef.current.onMouseLeave?.(e);
+      hide();
+    },
+    [hide],
+  );
+  const onFocus = useCallback(
+    (e: React.FocusEvent<HTMLElement>) => {
+      childHandlersRef.current.onFocus?.(e);
+      show(true);
+    },
+    [show],
+  );
+  const onBlur = useCallback(
+    (e: React.FocusEvent<HTMLElement>) => {
+      childHandlersRef.current.onBlur?.(e);
+      hide();
+    },
+    [hide],
+  );
 
   useEffect(() => () => clearTimer(), []);
 
@@ -155,7 +167,12 @@ export default function Tooltip({
       return true;
     };
 
-    const opposite: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' };
+    const opposite: Record<Side, Side> = {
+      top: 'bottom',
+      bottom: 'top',
+      left: 'right',
+      right: 'left',
+    };
     const order: Side[] = [side, opposite[side], 'top', 'bottom', 'left', 'right'];
     let chosen: Side = side;
     let c = compute(side);
@@ -195,15 +212,16 @@ export default function Tooltip({
   childRefSlot.current = childProps.ref;
   childHandlersRef.current = childProps;
 
-  const mergedProps: HTMLAttributes<HTMLElement> & { 'aria-describedby'?: string; ref?: unknown } = {
-    ...childProps,
-    onMouseEnter,
-    onMouseLeave,
-    onFocus,
-    onBlur,
-    'aria-describedby': open ? id : childProps['aria-describedby'],
-    ref: setTriggerRef,
-  };
+  const mergedProps: HTMLAttributes<HTMLElement> & { 'aria-describedby'?: string; ref?: unknown } =
+    {
+      ...childProps,
+      onMouseEnter,
+      onMouseLeave,
+      onFocus,
+      onBlur,
+      'aria-describedby': open ? id : childProps['aria-describedby'],
+      ref: setTriggerRef,
+    };
 
   const cloned = cloneElement(child, mergedProps);
 

@@ -55,9 +55,7 @@ const NAV_PRIMARY: NavItemDef[] = [
 
 // Oversight — monitoring & control (badge injected dynamically in Sidebar).
 // Activity moved into Settings → Activity.
-const NAV_OVERSIGHT_BASE: NavItemDef[] = [
-  { id: 'approvals', icon: ShieldCheck },
-];
+const NAV_OVERSIGHT_BASE: NavItemDef[] = [{ id: 'approvals', icon: ShieldCheck }];
 
 // Apps — embedded mini-apps (Knowledge Base, …)
 const NAV_APPS: NavItemDef[] = [
@@ -249,28 +247,23 @@ export default function Sidebar() {
     items.map((item) => ({ ...item, label: t(NAV_LABEL_KEYS[item.id] ?? item.id) }));
 
   const tasksBadge = stats.in_progress + stats.to_review;
-  const navPrimary = useMemo<NavItem[]>(() =>
-    resolveLabels(NAV_PRIMARY).map((item) =>
-      item.id === 'tasks' && tasksBadge > 0
-        ? { ...item, badge: tasksBadge }
-        : item,
-    ),
+  const navPrimary = useMemo<NavItem[]>(
+    () =>
+      resolveLabels(NAV_PRIMARY).map((item) =>
+        item.id === 'tasks' && tasksBadge > 0 ? { ...item, badge: tasksBadge } : item,
+      ),
     [tasksBadge, t],
   );
 
-  const navOversight = useMemo<NavItem[]>(() =>
-    resolveLabels(NAV_OVERSIGHT_BASE).map((item) =>
-      item.id === 'approvals' && pendingCount > 0
-        ? { ...item, badge: pendingCount }
-        : item,
-    ),
+  const navOversight = useMemo<NavItem[]>(
+    () =>
+      resolveLabels(NAV_OVERSIGHT_BASE).map((item) =>
+        item.id === 'approvals' && pendingCount > 0 ? { ...item, badge: pendingCount } : item,
+      ),
     [pendingCount, t],
   );
 
-  const navApps = useMemo<NavItem[]>(() =>
-    resolveLabels(NAV_APPS),
-    [t],
-  );
+  const navApps = useMemo<NavItem[]>(() => resolveLabels(NAV_APPS), [t]);
 
   const handleNewChat = () => {
     setActiveScreen('chat');
@@ -443,10 +436,15 @@ export default function Sidebar() {
                             isActive={conv.id === activeConversationId}
                             // Selecting a thread may happen from any screen, so
                             // route to chat as well as setting the conversation.
-                            onSelect={() => { setActiveScreen('chat'); setActiveConversation(conv.id); }}
+                            onSelect={() => {
+                              setActiveScreen('chat');
+                              setActiveConversation(conv.id);
+                            }}
                             onRename={renameConversation}
                             onDelete={(e) => handleDelete(e, conv.id)}
-                            onResetSession={() => { void window.cerebro.chatActions.resetSession(conv.id); }}
+                            onResetSession={() => {
+                              void window.cerebro.chatActions.resetSession(conv.id);
+                            }}
                           />
                         ))}
                       </div>
@@ -537,7 +535,11 @@ export default function Sidebar() {
           item={{ id: 'settings', label: t('nav.settings'), icon: Settings }}
           // Integrations + Skills now live inside Settings, so keep the footer
           // highlighted when a deep-link routes to those sub-sections.
-          isActive={activeScreen === 'settings' || activeScreen === 'integrations' || activeScreen === 'marketplace'}
+          isActive={
+            activeScreen === 'settings' ||
+            activeScreen === 'integrations' ||
+            activeScreen === 'marketplace'
+          }
           collapsed={collapsed}
           onClick={() => handleNavClick('settings')}
           isTourSpotlit={spotlightedNavId === 'settings'}

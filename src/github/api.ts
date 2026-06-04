@@ -73,7 +73,11 @@ export async function callGitHubApi<T = unknown>(
   // 304 Not Modified — use the existing cached state.
   if (response.status === 304) {
     return {
-      ok: true, status: 304, data: null, error: null, etag,
+      ok: true,
+      status: 304,
+      data: null,
+      error: null,
+      etag,
       rateLimitRemaining: Number.isFinite(rateLimitRemaining) ? rateLimitRemaining : null,
     };
   }
@@ -81,19 +85,31 @@ export async function callGitHubApi<T = unknown>(
   const text = await response.text().catch(() => '');
   let parsed: T | null = null;
   if (text) {
-    try { parsed = JSON.parse(text) as T; } catch { parsed = null; }
+    try {
+      parsed = JSON.parse(text) as T;
+    } catch {
+      parsed = null;
+    }
   }
 
   if (!response.ok) {
     const message = readErrorMessage(parsed) ?? `HTTP ${response.status}`;
     return {
-      ok: false, status: response.status, data: parsed, error: message, etag,
+      ok: false,
+      status: response.status,
+      data: parsed,
+      error: message,
+      etag,
       rateLimitRemaining: Number.isFinite(rateLimitRemaining) ? rateLimitRemaining : null,
     };
   }
 
   return {
-    ok: true, status: response.status, data: parsed, error: null, etag,
+    ok: true,
+    status: response.status,
+    data: parsed,
+    error: null,
+    etag,
     rateLimitRemaining: Number.isFinite(rateLimitRemaining) ? rateLimitRemaining : null,
   };
 }

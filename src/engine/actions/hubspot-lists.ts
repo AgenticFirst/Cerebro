@@ -20,10 +20,15 @@ import {
   type ListProcessingType,
 } from '../../hubspot/lists';
 
-function requireToken(deps: { getChannel: () => HubSpotChannel | null }, actionName: string): string {
+function requireToken(
+  deps: { getChannel: () => HubSpotChannel | null },
+  actionName: string,
+): string {
   const channel = deps.getChannel();
   if (!channel) {
-    throw new Error(`${actionName} — HubSpot is not configured. Connect HubSpot in Integrations first.`);
+    throw new Error(
+      `${actionName} — HubSpot is not configured. Connect HubSpot in Integrations first.`,
+    );
   }
   const token = channel.getAccessToken();
   if (!token) {
@@ -32,7 +37,9 @@ function requireToken(deps: { getChannel: () => HubSpotChannel | null }, actionN
   return token;
 }
 
-function availability(deps: { getChannel: () => HubSpotChannel | null }): 'available' | 'not_connected' {
+function availability(deps: {
+  getChannel: () => HubSpotChannel | null;
+}): 'available' | 'not_connected' {
   const ch = deps.getChannel();
   if (!ch) return 'not_connected';
   return ch.isConnected() ? 'available' : 'not_connected';
@@ -58,7 +65,8 @@ export function createHubSpotListListsAction(deps: {
   return {
     type: 'hubspot_list_lists',
     name: 'HubSpot: List Lists',
-    description: 'List or search HubSpot lists (segments). Read-only. Returns each list id, name, type, and size.',
+    description:
+      'List or search HubSpot lists (segments). Read-only. Returns each list id, name, type, and size.',
 
     chatExposable: true,
     chatGroup: 'hubspot',
@@ -69,7 +77,10 @@ export function createHubSpotListListsAction(deps: {
     },
     chatExamples: [
       { en: 'List my HubSpot lists.', es: 'Lista mis listas de HubSpot.' },
-      { en: 'Show my HubSpot segments named VIP.', es: 'Muéstrame mis segmentos de HubSpot llamados VIP.' },
+      {
+        en: 'Show my HubSpot segments named VIP.',
+        es: 'Muéstrame mis segmentos de HubSpot llamados VIP.',
+      },
     ],
     availabilityCheck: () => availability(deps),
     setupHref: 'integrations#hubspot',
@@ -77,7 +88,10 @@ export function createHubSpotListListsAction(deps: {
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Free-text search across list names. Optional. Templated.' },
+        query: {
+          type: 'string',
+          description: 'Free-text search across list names. Optional. Templated.',
+        },
         limit: { type: 'number', description: 'Max lists to return. Default 50, capped at 100.' },
       },
     },
@@ -107,13 +121,21 @@ export function createHubSpotListListsAction(deps: {
       const params = input.params as Record<string, unknown>;
       const vars = input.wiredInputs ?? {};
       const query = renderTemplate(String(params.query ?? ''), vars).trim();
-      const rawLimit = typeof params.limit === 'string' ? parseInt(params.limit, 10) : (params.limit as number);
+      const rawLimit =
+        typeof params.limit === 'string' ? parseInt(params.limit, 10) : (params.limit as number);
       const limit = Number.isFinite(rawLimit) ? rawLimit : undefined;
 
-      const res = await listLists(token, { query: query || undefined, limit, signal: input.context.signal });
+      const res = await listLists(token, {
+        query: query || undefined,
+        limit,
+        signal: input.context.signal,
+      });
       if (res.error) {
         input.context.log(`HubSpot list_lists failed: ${res.error}`);
-        return { data: { lists: [], count: 0, error: res.error }, summary: `HubSpot list lists failed: ${res.error}` };
+        return {
+          data: { lists: [], count: 0, error: res.error },
+          summary: `HubSpot list lists failed: ${res.error}`,
+        };
       }
       const lists = res.lists.map((l) => ({
         list_id: l.listId,
@@ -122,7 +144,10 @@ export function createHubSpotListListsAction(deps: {
         size: l.size,
       }));
       input.context.log(`HubSpot list_lists: found ${lists.length}`);
-      return { data: { lists, count: lists.length, error: null }, summary: `Found ${lists.length} HubSpot list(s)` };
+      return {
+        data: { lists, count: lists.length, error: null },
+        summary: `Found ${lists.length} HubSpot list(s)`,
+      };
     },
   };
 }
@@ -146,7 +171,10 @@ export function createHubSpotCreateListAction(deps: {
       es: 'Crea una lista (segmento) de HubSpot. Por defecto es una lista estática de contactos a la que puedes añadir registros.',
     },
     chatExamples: [
-      { en: 'Create a HubSpot list called VIP customers.', es: 'Crea una lista de HubSpot llamada Clientes VIP.' },
+      {
+        en: 'Create a HubSpot list called VIP customers.',
+        es: 'Crea una lista de HubSpot llamada Clientes VIP.',
+      },
     ],
     availabilityCheck: () => availability(deps),
     setupHref: 'integrations#hubspot',
@@ -158,7 +186,8 @@ export function createHubSpotCreateListAction(deps: {
         processing_type: {
           type: 'string',
           enum: ['MANUAL', 'DYNAMIC'],
-          description: 'MANUAL (static, default — accepts manual membership) or DYNAMIC (filter-based, managed by HubSpot).',
+          description:
+            'MANUAL (static, default — accepts manual membership) or DYNAMIC (filter-based, managed by HubSpot).',
         },
       },
       required: ['name'],
@@ -179,16 +208,22 @@ export function createHubSpotCreateListAction(deps: {
       const vars = input.wiredInputs ?? {};
       const name = renderTemplate(String(params.name ?? ''), vars).trim();
       if (!name) throw new Error('HubSpot: Create List — name is required.');
-      const processingType = (String(params.processing_type ?? '').toUpperCase() === 'DYNAMIC'
-        ? 'DYNAMIC'
-        : 'MANUAL') as ListProcessingType;
+      const processingType = (
+        String(params.processing_type ?? '').toUpperCase() === 'DYNAMIC' ? 'DYNAMIC' : 'MANUAL'
+      ) as ListProcessingType;
 
       const res = await createList(token, { name, processingType }, input.context.signal);
       if (res.error || !res.listId) {
         input.context.log(`HubSpot create_list failed: ${res.error}`);
-        return { data: { list_id: res.listId, created: false, error: res.error }, summary: `HubSpot create list failed: ${res.error ?? 'no id returned'}` };
+        return {
+          data: { list_id: res.listId, created: false, error: res.error },
+          summary: `HubSpot create list failed: ${res.error ?? 'no id returned'}`,
+        };
       }
-      return { data: { list_id: res.listId, created: true, error: null }, summary: `Created HubSpot list "${name}"` };
+      return {
+        data: { list_id: res.listId, created: true, error: null },
+        summary: `Created HubSpot list "${name}"`,
+      };
     },
   };
 }
@@ -211,7 +246,10 @@ export function createHubSpotUpdateListAction(deps: {
       es: 'Renombra una lista (segmento) existente de HubSpot por su id.',
     },
     chatExamples: [
-      { en: 'Rename HubSpot list 42 to Top accounts.', es: 'Renombra la lista 42 de HubSpot a Cuentas top.' },
+      {
+        en: 'Rename HubSpot list 42 to Top accounts.',
+        es: 'Renombra la lista 42 de HubSpot a Cuentas top.',
+      },
     ],
     availabilityCheck: () => availability(deps),
     setupHref: 'integrations#hubspot',
@@ -246,9 +284,15 @@ export function createHubSpotUpdateListAction(deps: {
       const res = await renameList(token, listId, name, input.context.signal);
       if (!res.ok) {
         input.context.log(`HubSpot update_list failed: ${res.error}`);
-        return { data: { list_id: listId, updated: false, error: res.error }, summary: `HubSpot rename list failed: ${res.error}` };
+        return {
+          data: { list_id: listId, updated: false, error: res.error },
+          summary: `HubSpot rename list failed: ${res.error}`,
+        };
       }
-      return { data: { list_id: listId, updated: true, error: null }, summary: `Renamed HubSpot list ${listId} to "${name}"` };
+      return {
+        data: { list_id: listId, updated: true, error: null },
+        summary: `Renamed HubSpot list ${listId} to "${name}"`,
+      };
     },
   };
 }
@@ -271,9 +315,7 @@ export function createHubSpotDeleteListAction(deps: {
       en: 'Archive (delete) a HubSpot list (segment) by its id. The records on the list are not deleted.',
       es: 'Archiva (elimina) una lista (segmento) de HubSpot por su id. Los registros de la lista no se eliminan.',
     },
-    chatExamples: [
-      { en: 'Delete HubSpot list 42.', es: 'Elimina la lista 42 de HubSpot.' },
-    ],
+    chatExamples: [{ en: 'Delete HubSpot list 42.', es: 'Elimina la lista 42 de HubSpot.' }],
     availabilityCheck: () => availability(deps),
     setupHref: 'integrations#hubspot',
 
@@ -304,9 +346,15 @@ export function createHubSpotDeleteListAction(deps: {
       const res = await deleteList(token, listId, input.context.signal);
       if (!res.ok) {
         input.context.log(`HubSpot delete_list failed: ${res.error}`);
-        return { data: { list_id: listId, deleted: false, error: res.error }, summary: `HubSpot delete list failed: ${res.error}` };
+        return {
+          data: { list_id: listId, deleted: false, error: res.error },
+          summary: `HubSpot delete list failed: ${res.error}`,
+        };
       }
-      return { data: { list_id: listId, deleted: true, error: null }, summary: `Archived HubSpot list ${listId}` };
+      return {
+        data: { list_id: listId, deleted: true, error: null },
+        summary: `Archived HubSpot list ${listId}`,
+      };
     },
   };
 }
@@ -324,14 +372,23 @@ export function createHubSpotListMembershipAction(deps: {
 
     chatExposable: true,
     chatGroup: 'hubspot',
-    chatLabel: { en: 'Add/remove HubSpot list members', es: 'Añadir/quitar miembros de lista de HubSpot' },
+    chatLabel: {
+      en: 'Add/remove HubSpot list members',
+      es: 'Añadir/quitar miembros de lista de HubSpot',
+    },
     chatDescription: {
       en: 'Add or remove records (contact ids) to/from a static HubSpot list. Only static lists accept manual membership changes.',
       es: 'Añade o quita registros (ids de contactos) de una lista estática de HubSpot. Solo las listas estáticas aceptan cambios manuales.',
     },
     chatExamples: [
-      { en: 'Add contact 789 to the VIP HubSpot list 42.', es: 'Añade el contacto 789 a la lista VIP 42 de HubSpot.' },
-      { en: 'Remove contact 789 from HubSpot list 42.', es: 'Quita el contacto 789 de la lista 42 de HubSpot.' },
+      {
+        en: 'Add contact 789 to the VIP HubSpot list 42.',
+        es: 'Añade el contacto 789 a la lista VIP 42 de HubSpot.',
+      },
+      {
+        en: 'Remove contact 789 from HubSpot list 42.',
+        es: 'Quita el contacto 789 de la lista 42 de HubSpot.',
+      },
     ],
     availabilityCheck: () => availability(deps),
     setupHref: 'integrations#hubspot',
@@ -340,10 +397,15 @@ export function createHubSpotListMembershipAction(deps: {
       type: 'object',
       properties: {
         list_id: { type: 'string', description: 'Id of the static list to modify. Templated.' },
-        mode: { type: 'string', enum: ['add', 'remove'], description: 'Whether to add or remove the records.' },
+        mode: {
+          type: 'string',
+          enum: ['add', 'remove'],
+          description: 'Whether to add or remove the records.',
+        },
         record_ids: {
           type: 'string',
-          description: 'Record ids (e.g. contact ids) to add/remove. Accepts an array or a comma-separated string. Templated.',
+          description:
+            'Record ids (e.g. contact ids) to add/remove. Accepts an array or a comma-separated string. Templated.',
         },
       },
       required: ['list_id', 'mode', 'record_ids'],
@@ -367,12 +429,16 @@ export function createHubSpotListMembershipAction(deps: {
       if (!listId) throw new Error('HubSpot: List Membership — list_id is required.');
       const mode = String(params.mode ?? '').toLowerCase() === 'remove' ? 'remove' : 'add';
       const recordIds = parseRecordIds(params.record_ids, vars);
-      if (recordIds.length === 0) throw new Error('HubSpot: List Membership — at least one record id is required.');
+      if (recordIds.length === 0)
+        throw new Error('HubSpot: List Membership — at least one record id is required.');
 
       const res = await updateMemberships(token, listId, mode, recordIds, input.context.signal);
       if (res.error) {
         input.context.log(`HubSpot list_membership (${mode}) failed: ${res.error}`);
-        return { data: { list_id: listId, mode, updated: 0, error: res.error }, summary: `HubSpot list membership failed: ${res.error}` };
+        return {
+          data: { list_id: listId, mode, updated: 0, error: res.error },
+          summary: `HubSpot list membership failed: ${res.error}`,
+        };
       }
       const verb = mode === 'add' ? 'Added' : 'Removed';
       return {

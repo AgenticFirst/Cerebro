@@ -67,26 +67,30 @@ export function validateDAG(
     if (step.actionType === 'approval_gate' && !step.requiresApproval) {
       errors.push(
         `Step "${step.id}" uses action type "approval_gate" but requiresApproval is not set — ` +
-        `approval gates must have requiresApproval: true`
+          `approval gates must have requiresApproval: true`,
       );
     }
     // Condition must have field and operator
     if (step.actionType === 'condition') {
       const p = step.params;
       if (!p.field) errors.push(`Step "${step.id}" (condition) requires a "field" parameter`);
-      if (!p.operator) errors.push(`Step "${step.id}" (condition) requires an "operator" parameter`);
+      if (!p.operator)
+        errors.push(`Step "${step.id}" (condition) requires an "operator" parameter`);
     }
     // Run command must have command
     if (step.actionType === 'run_command') {
-      if (!step.params.command) errors.push(`Step "${step.id}" (run_command) requires a "command" parameter`);
+      if (!step.params.command)
+        errors.push(`Step "${step.id}" (run_command) requires a "command" parameter`);
     }
     // Run script must have code
     if (step.actionType === 'run_script') {
-      if (!step.params.code) errors.push(`Step "${step.id}" (run_script) requires a "code" parameter`);
+      if (!step.params.code)
+        errors.push(`Step "${step.id}" (run_script) requires a "code" parameter`);
     }
     // HTTP request must have url
     if (step.actionType === 'http_request') {
-      if (!step.params.url) errors.push(`Step "${step.id}" (http_request) requires a "url" parameter`);
+      if (!step.params.url)
+        errors.push(`Step "${step.id}" (http_request) requires a "url" parameter`);
     }
   }
 
@@ -108,7 +112,7 @@ export function validateDAG(
 
       if (!stepMap.has(mapping.sourceStepId)) {
         errors.push(
-          `Step "${step.id}" has input mapping from non-existent step "${mapping.sourceStepId}"`
+          `Step "${step.id}" has input mapping from non-existent step "${mapping.sourceStepId}"`,
         );
         continue;
       }
@@ -118,7 +122,7 @@ export function validateDAG(
       if (!ancestors.has(mapping.sourceStepId)) {
         errors.push(
           `Step "${step.id}" has input mapping from step "${mapping.sourceStepId}" ` +
-          `which is not in its dependency chain`
+            `which is not in its dependency chain`,
         );
       }
     }
@@ -143,10 +147,7 @@ export function validateDAG(
 
 type Color = 'white' | 'gray' | 'black';
 
-function detectCycle(
-  steps: StepDefinition[],
-  stepMap: Map<string, StepDefinition>,
-): string | null {
+function detectCycle(steps: StepDefinition[], stepMap: Map<string, StepDefinition>): string | null {
   const color = new Map<string, Color>();
   const parent = new Map<string, string>();
 

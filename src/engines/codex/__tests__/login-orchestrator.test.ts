@@ -14,12 +14,24 @@ class FakePty extends EventEmitter {
   written: string[] = [];
   private dataListeners: Array<(d: string) => void> = [];
   private exitListeners: Array<(e: { exitCode: number; signal?: number }) => void> = [];
-  onData(cb: (d: string) => void): void { this.dataListeners.push(cb); }
-  onExit(cb: (e: { exitCode: number; signal?: number }) => void): void { this.exitListeners.push(cb); }
-  write(data: string): void { this.written.push(data); }
-  kill(): void { this.killed = true; }
-  emitData(d: string): void { for (const cb of this.dataListeners) cb(d); }
-  emitExit(exitCode: number, signal?: number): void { for (const cb of this.exitListeners) cb({ exitCode, signal }); }
+  onData(cb: (d: string) => void): void {
+    this.dataListeners.push(cb);
+  }
+  onExit(cb: (e: { exitCode: number; signal?: number }) => void): void {
+    this.exitListeners.push(cb);
+  }
+  write(data: string): void {
+    this.written.push(data);
+  }
+  kill(): void {
+    this.killed = true;
+  }
+  emitData(d: string): void {
+    for (const cb of this.dataListeners) cb(d);
+  }
+  emitExit(exitCode: number, signal?: number): void {
+    for (const cb of this.exitListeners) cb({ exitCode, signal });
+  }
 }
 
 let currentPty: FakePty | null = null;

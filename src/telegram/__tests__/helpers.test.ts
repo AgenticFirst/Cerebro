@@ -154,12 +154,13 @@ function makeRoutineRecord(overrides: {
   steps?: unknown[];
   dag_json?: string | null;
 }) {
-  const dag = overrides.dag_json !== undefined
-    ? overrides.dag_json
-    : JSON.stringify({
-        trigger: overrides.trigger,
-        steps: overrides.steps ?? [],
-      });
+  const dag =
+    overrides.dag_json !== undefined
+      ? overrides.dag_json
+      : JSON.stringify({
+          trigger: overrides.trigger,
+          steps: overrides.steps ?? [],
+        });
   return {
     id: overrides.id ?? 'r1',
     name: overrides.name ?? 'Test routine',
@@ -271,15 +272,21 @@ describe('matchesTelegramFilter', () => {
 describe('matchRoutineTriggers', () => {
   const baseDag = { steps: [] };
   const exact: TelegramTriggerRoutine = {
-    id: 'r-exact', name: 'exact', dag: baseDag,
+    id: 'r-exact',
+    name: 'exact',
+    dag: baseDag,
     trigger: { chat_id: '111', filter_type: 'none' },
   };
   const wildcard: TelegramTriggerRoutine = {
-    id: 'r-any', name: 'any', dag: baseDag,
+    id: 'r-any',
+    name: 'any',
+    dag: baseDag,
     trigger: { chat_id: '*', filter_type: 'none' },
   };
   const standup: TelegramTriggerRoutine = {
-    id: 'r-standup', name: 'standup', dag: baseDag,
+    id: 'r-standup',
+    name: 'standup',
+    dag: baseDag,
     trigger: { chat_id: '*', filter_type: 'keyword', filter_value: 'standup' },
   };
 

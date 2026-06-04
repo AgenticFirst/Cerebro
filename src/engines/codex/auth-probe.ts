@@ -75,6 +75,9 @@ function runProbe(): Promise<EngineProbeResult> {
 }
 
 function lastNonEmpty(text: string): string {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
   return lines.length > 0 ? lines[lines.length - 1] : '';
 }

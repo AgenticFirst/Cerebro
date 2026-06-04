@@ -34,7 +34,10 @@ export function createGitHubCommitAndPushAction(deps: {
       properties: {
         worktree_path: { type: 'string', description: 'Output of github_clone_worktree.' },
         branch: { type: 'string', description: 'Branch name to create + push.' },
-        commit_message: { type: 'string', description: 'Single-line or multi-line commit message. Templated.' },
+        commit_message: {
+          type: 'string',
+          description: 'Single-line or multi-line commit message. Templated.',
+        },
         author_name: { type: 'string' },
         author_email: { type: 'string' },
         cleanup: { type: ['boolean', 'string'] },
@@ -68,7 +71,9 @@ export function createGitHubCommitAndPushAction(deps: {
       const message = renderTemplate(params.commit_message ?? '', vars).trim();
       const authorName = renderTemplate(params.author_name ?? '', vars).trim();
       const authorEmail = renderTemplate(params.author_email ?? '', vars).trim();
-      const cleanupRaw = renderTemplate(String(params.cleanup ?? 'true'), vars).trim().toLowerCase();
+      const cleanupRaw = renderTemplate(String(params.cleanup ?? 'true'), vars)
+        .trim()
+        .toLowerCase();
       const cleanup = cleanupRaw !== 'false' && cleanupRaw !== '0' && cleanupRaw !== 'no';
 
       if (!worktree) throw new Error('GitHub: Commit & push — worktree_path is empty.');

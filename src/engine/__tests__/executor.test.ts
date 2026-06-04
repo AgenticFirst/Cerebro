@@ -66,7 +66,13 @@ describe('executor: topological ordering', () => {
     };
 
     const { emitter, events } = makeMockEmitter();
-    const executor = new DAGExecutor(dag, makeRegistry(), new RunScratchpad(), emitter, makeContext());
+    const executor = new DAGExecutor(
+      dag,
+      makeRegistry(),
+      new RunScratchpad(),
+      emitter,
+      makeContext(),
+    );
     await executor.execute();
 
     const started = events
@@ -99,7 +105,13 @@ describe('executor: topological ordering', () => {
     };
 
     const { emitter } = makeMockEmitter();
-    const executor = new DAGExecutor(dag, makeRegistry(loggingAction), new RunScratchpad(), emitter, makeContext());
+    const executor = new DAGExecutor(
+      dag,
+      makeRegistry(loggingAction),
+      new RunScratchpad(),
+      emitter,
+      makeContext(),
+    );
     await executor.execute();
 
     // B and C both finish before D starts
@@ -146,7 +158,13 @@ describe('executor: input wiring', () => {
     };
 
     const { emitter } = makeMockEmitter();
-    const executor = new DAGExecutor(dag, makeRegistry(capturingAction), new RunScratchpad(), emitter, makeContext());
+    const executor = new DAGExecutor(
+      dag,
+      makeRegistry(capturingAction),
+      new RunScratchpad(),
+      emitter,
+      makeContext(),
+    );
     await executor.execute();
 
     expect(receivedInputs.value).toBe('hello');
@@ -159,7 +177,9 @@ describe('executor: error policies', () => {
   const failingAction: ActionDefinition = {
     ...transformerAction,
     type: 'failing',
-    execute: async () => { throw new Error('boom'); },
+    execute: async () => {
+      throw new Error('boom');
+    },
   };
 
   it('onError: fail — aborts entire run', async () => {
@@ -171,12 +191,20 @@ describe('executor: error policies', () => {
     };
 
     const { emitter, events } = makeMockEmitter();
-    const executor = new DAGExecutor(dag, makeRegistry(failingAction), new RunScratchpad(), emitter, makeContext());
+    const executor = new DAGExecutor(
+      dag,
+      makeRegistry(failingAction),
+      new RunScratchpad(),
+      emitter,
+      makeContext(),
+    );
 
     await expect(executor.execute()).rejects.toThrow('boom');
     expect(events.some((e) => e.type === 'step_failed')).toBe(true);
     // B never started
-    const started = events.filter((e) => e.type === 'step_started') as Array<Extract<ExecutionEvent, { type: 'step_started' }>>;
+    const started = events.filter((e) => e.type === 'step_started') as Array<
+      Extract<ExecutionEvent, { type: 'step_started' }>
+    >;
     expect(started.every((e) => e.stepId !== 'B')).toBe(true);
   });
 
@@ -199,15 +227,19 @@ describe('executor: error policies', () => {
           id: 'B',
           actionType: 'capture',
           dependsOn: ['A'],
-          inputMappings: [
-            { sourceStepId: 'A', sourceField: 'result', targetField: 'data' },
-          ],
+          inputMappings: [{ sourceStepId: 'A', sourceField: 'result', targetField: 'data' }],
         }),
       ],
     };
 
     const { emitter, events } = makeMockEmitter();
-    const executor = new DAGExecutor(dag, makeRegistry(failingAction, captureAction), new RunScratchpad(), emitter, makeContext());
+    const executor = new DAGExecutor(
+      dag,
+      makeRegistry(failingAction, captureAction),
+      new RunScratchpad(),
+      emitter,
+      makeContext(),
+    );
     await executor.execute();
 
     expect(events.some((e) => e.type === 'step_skipped')).toBe(true);
@@ -232,7 +264,13 @@ describe('executor: error policies', () => {
     };
 
     const { emitter } = makeMockEmitter();
-    const executor = new DAGExecutor(dag, makeRegistry(retryAction), new RunScratchpad(), emitter, makeContext());
+    const executor = new DAGExecutor(
+      dag,
+      makeRegistry(retryAction),
+      new RunScratchpad(),
+      emitter,
+      makeContext(),
+    );
     await executor.execute();
 
     expect(callCount).toBe(3);
@@ -242,7 +280,9 @@ describe('executor: error policies', () => {
     const alwaysFails: ActionDefinition = {
       ...transformerAction,
       type: 'always_fails',
-      execute: async () => { throw new Error('persistent'); },
+      execute: async () => {
+        throw new Error('persistent');
+      },
     };
 
     const dag: DAGDefinition = {
@@ -250,7 +290,13 @@ describe('executor: error policies', () => {
     };
 
     const { emitter } = makeMockEmitter();
-    const executor = new DAGExecutor(dag, makeRegistry(alwaysFails), new RunScratchpad(), emitter, makeContext());
+    const executor = new DAGExecutor(
+      dag,
+      makeRegistry(alwaysFails),
+      new RunScratchpad(),
+      emitter,
+      makeContext(),
+    );
     await expect(executor.execute()).rejects.toThrow('persistent');
   });
 });
@@ -278,7 +324,13 @@ describe('executor: cancellation and timeout', () => {
     };
 
     const { emitter } = makeMockEmitter();
-    const executor = new DAGExecutor(dag, makeRegistry(abortingAction), new RunScratchpad(), emitter, makeContext({ signal: abortController.signal }));
+    const executor = new DAGExecutor(
+      dag,
+      makeRegistry(abortingAction),
+      new RunScratchpad(),
+      emitter,
+      makeContext({ signal: abortController.signal }),
+    );
     await expect(executor.execute()).rejects.toThrow('cancelled');
   });
 
@@ -294,7 +346,13 @@ describe('executor: cancellation and timeout', () => {
     };
 
     const { emitter } = makeMockEmitter();
-    const executor = new DAGExecutor(dag, makeRegistry(hangingAction), new RunScratchpad(), emitter, makeContext());
+    const executor = new DAGExecutor(
+      dag,
+      makeRegistry(hangingAction),
+      new RunScratchpad(),
+      emitter,
+      makeContext(),
+    );
     await expect(executor.execute()).rejects.toThrow('timed out');
   }, 10_000);
 });

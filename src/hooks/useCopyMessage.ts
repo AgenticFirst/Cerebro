@@ -34,10 +34,10 @@ export function useCopyMessage(): UseCopyMessageResult {
       // Rich path first — writes both MIME types so the clipboard target picks
       // the one it prefers.
       const canWriteRich =
-        typeof navigator !== 'undefined'
-        && !!navigator.clipboard
-        && typeof navigator.clipboard.write === 'function'
-        && typeof ClipboardItem !== 'undefined';
+        typeof navigator !== 'undefined' &&
+        !!navigator.clipboard &&
+        typeof navigator.clipboard.write === 'function' &&
+        typeof ClipboardItem !== 'undefined';
 
       if (canWriteRich) {
         try {

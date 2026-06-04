@@ -14,7 +14,10 @@ import AvatarPicker from './AvatarPicker';
 
 const DOMAINS = ['', 'productivity', 'health', 'finance', 'creative', 'engineering', 'research'];
 
-function timeAgo(dateStr: string | null, t: (key: string, opts?: Record<string, unknown>) => string): string {
+function timeAgo(
+  dateStr: string | null,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
   if (!dateStr) return t('timeAgo.never');
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -93,13 +96,16 @@ export default function ExpertDetailPanel({
   const [copied, setCopied] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
 
-  const capabilities = useMemo(() => [
-    t('experts.capResponds'),
-    t('experts.capRoutes'),
-    t('experts.capRoutines'),
-    t('experts.capDrafts'),
-    t('experts.capMemory'),
-  ], [t]);
+  const capabilities = useMemo(
+    () => [
+      t('experts.capResponds'),
+      t('experts.capRoutes'),
+      t('experts.capRoutines'),
+      t('experts.capDrafts'),
+      t('experts.capMemory'),
+    ],
+    [t],
+  );
 
   useEffect(() => {
     if (expert) {
@@ -147,7 +153,7 @@ export default function ExpertDetailPanel({
   };
 
   const handleCopy = () => {
-    const text = isCerebro ? 'cerebro' : expert?.slug ?? expert?.id ?? '';
+    const text = isCerebro ? 'cerebro' : (expert?.slug ?? expert?.id ?? '');
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
@@ -216,7 +222,11 @@ export default function ExpertDetailPanel({
           <>
             {isLocked && (
               <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-accent/5 border border-accent/20">
-                <BadgeCheck size={14} className="text-accent mt-0.5 flex-shrink-0" strokeWidth={2.25} />
+                <BadgeCheck
+                  size={14}
+                  className="text-accent mt-0.5 flex-shrink-0"
+                  strokeWidth={2.25}
+                />
                 <div className="text-[11px] text-text-secondary leading-relaxed">
                   <span className="text-accent font-medium">{t('experts.verified')}</span>
                   {' — '}
@@ -287,8 +297,7 @@ export default function ExpertDetailPanel({
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     onBlur={() =>
-                      description !== expert.description &&
-                      saveField('description', description)
+                      description !== expert.description && saveField('description', description)
                     }
                     rows={3}
                     readOnly={isLocked}
@@ -321,9 +330,7 @@ export default function ExpertDetailPanel({
                       >
                         <Users size={13} className="text-text-tertiary flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs text-text-primary truncate">
-                            {member.name}
-                          </div>
+                          <div className="text-xs text-text-primary truncate">{member.name}</div>
                           {member.domain && (
                             <div className="text-[10px] text-text-tertiary capitalize">
                               {member.domain}
@@ -359,9 +366,7 @@ export default function ExpertDetailPanel({
                           className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-bg-hover transition-colors"
                         >
                           <UserPlus size={12} className="text-accent flex-shrink-0" />
-                          <span className="text-xs text-text-secondary truncate">
-                            {exp.name}
-                          </span>
+                          <span className="text-xs text-text-secondary truncate">{exp.name}</span>
                         </button>
                       ))
                     )}
@@ -410,17 +415,11 @@ export default function ExpertDetailPanel({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-text-secondary">{t('experts.enabled')}</span>
-                  <Toggle
-                    checked={expert.isEnabled}
-                    onChange={() => onToggleEnabled(expert)}
-                  />
+                  <Toggle checked={expert.isEnabled} onChange={() => onToggleEnabled(expert)} />
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-text-secondary">{t('experts.pinnedLabel')}</span>
-                  <Toggle
-                    checked={expert.isPinned}
-                    onChange={() => onTogglePinned(expert)}
-                  />
+                  <Toggle checked={expert.isPinned} onChange={() => onTogglePinned(expert)} />
                 </div>
               </div>
             </Section>
@@ -442,7 +441,8 @@ export default function ExpertDetailPanel({
                   <span className="text-text-secondary capitalize">{expert.type}</span>
                 </div>
                 <div>
-                  {t('experts.versionLabel')}: <span className="text-text-secondary">{expert.version}</span>
+                  {t('experts.versionLabel')}:{' '}
+                  <span className="text-text-secondary">{expert.version}</span>
                 </div>
                 <div>
                   {t('experts.lastActive')}:{' '}
@@ -473,14 +473,15 @@ export default function ExpertDetailPanel({
             isCerebro || expert?.isEnabled ? 'bg-green-500' : 'bg-text-tertiary',
           )}
           style={{
-            boxShadow:
-              isCerebro || expert?.isEnabled
-                ? '0 0 6px rgba(34, 197, 94, 0.5)'
-                : 'none',
+            boxShadow: isCerebro || expert?.isEnabled ? '0 0 6px rgba(34, 197, 94, 0.5)' : 'none',
           }}
         />
         <span className="text-xs text-text-secondary">
-          {isCerebro ? t('experts.alwaysActive') : expert?.isEnabled ? t('experts.connected') : t('status.disabled')}
+          {isCerebro
+            ? t('experts.alwaysActive')
+            : expert?.isEnabled
+              ? t('experts.connected')
+              : t('status.disabled')}
         </span>
       </div>
     </div>

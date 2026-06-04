@@ -39,7 +39,9 @@ function RoutineStepNode({ data, selected }: NodeProps) {
     // AI actions
     if (resolved === 'ask_ai') {
       const prompt = (p.prompt as string) || '';
-      return prompt.length > 40 ? prompt.slice(0, 40) + '...' : prompt || t('routineEditor.noPromptSet');
+      return prompt.length > 40
+        ? prompt.slice(0, 40) + '...'
+        : prompt || t('routineEditor.noPromptSet');
     }
     if (resolved === 'run_expert') {
       const task = (p.prompt as string) || (p.task as string) || '';
@@ -111,7 +113,9 @@ function RoutineStepNode({ data, selected }: NodeProps) {
     }
     if (resolved === 'approval_gate') {
       const summary = (p.summary as string) || '';
-      return summary.length > 40 ? summary.slice(0, 40) + '...' : summary || t('routineEditor.approvalCheckpoint');
+      return summary.length > 40
+        ? summary.slice(0, 40) + '...'
+        : summary || t('routineEditor.approvalCheckpoint');
     }
 
     // Output
@@ -139,9 +143,14 @@ function RoutineStepNode({ data, selected }: NodeProps) {
 
   const hoverCard = useMemo(() => {
     const rows: Array<{ label: string; value: string }> = [];
-    if (meta?.description) rows.push({ label: t('routineTooltips.metaAction'), value: meta.description });
+    if (meta?.description)
+      rows.push({ label: t('routineTooltips.metaAction'), value: meta.description });
     if (preview) rows.push({ label: t('routineTooltips.metaConfig'), value: preview });
-    if (d.requiresApproval) rows.push({ label: t('routineTooltips.metaGate'), value: t('routineTooltips.approvalRequired') });
+    if (d.requiresApproval)
+      rows.push({
+        label: t('routineTooltips.metaGate'),
+        value: t('routineTooltips.approvalRequired'),
+      });
     if (d.onError) rows.push({ label: t('routineTooltips.metaOnError'), value: String(d.onError) });
     return (
       <TooltipCard
@@ -159,9 +168,7 @@ function RoutineStepNode({ data, selected }: NodeProps) {
         className={clsx(
           'w-[200px] rounded-lg border transition-all duration-150',
           CATEGORY_BG[category ?? ''] || 'bg-bg-surface',
-          selected
-            ? 'shadow-lg'
-            : 'hover:border-border-default',
+          selected ? 'shadow-lg' : 'hover:border-border-default',
           !selected && 'border-border-subtle',
         )}
         style={{
@@ -213,16 +220,12 @@ function RoutineStepNode({ data, selected }: NodeProps) {
 
         {/* Step name */}
         <div className="px-3 pb-1">
-          <span className="text-sm font-medium text-text-primary truncate block">
-            {d.name}
-          </span>
+          <span className="text-sm font-medium text-text-primary truncate block">{d.name}</span>
         </div>
 
         {/* Preview */}
         <div className="px-3 pb-2.5">
-          <span className="text-[11px] text-text-tertiary truncate block">
-            {preview}
-          </span>
+          <span className="text-[11px] text-text-tertiary truncate block">{preview}</span>
         </div>
 
         <Handle

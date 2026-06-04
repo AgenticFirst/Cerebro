@@ -89,11 +89,30 @@ export function createHubSpotUpdateTicketAction(deps: {
         content: { type: 'string', description: 'New ticket body / description. Templated.' },
         priority: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'], description: 'New priority.' },
         pipeline: { type: 'string', description: 'Move the ticket to this pipeline id.' },
-        stage: { type: 'string', description: 'Move the ticket to this stage id within its pipeline.' },
-        owner: { type: 'string', description: 'Reassign the ticket to a HubSpot user by name, email, or owner id. The name/email is resolved to the owner id. Templated.' },
-        owner_id: { type: 'string', description: 'Legacy: reassign by raw HubSpot owner id. Prefer `owner` (accepts name/email). Honored only when `owner` is empty.' },
-        follow_up_user: { type: 'string', description: 'Set the follow-up user (usuario de seguimiento) by name, email, or owner id. Requires the follow-up property configured in the HubSpot integration settings. Templated.' },
-        due_date: { type: 'string', description: 'Set the due date (fecha de vencimiento) as YYYY-MM-DD or ISO. Requires the due-date property configured in the HubSpot integration settings. Templated.' },
+        stage: {
+          type: 'string',
+          description: 'Move the ticket to this stage id within its pipeline.',
+        },
+        owner: {
+          type: 'string',
+          description:
+            'Reassign the ticket to a HubSpot user by name, email, or owner id. The name/email is resolved to the owner id. Templated.',
+        },
+        owner_id: {
+          type: 'string',
+          description:
+            'Legacy: reassign by raw HubSpot owner id. Prefer `owner` (accepts name/email). Honored only when `owner` is empty.',
+        },
+        follow_up_user: {
+          type: 'string',
+          description:
+            'Set the follow-up user (usuario de seguimiento) by name, email, or owner id. Requires the follow-up property configured in the HubSpot integration settings. Templated.',
+        },
+        due_date: {
+          type: 'string',
+          description:
+            'Set the due date (fecha de vencimiento) as YYYY-MM-DD or ISO. Requires the due-date property configured in the HubSpot integration settings. Templated.',
+        },
         source_type: { type: 'string', description: 'New source type.' },
         properties: {
           type: 'object',
@@ -112,10 +131,24 @@ export function createHubSpotUpdateTicketAction(deps: {
         ticket_id: { type: ['string', 'null'] },
         updated_fields: { type: 'array', items: { type: 'string' } },
         ticket_url: { type: ['string', 'null'] },
-        owner_resolved: { type: ['string', 'null'], description: 'Owner id written, when an owner was resolved.' },
-        follow_up_resolved: { type: ['string', 'null'], description: 'Follow-up owner id written, when one was resolved.' },
-        due_date_set: { type: ['string', 'null'], description: 'Normalized due-date value written, when set.' },
-        warnings: { type: 'array', items: { type: 'string' }, description: 'Non-fatal issues, e.g. an owner name that could not be resolved or an unconfigured property.' },
+        owner_resolved: {
+          type: ['string', 'null'],
+          description: 'Owner id written, when an owner was resolved.',
+        },
+        follow_up_resolved: {
+          type: ['string', 'null'],
+          description: 'Follow-up owner id written, when one was resolved.',
+        },
+        due_date_set: {
+          type: ['string', 'null'],
+          description: 'Normalized due-date value written, when set.',
+        },
+        warnings: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Non-fatal issues, e.g. an owner name that could not be resolved or an unconfigured property.',
+        },
         error: { type: ['string', 'null'] },
       },
       required: ['updated'],
@@ -124,7 +157,9 @@ export function createHubSpotUpdateTicketAction(deps: {
     execute: async (input: ActionInput): Promise<ActionOutput> => {
       const channel = deps.getChannel();
       if (!channel) {
-        throw new Error('HubSpot: Update Ticket — HubSpot is not configured. Connect HubSpot in Integrations first.');
+        throw new Error(
+          'HubSpot: Update Ticket — HubSpot is not configured. Connect HubSpot in Integrations first.',
+        );
       }
       const token = channel.getAccessToken();
       if (!token) {
@@ -150,8 +185,11 @@ export function createHubSpotUpdateTicketAction(deps: {
       const content = renderTemplate(params.content ?? '', vars).trim();
       if (content) properties.content = content;
 
-      const priorityRaw = renderTemplate(params.priority ?? '', vars).trim().toUpperCase();
-      if (priorityRaw && VALID_PRIORITIES.has(priorityRaw)) properties.hs_ticket_priority = priorityRaw;
+      const priorityRaw = renderTemplate(params.priority ?? '', vars)
+        .trim()
+        .toUpperCase();
+      if (priorityRaw && VALID_PRIORITIES.has(priorityRaw))
+        properties.hs_ticket_priority = priorityRaw;
 
       const pipeline = renderTemplate(params.pipeline ?? '', vars).trim();
       if (pipeline) properties.hs_pipeline = pipeline;
@@ -190,7 +228,9 @@ export function createHubSpotUpdateTicketAction(deps: {
       }
 
       const portal = channel.getPortalId();
-      const ticketUrl = portal ? `https://app.hubspot.com/contacts/${portal}/ticket/${ticketId}` : null;
+      const ticketUrl = portal
+        ? `https://app.hubspot.com/contacts/${portal}/ticket/${ticketId}`
+        : null;
       const resolved = {
         owner_resolved: extras.ownerResolved,
         follow_up_resolved: extras.followUpResolved,
@@ -202,7 +242,14 @@ export function createHubSpotUpdateTicketAction(deps: {
         for (const w of warnings) input.context.log(`HubSpot update_ticket: ${w}`);
         const note = warnings.length ? ` (${warnings.join('; ')})` : '';
         return {
-          data: { updated: false, ticket_id: ticketId, updated_fields: [], ticket_url: null, ...resolved, error: 'no properties to update' },
+          data: {
+            updated: false,
+            ticket_id: ticketId,
+            updated_fields: [],
+            ticket_url: null,
+            ...resolved,
+            error: 'no properties to update',
+          },
           summary: `HubSpot update_ticket: no properties to update for ticket ${ticketId}${note}`,
         };
       }
@@ -217,13 +264,27 @@ export function createHubSpotUpdateTicketAction(deps: {
         if (res.status === 404) {
           input.context.log(`HubSpot update_ticket: ticket ${ticketId} not found`);
           return {
-            data: { updated: false, ticket_id: ticketId, updated_fields: [], ticket_url: ticketUrl, ...resolved, error: 'ticket not found' },
+            data: {
+              updated: false,
+              ticket_id: ticketId,
+              updated_fields: [],
+              ticket_url: ticketUrl,
+              ...resolved,
+              error: 'ticket not found',
+            },
             summary: `HubSpot ticket ${ticketId} not found`,
           };
         }
         input.context.log(`HubSpot update_ticket ${res.status}: ${res.error}`);
         return {
-          data: { updated: false, ticket_id: ticketId, updated_fields: [], ticket_url: ticketUrl, ...resolved, error: res.error },
+          data: {
+            updated: false,
+            ticket_id: ticketId,
+            updated_fields: [],
+            ticket_url: ticketUrl,
+            ...resolved,
+            error: res.error,
+          },
           summary: `HubSpot update_ticket failed: ${res.error}`,
         };
       }

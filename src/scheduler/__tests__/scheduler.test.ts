@@ -135,7 +135,7 @@ describe('RoutineScheduler', () => {
   });
 
   it('removes jobs for deleted routines on re-sync', async () => {
-    let routines = [
+    const routines = [
       {
         id: 'r1',
         name: 'Will Be Deleted',
@@ -333,7 +333,7 @@ describe('RoutineScheduler', () => {
     // No setWebContents call
 
     await (scheduler as any).executeRoutine('r1', 'No WC');
-    expect((engine.startRun as any)).not.toHaveBeenCalled();
+    expect(engine.startRun as any).not.toHaveBeenCalled();
   });
 
   it('executeRoutine skips disabled routine', async () => {
@@ -358,11 +358,13 @@ describe('RoutineScheduler', () => {
     scheduler.setWebContents(makeMockWebContents());
 
     await (scheduler as any).executeRoutine('r1', 'Disabled');
-    expect((engine.startRun as any)).not.toHaveBeenCalled();
+    expect(engine.startRun as any).not.toHaveBeenCalled();
   });
 
   it('executeRoutine uses dag_json when available', async () => {
-    const dag = { steps: [{ id: 's1', name: 'Model', actionType: 'ask_ai', params: { prompt: 'test' } }] };
+    const dag = {
+      steps: [{ id: 's1', name: 'Model', actionType: 'ask_ai', params: { prompt: 'test' } }],
+    };
     const routines = [
       {
         id: 'r1',
@@ -385,7 +387,7 @@ describe('RoutineScheduler', () => {
     scheduler.setWebContents(wc);
 
     await (scheduler as any).executeRoutine('r1', 'Has DAG');
-    expect((engine.startRun as any)).toHaveBeenCalledWith(wc, {
+    expect(engine.startRun as any).toHaveBeenCalledWith(wc, {
       dag,
       routineId: 'r1',
       triggerSource: 'schedule',
@@ -414,7 +416,7 @@ describe('RoutineScheduler', () => {
     scheduler.setWebContents(makeMockWebContents());
 
     await (scheduler as any).executeRoutine('r2', 'Steps Only');
-    expect((engine.startRun as any)).toHaveBeenCalledTimes(1);
+    expect(engine.startRun as any).toHaveBeenCalledTimes(1);
 
     const callArgs = (engine.startRun as any).mock.calls[0][1];
     expect(callArgs.dag.steps).toHaveLength(2);
@@ -445,6 +447,6 @@ describe('RoutineScheduler', () => {
     scheduler.setWebContents(makeMockWebContents());
 
     await (scheduler as any).executeRoutine('r3', 'Empty');
-    expect((engine.startRun as any)).not.toHaveBeenCalled();
+    expect(engine.startRun as any).not.toHaveBeenCalled();
   });
 });

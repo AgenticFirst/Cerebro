@@ -56,7 +56,12 @@ interface GoogleEvent {
 export class GoogleCalendarProvider implements CalendarProvider {
   readonly id = 'google' as const;
 
-  buildAuthUrl(opts: { client: OAuthClient; pkceChallenge: string; state: string; loginHint?: string }): string {
+  buildAuthUrl(opts: {
+    client: OAuthClient;
+    pkceChallenge: string;
+    state: string;
+    loginHint?: string;
+  }): string {
     const p = new URLSearchParams({
       client_id: opts.client.clientId,
       redirect_uri: opts.client.redirectUri,
@@ -72,7 +77,11 @@ export class GoogleCalendarProvider implements CalendarProvider {
     return `${AUTH_URL}?${p.toString()}`;
   }
 
-  async exchangeCode(opts: { client: OAuthClient; code: string; pkceVerifier: string }): Promise<TokenSet> {
+  async exchangeCode(opts: {
+    client: OAuthClient;
+    code: string;
+    pkceVerifier: string;
+  }): Promise<TokenSet> {
     const body = new URLSearchParams({
       code: opts.code,
       client_id: opts.client.clientId,
@@ -103,10 +112,15 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   async listCalendars(accessToken: string): Promise<RemoteCalendar[]> {
-    const r = await apiGet<{ items?: Array<{ id: string; summary?: string; backgroundColor?: string; primary?: boolean; selected?: boolean }> }>(
-      `${API_BASE}/users/me/calendarList`,
-      accessToken,
-    );
+    const r = await apiGet<{
+      items?: Array<{
+        id: string;
+        summary?: string;
+        backgroundColor?: string;
+        primary?: boolean;
+        selected?: boolean;
+      }>;
+    }>(`${API_BASE}/users/me/calendarList`, accessToken);
     return (r.items ?? []).map((c) => ({
       id: c.id,
       name: c.summary ?? c.id,
@@ -166,7 +180,11 @@ export class GoogleCalendarProvider implements CalendarProvider {
     return { events, deletions, nextCursor, cursorExpired: false };
   }
 
-  async createEvent(opts: { accessToken: string; calendarId: string; event: ProviderEventWrite }): Promise<WriteResult> {
+  async createEvent(opts: {
+    accessToken: string;
+    calendarId: string;
+    event: ProviderEventWrite;
+  }): Promise<WriteResult> {
     const body = toGoogleWrite(opts.event);
     const conf = opts.event.conference ? '?conferenceDataVersion=1' : '';
     const r = await apiSend<GoogleEvent>(
@@ -194,7 +212,11 @@ export class GoogleCalendarProvider implements CalendarProvider {
     return { providerEventId: r.id, etag: r.etag ?? null };
   }
 
-  async deleteEvent(opts: { accessToken: string; calendarId: string; providerEventId: string }): Promise<void> {
+  async deleteEvent(opts: {
+    accessToken: string;
+    calendarId: string;
+    providerEventId: string;
+  }): Promise<void> {
     await apiSend(
       `${API_BASE}/calendars/${encodeURIComponent(opts.calendarId)}/events/${encodeURIComponent(opts.providerEventId)}`,
       opts.accessToken,
@@ -262,11 +284,12 @@ function normalizeGoogleEvent(ev: GoogleEvent): NormalizedEvent {
     ev.hangoutLink ??
     ev.conferenceData?.entryPoints?.find((e) => e.entryPointType === 'video')?.uri ??
     null;
-  const visibility = ev.visibility === 'private' || ev.visibility === 'confidential'
-    ? 'private'
-    : ev.visibility === 'public'
-      ? 'public'
-      : 'default';
+  const visibility =
+    ev.visibility === 'private' || ev.visibility === 'confidential'
+      ? 'private'
+      : ev.visibility === 'public'
+        ? 'public'
+        : 'default';
   return {
     providerEventId: ev.id,
     etag: ev.etag ?? null,
@@ -291,7 +314,7 @@ function normalizeGoogleEvent(ev: GoogleEvent): NormalizedEvent {
         }))
       : null,
     organizerEmail: ev.organizer?.email ?? null,
-    rsvpStatus: self ? mapResponseStatus(self.responseStatus) ?? null : null,
+    rsvpStatus: self ? (mapResponseStatus(self.responseStatus) ?? null) : null,
     visibility,
     transparency: ev.transparency === 'transparent' ? 'transparent' : 'opaque',
     status: ev.status === 'cancelled' ? 'cancelled' : 'confirmed',
@@ -327,7 +350,10 @@ function toGoogleWrite(e: ProviderEventWrite): Record<string, unknown> {
   }
   if (e.conference) {
     out.conferenceData = {
-      createRequest: { requestId: `cerebro-${Date.now()}`, conferenceSolutionKey: { type: 'hangoutsMeet' } },
+      createRequest: {
+        requestId: `cerebro-${Date.now()}`,
+        conferenceSolutionKey: { type: 'hangoutsMeet' },
+      },
     };
   }
   return out;

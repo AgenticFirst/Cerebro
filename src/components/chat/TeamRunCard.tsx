@@ -1,13 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Users,
-  ChevronRight,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Clock,
-} from 'lucide-react';
+import { Users, ChevronRight, CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react';
 import clsx from 'clsx';
 import type { TeamRun, TeamRunMember } from '../../types/chat';
 
@@ -144,7 +137,10 @@ export default function TeamRunCard({ teamRun }: TeamRunCardProps) {
       {teamRun.status !== 'running' && teamRun.successCount !== undefined && (
         <div className="border-t border-border-subtle px-3 py-1.5">
           <span className="text-[10px] text-text-tertiary">
-            {t('teamRun.completedProgress', { done: teamRun.successCount, total: teamRun.totalCount })}
+            {t('teamRun.completedProgress', {
+              done: teamRun.successCount,
+              total: teamRun.totalCount,
+            })}
           </span>
         </div>
       )}

@@ -3,14 +3,7 @@
  * Three modes (view / edit / split) share one shell so toggling never reflows.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Bold,
   Code,
@@ -79,12 +72,7 @@ function wrapSelection(
 }
 
 /** Prefix every line that overlaps the selection with `prefix`. */
-function prefixLines(
-  value: string,
-  start: number,
-  end: number,
-  prefix: string,
-): SelectionEdit {
+function prefixLines(value: string, start: number, end: number, prefix: string): SelectionEdit {
   const lineStart = value.lastIndexOf('\n', start - 1) + 1;
   const lineEndIdx = value.indexOf('\n', end);
   const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
@@ -108,8 +96,7 @@ function insertHr(value: string, start: number, end: number): SelectionEdit {
   const after = value.slice(end);
   const needsLeadingNewline = before.length > 0 && !before.endsWith('\n');
   const needsTrailingNewline = after.length > 0 && !after.startsWith('\n');
-  const insert =
-    (needsLeadingNewline ? '\n' : '') + '---' + (needsTrailingNewline ? '\n' : '');
+  const insert = (needsLeadingNewline ? '\n' : '') + '---' + (needsTrailingNewline ? '\n' : '');
   const next = before + insert + after;
   const cursor = start + insert.length;
   return { value: next, selectionStart: cursor, selectionEnd: cursor };
@@ -247,8 +234,7 @@ export default function MarkdownDocument({
     withSelection((s, e) => wrapSelection(draft, s, e, '**', '**', 'bold text'));
   const toggleItalic = () =>
     withSelection((s, e) => wrapSelection(draft, s, e, '_', '_', 'italic text'));
-  const toggleCode = () =>
-    withSelection((s, e) => wrapSelection(draft, s, e, '`', '`', 'code'));
+  const toggleCode = () => withSelection((s, e) => wrapSelection(draft, s, e, '`', '`', 'code'));
   const insertLink = () =>
     withSelection((s, e) => wrapSelection(draft, s, e, '[', '](https://)', 'link text'));
   const headingPrefix = (level: 1 | 2 | 3) => () =>
@@ -545,9 +531,7 @@ export default function MarkdownDocument({
                 </button>
               )}
             </div>
-            <div>
-              {t('markdown.wordCount', { count: wordCount })}
-            </div>
+            <div>{t('markdown.wordCount', { count: wordCount })}</div>
           </div>
         </div>
       </div>

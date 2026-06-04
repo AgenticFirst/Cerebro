@@ -14,7 +14,11 @@ import type { ActionDefinition, ActionInput, ActionOutput } from './types';
 import { renderTemplate } from './utils/template';
 import type { HubSpotChannel } from './hubspot-channel';
 import { callHubSpotApi } from '../../hubspot/api';
-import { resolveTicketAssociations, toContactOutputs, toCompanyOutputs } from '../../hubspot/associations';
+import {
+  resolveTicketAssociations,
+  toContactOutputs,
+  toCompanyOutputs,
+} from '../../hubspot/associations';
 import { ownerDisplayNames } from '../../hubspot/owners';
 import { formatHubSpotDate } from '../../hubspot/ticket-fields';
 
@@ -86,14 +90,17 @@ export function createHubSpotSearchTicketsAction(deps: {
           description:
             'ISO date or datetime (UTC). Upper bound on the ticket creation date, inclusive. For "created today" pass the start of tomorrow. Templated.',
         },
-        query: { type: 'string', description: 'Free-text search across ticket subject and content. Optional. Templated.' },
+        query: {
+          type: 'string',
+          description: 'Free-text search across ticket subject and content. Optional. Templated.',
+        },
         pipeline: { type: 'string', description: 'Filter to a ticket pipeline id. Optional.' },
         stage: { type: 'string', description: 'Filter to a pipeline stage id. Optional.' },
         limit: { type: 'number', description: 'Max tickets to return. Default 50, capped at 100.' },
         include_associations: {
           type: 'boolean',
           description:
-            'When true, attach each ticket\'s associated contacts[] and companies[] (the company is resolved through the contact when the ticket has no direct company link). Default false. Adds one batched lookup over the result page.',
+            "When true, attach each ticket's associated contacts[] and companies[] (the company is resolved through the contact when the ticket has no direct company link). Default false. Adds one batched lookup over the result page.",
         },
       },
     },
@@ -164,7 +171,9 @@ export function createHubSpotSearchTicketsAction(deps: {
     execute: async (input: ActionInput): Promise<ActionOutput> => {
       const channel = deps.getChannel();
       if (!channel) {
-        throw new Error('HubSpot: Search Tickets — HubSpot is not configured. Connect HubSpot in Integrations first.');
+        throw new Error(
+          'HubSpot: Search Tickets — HubSpot is not configured. Connect HubSpot in Integrations first.',
+        );
       }
       const token = channel.getAccessToken();
       if (!token) {
@@ -181,20 +190,29 @@ export function createHubSpotSearchTicketsAction(deps: {
       const stage = renderTemplate(params.stage ?? '', vars).trim();
 
       const rawLimit = typeof params.limit === 'string' ? parseInt(params.limit, 10) : params.limit;
-      const limit = Math.min(Math.max(Number.isFinite(rawLimit as number) ? (rawLimit as number) : 50, 1), 100);
+      const limit = Math.min(
+        Math.max(Number.isFinite(rawLimit as number) ? (rawLimit as number) : 50, 1),
+        100,
+      );
 
       const afterMs = createdAfter ? toEpochMs(createdAfter) : null;
       const beforeMs = createdBefore ? toEpochMs(createdBefore) : null;
       if (createdAfter && afterMs === null) {
-        input.context.log(`HubSpot search_tickets: ignoring unparseable created_after "${createdAfter}"`);
+        input.context.log(
+          `HubSpot search_tickets: ignoring unparseable created_after "${createdAfter}"`,
+        );
       }
       if (createdBefore && beforeMs === null) {
-        input.context.log(`HubSpot search_tickets: ignoring unparseable created_before "${createdBefore}"`);
+        input.context.log(
+          `HubSpot search_tickets: ignoring unparseable created_before "${createdBefore}"`,
+        );
       }
 
       const filters: Array<{ propertyName: string; operator: string; value: string }> = [];
-      if (afterMs !== null) filters.push({ propertyName: 'createdate', operator: 'GTE', value: String(afterMs) });
-      if (beforeMs !== null) filters.push({ propertyName: 'createdate', operator: 'LTE', value: String(beforeMs) });
+      if (afterMs !== null)
+        filters.push({ propertyName: 'createdate', operator: 'GTE', value: String(afterMs) });
+      if (beforeMs !== null)
+        filters.push({ propertyName: 'createdate', operator: 'LTE', value: String(beforeMs) });
       if (pipeline) filters.push({ propertyName: 'hs_pipeline', operator: 'EQ', value: pipeline });
       if (stage) filters.push({ propertyName: 'hs_pipeline_stage', operator: 'EQ', value: stage });
 
@@ -247,7 +265,9 @@ export function createHubSpotSearchTicketsAction(deps: {
           }
         }
       } catch (err) {
-        input.context.log(`HubSpot search_tickets: pipeline label lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+        input.context.log(
+          `HubSpot search_tickets: pipeline label lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
 
       const portal = channel.getPortalId();
@@ -261,9 +281,9 @@ export function createHubSpotSearchTicketsAction(deps: {
           subject: props.subject ?? null,
           content: props.content ?? null,
           pipeline: pipelineId,
-          pipeline_label: pipelineId ? pipelineLabels.get(pipelineId) ?? null : null,
+          pipeline_label: pipelineId ? (pipelineLabels.get(pipelineId) ?? null) : null,
           stage: stageId,
-          stage_label: stageId ? stageLabels.get(stageId) ?? null : null,
+          stage_label: stageId ? (stageLabels.get(stageId) ?? null) : null,
           priority: props.hs_ticket_priority ?? null,
           created_at: props.createdate ?? null,
           updated_at: props.hs_lastmodifieddate ?? null,
@@ -273,8 +293,19 @@ export function createHubSpotSearchTicketsAction(deps: {
           follow_up_name: null as string | null,
           due_date: dueDateProp ? formatHubSpotDate(props[dueDateProp]) : null,
           ticket_url: portal ? `https://app.hubspot.com/contacts/${portal}/ticket/${t.id}` : null,
-          contacts: [] as Array<{ contact_id: string; email: string | null; firstname: string | null; lastname: string | null }>,
-          companies: [] as Array<{ company_id: string; name: string | null; domain: string | null; source: 'ticket' | 'contact'; via_contact_id: string | null }>,
+          contacts: [] as Array<{
+            contact_id: string;
+            email: string | null;
+            firstname: string | null;
+            lastname: string | null;
+          }>,
+          companies: [] as Array<{
+            company_id: string;
+            name: string | null;
+            domain: string | null;
+            source: 'ticket' | 'contact';
+            via_contact_id: string | null;
+          }>,
         };
       });
 
@@ -293,7 +324,9 @@ export function createHubSpotSearchTicketsAction(deps: {
             if (t.follow_up_user) t.follow_up_name = names.get(t.follow_up_user) ?? null;
           }
         } catch (err) {
-          input.context.log(`HubSpot search_tickets: owner name lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+          input.context.log(
+            `HubSpot search_tickets: owner name lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
 
@@ -301,7 +334,8 @@ export function createHubSpotSearchTicketsAction(deps: {
       // lookup above, a failure here keeps the tickets and just leaves the
       // arrays empty rather than failing the whole search.
       const includeAssociations =
-        params.include_associations === true || String(params.include_associations ?? '').toLowerCase() === 'true';
+        params.include_associations === true ||
+        String(params.include_associations ?? '').toLowerCase() === 'true';
       let companiesScopeMissing = false;
       if (includeAssociations && tickets.length > 0) {
         const assoc = await resolveTicketAssociations(
@@ -314,7 +348,9 @@ export function createHubSpotSearchTicketsAction(deps: {
         }
         companiesScopeMissing = assoc.companiesScopeMissing;
         if (assoc.companiesScopeMissing) {
-          input.context.log('HubSpot search_tickets: companies unavailable — token lacks crm.objects.companies.read');
+          input.context.log(
+            'HubSpot search_tickets: companies unavailable — token lacks crm.objects.companies.read',
+          );
         }
         for (const ticket of tickets) {
           const resolved = assoc.byTicket.get(ticket.ticket_id);
@@ -329,7 +365,12 @@ export function createHubSpotSearchTicketsAction(deps: {
         ? ' (companies not returned — grant crm.objects.companies.read on the HubSpot Private App)'
         : '';
       return {
-        data: { tickets, count: tickets.length, companies_scope_missing: companiesScopeMissing, error: null },
+        data: {
+          tickets,
+          count: tickets.length,
+          companies_scope_missing: companiesScopeMissing,
+          error: null,
+        },
         summary: `Found ${tickets.length} HubSpot ticket(s)${scopeNote}`,
       };
     },

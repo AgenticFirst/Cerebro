@@ -35,7 +35,11 @@ interface DocumentHit {
 }
 
 function extractJsonArray(text: string): DocumentHit[] | null {
-  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+  const trimmed = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```$/, '')
+    .trim();
   const start = trimmed.indexOf('[');
   const end = trimmed.lastIndexOf(']');
   if (start === -1 || end === -1 || end < start) return null;

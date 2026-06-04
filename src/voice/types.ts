@@ -1,11 +1,6 @@
 // ── Voice session state machine ───────────────────────────────────
 
-export type VoiceSessionState =
-  | 'idle'
-  | 'initializing'
-  | 'listening'
-  | 'processing'
-  | 'speaking';
+export type VoiceSessionState = 'idle' | 'initializing' | 'listening' | 'processing' | 'speaking';
 
 // ── Events from main process → renderer ──────────────────────────
 
@@ -14,7 +9,7 @@ export type VoiceSessionEvent =
   | { type: 'transcription'; text: string; isFinal: boolean }
   | { type: 'response_text'; delta: string }
   | { type: 'response_done'; fullText: string }
-  | { type: 'tts_audio'; chunk: string }  // base64-encoded PCM int16
+  | { type: 'tts_audio'; chunk: string } // base64-encoded PCM int16
   | { type: 'tts_done' }
   | { type: 'error'; error: string }
   | { type: 'ended' };

@@ -8,12 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { loadSetting, saveSetting } from '../lib/settings';
-import {
-  QUALITY_TIERS,
-  RESPONSE_MODELS,
-  type QualityTier,
-  type ResponseModel,
-} from '../types/ipc';
+import { QUALITY_TIERS, RESPONSE_MODELS, type QualityTier, type ResponseModel } from '../types/ipc';
 
 const TIER_STORAGE_KEY = 'cerebro_quality_tier';
 const TIER_SETTING_KEY = 'quality_tier';
@@ -42,7 +37,9 @@ export function QualityProvider({ children }: { children: ReactNode }) {
     try {
       const saved = localStorage.getItem(TIER_STORAGE_KEY);
       if (isValidTier(saved)) return saved;
-    } catch { /* private mode */ }
+    } catch {
+      /* private mode */
+    }
     return 'medium';
   });
 
@@ -50,7 +47,9 @@ export function QualityProvider({ children }: { children: ReactNode }) {
     try {
       const saved = localStorage.getItem(MODEL_STORAGE_KEY);
       if (isValidModel(saved)) return saved;
-    } catch { /* private mode */ }
+    } catch {
+      /* private mode */
+    }
     return 'sonnet';
   });
 
@@ -65,18 +64,28 @@ export function QualityProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       if (isValidModel(v)) setModelState((prev) => (prev === v ? prev : v));
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const setTier = useCallback((next: QualityTier) => {
     setTierState(next);
-    try { localStorage.setItem(TIER_STORAGE_KEY, next); } catch { /* private mode */ }
+    try {
+      localStorage.setItem(TIER_STORAGE_KEY, next);
+    } catch {
+      /* private mode */
+    }
     saveSetting(TIER_SETTING_KEY, next);
   }, []);
 
   const setModel = useCallback((next: ResponseModel) => {
     setModelState(next);
-    try { localStorage.setItem(MODEL_STORAGE_KEY, next); } catch { /* private mode */ }
+    try {
+      localStorage.setItem(MODEL_STORAGE_KEY, next);
+    } catch {
+      /* private mode */
+    }
     saveSetting(MODEL_SETTING_KEY, next);
   }, []);
 

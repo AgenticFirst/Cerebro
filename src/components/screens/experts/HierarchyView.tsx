@@ -46,28 +46,29 @@ export default function HierarchyView() {
     if (pending) setSelectedId(pending);
   }, [consumePendingDetailExpertId]);
 
-  const disabledCount = useMemo(
-    () => experts.filter((e) => !e.isEnabled).length,
-    [experts],
-  );
+  const disabledCount = useMemo(() => experts.filter((e) => !e.isEnabled).length, [experts]);
 
   // Filter pipeline: visibility first, then free-text search.
   const visibleExperts = useMemo(() => {
     const byVisibility = (() => {
       switch (filter) {
-        case 'active': return experts.filter((e) => e.isEnabled);
-        case 'disabled': return experts.filter((e) => !e.isEnabled);
-        case 'pinned': return experts.filter((e) => e.isPinned);
-        default: return experts;
+        case 'active':
+          return experts.filter((e) => e.isEnabled);
+        case 'disabled':
+          return experts.filter((e) => !e.isEnabled);
+        case 'pinned':
+          return experts.filter((e) => e.isPinned);
+        default:
+          return experts;
       }
     })();
     const q = search.trim().toLowerCase();
     if (!q) return byVisibility;
     return byVisibility.filter(
       (e) =>
-        e.name.toLowerCase().includes(q)
-        || (e.domain ?? '').toLowerCase().includes(q)
-        || (e.description ?? '').toLowerCase().includes(q),
+        e.name.toLowerCase().includes(q) ||
+        (e.domain ?? '').toLowerCase().includes(q) ||
+        (e.description ?? '').toLowerCase().includes(q),
     );
   }, [experts, filter, search]);
 
@@ -87,16 +88,14 @@ export default function HierarchyView() {
       return { team, members };
     });
 
-    const solos = visibleExperts.filter(
-      (e) => e.type === 'expert' && !teamMemberIds.has(e.id),
-    );
+    const solos = visibleExperts.filter((e) => e.type === 'expert' && !teamMemberIds.has(e.id));
 
     return { departments: depts, soloExperts: solos };
   }, [visibleExperts]);
 
   const selectedExpert =
     selectedId && selectedId !== 'cerebro'
-      ? experts.find((e) => e.id === selectedId) ?? null
+      ? (experts.find((e) => e.id === selectedId) ?? null)
       : null;
   const isCerebroSelected = selectedId === 'cerebro';
 
@@ -104,14 +103,11 @@ export default function HierarchyView() {
     setSelectedId((prev) => (prev === id ? null : id));
   }, []);
 
-  const handleContextMenu = useCallback(
-    (expert: Expert, e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setContextMenu({ expert, position: { x: e.clientX, y: e.clientY } });
-    },
-    [],
-  );
+  const handleContextMenu = useCallback((expert: Expert, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ expert, position: { x: e.clientX, y: e.clientY } });
+  }, []);
 
   const handleContextMenuDelete = useCallback(
     async (id: string) => {
@@ -152,12 +148,12 @@ export default function HierarchyView() {
     <div className="relative flex-1 flex flex-col overflow-hidden">
       <div className="canvas-toolbar flex items-center justify-between gap-3 px-4 py-3 border-b border-border-subtle bg-bg-base/60">
         <div className="flex items-center gap-1.5 flex-wrap">
-          {([
+          {[
             { key: 'all' as const, labelKey: 'experts.filterAll', count: experts.length },
             { key: 'active' as const, labelKey: 'experts.filterActive', count: activeCount },
             { key: 'disabled' as const, labelKey: 'experts.filterDisabled', count: disabledCount },
             { key: 'pinned' as const, labelKey: 'experts.filterPinned', count: pinnedCount },
-          ]).map((pill) => (
+          ].map((pill) => (
             <button
               key={pill.key}
               onClick={() => setFilter(pill.key)}
@@ -205,10 +201,7 @@ export default function HierarchyView() {
             transformOrigin: 'top center',
           }}
         >
-          <CerebroHeader
-            isSelected={isCerebroSelected}
-            onClick={() => handleSelectId('cerebro')}
-          />
+          <CerebroHeader isSelected={isCerebroSelected} onClick={() => handleSelectId('cerebro')} />
 
           <div className="w-px h-8 bg-gradient-to-b from-accent/30 to-transparent" />
 
@@ -336,13 +329,7 @@ export default function HierarchyView() {
 
 // ── Cerebro header node ──────────────────────────────────────────
 
-function CerebroHeader({
-  isSelected,
-  onClick,
-}: {
-  isSelected: boolean;
-  onClick: () => void;
-}) {
+function CerebroHeader({ isSelected, onClick }: { isSelected: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -397,10 +384,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       className="flex flex-col items-center gap-2 cursor-pointer group mt-4"
     >
       <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-border-default flex items-center justify-center group-hover:border-accent/40 transition-colors">
-        <Plus
-          size={28}
-          className="text-text-tertiary group-hover:text-accent transition-colors"
-        />
+        <Plus size={28} className="text-text-tertiary group-hover:text-accent transition-colors" />
       </div>
       <span className="text-xs text-text-tertiary group-hover:text-text-secondary transition-colors">
         {t('experts.addExpert')}

@@ -35,7 +35,9 @@ export const slackManifest: IntegrationManifest = {
       const r = await window.cerebro.slack.verify(fields.botToken, fields.appToken);
       return {
         ok: r.ok,
-        data: r.ok ? { teamName: r.teamName ?? '', teamId: r.teamId ?? '', botUserId: r.botUserId ?? '' } : undefined,
+        data: r.ok
+          ? { teamName: r.teamName ?? '', teamId: r.teamId ?? '', botUserId: r.botUserId ?? '' }
+          : undefined,
         error: r.error,
       };
     },
@@ -46,10 +48,11 @@ export const slackManifest: IntegrationManifest = {
         details: r.teamName ? { teamName: r.teamName, botUserId: r.botUserId ?? '' } : undefined,
       };
     },
-    saveCredentials: async (fields) => window.cerebro.slack.setTokens({
-      botToken: fields.botToken,
-      appToken: fields.appToken,
-    }),
+    saveCredentials: async (fields) =>
+      window.cerebro.slack.setTokens({
+        botToken: fields.botToken,
+        appToken: fields.appToken,
+      }),
     clear: async () => window.cerebro.slack.clearTokens(),
   },
 };

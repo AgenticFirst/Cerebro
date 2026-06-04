@@ -27,7 +27,11 @@ export function startOfWeek(d: Date): Date {
 }
 
 export function sameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
 /** Now, rounded up to the next :30 or :00 — a sensible default event start. */
@@ -53,6 +57,9 @@ export function buildColorByAccount(accounts: CalendarAccountInfo[]): Map<string
 }
 
 /** An event's color: its own override, else its account's color, else the default. */
-export function colorForEvent(event: CalendarEventDTO, colorByAccount: Map<string, string>): string {
+export function colorForEvent(
+  event: CalendarEventDTO,
+  colorByAccount: Map<string, string>,
+): string {
   return event.color ?? colorByAccount.get(event.account_id) ?? DEFAULT_EVENT_COLOR;
 }

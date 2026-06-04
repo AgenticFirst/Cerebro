@@ -33,7 +33,10 @@ export function createCalendarFindFreeTimeAction(deps: {
       es: 'Sugiere espacios libres de cierta duración (p. ej. 30 minutos) dentro de un rango de fechas, evitando tus eventos ocupados.',
     },
     chatExamples: [
-      { en: 'Find 30 minutes next week for a call with Sarah.', es: 'Encuentra 30 minutos la próxima semana para una llamada con Sarah.' },
+      {
+        en: 'Find 30 minutes next week for a call with Sarah.',
+        es: 'Encuentra 30 minutos la próxima semana para una llamada con Sarah.',
+      },
     ],
     availabilityCheck: () => {
       // Available whenever the bridge exists — the local calendar works without
@@ -48,8 +51,14 @@ export function createCalendarFindFreeTimeAction(deps: {
         duration_mins: { type: 'number', description: 'Slot length in minutes.' },
         start: { type: 'string', description: 'Search window start, ISO 8601.' },
         end: { type: 'string', description: 'Search window end, ISO 8601.' },
-        workday_start_hour: { type: 'number', description: 'Earliest hour to suggest (local, default 9).' },
-        workday_end_hour: { type: 'number', description: 'Latest hour to suggest (local, default 18).' },
+        workday_start_hour: {
+          type: 'number',
+          description: 'Earliest hour to suggest (local, default 9).',
+        },
+        workday_end_hour: {
+          type: 'number',
+          description: 'Latest hour to suggest (local, default 18).',
+        },
       },
       required: ['duration_mins', 'start', 'end'],
     },
@@ -65,7 +74,8 @@ export function createCalendarFindFreeTimeAction(deps: {
       if (!channel) throw new Error('Calendar: Find Free Time — no calendar connected.');
       const params = input.params as unknown as FindParams;
       const vars = input.wiredInputs ?? {};
-      const duration = Number(renderTemplate(String(params.duration_mins ?? ''), vars).trim()) || 30;
+      const duration =
+        Number(renderTemplate(String(params.duration_mins ?? ''), vars).trim()) || 30;
       const start = renderTemplate(params.start ?? '', vars).trim();
       const end = renderTemplate(params.end ?? '', vars).trim();
       if (!start || !end) throw new Error('Calendar: Find Free Time — start and end are required.');

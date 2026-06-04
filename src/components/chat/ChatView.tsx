@@ -57,7 +57,7 @@ export default function ChatView({ conversation, onSend, isStreaming, isThinking
   const isTelegram = conversation.source === 'telegram';
   const telegramLabel = telegramUsername
     ? `@${telegramUsername}`
-    : conversation.externalChatId ?? 'unknown chat';
+    : (conversation.externalChatId ?? 'unknown chat');
 
   return (
     <div className="flex-1 flex flex-col min-h-0 relative" {...dropProps}>
@@ -93,7 +93,12 @@ export default function ChatView({ conversation, onSend, isStreaming, isThinking
       />
       <div className="px-4 pb-4">
         <div className="mx-auto max-w-3xl">
-          <ChatInput ref={chatInputRef} onSend={onSend} onStop={stopMessage} isStreaming={isStreaming} />
+          <ChatInput
+            ref={chatInputRef}
+            onSend={onSend}
+            onStop={stopMessage}
+            isStreaming={isStreaming}
+          />
         </div>
       </div>
 

@@ -96,9 +96,7 @@ describe('SettingsScreen — Voice gating', () => {
 
   it('renders the voice pane when the flag is ON and a caller pre-selects voice', async () => {
     mockFlags = { teams: false, 'voice-calls': true };
-    const { setPendingSettingsSection } = await import(
-      '../settings/pending-section'
-    );
+    const { setPendingSettingsSection } = await import('../settings/pending-section');
     setPendingSettingsSection('voice');
     render(<SettingsScreen />);
     expect(screen.getByText('__voice_pane__')).toBeInTheDocument();
@@ -106,9 +104,7 @@ describe('SettingsScreen — Voice gating', () => {
 
   it('falls back to the Beta pane if a caller asks for voice while the flag is OFF', async () => {
     mockFlags = { teams: false, 'voice-calls': false };
-    const { setPendingSettingsSection } = await import(
-      '../settings/pending-section'
-    );
+    const { setPendingSettingsSection } = await import('../settings/pending-section');
     setPendingSettingsSection('voice');
     render(<SettingsScreen />);
     // Voice pane is NOT shown; the user lands on Beta where they can flip the flag.

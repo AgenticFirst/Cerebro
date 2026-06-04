@@ -48,9 +48,11 @@ const CATEGORIES: CategoryDef[] = [
   { id: 'productivity', labelKey: 'skills.categoryProductivity', icon: ListChecks },
 ];
 
-const SKILL_CATEGORIES = CATEGORIES.filter(
-  (c) => c.id !== 'all' && c.id !== 'my-skills',
-) as { id: SkillCategory; labelKey: string; icon: LucideIcon }[];
+const SKILL_CATEGORIES = CATEGORIES.filter((c) => c.id !== 'all' && c.id !== 'my-skills') as {
+  id: SkillCategory;
+  labelKey: string;
+  icon: LucideIcon;
+}[];
 
 const ICON_NAMES = Object.keys(ICON_MAP);
 
@@ -159,7 +161,8 @@ export default function SkillsLibraryScreen() {
   }, [filteredSkills]);
 
   const isDirty = selectedSkill
-    ? editDescription !== selectedSkill.description || editInstructions !== selectedSkill.instructions
+    ? editDescription !== selectedSkill.description ||
+      editInstructions !== selectedSkill.instructions
     : false;
   const isBuiltin = selectedSkill?.source === 'builtin';
 
@@ -265,7 +268,10 @@ export default function SkillsLibraryScreen() {
 
   const canCreate = draftName.trim().length > 0 && draftInstructions.trim().length > 0;
 
-  const assignedExpertIds = useMemo(() => new Set(assignments.map((a) => a.expertId)), [assignments]);
+  const assignedExpertIds = useMemo(
+    () => new Set(assignments.map((a) => a.expertId)),
+    [assignments],
+  );
   const assignableExperts = useMemo(
     () => experts.filter((e) => !assignedExpertIds.has(e.id) && e.type === 'expert'),
     [experts, assignedExpertIds],
@@ -316,7 +322,10 @@ export default function SkillsLibraryScreen() {
 
         {/* Category filter tabs */}
         <div className="px-3 pb-2 flex flex-wrap gap-1">
-          {[{ id: 'all', label: t('skills.filterAll') }, { id: 'my-skills', label: t('skills.filterMine') }].map((tab) => (
+          {[
+            { id: 'all', label: t('skills.filterAll') },
+            { id: 'my-skills', label: t('skills.filterMine') },
+          ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveCategory(tab.id)}
@@ -420,10 +429,10 @@ export default function SkillsLibraryScreen() {
 
             {/* Tabs */}
             <div className="flex gap-0 border-b border-border-subtle">
-              {([
+              {[
                 { id: 'import' as const, label: t('skills.importTab'), icon: Download },
                 { id: 'manual' as const, label: t('skills.createTab'), icon: Plus },
-              ]).map((tab) => {
+              ].map((tab) => {
                 const Icon = tab.icon;
                 const active = createTab === tab.id;
                 return (
@@ -456,15 +465,16 @@ export default function SkillsLibraryScreen() {
                   <input
                     type="text"
                     value={importInput}
-                    onChange={(e) => { setImportInput(e.target.value); setImportError(null); }}
+                    onChange={(e) => {
+                      setImportInput(e.target.value);
+                      setImportError(null);
+                    }}
                     onKeyDown={(e) => e.key === 'Enter' && handleImport()}
                     placeholder={t('skills.importPlaceholder')}
                     autoFocus
                     className="w-full bg-bg-base border border-border-subtle rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent/30 transition-colors"
                   />
-                  {importError && (
-                    <p className="text-[11px] text-red-400">{importError}</p>
-                  )}
+                  {importError && <p className="text-[11px] text-red-400">{importError}</p>}
                   <button
                     onClick={handleImport}
                     disabled={!importInput.trim() || isImporting}
@@ -515,7 +525,10 @@ export default function SkillsLibraryScreen() {
                       <div key={label}>
                         <span className="text-[10px] font-medium text-text-tertiary">{label}</span>
                         <button
-                          onClick={() => { setImportInput(example); setImportError(null); }}
+                          onClick={() => {
+                            setImportInput(example);
+                            setImportError(null);
+                          }}
                           className="block w-full text-left mt-0.5"
                         >
                           <code className="text-[11px] text-text-secondary hover:text-accent transition-colors font-mono">
@@ -532,9 +545,7 @@ export default function SkillsLibraryScreen() {
               <div className="space-y-5">
                 {imported && (
                   <div className="bg-accent/5 border border-accent/15 rounded-lg px-3 py-2">
-                    <p className="text-[11px] text-accent">
-                      {t('skills.importSuccess')}
-                    </p>
+                    <p className="text-[11px] text-accent">{t('skills.importSuccess')}</p>
                   </div>
                 )}
 
@@ -661,15 +672,16 @@ export default function SkillsLibraryScreen() {
                 <SkillIcon name={selectedSkill.icon} size={20} className="text-accent" />
               </div>
               <div className="flex-1 min-w-0">
-                <h2 className="text-lg font-semibold text-text-primary">
-                  {selectedSkill.name}
-                </h2>
+                <h2 className="text-lg font-semibold text-text-primary">{selectedSkill.name}</h2>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-accent bg-accent/10 px-2 py-0.5 rounded">
                     {selectedSkill.category}
                   </span>
                   <span className="text-[10px] text-text-tertiary">
-                    {t('skills.sourceVersion', { source: selectedSkill.source, version: selectedSkill.version })}
+                    {t('skills.sourceVersion', {
+                      source: selectedSkill.source,
+                      version: selectedSkill.version,
+                    })}
                   </span>
                   {selectedSkill.isDefault && (
                     <span className="text-[10px] text-text-tertiary bg-bg-elevated px-1.5 py-0.5 rounded">
@@ -704,7 +716,9 @@ export default function SkillsLibraryScreen() {
                   {t('skills.instructionsLabel')}
                 </h4>
                 {isBuiltin && (
-                  <span className="text-[10px] text-text-tertiary">{t('skills.builtInReadOnly')}</span>
+                  <span className="text-[10px] text-text-tertiary">
+                    {t('skills.builtInReadOnly')}
+                  </span>
                 )}
               </div>
               <textarea
@@ -776,9 +790,7 @@ export default function SkillsLibraryScreen() {
                         className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-bg-hover transition-colors"
                       >
                         <User size={12} className="text-accent flex-shrink-0" />
-                        <span className="text-xs text-text-secondary truncate">
-                          {expert.name}
-                        </span>
+                        <span className="text-xs text-text-secondary truncate">{expert.name}</span>
                       </button>
                     ))
                   )}
@@ -828,13 +840,18 @@ export default function SkillsLibraryScreen() {
             <div className="w-16 h-16 rounded-xl border-2 border-dashed border-border-default flex items-center justify-center mb-4">
               <SkillIcon name="sparkles" size={24} className="text-text-tertiary" />
             </div>
-            <h3 className="text-sm font-medium text-text-primary mb-1.5">{t('skills.emptyTitle')}</h3>
+            <h3 className="text-sm font-medium text-text-primary mb-1.5">
+              {t('skills.emptyTitle')}
+            </h3>
             <p className="text-xs text-text-secondary mb-4 max-w-[280px] text-center">
               {t('skills.emptyDescription')}
             </p>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => { handleStartCreate(); setCreateTab('import'); }}
+                onClick={() => {
+                  handleStartCreate();
+                  setCreateTab('import');
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/15 text-accent hover:bg-accent/25 border border-accent/20 transition-colors"
               >
                 <Download size={13} />
@@ -842,7 +859,10 @@ export default function SkillsLibraryScreen() {
               </button>
               <span className="text-[10px] text-text-tertiary">{t('common.or')}</span>
               <button
-                onClick={() => { handleStartCreate(); setCreateTab('manual'); }}
+                onClick={() => {
+                  handleStartCreate();
+                  setCreateTab('manual');
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-white/[0.04] border border-border-subtle transition-colors"
               >
                 <Plus size={13} />

@@ -82,7 +82,9 @@ export class SlidingWindowLimiter {
 }
 
 /** Parse a callback_query.data string for an approval decision. */
-export function parseApprovalCallback(data: string): { action: 'approve' | 'deny'; approvalId: string } | null {
+export function parseApprovalCallback(
+  data: string,
+): { action: 'approve' | 'deny'; approvalId: string } | null {
   const m = data.match(/^(approve|deny):(.+)$/);
   if (!m) return null;
   return { action: m[1] as 'approve' | 'deny', approvalId: m[2] };
@@ -131,7 +133,9 @@ export interface BackendRoutineRecord {
  * `steps`, so that's where we read it from. Returns null if the routine
  * doesn't have a usable telegram trigger.
  */
-export function parseTelegramTriggerRoutine(record: BackendRoutineRecord): TelegramTriggerRoutine | null {
+export function parseTelegramTriggerRoutine(
+  record: BackendRoutineRecord,
+): TelegramTriggerRoutine | null {
   if (!record.dag_json) return null;
   let dag: CanvasDagJson;
   try {
@@ -144,10 +148,10 @@ export function parseTelegramTriggerRoutine(record: BackendRoutineRecord): Teleg
   const chat_id = typeof cfg.chat_id === 'string' ? cfg.chat_id.trim() : '';
   if (!chat_id) return null;
   const rawFilterType = typeof cfg.filter_type === 'string' ? cfg.filter_type : 'none';
-  const filter_type: TelegramFilterType = (
+  const filter_type: TelegramFilterType =
     rawFilterType === 'keyword' || rawFilterType === 'prefix' || rawFilterType === 'regex'
-      ? rawFilterType : 'none'
-  );
+      ? rawFilterType
+      : 'none';
   const filter_value = typeof cfg.filter_value === 'string' ? cfg.filter_value : '';
   // The trigger lives on `dag.trigger`, never as a step, so the runtime DAG
   // is just `dag.steps` — no need to filter anything out.

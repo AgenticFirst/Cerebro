@@ -59,7 +59,10 @@ export default function CapabilitiesModal({ onClose }: CapabilitiesModalProps) {
         .then((res) => (res.ok ? res.data.skills : []))
         .catch(() => []),
       window.cerebro
-        .invoke<{ experts: ApiExpertLite[] }>({ method: 'GET', path: '/experts?is_enabled=true&limit=200' })
+        .invoke<{ experts: ApiExpertLite[] }>({
+          method: 'GET',
+          path: '/experts?is_enabled=true&limit=200',
+        })
         .then((res) => (res.ok ? res.data.experts : []))
         .catch(() => []),
     ]).then(([catalog, sk, ex]) => {
@@ -76,14 +79,11 @@ export default function CapabilitiesModal({ onClose }: CapabilitiesModalProps) {
   }, [lang]);
 
   // Group actions by their `group` key (hubspot/telegram/whatsapp/http/…).
-  const actionsByGroup = actions.reduce<Record<string, ChatActionCatalogEntry[]>>(
-    (acc, a) => {
-      const key = a.group ?? 'other';
-      (acc[key] ||= []).push(a);
-      return acc;
-    },
-    {},
-  );
+  const actionsByGroup = actions.reduce<Record<string, ChatActionCatalogEntry[]>>((acc, a) => {
+    const key = a.group ?? 'other';
+    (acc[key] ||= []).push(a);
+    return acc;
+  }, {});
 
   const examples = (t('capabilitiesModal.examples', { returnObjects: true }) as string[]) ?? [];
 
@@ -94,7 +94,9 @@ export default function CapabilitiesModal({ onClose }: CapabilitiesModalProps) {
       <div className="relative bg-bg-surface border border-border-subtle rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col animate-fade-in">
         <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-3 border-b border-border-subtle">
           <div>
-            <h2 className="text-base font-medium text-text-primary">{t('capabilitiesModal.title')}</h2>
+            <h2 className="text-base font-medium text-text-primary">
+              {t('capabilitiesModal.title')}
+            </h2>
             <p className="mt-1 text-xs text-text-secondary leading-relaxed max-w-lg">
               {t('capabilitiesModal.subtitle')}
             </p>
@@ -111,7 +113,10 @@ export default function CapabilitiesModal({ onClose }: CapabilitiesModalProps) {
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {/* ── Integration actions ──────────────────────────── */}
           <section>
-            <SectionHeader icon={<Wrench size={13} />} title={t('capabilitiesModal.sections.actions')} />
+            <SectionHeader
+              icon={<Wrench size={13} />}
+              title={t('capabilitiesModal.sections.actions')}
+            />
             {loading ? (
               <SkeletonRows />
             ) : actions.length === 0 ? (
@@ -136,7 +141,10 @@ export default function CapabilitiesModal({ onClose }: CapabilitiesModalProps) {
 
           {/* ── Skills ───────────────────────────────────────── */}
           <section>
-            <SectionHeader icon={<Sparkles size={13} />} title={t('capabilitiesModal.sections.skills')} />
+            <SectionHeader
+              icon={<Sparkles size={13} />}
+              title={t('capabilitiesModal.sections.skills')}
+            />
             {loading ? (
               <SkeletonRows />
             ) : skills.length === 0 ? (
@@ -149,7 +157,9 @@ export default function CapabilitiesModal({ onClose }: CapabilitiesModalProps) {
                     className="rounded-md bg-bg-elevated border border-border-subtle px-3 py-2"
                   >
                     <div className="text-xs font-medium text-text-primary">{s.name}</div>
-                    <div className="text-[11px] text-text-secondary mt-0.5 line-clamp-2">{s.description}</div>
+                    <div className="text-[11px] text-text-secondary mt-0.5 line-clamp-2">
+                      {s.description}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -158,7 +168,10 @@ export default function CapabilitiesModal({ onClose }: CapabilitiesModalProps) {
 
           {/* ── Experts ──────────────────────────────────────── */}
           <section>
-            <SectionHeader icon={<Users size={13} />} title={t('capabilitiesModal.sections.experts')} />
+            <SectionHeader
+              icon={<Users size={13} />}
+              title={t('capabilitiesModal.sections.experts')}
+            />
             {loading ? (
               <SkeletonRows />
             ) : experts.length === 0 ? (
@@ -171,7 +184,9 @@ export default function CapabilitiesModal({ onClose }: CapabilitiesModalProps) {
                     className="rounded-md bg-bg-elevated border border-border-subtle px-3 py-2"
                   >
                     <div className="text-xs font-medium text-text-primary">{e.name}</div>
-                    <div className="text-[11px] text-text-secondary mt-0.5 line-clamp-2">{e.description}</div>
+                    <div className="text-[11px] text-text-secondary mt-0.5 line-clamp-2">
+                      {e.description}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -180,8 +195,13 @@ export default function CapabilitiesModal({ onClose }: CapabilitiesModalProps) {
 
           {/* ── Examples ─────────────────────────────────────── */}
           <section>
-            <SectionHeader icon={<MessageSquare size={13} />} title={t('capabilitiesModal.sections.examples')} />
-            <p className="text-[11px] text-text-tertiary mb-2">{t('capabilitiesModal.examplesIntro')}</p>
+            <SectionHeader
+              icon={<MessageSquare size={13} />}
+              title={t('capabilitiesModal.sections.examples')}
+            />
+            <p className="text-[11px] text-text-tertiary mb-2">
+              {t('capabilitiesModal.examplesIntro')}
+            </p>
             <ul className="space-y-1">
               {examples.map((ex, idx) => (
                 <li
@@ -220,7 +240,9 @@ function ActionRow({ action, lang }: { action: ChatActionCatalogEntry; lang: 'en
             <span className="text-xs font-medium text-text-primary">{action.label}</span>
             <AvailabilityBadge connected={connected} action={action} />
           </div>
-          <div className="text-[11px] text-text-secondary mt-0.5 leading-relaxed">{action.description}</div>
+          <div className="text-[11px] text-text-secondary mt-0.5 leading-relaxed">
+            {action.description}
+          </div>
           {action.examples.length > 0 && (
             <div className="mt-1.5 text-[11px] text-text-tertiary italic">
               {action.examples.slice(0, 2).map((ex, i) => (
@@ -243,7 +265,13 @@ function ActionRow({ action, lang }: { action: ChatActionCatalogEntry; lang: 'en
   );
 }
 
-function AvailabilityBadge({ connected, action }: { connected: boolean; action: ChatActionCatalogEntry }) {
+function AvailabilityBadge({
+  connected,
+  action,
+}: {
+  connected: boolean;
+  action: ChatActionCatalogEntry;
+}) {
   const { t } = useTranslation();
   return (
     <span
@@ -256,10 +284,7 @@ function AvailabilityBadge({ connected, action }: { connected: boolean; action: 
       title={action.availability}
     >
       <span
-        className={clsx(
-          'w-1.5 h-1.5 rounded-full',
-          connected ? 'bg-accent' : 'bg-text-tertiary',
-        )}
+        className={clsx('w-1.5 h-1.5 rounded-full', connected ? 'bg-accent' : 'bg-text-tertiary')}
       />
       {connected
         ? t('capabilitiesModal.availability.connected')
@@ -272,7 +297,10 @@ function SkeletonRows() {
   return (
     <ul className="space-y-1.5">
       {[0, 1, 2].map((i) => (
-        <li key={i} className="h-12 rounded-md bg-bg-elevated/50 border border-border-subtle/40 animate-pulse" />
+        <li
+          key={i}
+          className="h-12 rounded-md bg-bg-elevated/50 border border-border-subtle/40 animate-pulse"
+        />
       ))}
     </ul>
   );

@@ -12,7 +12,10 @@ import { useExperts } from '../../../context/ExpertContext';
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function timeAgo(dateStr: string | null, t: (key: string, opts?: Record<string, unknown>) => string): string {
+function timeAgo(
+  dateStr: string | null,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
   if (!dateStr) return t('routineEditor.never');
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -65,7 +68,11 @@ export default function RoutineCard({
   const issues = useMemo(() => {
     if (!routine.dagJson) return [];
     let dag: DAGDefinition;
-    try { dag = JSON.parse(routine.dagJson); } catch { return []; }
+    try {
+      dag = JSON.parse(routine.dagJson);
+    } catch {
+      return [];
+    }
     return validateDagParams(dag, {
       experts: experts.map((e) => ({
         id: e.id,
@@ -112,9 +119,7 @@ export default function RoutineCard({
           {/* Left: name + description */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-medium text-text-primary truncate">
-                {routine.name}
-              </span>
+              <span className="text-sm font-medium text-text-primary truncate">{routine.name}</span>
               <Tooltip label={triggerTooltip}>
                 <span
                   className={clsx(
@@ -135,9 +140,7 @@ export default function RoutineCard({
               )}
             </div>
             {routine.description && (
-              <p className="text-xs text-text-secondary line-clamp-2">
-                {routine.description}
-              </p>
+              <p className="text-xs text-text-secondary line-clamp-2">{routine.description}</p>
             )}
           </div>
 
@@ -161,7 +164,6 @@ export default function RoutineCard({
                 </button>
               </Tooltip>
             )}
-            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events,jsx-a11y/no-static-element-interactions */}
             <Tooltip
               label={t(
                 routine.isEnabled
@@ -188,11 +190,16 @@ export default function RoutineCard({
             >
               <AlertTriangle size={12} className="flex-shrink-0" />
               <span className="font-medium">
-                {t(issues.length === 1 ? 'routines.issuesOne' : 'routines.issuesOther', { count: issues.length })}
+                {t(issues.length === 1 ? 'routines.issuesOne' : 'routines.issuesOther', {
+                  count: issues.length,
+                })}
               </span>
               <ChevronDown
                 size={11}
-                className={clsx('ml-auto transition-transform duration-150', showIssues && 'rotate-180')}
+                className={clsx(
+                  'ml-auto transition-transform duration-150',
+                  showIssues && 'rotate-180',
+                )}
               />
             </button>
             {showIssues && (
@@ -208,7 +215,10 @@ export default function RoutineCard({
                 ))}
                 <li>
                   <button
-                    onClick={(e) => { e.stopPropagation(); onClick(); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClick();
+                    }}
                     className="mt-1 text-[11px] text-accent hover:text-accent-hover font-medium transition-colors"
                   >
                     {t('routines.issueOpenEditor')} →
@@ -224,13 +234,15 @@ export default function RoutineCard({
           <div className="flex items-center gap-3 text-[11px] text-text-tertiary">
             <Tooltip label={t('routineTooltips.lastRun')}>
               <span>
-                {t('routines.lastRun')}: <span className="text-text-secondary">{timeAgo(routine.lastRunAt, t)}</span>
+                {t('routines.lastRun')}:{' '}
+                <span className="text-text-secondary">{timeAgo(routine.lastRunAt, t)}</span>
               </span>
             </Tooltip>
             {routine.runCount > 0 && (
               <Tooltip label={t('routineTooltips.runs')}>
                 <span>
-                  {t('routines.runs')}: <span className="text-text-secondary">{routine.runCount}</span>
+                  {t('routines.runs')}:{' '}
+                  <span className="text-text-secondary">{routine.runCount}</span>
                 </span>
               </Tooltip>
             )}

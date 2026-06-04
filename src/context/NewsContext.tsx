@@ -174,7 +174,12 @@ export function NewsProvider({ children }: { children: ReactNode }) {
         if (assistantText.trim()) {
           setMessages((prev) => [
             ...prev,
-            { id: `a-${Date.now()}`, role: 'assistant', content: assistantText, sources: [...sources] },
+            {
+              id: `a-${Date.now()}`,
+              role: 'assistant',
+              content: assistantText,
+              sources: [...sources],
+            },
           ]);
         }
       };
@@ -208,7 +213,10 @@ export function NewsProvider({ children }: { children: ReactNode }) {
             runIdRef.current = null;
             setStreaming(null);
             const detail = event.error?.trim() || t('news.askError');
-            setMessages((prev) => [...prev, { id: `e-${Date.now()}`, role: 'assistant', content: `⚠️ ${detail}` }]);
+            setMessages((prev) => [
+              ...prev,
+              { id: `e-${Date.now()}`, role: 'assistant', content: `⚠️ ${detail}` },
+            ]);
             break;
           }
           default:

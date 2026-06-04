@@ -52,13 +52,19 @@ export function fireVoiceMemoryUpdate(params: VoiceMemoryUpdateParams): void {
   const promptBody = formatTranscript(params.transcript);
 
   const args = [
-    '-p', promptBody,
-    '--output-format', 'text',
-    '--max-turns', '5',
-    '--model', MODEL,
+    '-p',
+    promptBody,
+    '--output-format',
+    'text',
+    '--max-turns',
+    '5',
+    '--model',
+    MODEL,
     '--dangerously-skip-permissions',
-    '--system-prompt', systemPrompt,
-    '--allowedTools', 'Read,Write,Edit,Glob',
+    '--system-prompt',
+    systemPrompt,
+    '--allowedTools',
+    'Read,Write,Edit,Glob',
   ];
 
   const env = { ...process.env } as Record<string, string>;
@@ -93,12 +99,8 @@ export function fireVoiceMemoryUpdate(params: VoiceMemoryUpdateParams): void {
   child.on('error', (err) => console.error('[VoiceMemory] spawn error:', err.message));
 }
 
-function formatTranscript(
-  history: Array<{ role: string; content: string }>,
-): string {
-  const body = history
-    .map((m) => `<${m.role}>\n${m.content}\n</${m.role}>`)
-    .join('\n');
+function formatTranscript(history: Array<{ role: string; content: string }>): string {
+  const body = history.map((m) => `<${m.role}>\n${m.content}\n</${m.role}>`).join('\n');
   return `<transcript>\n${body}\n</transcript>\n\nProcess this transcript per your instructions.`;
 }
 

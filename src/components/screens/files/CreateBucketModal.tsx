@@ -55,7 +55,9 @@ export default function CreateBucketModal({ onClose, onCreated }: CreateBucketMo
           >
             <X size={14} />
           </button>
-          <h3 className="text-sm font-medium text-text-primary mb-4">{t('files.createBucketTitle')}</h3>
+          <h3 className="text-sm font-medium text-text-primary mb-4">
+            {t('files.createBucketTitle')}
+          </h3>
 
           <label className="block text-[11px] font-medium text-text-tertiary uppercase tracking-wider mb-1.5">
             {t('files.createBucketName')}

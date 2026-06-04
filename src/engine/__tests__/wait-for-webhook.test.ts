@@ -46,7 +46,12 @@ describe('waitForWebhookAction', () => {
   it('registers a listener with the configured params', async () => {
     mockFetch
       .mockResolvedValueOnce(LISTENER) // POST /webhooks/listen
-      .mockResolvedValueOnce({ received: true, payload: { ok: 1 }, headers: { a: 'b' }, received_at: '2026-04-21T10:00:00Z' }); // first poll
+      .mockResolvedValueOnce({
+        received: true,
+        payload: { ok: 1 },
+        headers: { a: 'b' },
+        received_at: '2026-04-21T10:00:00Z',
+      }); // first poll
 
     await waitForWebhookAction.execute({
       params: { match_path: '/stripe', timeout: 10, description: 'note' },
@@ -88,14 +93,12 @@ describe('waitForWebhookAction', () => {
   it('returns payload + endpoint_url when the first poll sees received', async () => {
     const payload = { event: 'signed', order_id: 42 };
     const headers = { 'x-stripe-signature': 'xyz' };
-    mockFetch
-      .mockResolvedValueOnce(LISTENER)
-      .mockResolvedValueOnce({
-        received: true,
-        payload,
-        headers,
-        received_at: '2026-04-21T12:00:00Z',
-      });
+    mockFetch.mockResolvedValueOnce(LISTENER).mockResolvedValueOnce({
+      received: true,
+      payload,
+      headers,
+      received_at: '2026-04-21T12:00:00Z',
+    });
 
     const result = await waitForWebhookAction.execute({
       params: { timeout: 10 },
@@ -128,9 +131,7 @@ describe('waitForWebhookAction', () => {
     // Allow the fire-and-forget cleanup microtask to resolve.
     await Promise.resolve();
 
-    const deleteCall = mockFetch.mock.calls.find(
-      (c) => c[1] === 'DELETE',
-    );
+    const deleteCall = mockFetch.mock.calls.find((c) => c[1] === 'DELETE');
     expect(deleteCall).toBeDefined();
     expect(deleteCall![2]).toBe(`/webhooks/listen/${LISTENER.listener_id}`);
   });

@@ -342,11 +342,18 @@ export class ClaudeCodeRunner extends EventEmitter {
       // authenticate…" }` and still exits 0. Without this, that 401 text leaks
       // out as a normal assistant reply instead of routing to the auth class.
       const realSignal = signal && String(signal) !== '0' ? signal : null;
-      const isError = (code !== 0 && code !== null) || realSignal != null || this.resultErrorTail.length > 0;
+      const isError =
+        (code !== 0 && code !== null) || realSignal != null || this.resultErrorTail.length > 0;
 
       if (isError) {
         let detail: string;
-        const tailLower = (this.stderrTail + ' ' + this.resultErrorTail + ' ' + this.stdoutTail).toLowerCase();
+        const tailLower = (
+          this.stderrTail +
+          ' ' +
+          this.resultErrorTail +
+          ' ' +
+          this.stdoutTail
+        ).toLowerCase();
         // Resume target missing on disk — surface as a distinct class so the
         // runtime can transparently fall back to --session-id and seed the
         // new session with full conversation history from SQLite.
@@ -370,7 +377,10 @@ export class ClaudeCodeRunner extends EventEmitter {
         // create a session whose id already exists on disk (the deterministic
         // per-conversation id was created by an earlier turn). The runtime
         // recovers by retrying the same id with --resume.
-        if (tailLower.includes('already in use') || (tailLower.includes('session id') && tailLower.includes('in use'))) {
+        if (
+          tailLower.includes('already in use') ||
+          (tailLower.includes('session id') && tailLower.includes('in use'))
+        ) {
           detail = 'Reattaching to the existing Claude Code session.';
           this.lastErrorClass = 'session_in_use';
           this.closeRunLog(`[exit] code=${code} signal=${signal ?? ''} session_in_use`);
@@ -388,14 +398,30 @@ export class ClaudeCodeRunner extends EventEmitter {
           const lower = this.resultErrorTail.toLowerCase();
           if (lower.includes('max turns') || lower.includes('max_turns')) {
             this.lastErrorClass = 'max_turns';
-            detail = 'Claude Code reached the maximum number of turns without completing the task. Try a simpler request.';
-          } else if (lower.includes('context') && (lower.includes('length') || lower.includes('window') || lower.includes('limit'))) {
+            detail =
+              'Claude Code reached the maximum number of turns without completing the task. Try a simpler request.';
+          } else if (
+            lower.includes('context') &&
+            (lower.includes('length') || lower.includes('window') || lower.includes('limit'))
+          ) {
             this.lastErrorClass = 'context';
-            detail = 'Claude Code ran out of context window. The conversation is too long for this model.';
-          } else if (lower.includes('rate limit') || lower.includes('overload') || lower.includes('429') || lower.includes('503')) {
+            detail =
+              'Claude Code ran out of context window. The conversation is too long for this model.';
+          } else if (
+            lower.includes('rate limit') ||
+            lower.includes('overload') ||
+            lower.includes('429') ||
+            lower.includes('503')
+          ) {
             this.lastErrorClass = 'overload';
             detail = 'Rate limited or overloaded by the API. Please wait a moment and try again.';
-          } else if (lower.includes('authentication') || lower.includes('401') || lower.includes('not authenticated') || lower.includes('unauthorized') || lower.includes('invalid api key')) {
+          } else if (
+            lower.includes('authentication') ||
+            lower.includes('401') ||
+            lower.includes('not authenticated') ||
+            lower.includes('unauthorized') ||
+            lower.includes('invalid api key')
+          ) {
             this.lastErrorClass = 'auth';
             detail = 'Cerebro lost its Claude Code session.';
           } else {
@@ -403,15 +429,33 @@ export class ClaudeCodeRunner extends EventEmitter {
             detail = `Claude Code error (code ${code}): ${this.resultErrorTail}`;
           }
         } else if (tailLower.includes('max turns') || tailLower.includes('max_turns')) {
-          detail = 'Claude Code reached the maximum number of turns without completing the task. Try a simpler request.';
+          detail =
+            'Claude Code reached the maximum number of turns without completing the task. Try a simpler request.';
           this.lastErrorClass = 'max_turns';
-        } else if (tailLower.includes('context') && (tailLower.includes('length') || tailLower.includes('window') || tailLower.includes('limit'))) {
-          detail = 'Claude Code ran out of context window. The conversation is too long for this model.';
+        } else if (
+          tailLower.includes('context') &&
+          (tailLower.includes('length') ||
+            tailLower.includes('window') ||
+            tailLower.includes('limit'))
+        ) {
+          detail =
+            'Claude Code ran out of context window. The conversation is too long for this model.';
           this.lastErrorClass = 'context';
-        } else if (tailLower.includes('rate limit') || tailLower.includes('overload') || tailLower.includes('429') || tailLower.includes('503')) {
+        } else if (
+          tailLower.includes('rate limit') ||
+          tailLower.includes('overload') ||
+          tailLower.includes('429') ||
+          tailLower.includes('503')
+        ) {
           detail = 'Rate limited or overloaded by the API. Please wait a moment and try again.';
           this.lastErrorClass = 'overload';
-        } else if (tailLower.includes('authentication') || tailLower.includes('401') || tailLower.includes('not authenticated') || tailLower.includes('unauthorized') || tailLower.includes('invalid api key')) {
+        } else if (
+          tailLower.includes('authentication') ||
+          tailLower.includes('401') ||
+          tailLower.includes('not authenticated') ||
+          tailLower.includes('unauthorized') ||
+          tailLower.includes('invalid api key')
+        ) {
           detail = 'Cerebro lost its Claude Code session.';
           this.lastErrorClass = 'auth';
         } else if (signal) {
@@ -440,7 +484,9 @@ export class ClaudeCodeRunner extends EventEmitter {
         if (this.logPath && !detail.includes(this.logPath)) {
           detail += `\n\n(Details: ${this.logPath})`;
         }
-        this.closeRunLog(`[exit] code=${code} signal=${signal ?? ''} detail=${detail.replace(/\n/g, ' ¶ ')}`);
+        this.closeRunLog(
+          `[exit] code=${code} signal=${signal ?? ''} detail=${detail.replace(/\n/g, ' ¶ ')}`,
+        );
         this.emit('event', { type: 'error', runId, error: detail } as RendererAgentEvent);
         this.emit('error', detail);
       } else {
@@ -462,7 +508,8 @@ export class ClaudeCodeRunner extends EventEmitter {
         if (!this.closeHandled && !this.killed) {
           this.closeHandled = true;
           const realSignal = signal && String(signal) !== '0' ? signal : null;
-          const isError = (code !== 0 && code !== null) || realSignal != null || this.resultErrorTail.length > 0;
+          const isError =
+            (code !== 0 && code !== null) || realSignal != null || this.resultErrorTail.length > 0;
           if (isError) {
             let detail = `Claude Code exited (code ${code}, signal ${signal})`;
             if (this.logPath) detail += `\n\n(Details: ${this.logPath})`;
@@ -535,13 +582,17 @@ export class ClaudeCodeRunner extends EventEmitter {
       const ts = new Date().toISOString();
       // Redact --append-system-prompt body (can be long and is reproducible
       // from the same agent name); other args are short and safe.
-      const safeArgs = args.map((a, i) => (args[i - 1] === '--append-system-prompt' ? '<system-prompt>' : a));
+      const safeArgs = args.map((a, i) =>
+        args[i - 1] === '--append-system-prompt' ? '<system-prompt>' : a,
+      );
       this.logStream.write(`[${ts}] [start] ${binary} ${safeArgs.join(' ')}\n`);
       this.pruneOldLogs(logDir);
     } catch (err) {
       this.logStream = null;
       this.logPath = '';
-      console.warn(`[ClaudeCode:${runId.slice(0, 8)}] could not open run log: ${(err as Error).message}`);
+      console.warn(
+        `[ClaudeCode:${runId.slice(0, 8)}] could not open run log: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -681,7 +732,10 @@ export class ClaudeCodeRunner extends EventEmitter {
   private clearIdleTimers(): void {
     for (const t of this.idleWarningTimers) clearTimeout(t);
     this.idleWarningTimers = [];
-    if (this.idleKillTimer) { clearTimeout(this.idleKillTimer); this.idleKillTimer = null; }
+    if (this.idleKillTimer) {
+      clearTimeout(this.idleKillTimer);
+      this.idleKillTimer = null;
+    }
   }
 
   /** Inspect a stderr chunk for the Claude CLI's auth-failure markers.
@@ -693,8 +747,7 @@ export class ClaudeCodeRunner extends EventEmitter {
     this.killed = true;
     this.clearIdleTimers();
     this.lastErrorClass = 'auth';
-    const detail =
-      'Cerebro lost its Claude Code session.';
+    const detail = 'Cerebro lost its Claude Code session.';
     if (this.process && !this.process.killed) {
       this.process.kill('SIGTERM');
       setTimeout(() => {
@@ -710,7 +763,13 @@ export class ClaudeCodeRunner extends EventEmitter {
     return this.accumulatedText;
   }
 
-  private emitToolEnd(runId: string, toolCallId: string, toolName: string, content: unknown, isError: boolean): void {
+  private emitToolEnd(
+    runId: string,
+    toolCallId: string,
+    toolName: string,
+    content: unknown,
+    isError: boolean,
+  ): void {
     if (this.openToolCount > 0) this.openToolCount -= 1;
     if (this.openToolCount === 0) this.lastOpenToolName = '';
     this.armIdleTimers(runId);
@@ -833,16 +892,33 @@ export class ClaudeCodeRunner extends EventEmitter {
       const toolCallId = parsed.tool_use_id || parsed.id || '';
       const toolName = parsed.name || parsed.tool_name || '';
       this.emitToolEnd(runId, toolCallId, toolName, parsed.content, parsed.is_error === true);
-    } else if (type === 'user' && parsed.message?.content && Array.isArray(parsed.message.content)) {
+    } else if (
+      type === 'user' &&
+      parsed.message?.content &&
+      Array.isArray(parsed.message.content)
+    ) {
       // Tool results nested inside user messages
       for (const block of parsed.message.content) {
         if (block.type === 'tool_result') {
-          this.emitToolEnd(runId, block.tool_use_id || '', '', block.content, block.is_error === true);
+          this.emitToolEnd(
+            runId,
+            block.tool_use_id || '',
+            '',
+            block.content,
+            block.is_error === true,
+          );
         }
       }
     } else if (type) {
       // Skip high-frequency noise events that add no user-visible information
-      const SKIP = new Set(['content_block_start', 'content_block_stop', 'message_start', 'message_stop', 'ping', 'message_delta']);
+      const SKIP = new Set([
+        'content_block_start',
+        'content_block_stop',
+        'message_start',
+        'message_stop',
+        'ping',
+        'message_delta',
+      ]);
       if (!SKIP.has(type)) {
         this.emit('event', {
           type: 'system',

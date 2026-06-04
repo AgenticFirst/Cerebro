@@ -29,10 +29,7 @@ function makeContext(): ActionContext {
   } as ActionContext;
 }
 
-async function run(
-  params: Record<string, unknown>,
-  context: ActionContext = makeContext(),
-) {
+async function run(params: Record<string, unknown>, context: ActionContext = makeContext()) {
   return saveToMemoryAction.execute({
     params,
     wiredInputs: {},
@@ -149,8 +146,7 @@ describe('saveToMemoryAction', () => {
   });
 
   it('STM-U8: appends new entries to existing day file instead of overwriting', async () => {
-    const existing =
-      '# Routine notes — 2026-04-21\n\n## 2026-04-21 09:00\n\nEarlier entry.\n';
+    const existing = '# Routine notes — 2026-04-21\n\n## 2026-04-21 09:00\n\nEarlier entry.\n';
     mockBackendFetch.mockImplementation(async (_port, method, _path, body) => {
       if (method === 'GET') {
         return {

@@ -9,9 +9,15 @@ import type { ActionContext } from '../actions/types';
 // tests can assert on the final prompt/agent without spawning a
 // real subprocess.
 
-const claudeSpy = vi.fn<
-  (opts: { agent: string; prompt: string; signal?: AbortSignal; maxTurns?: number }) => Promise<string>
->();
+const claudeSpy =
+  vi.fn<
+    (opts: {
+      agent: string;
+      prompt: string;
+      signal?: AbortSignal;
+      maxTurns?: number;
+    }) => Promise<string>
+  >();
 
 vi.mock('../../claude-code/single-shot', () => ({
   singleShotClaudeCode: (opts: Parameters<typeof claudeSpy>[0]) => claudeSpy(opts),
@@ -96,19 +102,13 @@ describe('askAiAction: variable templating', () => {
   });
 
   it('does not HTML-escape angle brackets or ampersands (output goes to an LLM, not a browser)', async () => {
-    await runAskAi(
-      { prompt: 'Respond with: {{snippet}}' },
-      { snippet: '<b>bold & bright</b>' },
-    );
+    await runAskAi({ prompt: 'Respond with: {{snippet}}' }, { snippet: '<b>bold & bright</b>' });
     const call = claudeSpy.mock.calls[0][0];
     expect(call.prompt).toContain('<b>bold & bright</b>');
   });
 
   it('treats missing variables as empty strings rather than crashing', async () => {
-    const out = await runAskAi(
-      { prompt: 'Hello {{name}}, welcome.' },
-      {},
-    );
+    const out = await runAskAi({ prompt: 'Hello {{name}}, welcome.' }, {});
     const call = claudeSpy.mock.calls[0][0];
     expect(call.prompt).toBe('Hello , welcome.');
     expect(out.data.response).toBe('OK');
@@ -160,8 +160,6 @@ describe('askAiAction: input guards', () => {
   });
 
   it('throws when the rendered prompt becomes empty (all vars missing and no literal text)', async () => {
-    await expect(
-      runAskAi({ prompt: '{{not_there}}' }, {}),
-    ).rejects.toThrow(/prompt is empty/);
+    await expect(runAskAi({ prompt: '{{not_there}}' }, {})).rejects.toThrow(/prompt is empty/);
   });
 });

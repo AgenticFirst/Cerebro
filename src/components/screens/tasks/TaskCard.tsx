@@ -1,7 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MessageCircle, Calendar, ArrowUp, Play, ChevronDown, Trash2, FileText, AlertTriangle } from 'lucide-react';
+import {
+  MessageCircle,
+  Calendar,
+  ArrowUp,
+  Play,
+  ChevronDown,
+  Trash2,
+  FileText,
+  AlertTriangle,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Task, TaskColumn } from '../../../context/TaskContext';
@@ -107,17 +116,12 @@ export default function TaskCard({
       .catch(() => {
         if (!cancelled) setFileCount(0);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [task.id, task.project_path, task.column, task.run_id, isDragOverlay]);
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { column: task.column },
   });
@@ -143,8 +147,9 @@ export default function TaskCard({
   const showPriorityDot = task.priority !== 'normal';
   const due = task.due_at ? relativeDate(task.due_at, t) : null;
   const hasChecklist = task.checklist_total > 0;
-  const checklistPct =
-    hasChecklist ? Math.round((task.checklist_done / task.checklist_total) * 100) : 0;
+  const checklistPct = hasChecklist
+    ? Math.round((task.checklist_done / task.checklist_total) * 100)
+    : 0;
 
   // A task is "interrupted" when it's pinned to in_progress, was actually
   // started at some point (has a run_id), and its subprocess is no longer
@@ -159,11 +164,13 @@ export default function TaskCard({
     isInterrupted;
   const hasExpert = !!task.expert_id;
   const canStart = isStartableColumn && hasExpert;
-  const startLabel =
-    isInterrupted ? t('tasks.resumeTask')
-    : task.column === 'to_review' ? t('tasks.rerunTask')
-    : task.column === 'error' ? t('tasks.retryTask')
-    : t('tasks.startTask');
+  const startLabel = isInterrupted
+    ? t('tasks.resumeTask')
+    : task.column === 'to_review'
+      ? t('tasks.rerunTask')
+      : task.column === 'error'
+        ? t('tasks.retryTask')
+        : t('tasks.startTask');
 
   const handleStart = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -195,199 +202,207 @@ export default function TaskCard({
 
   return (
     <>
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      onClick={onClick}
-      className={clsx(
-        'group bg-bg-surface border border-border-subtle rounded-lg p-3 cursor-pointer',
-        'hover:border-border-default transition-colors',
-        isDragging && 'opacity-50',
-      )}
-    >
-      {/* Title row */}
-      <div className="flex items-start gap-2">
-        {showPriorityDot && (
-          <span
-            className={clsx('mt-1.5 w-2 h-2 rounded-full flex-shrink-0', priorityDot)}
-            title={t(`tasks.priority_${task.priority}`)}
-          />
+      <div
+        ref={setNodeRef}
+        style={style}
+        {...attributes}
+        {...listeners}
+        onClick={onClick}
+        className={clsx(
+          'group bg-bg-surface border border-border-subtle rounded-lg p-3 cursor-pointer',
+          'hover:border-border-default transition-colors',
+          isDragging && 'opacity-50',
         )}
-        <span className="flex-1 text-sm text-text-primary line-clamp-2 leading-snug">
-          {task.title}
-        </span>
-        {task.expert_id && expertName && (
-          <span
-            className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/15 text-accent text-[10px] font-medium flex items-center justify-center"
-            title={expertName}
-          >
-            {expertInitials(expertName)}
+      >
+        {/* Title row */}
+        <div className="flex items-start gap-2">
+          {showPriorityDot && (
+            <span
+              className={clsx('mt-1.5 w-2 h-2 rounded-full flex-shrink-0', priorityDot)}
+              title={t(`tasks.priority_${task.priority}`)}
+            />
+          )}
+          <span className="flex-1 text-sm text-text-primary line-clamp-2 leading-snug">
+            {task.title}
           </span>
-        )}
-        {onDelete && (
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={handleDelete}
-            className="flex-shrink-0 p-0.5 rounded text-text-tertiary hover:text-red-400 hover:bg-red-400/10 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
-            title={t('tasks.deleteTask')}
-          >
-            <Trash2 size={12} />
-          </button>
-        )}
-      </div>
-
-      {/* Metadata row */}
-      <div className="flex items-center gap-2 mt-2 flex-wrap">
-        {task.parent_task_id && (
-          <span className="inline-flex items-center text-[10px] text-text-tertiary" title={t('tasks.subtask')}>
-            <ArrowUp size={10} className="mr-0.5" />
-          </span>
-        )}
-
-        {/* Column move dropdown */}
-        {onMove && (
-          <div ref={dropdownRef} className="relative">
-            <button
-              onClick={(e) => { e.stopPropagation(); setDropdownOpen((v) => !v); }}
-              className={clsx(
-                'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium transition-colors cursor-pointer',
-                COLUMN_PILL_COLORS[task.column],
-              )}
+          {task.expert_id && expertName && (
+            <span
+              className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/15 text-accent text-[10px] font-medium flex items-center justify-center"
+              title={expertName}
             >
-              {t(`tasks.column_${task.column}`)}
-              <ChevronDown size={10} />
+              {expertInitials(expertName)}
+            </span>
+          )}
+          {onDelete && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={handleDelete}
+              className="flex-shrink-0 p-0.5 rounded text-text-tertiary hover:text-red-400 hover:bg-red-400/10 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
+              title={t('tasks.deleteTask')}
+            >
+              <Trash2 size={12} />
             </button>
-            {dropdownOpen && (
-              <div className="absolute left-0 top-full mt-1 z-50 bg-bg-elevated border border-border-subtle rounded-lg shadow-xl py-1 min-w-[140px]">
-                {COLUMNS.map((col) => (
-                  <button
-                    key={col}
-                    onClick={(e) => handleColumnSelect(e, col)}
-                    className={clsx(
-                      'w-full px-3 py-1.5 text-left text-xs transition-colors cursor-pointer',
-                      col === task.column
-                        ? 'text-accent bg-accent/10'
-                        : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover',
-                    )}
-                  >
-                    {t(`tasks.column_${col}`)}
-                  </button>
-                ))}
-              </div>
+          )}
+        </div>
+
+        {/* Metadata row */}
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          {task.parent_task_id && (
+            <span
+              className="inline-flex items-center text-[10px] text-text-tertiary"
+              title={t('tasks.subtask')}
+            >
+              <ArrowUp size={10} className="mr-0.5" />
+            </span>
+          )}
+
+          {/* Column move dropdown */}
+          {onMove && (
+            <div ref={dropdownRef} className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDropdownOpen((v) => !v);
+                }}
+                className={clsx(
+                  'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium transition-colors cursor-pointer',
+                  COLUMN_PILL_COLORS[task.column],
+                )}
+              >
+                {t(`tasks.column_${task.column}`)}
+                <ChevronDown size={10} />
+              </button>
+              {dropdownOpen && (
+                <div className="absolute left-0 top-full mt-1 z-50 bg-bg-elevated border border-border-subtle rounded-lg shadow-xl py-1 min-w-[140px]">
+                  {COLUMNS.map((col) => (
+                    <button
+                      key={col}
+                      onClick={(e) => handleColumnSelect(e, col)}
+                      className={clsx(
+                        'w-full px-3 py-1.5 text-left text-xs transition-colors cursor-pointer',
+                        col === task.column
+                          ? 'text-accent bg-accent/10'
+                          : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover',
+                      )}
+                    >
+                      {t(`tasks.column_${col}`)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {due && (
+            <span className={clsx('inline-flex items-center gap-1 text-[11px]', due.color)}>
+              <Calendar size={10} />
+              {due.label}
+            </span>
+          )}
+
+          {hasChecklist && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-text-tertiary">
+              <span>
+                {task.checklist_done}/{task.checklist_total}
+              </span>
+              <span className="relative w-8 h-1 rounded-full bg-bg-hover overflow-hidden">
+                <span
+                  className="absolute inset-y-0 left-0 rounded-full bg-accent/60"
+                  style={{ width: `${checklistPct}%` }}
+                />
+              </span>
+            </span>
+          )}
+
+          {(fileCount > 0 || task.comment_count > 0) && (
+            <span className="ml-auto inline-flex items-center gap-2 text-[11px] text-text-tertiary">
+              {fileCount > 0 && (
+                <span
+                  className="inline-flex items-center gap-0.5"
+                  title={t('tasks.cardFileCount', { count: fileCount })}
+                >
+                  <FileText size={10} />
+                  {fileCount}
+                </span>
+              )}
+              {task.comment_count > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  <MessageCircle size={10} />
+                  {task.comment_count}
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+
+        {task.tags && task.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {task.tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center px-1.5 py-[1px] text-[10px] font-medium bg-bg-hover text-text-tertiary rounded-full"
+              >
+                {tag}
+              </span>
+            ))}
+            {task.tags.length > 3 && (
+              <span className="inline-flex items-center px-1.5 py-[1px] text-[10px] font-medium text-text-tertiary">
+                +{task.tags.length - 3}
+              </span>
             )}
           </div>
         )}
 
-        {due && (
-          <span className={clsx('inline-flex items-center gap-1 text-[11px]', due.color)}>
-            <Calendar size={10} />
-            {due.label}
-          </span>
-        )}
-
-        {hasChecklist && (
-          <span className="inline-flex items-center gap-1.5 text-[11px] text-text-tertiary">
-            <span>{task.checklist_done}/{task.checklist_total}</span>
-            <span className="relative w-8 h-1 rounded-full bg-bg-hover overflow-hidden">
-              <span
-                className="absolute inset-y-0 left-0 rounded-full bg-accent/60"
-                style={{ width: `${checklistPct}%` }}
-              />
+        {/* Interrupted-by-shutdown banner — appears above the Resume button. */}
+        {isInterrupted && (
+          <div className="mt-2.5 flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] leading-snug">
+            <AlertTriangle size={12} className="flex-shrink-0 mt-[1px]" />
+            <span className="flex-1">
+              <span className="font-medium">{t('tasks.interruptedBadge')}</span>
+              <span className="block text-amber-300/80">{t('tasks.interruptedHint')}</span>
             </span>
-          </span>
+          </div>
         )}
 
-        {(fileCount > 0 || task.comment_count > 0) && (
-          <span className="ml-auto inline-flex items-center gap-2 text-[11px] text-text-tertiary">
-            {fileCount > 0 && (
-              <span
-                className="inline-flex items-center gap-0.5"
-                title={t('tasks.cardFileCount', { count: fileCount })}
-              >
-                <FileText size={10} />
-                {fileCount}
-              </span>
+        {/* Start / Retry / Rerun / Resume button — disabled for unassigned tasks */}
+        {isStartableColumn && (onStart || onMove) && (
+          <button
+            onClick={canStart ? handleStart : (e) => e.stopPropagation()}
+            disabled={!canStart}
+            title={!hasExpert ? t('tasks.startNeedsExpert') : undefined}
+            className={clsx(
+              'mt-2.5 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors border',
+              canStart
+                ? isInterrupted
+                  ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border-amber-500/30 cursor-pointer'
+                  : 'bg-accent/10 text-accent hover:bg-accent/20 border-accent/20 cursor-pointer'
+                : 'bg-bg-hover text-text-tertiary border-border-subtle cursor-not-allowed',
             )}
-            {task.comment_count > 0 && (
-              <span className="inline-flex items-center gap-0.5">
-                <MessageCircle size={10} />
-                {task.comment_count}
-              </span>
-            )}
-          </span>
+          >
+            <Play size={12} className={canStart ? 'fill-current' : ''} />
+            {startLabel}
+          </button>
         )}
       </div>
 
-      {task.tags && task.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2">
-          {task.tags.slice(0, 3).map((tag) => (
-            <span
-              key={tag}
-              className="inline-flex items-center px-1.5 py-[1px] text-[10px] font-medium bg-bg-hover text-text-tertiary rounded-full"
-            >
-              {tag}
-            </span>
-          ))}
-          {task.tags.length > 3 && (
-            <span className="inline-flex items-center px-1.5 py-[1px] text-[10px] font-medium text-text-tertiary">
-              +{task.tags.length - 3}
-            </span>
-          )}
-        </div>
+      {showDeleteConfirm && (
+        <AlertModal
+          icon={<Trash2 size={18} className="text-red-400" />}
+          iconTone="danger"
+          title={t('tasks.deleteTaskTitle')}
+          message={t('tasks.deleteTaskMessage', { title: task.title })}
+          onClose={() => setShowDeleteConfirm(false)}
+          actions={[
+            { label: t('common.cancel'), onClick: () => setShowDeleteConfirm(false) },
+            {
+              label: t('common.delete'),
+              primary: true,
+              variant: 'danger',
+              onClick: confirmDelete,
+            },
+          ]}
+        />
       )}
-
-      {/* Interrupted-by-shutdown banner — appears above the Resume button. */}
-      {isInterrupted && (
-        <div className="mt-2.5 flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] leading-snug">
-          <AlertTriangle size={12} className="flex-shrink-0 mt-[1px]" />
-          <span className="flex-1">
-            <span className="font-medium">{t('tasks.interruptedBadge')}</span>
-            <span className="block text-amber-300/80">{t('tasks.interruptedHint')}</span>
-          </span>
-        </div>
-      )}
-
-      {/* Start / Retry / Rerun / Resume button — disabled for unassigned tasks */}
-      {isStartableColumn && (onStart || onMove) && (
-        <button
-          onClick={canStart ? handleStart : (e) => e.stopPropagation()}
-          disabled={!canStart}
-          title={!hasExpert ? t('tasks.startNeedsExpert') : undefined}
-          className={clsx(
-            'mt-2.5 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors border',
-            canStart
-              ? isInterrupted
-                ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border-amber-500/30 cursor-pointer'
-                : 'bg-accent/10 text-accent hover:bg-accent/20 border-accent/20 cursor-pointer'
-              : 'bg-bg-hover text-text-tertiary border-border-subtle cursor-not-allowed',
-          )}
-        >
-          <Play size={12} className={canStart ? 'fill-current' : ''} />
-          {startLabel}
-        </button>
-      )}
-    </div>
-
-    {showDeleteConfirm && (
-      <AlertModal
-        icon={<Trash2 size={18} className="text-red-400" />}
-        iconTone="danger"
-        title={t('tasks.deleteTaskTitle')}
-        message={t('tasks.deleteTaskMessage', { title: task.title })}
-        onClose={() => setShowDeleteConfirm(false)}
-        actions={[
-          { label: t('common.cancel'), onClick: () => setShowDeleteConfirm(false) },
-          {
-            label: t('common.delete'),
-            primary: true,
-            variant: 'danger',
-            onClick: confirmDelete,
-          },
-        ]}
-      />
-    )}
     </>
   );
 }

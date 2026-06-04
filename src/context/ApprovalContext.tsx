@@ -56,17 +56,23 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const approve = useCallback(async (id: string) => {
-    const result = await window.cerebro.engine.approve(id);
-    if (!result) throw new Error('Approval failed — run may have ended');
-    await refresh();
-  }, [refresh]);
+  const approve = useCallback(
+    async (id: string) => {
+      const result = await window.cerebro.engine.approve(id);
+      if (!result) throw new Error('Approval failed — run may have ended');
+      await refresh();
+    },
+    [refresh],
+  );
 
-  const deny = useCallback(async (id: string, reason?: string) => {
-    const result = await window.cerebro.engine.deny(id, reason);
-    if (!result) throw new Error('Denial failed — run may have ended');
-    await refresh();
-  }, [refresh]);
+  const deny = useCallback(
+    async (id: string, reason?: string) => {
+      const result = await window.cerebro.engine.deny(id, reason);
+      if (!result) throw new Error('Denial failed — run may have ended');
+      await refresh();
+    },
+    [refresh],
+  );
 
   // Initial fetch
   useEffect(() => {
@@ -105,11 +111,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     refresh,
   };
 
-  return (
-    <ApprovalContext.Provider value={value}>
-      {children}
-    </ApprovalContext.Provider>
-  );
+  return <ApprovalContext.Provider value={value}>{children}</ApprovalContext.Provider>;
 }
 
 // ── Hook ────────────────────────────────────────────────────────

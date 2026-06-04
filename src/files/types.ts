@@ -9,13 +9,13 @@
  */
 
 export type MediaCategory =
-  | 'image'      // PNG/JPG/WEBP/GIF — passthrough; Claude reads via Read tool
-  | 'pdf'        // pre-extracted to markdown sidecar
-  | 'office'     // .docx/.xlsx/.pptx → markdown sidecar
-  | 'audio'      // STT-transcribed via /voice/stt/transcribe-file
-  | 'text'       // .txt/.md — passthrough
-  | 'video'      // currently no processing; surfaced as "video attached"
-  | 'unknown';   // fall-through
+  | 'image' // PNG/JPG/WEBP/GIF — passthrough; Claude reads via Read tool
+  | 'pdf' // pre-extracted to markdown sidecar
+  | 'office' // .docx/.xlsx/.pptx → markdown sidecar
+  | 'audio' // STT-transcribed via /voice/stt/transcribe-file
+  | 'text' // .txt/.md — passthrough
+  | 'video' // currently no processing; surfaced as "video attached"
+  | 'unknown'; // fall-through
 
 export interface ResolvedAttachment {
   /** FileItem row id (registered via /files/items/from-path). */

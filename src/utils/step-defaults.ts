@@ -41,7 +41,11 @@ import {
   UserPlus,
   type LucideIcon,
 } from 'lucide-react';
-import { TelegramIcon as TelegramBrandIcon, WhatsAppIcon as WhatsAppBrandIcon, HubSpotIcon as HubSpotBrandIcon } from '../components/icons/BrandIcons';
+import {
+  TelegramIcon as TelegramBrandIcon,
+  WhatsAppIcon as WhatsAppBrandIcon,
+  HubSpotIcon as HubSpotBrandIcon,
+} from '../components/icons/BrandIcons';
 import type { RoutineStepData } from './dag-flow-mapping';
 import { DEFAULT_CLAUDE_MODEL } from './claude-models';
 
@@ -65,36 +69,37 @@ export interface ActionCategory {
   id: ActionCategoryId;
   name: string;
   icon: LucideIcon;
-  color: string;        // Tailwind color class prefix
-  colorHex: string;     // Hex for canvas rendering
+  color: string; // Tailwind color class prefix
+  colorHex: string; // Hex for canvas rendering
 }
 
 export const TRIGGER_TEAL = '#14b8a6';
 
 export const ACTION_CATEGORIES: ActionCategory[] = [
-  { id: 'triggers',     name: 'Triggers',     icon: Zap,          color: 'teal',    colorHex: TRIGGER_TEAL },
-  { id: 'ai',           name: 'AI',           icon: Brain,        color: 'violet',  colorHex: '#8b5cf6' },
-  { id: 'knowledge',    name: 'Knowledge',    icon: BookOpen,     color: 'indigo',  colorHex: '#6366f1' },
-  { id: 'integrations', name: 'Integrations', icon: Plug2,        color: 'amber',   colorHex: '#f59e0b' },
-  { id: 'logic',        name: 'Logic',        icon: GitBranch,    color: 'slate',   colorHex: '#64748b' },
-  { id: 'output',       name: 'Output',       icon: ArrowUpRight, color: 'emerald', colorHex: '#10b981' },
+  { id: 'triggers', name: 'Triggers', icon: Zap, color: 'teal', colorHex: TRIGGER_TEAL },
+  { id: 'ai', name: 'AI', icon: Brain, color: 'violet', colorHex: '#8b5cf6' },
+  { id: 'knowledge', name: 'Knowledge', icon: BookOpen, color: 'indigo', colorHex: '#6366f1' },
+  { id: 'integrations', name: 'Integrations', icon: Plug2, color: 'amber', colorHex: '#f59e0b' },
+  { id: 'logic', name: 'Logic', icon: GitBranch, color: 'slate', colorHex: '#64748b' },
+  { id: 'output', name: 'Output', icon: ArrowUpRight, color: 'emerald', colorHex: '#10b981' },
 ];
 
-export const CATEGORY_MAP = Object.fromEntries(
-  ACTION_CATEGORIES.map((c) => [c.id, c]),
-) as Record<ActionCategoryId, ActionCategory>;
+export const CATEGORY_MAP = Object.fromEntries(ACTION_CATEGORIES.map((c) => [c.id, c])) as Record<
+  ActionCategoryId,
+  ActionCategory
+>;
 
 // ── Action Metadata ───────────────────────────────────────────
 
 export interface ActionMeta {
   name: string;
   icon: LucideIcon;
-  color: string;        // Tailwind color class prefix
-  colorHex: string;     // Hex for canvas rendering
+  color: string; // Tailwind color class prefix
+  colorHex: string; // Hex for canvas rendering
   description: string;
   category: ActionCategoryId;
   isAvailable: boolean; // false = shows "soon" badge, not draggable
-  keywords: string[];   // for sidebar search
+  keywords: string[]; // for sidebar search
 }
 
 export const ACTION_META: Record<string, ActionMeta> = {
@@ -622,11 +627,12 @@ export function resolveActionType(actionType: string): string {
 // ── Helpers ─────────────────────────────────────────────────
 
 /** Get actions grouped by category. */
-export function getActionsByCategory(): { category: ActionCategory; actions: [string, ActionMeta][] }[] {
+export function getActionsByCategory(): {
+  category: ActionCategory;
+  actions: [string, ActionMeta][];
+}[] {
   return ACTION_CATEGORIES.map((category) => {
-    const entries = Object.entries(ACTION_META).filter(
-      ([, meta]) => meta.category === category.id,
-    );
+    const entries = Object.entries(ACTION_META).filter(([, meta]) => meta.category === category.id);
     const available = entries.filter(([, meta]) => meta.isAvailable);
     const comingSoon = entries.filter(([, meta]) => !meta.isAvailable);
     return { category, actions: [...available, ...comingSoon] };
@@ -652,16 +658,43 @@ export function getDefaultStepData(
     // AI
     case 'ask_ai':
     case 'model_call': // legacy
-      return { ...base, params: { prompt: '', system_prompt: '', agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL } };
+      return {
+        ...base,
+        params: { prompt: '', system_prompt: '', agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL },
+      };
     case 'run_expert':
     case 'expert_step': // legacy
-      return { ...base, params: { expertId: '', prompt: '', additionalContext: '', maxTurns: 10, model: DEFAULT_CLAUDE_MODEL } };
+      return {
+        ...base,
+        params: {
+          expertId: '',
+          prompt: '',
+          additionalContext: '',
+          maxTurns: 10,
+          model: DEFAULT_CLAUDE_MODEL,
+        },
+      };
     case 'classify':
-      return { ...base, params: { prompt: '', categories: [], agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL } };
+      return {
+        ...base,
+        params: { prompt: '', categories: [], agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL },
+      };
     case 'extract':
-      return { ...base, params: { prompt: '', schema: [], agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL } };
+      return {
+        ...base,
+        params: { prompt: '', schema: [], agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL },
+      };
     case 'summarize':
-      return { ...base, params: { input_field: '', max_length: 'medium', focus: '', agent: 'cerebro', model: DEFAULT_CLAUDE_MODEL } };
+      return {
+        ...base,
+        params: {
+          input_field: '',
+          max_length: 'medium',
+          focus: '',
+          agent: 'cerebro',
+          model: DEFAULT_CLAUDE_MODEL,
+        },
+      };
 
     // Knowledge
     case 'search_memory':
@@ -709,13 +742,28 @@ export function getDefaultStepData(
     // Integrations
     case 'http_request':
     case 'connector': // legacy
-      return { ...base, params: { method: 'GET', url: '', headers: [], body: '', auth_type: 'none', auth_value: '', auth_header: '', timeout: 30 } };
+      return {
+        ...base,
+        params: {
+          method: 'GET',
+          url: '',
+          headers: [],
+          body: '',
+          auth_type: 'none',
+          auth_value: '',
+          auth_header: '',
+          timeout: 30,
+        },
+      };
 
     // Integrations (process)
     case 'run_command':
       return { ...base, params: { command: '', args: '', working_directory: '', timeout: 300 } };
     case 'run_claude_code':
-      return { ...base, params: { mode: 'ask', prompt: '', working_directory: '', max_turns: 50, timeout: 600 } };
+      return {
+        ...base,
+        params: { mode: 'ask', prompt: '', working_directory: '', max_turns: 50, timeout: 600 },
+      };
 
     // Logic
     case 'condition':
@@ -746,29 +794,65 @@ export function getDefaultStepData(
 
     // HubSpot
     case 'hubspot_create_ticket':
-      return { ...base, params: { subject: '', content: '', pipeline: '', stage: '', priority: '', contact_id: '' } };
+      return {
+        ...base,
+        params: { subject: '', content: '', pipeline: '', stage: '', priority: '', contact_id: '' },
+      };
     case 'hubspot_upsert_contact':
       return { ...base, params: { email: '', phone: '', firstname: '', lastname: '' } };
 
     // GitHub
     case 'github_create_issue':
-      return { requiresApproval: true, onError: 'fail' as const, params: { repo: '', title: '', body: '', labels: '', assignees: '' } };
+      return {
+        requiresApproval: true,
+        onError: 'fail' as const,
+        params: { repo: '', title: '', body: '', labels: '', assignees: '' },
+      };
     case 'github_comment_issue':
-      return { requiresApproval: true, onError: 'fail' as const, params: { repo: '', issue_number: '', body: '' } };
+      return {
+        requiresApproval: true,
+        onError: 'fail' as const,
+        params: { repo: '', issue_number: '', body: '' },
+      };
     case 'github_comment_pr':
-      return { requiresApproval: true, onError: 'fail' as const, params: { repo: '', pr_number: '', body: '' } };
+      return {
+        requiresApproval: true,
+        onError: 'fail' as const,
+        params: { repo: '', pr_number: '', body: '' },
+      };
     case 'github_review_pr':
-      return { requiresApproval: true, onError: 'fail' as const, params: { repo: '', pr_number: '', event: 'COMMENT', body: '' } };
+      return {
+        requiresApproval: true,
+        onError: 'fail' as const,
+        params: { repo: '', pr_number: '', event: 'COMMENT', body: '' },
+      };
     case 'github_open_pr':
-      return { requiresApproval: true, onError: 'fail' as const, params: { repo: '', base: 'main', head: '', title: '', body: '', draft: false } };
+      return {
+        requiresApproval: true,
+        onError: 'fail' as const,
+        params: { repo: '', base: 'main', head: '', title: '', body: '', draft: false },
+      };
     case 'github_fetch_issue':
       return { ...base, params: { repo: '', issue_number: '', include_comments: false } };
     case 'github_fetch_pr':
-      return { ...base, params: { repo: '', pr_number: '', include_diff: true, max_diff_bytes: 200000 } };
+      return {
+        ...base,
+        params: { repo: '', pr_number: '', include_diff: true, max_diff_bytes: 200000 },
+      };
     case 'github_clone_worktree':
       return { ...base, params: { repo: '', base_branch: '' } };
     case 'github_commit_and_push':
-      return { ...base, params: { worktree_path: '', branch: '', commit_message: '', author_name: '', author_email: '', cleanup: true } };
+      return {
+        ...base,
+        params: {
+          worktree_path: '',
+          branch: '',
+          commit_message: '',
+          author_name: '',
+          author_email: '',
+          cleanup: true,
+        },
+      };
 
     case 'send_email':
       return { ...base, params: { to: '', subject: '', body: '', provider: '' } };

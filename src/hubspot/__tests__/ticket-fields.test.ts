@@ -12,11 +12,15 @@ import { normalizeHubSpotDate, formatHubSpotDate, buildTicketExtras } from '../t
 const TOKEN = 'pat-test-token';
 
 function mockFetch(json: unknown): void {
-  vi.stubGlobal('fetch', async () => ({
-    ok: true,
-    status: 200,
-    text: async () => JSON.stringify(json),
-  } as unknown as Response));
+  vi.stubGlobal(
+    'fetch',
+    async () =>
+      ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(json),
+      }) as unknown as Response,
+  );
 }
 
 const OWNERS = {
@@ -26,7 +30,9 @@ const OWNERS = {
   ],
 };
 
-function buildChannel(opts: Partial<{ followUp: string | null; dueDate: string | null }> = {}): HubSpotChannel {
+function buildChannel(
+  opts: Partial<{ followUp: string | null; dueDate: string | null }> = {},
+): HubSpotChannel {
   return {
     getAccessToken: () => TOKEN,
     getPortalId: () => '999',
@@ -39,10 +45,16 @@ function buildChannel(opts: Partial<{ followUp: string | null; dueDate: string |
   };
 }
 
-const noop = () => { /* no-op */ };
+const noop = () => {
+  /* no-op */
+};
 
-beforeEach(() => { clearOwnersCache(); });
-afterEach(() => { vi.unstubAllGlobals(); });
+beforeEach(() => {
+  clearOwnersCache();
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('normalizeHubSpotDate', () => {
   it('turns YYYY-MM-DD into midnight-UTC epoch ms', () => {
@@ -86,7 +98,10 @@ describe('buildTicketExtras', () => {
   it('resolves owner by name and writes hubspot_owner_id', async () => {
     mockFetch(OWNERS);
     const res = await buildTicketExtras({
-      channel: buildChannel(), token: TOKEN, log: noop, owner: 'María López',
+      channel: buildChannel(),
+      token: TOKEN,
+      log: noop,
+      owner: 'María López',
     });
     expect(res.props.hubspot_owner_id).toBe('101');
     expect(res.ownerResolved).toBe('101');
@@ -96,7 +111,10 @@ describe('buildTicketExtras', () => {
   it('honors a legacy raw owner id when owner is empty', async () => {
     mockFetch(OWNERS);
     const res = await buildTicketExtras({
-      channel: buildChannel(), token: TOKEN, log: noop, ownerId: '555',
+      channel: buildChannel(),
+      token: TOKEN,
+      log: noop,
+      ownerId: '555',
     });
     expect(res.props.hubspot_owner_id).toBe('555');
   });
@@ -104,7 +122,10 @@ describe('buildTicketExtras', () => {
   it('warns (and writes nothing) when an owner name cannot be resolved', async () => {
     mockFetch(OWNERS);
     const res = await buildTicketExtras({
-      channel: buildChannel(), token: TOKEN, log: noop, owner: 'Ghost User',
+      channel: buildChannel(),
+      token: TOKEN,
+      log: noop,
+      owner: 'Ghost User',
     });
     expect(res.props.hubspot_owner_id).toBeUndefined();
     expect(res.warnings[0]).toContain('Owner not set');
@@ -114,7 +135,9 @@ describe('buildTicketExtras', () => {
     mockFetch(OWNERS);
     const res = await buildTicketExtras({
       channel: buildChannel({ followUp: 'hs_followup_user' }),
-      token: TOKEN, log: noop, followUpUser: 'juan@example.com',
+      token: TOKEN,
+      log: noop,
+      followUpUser: 'juan@example.com',
     });
     expect(res.props.hs_followup_user).toBe('102');
     expect(res.followUpResolved).toBe('102');
@@ -123,7 +146,10 @@ describe('buildTicketExtras', () => {
   it('warns when the follow-up property is not configured', async () => {
     mockFetch(OWNERS);
     const res = await buildTicketExtras({
-      channel: buildChannel(), token: TOKEN, log: noop, followUpUser: 'juan@example.com',
+      channel: buildChannel(),
+      token: TOKEN,
+      log: noop,
+      followUpUser: 'juan@example.com',
     });
     expect(res.followUpResolved).toBeNull();
     expect(res.warnings[0]).toContain('no follow-up property is configured');
@@ -132,7 +158,9 @@ describe('buildTicketExtras', () => {
   it('writes a normalized due date to the configured property', async () => {
     const res = await buildTicketExtras({
       channel: buildChannel({ dueDate: 'hs_due_date' }),
-      token: TOKEN, log: noop, dueDate: '2026-06-10',
+      token: TOKEN,
+      log: noop,
+      dueDate: '2026-06-10',
     });
     expect(res.props.hs_due_date).toBe(String(Date.UTC(2026, 5, 10)));
     expect(res.dueDateSet).toBe(String(Date.UTC(2026, 5, 10)));
@@ -140,7 +168,10 @@ describe('buildTicketExtras', () => {
 
   it('warns when the due-date property is not configured', async () => {
     const res = await buildTicketExtras({
-      channel: buildChannel(), token: TOKEN, log: noop, dueDate: '2026-06-10',
+      channel: buildChannel(),
+      token: TOKEN,
+      log: noop,
+      dueDate: '2026-06-10',
     });
     expect(res.dueDateSet).toBeNull();
     expect(res.warnings[0]).toContain('no due-date property is configured');

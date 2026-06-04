@@ -60,10 +60,9 @@ const HISTORY_MESSAGES_IN_PAYLOAD = 20;
 // 60s query timeout (avoids false positives on a slow round-trip), while 3
 // consecutive misses recovers a dead socket in ~2-3 min without flapping on a
 // single transient blip.
-const WATCHDOG_INTERVAL_MS = 45_000;        // probe a connected socket every 45s
-const WATCHDOG_PROBE_TIMEOUT_MS = 20_000;   // a probe that hangs >20s counts as a failure
-const WATCHDOG_MAX_FAILURES = 3;            // ~2-3 min of silence before forced reconnect
-
+const WATCHDOG_INTERVAL_MS = 45_000; // probe a connected socket every 45s
+const WATCHDOG_PROBE_TIMEOUT_MS = 20_000; // a probe that hangs >20s counts as a failure
+const WATCHDOG_MAX_FAILURES = 3; // ~2-3 min of silence before forced reconnect
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -124,7 +123,10 @@ export class WhatsAppBridge implements WhatsAppChannel {
   };
 
   private outboundLimiter = new SlidingWindowLimiter(OUTBOUND_RATE_PER_HOUR, 60 * 60 * 1_000);
-  private routineCache: { routines: WhatsAppTriggerRoutine[]; at: number } = { routines: [], at: 0 };
+  private routineCache: { routines: WhatsAppTriggerRoutine[]; at: number } = {
+    routines: [],
+    at: 0,
+  };
   private conversationCache = new Map<string, ConversationCacheEntry>();
 
   /** True when start()/stop() is in flight — guards against reentrancy. */
@@ -195,7 +197,9 @@ export class WhatsAppBridge implements WhatsAppChannel {
     try {
       this.sock?.ev?.removeAllListeners?.();
       this.sock?.end?.(undefined);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     this.sock = null;
     this.saveCreds = null;
     this.sttLoader.reset();
@@ -238,7 +242,14 @@ export class WhatsAppBridge implements WhatsAppChannel {
     await backendPutSetting(this.deps.backendPort, WHATSAPP_SETTING_KEYS.enabled, false);
     this.settings.enabled = false;
     this.conversationCache.clear();
-    this.setState({ state: 'off', phoneNumber: null, pushName: null, qr: null, lastError: null, hasCreds: false });
+    this.setState({
+      state: 'off',
+      phoneNumber: null,
+      pushName: null,
+      qr: null,
+      lastError: null,
+      hasCreds: false,
+    });
     return { ok: true };
   }
 
@@ -273,13 +284,20 @@ export class WhatsAppBridge implements WhatsAppChannel {
     const [allowlist, enabled, usernames, conversations] = await Promise.all([
       backendGetSetting<string[]>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.allowlist),
       backendGetSetting<boolean>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.enabled),
-      backendGetSetting<Record<string, string>>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.phoneUsernames),
-      backendGetSetting<Record<string, string>>(this.deps.backendPort, WHATSAPP_SETTING_KEYS.phoneConversations),
+      backendGetSetting<Record<string, string>>(
+        this.deps.backendPort,
+        WHATSAPP_SETTING_KEYS.phoneUsernames,
+      ),
+      backendGetSetting<Record<string, string>>(
+        this.deps.backendPort,
+        WHATSAPP_SETTING_KEYS.phoneConversations,
+      ),
     ]);
     this.settings.allowlist = Array.isArray(allowlist) ? allowlist : [];
     this.settings.enabled = typeof enabled === 'boolean' ? enabled : false;
     this.settings.phoneUsernames = usernames && typeof usernames === 'object' ? usernames : {};
-    this.settings.phoneConversations = conversations && typeof conversations === 'object' ? conversations : {};
+    this.settings.phoneConversations =
+      conversations && typeof conversations === 'object' ? conversations : {};
     this.setState({ hasCreds: this.hasSessionOnDisk() });
   }
 
@@ -412,7 +430,11 @@ export class WhatsAppBridge implements WhatsAppChannel {
   }
 
   /** Common pre-flight for outbound: socket connected + allowlist + rate-limit. */
-  private outboundGuard(phoneOrJid: string): { jid: string | null; digits: string | null; error: string | null } {
+  private outboundGuard(phoneOrJid: string): {
+    jid: string | null;
+    digits: string | null;
+    error: string | null;
+  } {
     if (!this.sock || this.state.state !== 'connected') {
       return { jid: null, digits: null, error: 'WhatsApp bridge is not connected.' };
     }
@@ -452,13 +474,20 @@ export class WhatsAppBridge implements WhatsAppChannel {
   private hasSessionOnDisk(): boolean {
     try {
       return fs.existsSync(path.join(this.sessionDir, 'creds.json'));
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
 
   private async connect(opts: { pairing: boolean }): Promise<void> {
     // Clean up any prior socket.
     this.stopWatchdog();
-    try { this.sock?.ev?.removeAllListeners?.(); this.sock?.end?.(undefined); } catch { /* ignore */ }
+    try {
+      this.sock?.ev?.removeAllListeners?.();
+      this.sock?.end?.(undefined);
+    } catch {
+      /* ignore */
+    }
     this.sock = null;
 
     // Dynamic-import baileys so a missing module doesn't crash main.ts boot.
@@ -488,7 +517,9 @@ export class WhatsAppBridge implements WhatsAppChannel {
     try {
       const fetched = await fetchLatestBaileysVersion();
       version = fetched?.version;
-    } catch { /* fall back to Baileys's compiled-in default */ }
+    } catch {
+      /* fall back to Baileys's compiled-in default */
+    }
 
     this.setState({
       state: opts.pairing ? 'pairing' : 'connecting',
@@ -519,7 +550,11 @@ export class WhatsAppBridge implements WhatsAppChannel {
     this.sock = sock;
 
     sock.ev.on('creds.update', async () => {
-      try { await saveCreds(); } catch (err) { logError('saveCreds failed:', err); }
+      try {
+        await saveCreds();
+      } catch (err) {
+        logError('saveCreds failed:', err);
+      }
     });
 
     sock.ev.on('connection.update', async (update: any) => {
@@ -594,7 +629,9 @@ export class WhatsAppBridge implements WhatsAppChannel {
   private startWatchdog(): void {
     if (this.watchdogTimer) return;
     this.watchdogFailures = 0;
-    this.watchdogTimer = setInterval(() => { void this.probeLiveness(); }, WATCHDOG_INTERVAL_MS);
+    this.watchdogTimer = setInterval(() => {
+      void this.probeLiveness();
+    }, WATCHDOG_INTERVAL_MS);
     // Don't let the watchdog keep the process alive on its own.
     if (typeof this.watchdogTimer.unref === 'function') this.watchdogTimer.unref();
   }
@@ -623,7 +660,10 @@ export class WhatsAppBridge implements WhatsAppChannel {
       await Promise.race([
         sock.fetchPrivacySettings(true),
         new Promise((_resolve, reject) =>
-          setTimeout(() => reject(new Error('watchdog probe timed out')), WATCHDOG_PROBE_TIMEOUT_MS),
+          setTimeout(
+            () => reject(new Error('watchdog probe timed out')),
+            WATCHDOG_PROBE_TIMEOUT_MS,
+          ),
         ),
       ]);
       this.watchdogFailures = 0;
@@ -634,13 +674,21 @@ export class WhatsAppBridge implements WhatsAppChannel {
         `watchdog probe failed (${this.watchdogFailures}/${WATCHDOG_MAX_FAILURES}):`,
         err instanceof Error ? err.message : String(err),
       );
-      if (this.watchdogFailures >= WATCHDOG_MAX_FAILURES && this.settings.enabled && !this.pairingRequested) {
+      if (
+        this.watchdogFailures >= WATCHDOG_MAX_FAILURES &&
+        this.settings.enabled &&
+        !this.pairingRequested
+      ) {
         log('watchdog: socket unresponsive, forcing reconnect');
         this.stopWatchdog();
         // Ending the socket emits `connection: 'close'`, whose handler clears
         // any prior timer and schedules the 5s reconnect — we don't schedule
         // our own to avoid a double reconnect.
-        try { sock.end?.(new Error('watchdog: unresponsive socket')); } catch { /* ignore */ }
+        try {
+          sock.end?.(new Error('watchdog: unresponsive socket'));
+        } catch {
+          /* ignore */
+        }
       }
     } finally {
       this.watchdogProbing = false;
@@ -805,8 +853,8 @@ export class WhatsAppBridge implements WhatsAppChannel {
         if (jid) {
           await this.notifyUser(
             jid,
-            '🎙️ Voice transcription is unavailable right now. '
-            + 'Try typing your message, or open Settings → Voice to set it up.',
+            '🎙️ Voice transcription is unavailable right now. ' +
+              'Try typing your message, or open Settings → Voice to set it up.',
           );
         }
         return null;
@@ -831,7 +879,9 @@ export class WhatsAppBridge implements WhatsAppChannel {
     if (!this.sock || this.state.state !== 'connected') return;
     try {
       await this.sock.sendMessage(jid, { text });
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   /**
@@ -869,17 +919,25 @@ export class WhatsAppBridge implements WhatsAppChannel {
       // Stored id was deleted server-side — fall through to create.
     }
 
-    const createRes = await backendJsonRequest<{ id: string }>(this.deps.backendPort, 'POST', '/conversations', {
-      title: `WhatsApp ${toDisplayPhone(phone)}`,
-      source: 'whatsapp',
-      external_chat_id: phone,
-    });
+    const createRes = await backendJsonRequest<{ id: string }>(
+      this.deps.backendPort,
+      'POST',
+      '/conversations',
+      {
+        title: `WhatsApp ${toDisplayPhone(phone)}`,
+        source: 'whatsapp',
+        external_chat_id: phone,
+      },
+    );
     if (!createRes.ok || !createRes.data?.id) {
       logError('create conversation failed:', createRes.status);
       return null;
     }
     const conversationId = createRes.data.id;
-    this.settings.phoneConversations = { ...this.settings.phoneConversations, [phone]: conversationId };
+    this.settings.phoneConversations = {
+      ...this.settings.phoneConversations,
+      [phone]: conversationId,
+    };
     // Fire-and-forget — routine dispatch shouldn't block on this write.
     backendPutSetting(
       this.deps.backendPort,
@@ -927,10 +985,12 @@ export class WhatsAppBridge implements WhatsAppChannel {
       role,
       content,
       metadata: { source: 'whatsapp', whatsapp_phone: phone },
-    }).then((res) => {
-      if (res.ok) this.emitConversationUpdated(conversationId, 'message');
-      else logError('persistMessage failed:', res.status);
-    }).catch((err) => logError('persistMessage threw:', err));
+    })
+      .then((res) => {
+        if (res.ok) this.emitConversationUpdated(conversationId, 'message');
+        else logError('persistMessage failed:', res.status);
+      })
+      .catch((err) => logError('persistMessage threw:', err));
   }
 
   private async getTriggerRoutines(): Promise<WhatsAppTriggerRoutine[]> {
@@ -938,11 +998,9 @@ export class WhatsAppBridge implements WhatsAppChannel {
     if (now - this.routineCache.at < ROUTINE_CACHE_TTL_MS) {
       return this.routineCache.routines;
     }
-    const res = await backendJsonRequest<{ routines?: BackendRoutineRecord[] } | BackendRoutineRecord[]>(
-      this.deps.backendPort,
-      'GET',
-      '/routines',
-    );
+    const res = await backendJsonRequest<
+      { routines?: BackendRoutineRecord[] } | BackendRoutineRecord[]
+    >(this.deps.backendPort, 'GET', '/routines');
     const rawList: BackendRoutineRecord[] = Array.isArray(res.data)
       ? (res.data as BackendRoutineRecord[])
       : (res.data?.routines ?? []);
@@ -968,14 +1026,18 @@ export class WhatsAppBridge implements WhatsAppChannel {
     if (!this.webContents || this.webContents.isDestroyed()) return;
     try {
       this.webContents.send(IPC_CHANNELS.WHATSAPP_STATUS_CHANGED, this.state);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   private emitConversationUpdated(conversationId: string, kind: 'created' | 'message'): void {
     if (!this.webContents || this.webContents.isDestroyed()) return;
     try {
       this.webContents.send(IPC_CHANNELS.WHATSAPP_CONVERSATION_UPDATED, { conversationId, kind });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -1048,14 +1110,24 @@ export function extractInbound(msg: any): InboundMessage {
     const caption = (m.imageMessage.caption ?? '') as string;
     return {
       text: caption,
-      media: { kind: 'image', mime: m.imageMessage.mimetype ?? 'image/jpeg', filename: null, caption },
+      media: {
+        kind: 'image',
+        mime: m.imageMessage.mimetype ?? 'image/jpeg',
+        filename: null,
+        caption,
+      },
     };
   }
   if (m.videoMessage) {
     const caption = (m.videoMessage.caption ?? '') as string;
     return {
       text: caption,
-      media: { kind: 'video', mime: m.videoMessage.mimetype ?? 'video/mp4', filename: null, caption },
+      media: {
+        kind: 'video',
+        mime: m.videoMessage.mimetype ?? 'video/mp4',
+        filename: null,
+        caption,
+      },
     };
   }
   if (m.documentMessage) {

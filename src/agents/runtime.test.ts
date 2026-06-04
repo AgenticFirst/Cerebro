@@ -49,7 +49,11 @@ const h = vi.hoisted(() => {
           this.emit('event', { type: 'error', runId: opts.runId, error: next.error });
           this.emit('error', next.error);
         } else if (next?.kind === 'done') {
-          this.emit('event', { type: 'done', runId: opts.runId, messageContent: next.message ?? '' });
+          this.emit('event', {
+            type: 'done',
+            runId: opts.runId,
+            messageContent: next.message ?? '',
+          });
           this.emit('done', next.message ?? '');
         } else if (runnerShouldError.value) {
           this.errorClass = 'unknown';
@@ -335,7 +339,11 @@ describe('AgentRuntime.startRun — chat', () => {
   it('session_missing on resume → spawns recovery with resume:false AND suppresses the error event to the renderer', async () => {
     // First spawn errors with session_missing; second spawn succeeds.
     runnerNextBehaviors.push(
-      { kind: 'error', error: 'Claude Code session not found — restoring from conversation history.', errorClass: 'session_missing' },
+      {
+        kind: 'error',
+        error: 'Claude Code session not found — restoring from conversation history.',
+        errorClass: 'session_missing',
+      },
       { kind: 'done', message: 'recovered output' },
     );
 
@@ -390,7 +398,11 @@ describe('AgentRuntime.startRun — chat', () => {
     // session already exists on disk), so the runtime flips to --resume. This
     // is the Slack 2nd-turn / approval "Session ID … is already in use" bug.
     runnerNextBehaviors.push(
-      { kind: 'error', error: 'Reattaching to the existing Claude Code session.', errorClass: 'session_in_use' },
+      {
+        kind: 'error',
+        error: 'Reattaching to the existing Claude Code session.',
+        errorClass: 'session_in_use',
+      },
       { kind: 'done', message: 'resumed output' },
     );
 
@@ -425,8 +437,16 @@ describe('AgentRuntime.startRun — chat', () => {
     // wedged (orphaned on-disk lock). The runtime rotates to a brand-new UUID
     // (which cannot collide), seeds it from history, and the turn succeeds.
     runnerNextBehaviors.push(
-      { kind: 'error', error: 'Reattaching to the existing Claude Code session.', errorClass: 'session_in_use' },
-      { kind: 'error', error: 'Reattaching to the existing Claude Code session.', errorClass: 'session_in_use' },
+      {
+        kind: 'error',
+        error: 'Reattaching to the existing Claude Code session.',
+        errorClass: 'session_in_use',
+      },
+      {
+        kind: 'error',
+        error: 'Reattaching to the existing Claude Code session.',
+        errorClass: 'session_in_use',
+      },
       { kind: 'done', message: 'rotated recovery' },
     );
 
@@ -467,9 +487,21 @@ describe('AgentRuntime.startRun — chat', () => {
     // The user must see a transient message, never "Session ID … is already
     // in use."
     runnerNextBehaviors.push(
-      { kind: 'error', error: 'Reattaching to the existing Claude Code session.', errorClass: 'session_in_use' },
-      { kind: 'error', error: 'Reattaching to the existing Claude Code session.', errorClass: 'session_in_use' },
-      { kind: 'error', error: 'Reattaching to the existing Claude Code session.', errorClass: 'session_in_use' },
+      {
+        kind: 'error',
+        error: 'Reattaching to the existing Claude Code session.',
+        errorClass: 'session_in_use',
+      },
+      {
+        kind: 'error',
+        error: 'Reattaching to the existing Claude Code session.',
+        errorClass: 'session_in_use',
+      },
+      {
+        kind: 'error',
+        error: 'Reattaching to the existing Claude Code session.',
+        errorClass: 'session_in_use',
+      },
     );
 
     const rt = new AgentRuntime(backend.port, dataDir);
@@ -493,7 +525,11 @@ describe('AgentRuntime.startRun — chat', () => {
     // A no-tool idle-watchdog kill is transient (a mid-turn stall). The runtime
     // re-spawns once rather than surfacing the raw "produced no output" string.
     runnerNextBehaviors.push(
-      { kind: 'error', error: 'Claude Code produced no output for 90 seconds and was killed.', errorClass: 'idle_hang' },
+      {
+        kind: 'error',
+        error: 'Claude Code produced no output for 90 seconds and was killed.',
+        errorClass: 'idle_hang',
+      },
       { kind: 'done', message: 'recovered after stall' },
     );
 
@@ -515,8 +551,16 @@ describe('AgentRuntime.startRun — chat', () => {
 
   it('idle_hang twice → surfaces a friendly retry message, never the raw "produced no output" / "Claude Code" string', async () => {
     runnerNextBehaviors.push(
-      { kind: 'error', error: 'Claude Code produced no output for 90 seconds and was killed.', errorClass: 'idle_hang' },
-      { kind: 'error', error: 'Claude Code produced no output for 90 seconds and was killed.', errorClass: 'idle_hang' },
+      {
+        kind: 'error',
+        error: 'Claude Code produced no output for 90 seconds and was killed.',
+        errorClass: 'idle_hang',
+      },
+      {
+        kind: 'error',
+        error: 'Claude Code produced no output for 90 seconds and was killed.',
+        errorClass: 'idle_hang',
+      },
     );
 
     const rt = new AgentRuntime(backend.port, dataDir);

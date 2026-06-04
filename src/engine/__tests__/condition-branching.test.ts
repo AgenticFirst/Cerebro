@@ -60,7 +60,12 @@ describe('condition branching in DAGExecutor', () => {
           params: {},
           dependsOn: ['cond'],
           inputMappings: [
-            { sourceStepId: 'cond', sourceField: 'passed', targetField: 'passed', branchCondition: 'true' },
+            {
+              sourceStepId: 'cond',
+              sourceField: 'passed',
+              targetField: 'passed',
+              branchCondition: 'true',
+            },
           ],
           requiresApproval: false,
           onError: 'fail',
@@ -72,7 +77,12 @@ describe('condition branching in DAGExecutor', () => {
           params: {},
           dependsOn: ['cond'],
           inputMappings: [
-            { sourceStepId: 'cond', sourceField: 'passed', targetField: 'passed', branchCondition: 'false' },
+            {
+              sourceStepId: 'cond',
+              sourceField: 'passed',
+              targetField: 'passed',
+              branchCondition: 'false',
+            },
           ],
           requiresApproval: false,
           onError: 'fail',
@@ -102,9 +112,7 @@ describe('condition branching in DAGExecutor', () => {
         {
           ...dag.steps[0],
           dependsOn: ['input'],
-          inputMappings: [
-            { sourceStepId: 'input', sourceField: 'status', targetField: 'status' },
-          ],
+          inputMappings: [{ sourceStepId: 'input', sourceField: 'status', targetField: 'status' }],
         },
         dag.steps[1],
         dag.steps[2],
@@ -137,7 +145,12 @@ describe('condition branching in DAGExecutor', () => {
           params: {},
           dependsOn: ['cond'],
           inputMappings: [
-            { sourceStepId: 'cond', sourceField: 'passed', targetField: 'passed', branchCondition: 'true' },
+            {
+              sourceStepId: 'cond',
+              sourceField: 'passed',
+              targetField: 'passed',
+              branchCondition: 'true',
+            },
           ],
           requiresApproval: false,
           onError: 'fail',
@@ -149,7 +162,12 @@ describe('condition branching in DAGExecutor', () => {
           params: {},
           dependsOn: ['cond'],
           inputMappings: [
-            { sourceStepId: 'cond', sourceField: 'passed', targetField: 'passed', branchCondition: 'false' },
+            {
+              sourceStepId: 'cond',
+              sourceField: 'passed',
+              targetField: 'passed',
+              branchCondition: 'false',
+            },
           ],
           requiresApproval: false,
           onError: 'fail',
@@ -157,18 +175,12 @@ describe('condition branching in DAGExecutor', () => {
       ],
     };
 
-    const executor = new DAGExecutor(
-      simpleDag,
-      registry,
-      new RunScratchpad(),
-      emitter,
-      {
-        runId: 'test-run',
-        backendPort: 9999,
-        signal: new AbortController().signal,
-        resolveModel: vi.fn(),
-      },
-    );
+    const executor = new DAGExecutor(simpleDag, registry, new RunScratchpad(), emitter, {
+      runId: 'test-run',
+      backendPort: 9999,
+      signal: new AbortController().signal,
+      resolveModel: vi.fn(),
+    });
 
     await executor.execute();
 
@@ -176,14 +188,14 @@ describe('condition branching in DAGExecutor', () => {
     // true-branch should run (branchCondition 'true' matches)
     // false-branch should be skipped (branchCondition 'false' doesn't match)
 
-    const completedEvents = (events as any[]).filter(e => e.type === 'step_completed');
-    const skippedEvents = (events as any[]).filter(e => e.type === 'step_skipped');
+    const completedEvents = (events as any[]).filter((e) => e.type === 'step_completed');
+    const skippedEvents = (events as any[]).filter((e) => e.type === 'step_skipped');
 
     // cond + true-branch completed
-    expect(completedEvents.map(e => e.stepId)).toContain('cond');
-    expect(completedEvents.map(e => e.stepId)).toContain('true-branch');
+    expect(completedEvents.map((e) => e.stepId)).toContain('cond');
+    expect(completedEvents.map((e) => e.stepId)).toContain('true-branch');
 
     // false-branch skipped
-    expect(skippedEvents.map(e => e.stepId)).toContain('false-branch');
+    expect(skippedEvents.map((e) => e.stepId)).toContain('false-branch');
   });
 });

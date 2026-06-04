@@ -19,7 +19,9 @@ export interface FreeSlot {
 export interface CalendarChannel {
   isConnected(): boolean;
   listAccounts(): CalendarAccountInfo[];
-  createEvent(input: CalendarEventInput): Promise<{ ok: boolean; event?: CalendarEventDTO; error?: string }>;
+  createEvent(
+    input: CalendarEventInput,
+  ): Promise<{ ok: boolean; event?: CalendarEventDTO; error?: string }>;
   updateEvent(
     eventId: string,
     patch: Partial<CalendarEventInput>,

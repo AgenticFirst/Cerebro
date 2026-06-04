@@ -9,8 +9,7 @@
 import http from 'node:http';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { ExecutionEngine } from '../engine';
-import type { EngineRunRequest } from '../dag/types';
-import type { StepDefinition } from '../dag/types';
+import type { EngineRunRequest, StepDefinition } from '../dag/types';
 
 // ── Test helpers ────────────────────────────────────────────────
 
@@ -53,14 +52,21 @@ let mockServer: http.Server;
 let serverPort: number;
 let capturedRequests: CapturedRequest[];
 
-function waitForRequests(predicate: (reqs: CapturedRequest[]) => boolean, timeoutMs = 5000): Promise<void> {
+function waitForRequests(
+  predicate: (reqs: CapturedRequest[]) => boolean,
+  timeoutMs = 5000,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const check = () => {
       if (predicate(capturedRequests)) {
         resolve();
       } else if (Date.now() - start > timeoutMs) {
-        reject(new Error(`Timed out waiting for requests. Captured: ${JSON.stringify(capturedRequests.map(r => `${r.method} ${r.path}`))}`));
+        reject(
+          new Error(
+            `Timed out waiting for requests. Captured: ${JSON.stringify(capturedRequests.map((r) => `${r.method} ${r.path}`))}`,
+          ),
+        );
       } else {
         setTimeout(check, 20);
       }
@@ -73,10 +79,16 @@ beforeAll(async () => {
   capturedRequests = [];
   mockServer = http.createServer((req, res) => {
     let body = '';
-    req.on('data', (chunk) => { body += chunk; });
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
     req.on('end', () => {
       let parsed: any = null;
-      try { parsed = JSON.parse(body); } catch { parsed = body; }
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        parsed = body;
+      }
 
       capturedRequests.push({
         method: req.method || 'GET',
@@ -86,41 +98,72 @@ beforeAll(async () => {
 
       // Return minimal valid responses for each endpoint
       const url = req.url || '';
-      if (req.method === 'POST' && url.endsWith('/runs') && !url.includes('/steps') && !url.includes('/events')) {
+      if (
+        req.method === 'POST' &&
+        url.endsWith('/runs') &&
+        !url.includes('/steps') &&
+        !url.includes('/events')
+      ) {
         res.writeHead(201, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          id: parsed?.id || 'test',
-          status: 'running',
-          run_type: 'routine',
-          trigger: 'manual',
-          total_steps: parsed?.total_steps || 0,
-          completed_steps: 0,
-          started_at: new Date().toISOString(),
-          routine_id: null, expert_id: null, conversation_id: null,
-          dag_json: null, error: null, failed_step_id: null,
-          completed_at: null, duration_ms: null, steps: null,
-        }));
+        res.end(
+          JSON.stringify({
+            id: parsed?.id || 'test',
+            status: 'running',
+            run_type: 'routine',
+            trigger: 'manual',
+            total_steps: parsed?.total_steps || 0,
+            completed_steps: 0,
+            started_at: new Date().toISOString(),
+            routine_id: null,
+            expert_id: null,
+            conversation_id: null,
+            dag_json: null,
+            error: null,
+            failed_step_id: null,
+            completed_at: null,
+            duration_ms: null,
+            steps: null,
+          }),
+        );
       } else if (req.method === 'POST' && url.includes('/steps')) {
         res.writeHead(201, { 'Content-Type': 'application/json' });
-        const steps = Array.isArray(parsed) ? parsed.map((s: any) => ({
-          ...s, run_id: 'test', summary: null, error: null,
-          started_at: null, completed_at: null, duration_ms: null,
-        })) : [];
+        const steps = Array.isArray(parsed)
+          ? parsed.map((s: any) => ({
+              ...s,
+              run_id: 'test',
+              summary: null,
+              error: null,
+              started_at: null,
+              completed_at: null,
+              duration_ms: null,
+            }))
+          : [];
         res.end(JSON.stringify(steps));
       } else if (req.method === 'POST' && url.includes('/events')) {
         res.writeHead(201, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ created: parsed?.events?.length || 0 }));
       } else if (req.method === 'PATCH') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          id: 'test', status: parsed?.status || 'running',
-          run_type: 'routine', trigger: 'manual',
-          total_steps: 0, completed_steps: 0,
-          started_at: new Date().toISOString(),
-          routine_id: null, expert_id: null, conversation_id: null,
-          dag_json: null, error: null, failed_step_id: null,
-          completed_at: null, duration_ms: null, steps: null,
-        }));
+        res.end(
+          JSON.stringify({
+            id: 'test',
+            status: parsed?.status || 'running',
+            run_type: 'routine',
+            trigger: 'manual',
+            total_steps: 0,
+            completed_steps: 0,
+            started_at: new Date().toISOString(),
+            routine_id: null,
+            expert_id: null,
+            conversation_id: null,
+            dag_json: null,
+            error: null,
+            failed_step_id: null,
+            completed_at: null,
+            duration_ms: null,
+            steps: null,
+          }),
+        );
       } else {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({}));
@@ -169,15 +212,22 @@ describe('engine integration: happy path', () => {
 
     // Wait for the run to complete and all persistence calls to fire
     await waitForRequests((reqs) => {
-      const hasRunCreate = reqs.some(r => r.method === 'POST' && r.path === '/engine/runs');
-      const hasStepCreate = reqs.some(r => r.method === 'POST' && r.path.includes('/steps'));
-      const hasRunPatch = reqs.some(r => r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'completed');
-      const hasEvents = reqs.some(r => r.method === 'POST' && r.path.includes('/events'));
+      const hasRunCreate = reqs.some((r) => r.method === 'POST' && r.path === '/engine/runs');
+      const hasStepCreate = reqs.some((r) => r.method === 'POST' && r.path.includes('/steps'));
+      const hasRunPatch = reqs.some(
+        (r) =>
+          r.method === 'PATCH' &&
+          r.path === `/engine/runs/${runId}` &&
+          r.body?.status === 'completed',
+      );
+      const hasEvents = reqs.some((r) => r.method === 'POST' && r.path.includes('/events'));
       return hasRunCreate && hasStepCreate && hasRunPatch && hasEvents;
     });
 
     // Verify POST /engine/runs was called with correct fields
-    const runCreate = capturedRequests.find(r => r.method === 'POST' && r.path === '/engine/runs');
+    const runCreate = capturedRequests.find(
+      (r) => r.method === 'POST' && r.path === '/engine/runs',
+    );
     expect(runCreate).toBeDefined();
     expect(runCreate!.body.id).toBe(runId);
     expect(runCreate!.body.total_steps).toBe(3);
@@ -185,26 +235,37 @@ describe('engine integration: happy path', () => {
     expect(runCreate!.body.dag_json).toBeDefined();
 
     // Verify POST /engine/runs/{id}/steps was called with 3 step records
-    const stepCreate = capturedRequests.find(r => r.method === 'POST' && r.path.includes('/steps'));
+    const stepCreate = capturedRequests.find(
+      (r) => r.method === 'POST' && r.path.includes('/steps'),
+    );
     expect(stepCreate).toBeDefined();
     expect(stepCreate!.body).toHaveLength(3);
     expect(stepCreate!.body[0].action_type).toBe('transformer');
 
     // Verify step PATCH calls (each completed step gets a PATCH)
-    const stepPatches = capturedRequests.filter(r => r.method === 'PATCH' && r.path.includes('/steps/'));
+    const stepPatches = capturedRequests.filter(
+      (r) => r.method === 'PATCH' && r.path.includes('/steps/'),
+    );
     expect(stepPatches.length).toBeGreaterThanOrEqual(3);
-    const completedPatches = stepPatches.filter(r => r.body.status === 'completed');
+    const completedPatches = stepPatches.filter((r) => r.body.status === 'completed');
     expect(completedPatches.length).toBe(3);
 
     // Verify run completion PATCH
-    const runPatch = capturedRequests.find(r => r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'completed');
+    const runPatch = capturedRequests.find(
+      (r) =>
+        r.method === 'PATCH' &&
+        r.path === `/engine/runs/${runId}` &&
+        r.body?.status === 'completed',
+    );
     expect(runPatch).toBeDefined();
     expect(runPatch!.body.completed_steps).toBe(3);
     expect(runPatch!.body.duration_ms).toBeGreaterThanOrEqual(0);
     expect(runPatch!.body.completed_at).toBeDefined();
 
     // Verify event buffer persisted
-    const eventPost = capturedRequests.find(r => r.method === 'POST' && r.path.includes('/events'));
+    const eventPost = capturedRequests.find(
+      (r) => r.method === 'POST' && r.path.includes('/events'),
+    );
     expect(eventPost).toBeDefined();
     const events = eventPost!.body.events;
     expect(events.length).toBeGreaterThanOrEqual(10); // run_started + 3×queued + 3×started + 3×completed + run_completed
@@ -249,11 +310,15 @@ describe('engine integration: failure path', () => {
 
     // Wait for run_failed PATCH
     await waitForRequests((reqs) =>
-      reqs.some(r => r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'failed'),
+      reqs.some(
+        (r) =>
+          r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'failed',
+      ),
     );
 
-    const failPatch = capturedRequests.find(r =>
-      r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'failed',
+    const failPatch = capturedRequests.find(
+      (r) =>
+        r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'failed',
     );
     expect(failPatch).toBeDefined();
     expect(failPatch!.body.error).toBeDefined();
@@ -261,9 +326,11 @@ describe('engine integration: failure path', () => {
 
     // Events should contain run_failed
     await waitForRequests((reqs) =>
-      reqs.some(r => r.method === 'POST' && r.path.includes('/events')),
+      reqs.some((r) => r.method === 'POST' && r.path.includes('/events')),
     );
-    const eventPost = capturedRequests.find(r => r.method === 'POST' && r.path.includes('/events'));
+    const eventPost = capturedRequests.find(
+      (r) => r.method === 'POST' && r.path.includes('/events'),
+    );
     const eventTypes = eventPost!.body.events.map((e: any) => e.event_type);
     expect(eventTypes).toContain('run_failed');
   }, 10_000);
@@ -297,11 +364,11 @@ describe('engine integration: cancellation', () => {
 
     // Cancel immediately — the transformer action is fast but we can still test the flow
     // Wait a tick for execution to start
-    await new Promise(r => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 5));
     const cancelled = engine.cancelRun(runId);
     // cancelRun may return false if the run already completed (transformer is fast)
     // Either way, verify the run is no longer active
-    expect(engine.getActiveRuns().find(r => r.runId === runId)).toBeUndefined();
+    expect(engine.getActiveRuns().find((r) => r.runId === runId)).toBeUndefined();
   }, 10_000);
 
   it('getActiveRuns returns empty after all runs finish', async () => {
@@ -317,7 +384,12 @@ describe('engine integration: cancellation', () => {
 
     // Wait for completion
     await waitForRequests((reqs) =>
-      reqs.some(r => r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'completed'),
+      reqs.some(
+        (r) =>
+          r.method === 'PATCH' &&
+          r.path === `/engine/runs/${runId}` &&
+          r.body?.status === 'completed',
+      ),
     );
 
     expect(engine.getActiveRuns()).toHaveLength(0);
@@ -344,11 +416,18 @@ describe('engine integration: parallel branches with join', () => {
     const runId = await engine.startRun(webContents, request);
 
     await waitForRequests((reqs) =>
-      reqs.some(r => r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'completed'),
+      reqs.some(
+        (r) =>
+          r.method === 'PATCH' &&
+          r.path === `/engine/runs/${runId}` &&
+          r.body?.status === 'completed',
+      ),
     );
 
     // Step records created with correct order_index
-    const stepCreate = capturedRequests.find(r => r.method === 'POST' && r.path.includes('/steps'));
+    const stepCreate = capturedRequests.find(
+      (r) => r.method === 'POST' && r.path.includes('/steps'),
+    );
     expect(stepCreate!.body).toHaveLength(4);
     expect(stepCreate!.body[0].order_index).toBe(0);
     expect(stepCreate!.body[1].order_index).toBe(1);
@@ -356,14 +435,17 @@ describe('engine integration: parallel branches with join', () => {
     expect(stepCreate!.body[3].order_index).toBe(3);
 
     // All 4 steps completed
-    const completedPatches = capturedRequests.filter(r =>
-      r.method === 'PATCH' && r.path.includes('/steps/') && r.body?.status === 'completed',
+    const completedPatches = capturedRequests.filter(
+      (r) => r.method === 'PATCH' && r.path.includes('/steps/') && r.body?.status === 'completed',
     );
     expect(completedPatches).toHaveLength(4);
 
     // Run completed with 4 steps
-    const runPatch = capturedRequests.find(r =>
-      r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'completed',
+    const runPatch = capturedRequests.find(
+      (r) =>
+        r.method === 'PATCH' &&
+        r.path === `/engine/runs/${runId}` &&
+        r.body?.status === 'completed',
     );
     expect(runPatch!.body.completed_steps).toBe(4);
   }, 10_000);
@@ -399,12 +481,17 @@ describe('engine integration: input wiring through full pipeline', () => {
     const runId = await engine.startRun(webContents, request);
 
     await waitForRequests((reqs) =>
-      reqs.some(r => r.method === 'PATCH' && r.path === `/engine/runs/${runId}` && r.body?.status === 'completed'),
+      reqs.some(
+        (r) =>
+          r.method === 'PATCH' &&
+          r.path === `/engine/runs/${runId}` &&
+          r.body?.status === 'completed',
+      ),
     );
 
     // Both steps should have completed (output_json persisted)
-    const stepPatches = capturedRequests.filter(r =>
-      r.method === 'PATCH' && r.path.includes('/steps/') && r.body?.status === 'completed',
+    const stepPatches = capturedRequests.filter(
+      (r) => r.method === 'PATCH' && r.path.includes('/steps/') && r.body?.status === 'completed',
     );
     expect(stepPatches).toHaveLength(2);
     // Each completed step persists output_json
@@ -422,20 +509,19 @@ describe('engine integration: event buffer batch persistence', () => {
 
     const request: EngineRunRequest = {
       dag: {
-        steps: [
-          makeStep({ id: 'X' }),
-          makeStep({ id: 'Y', dependsOn: ['X'] }),
-        ],
+        steps: [makeStep({ id: 'X' }), makeStep({ id: 'Y', dependsOn: ['X'] })],
       },
     };
 
     const runId = await engine.startRun(webContents, request);
 
     await waitForRequests((reqs) =>
-      reqs.some(r => r.method === 'POST' && r.path.includes('/events')),
+      reqs.some((r) => r.method === 'POST' && r.path.includes('/events')),
     );
 
-    const eventPost = capturedRequests.find(r => r.method === 'POST' && r.path.includes('/events'));
+    const eventPost = capturedRequests.find(
+      (r) => r.method === 'POST' && r.path.includes('/events'),
+    );
     expect(eventPost).toBeDefined();
     const events = eventPost!.body.events;
 
@@ -495,16 +581,19 @@ describe('engine integration: multiple concurrent runs', () => {
 
     // Wait for both to complete
     await waitForRequests((reqs) => {
-      const completions = reqs.filter(r =>
-        r.method === 'PATCH' && r.body?.status === 'completed' && !r.path.includes('/steps/'),
+      const completions = reqs.filter(
+        (r) =>
+          r.method === 'PATCH' && r.body?.status === 'completed' && !r.path.includes('/steps/'),
       );
       return completions.length >= 2;
     });
 
     // Both runs had their own create call
-    const runCreates = capturedRequests.filter(r => r.method === 'POST' && r.path === '/engine/runs');
+    const runCreates = capturedRequests.filter(
+      (r) => r.method === 'POST' && r.path === '/engine/runs',
+    );
     expect(runCreates.length).toBe(2);
-    const runIds = runCreates.map(r => r.body.id);
+    const runIds = runCreates.map((r) => r.body.id);
     expect(runIds).toContain(runId1);
     expect(runIds).toContain(runId2);
 
@@ -637,16 +726,26 @@ describe('engine integration: approval persisted before announce', () => {
   it('does not emit approval_requested until POST /engine/approvals has resolved', async () => {
     const captured: CapturedRequest[] = [];
     let approvalPostReceived: () => void = () => {};
-    const approvalPostReceivedP = new Promise<void>((r) => { approvalPostReceived = r; });
+    const approvalPostReceivedP = new Promise<void>((r) => {
+      approvalPostReceived = r;
+    });
     let releaseApprovalPost: () => void = () => {};
-    const approvalPostGate = new Promise<void>((r) => { releaseApprovalPost = r; });
+    const approvalPostGate = new Promise<void>((r) => {
+      releaseApprovalPost = r;
+    });
 
     const localServer = http.createServer((req, res) => {
       let body = '';
-      req.on('data', (c) => { body += c; });
+      req.on('data', (c) => {
+        body += c;
+      });
       req.on('end', async () => {
         let parsed: any = null;
-        try { parsed = JSON.parse(body); } catch { parsed = body; }
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          parsed = body;
+        }
         const url = req.url || '';
         captured.push({ method: req.method || 'GET', path: url, body: parsed });
 
@@ -686,7 +785,12 @@ describe('engine integration: approval persisted before announce', () => {
       const runId = await engine.startRun(webContents, {
         dag: {
           steps: [
-            makeStep({ id: 'gate', actionType: 'approval_gate', requiresApproval: true, params: {} }),
+            makeStep({
+              id: 'gate',
+              actionType: 'approval_gate',
+              requiresApproval: true,
+              params: {},
+            }),
           ],
         },
       });
@@ -710,7 +814,9 @@ describe('engine integration: approval persisted before announce', () => {
 
       // And the approval POST was chained after the run record (no 404 risk).
       const runIdx = captured.findIndex((r) => r.method === 'POST' && r.path === '/engine/runs');
-      const apprIdx = captured.findIndex((r) => r.method === 'POST' && r.path === '/engine/approvals');
+      const apprIdx = captured.findIndex(
+        (r) => r.method === 'POST' && r.path === '/engine/approvals',
+      );
       expect(runIdx).toBeGreaterThanOrEqual(0);
       expect(apprIdx).toBeGreaterThan(runIdx);
 
@@ -734,7 +840,7 @@ describe('engine integration: IPC events forwarded to webContents', () => {
     const runId = await engine.startRun(webContents, request);
 
     await waitForRequests((reqs) =>
-      reqs.some(r => r.method === 'POST' && r.path.includes('/events')),
+      reqs.some((r) => r.method === 'POST' && r.path.includes('/events')),
     );
 
     // webContents.send should have been called on both the run-specific

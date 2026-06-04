@@ -40,7 +40,9 @@ export default function TaskAttachmentChip({ attachment, onRemove }: TaskAttachm
       </span>
       <div className="flex flex-col min-w-0 flex-1">
         <span className="text-sm text-text-primary truncate">{attachment.name}</span>
-        <span className="text-[11px] text-text-tertiary">{formatFileSize(attachment.size_bytes)}</span>
+        <span className="text-[11px] text-text-tertiary">
+          {formatFileSize(attachment.size_bytes)}
+        </span>
       </div>
       <button
         type="button"

@@ -18,7 +18,9 @@ import {
   createHubSpotListObjectsAction,
 } from '../hubspot-crm-objects';
 
-function buildChannel(opts: Partial<{ token: string | null; portalId: string }> = {}): HubSpotChannel {
+function buildChannel(
+  opts: Partial<{ token: string | null; portalId: string }> = {},
+): HubSpotChannel {
   return {
     getAccessToken: () => (opts.token === undefined ? 'pat-test' : opts.token),
     getPortalId: () => opts.portalId ?? '999',
@@ -31,14 +33,21 @@ function buildChannel(opts: Partial<{ token: string | null; portalId: string }> 
   };
 }
 
-function buildActionInput(params: Record<string, unknown>, wiredInputs: Record<string, unknown> = {}): ActionInput {
+function buildActionInput(
+  params: Record<string, unknown>,
+  wiredInputs: Record<string, unknown> = {},
+): ActionInput {
   const context: ActionContext = {
     runId: 'test-run',
     stepId: 'test-step',
     backendPort: 0,
     signal: new AbortController().signal,
-    log: () => { /* no-op */ },
-    emitEvent: () => { /* no-op */ },
+    log: () => {
+      /* no-op */
+    },
+    emitEvent: () => {
+      /* no-op */
+    },
   };
   return {
     params,
@@ -75,11 +84,13 @@ describe('hubspot_create_object', () => {
   it('POSTs a company with allowed properties and returns id + deep-link', async () => {
     const fetchMock = mockFetch(200, { id: 'CMP1' });
     const action = createHubSpotCreateObjectAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({
-      object_type: 'companies',
-      name: 'Acme',
-      domain: 'acme.com',
-    }));
+    const result = await action.execute(
+      buildActionInput({
+        object_type: 'companies',
+        name: 'Acme',
+        domain: 'acme.com',
+      }),
+    );
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('/crm/v3/objects/companies');
@@ -97,12 +108,14 @@ describe('hubspot_create_object', () => {
   it('drops properties the type does not allow', async () => {
     const fetchMock = mockFetch(200, { id: 'D1' });
     const action = createHubSpotCreateObjectAction({ getChannel: () => buildChannel() });
-    await action.execute(buildActionInput({
-      object_type: 'deals',
-      dealname: 'Q3 Renewal',
-      amount: '5000',
-      properties: { bogus_field: 'x' },
-    }));
+    await action.execute(
+      buildActionInput({
+        object_type: 'deals',
+        dealname: 'Q3 Renewal',
+        amount: '5000',
+        properties: { bogus_field: 'x' },
+      }),
+    );
     const sent = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
     expect(sent.properties).toEqual({ dealname: 'Q3 Renewal', amount: '5000' });
     expect(sent.properties.bogus_field).toBeUndefined();
@@ -120,14 +133,16 @@ describe('hubspot_create_object', () => {
   it('routes contacts through the idempotent upsert (search then create)', async () => {
     const fetchMock = mockFetchSequence([
       { status: 200, body: { results: [] } }, // search: not found
-      { status: 200, body: { id: 'C1' } },     // create
+      { status: 200, body: { id: 'C1' } }, // create
     ]);
     const action = createHubSpotCreateObjectAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({
-      object_type: 'contacts',
-      email: 'maria@example.com',
-      firstname: 'Maria',
-    }));
+    const result = await action.execute(
+      buildActionInput({
+        object_type: 'contacts',
+        email: 'maria@example.com',
+        firstname: 'Maria',
+      }),
+    );
 
     expect(String(fetchMock.mock.calls[0][0])).toContain('/crm/v3/objects/contacts/search');
     expect(String(fetchMock.mock.calls[1][0])).toContain('/crm/v3/objects/contacts');
@@ -138,13 +153,17 @@ describe('hubspot_create_object', () => {
 
   it('throws on an invalid object_type', async () => {
     const action = createHubSpotCreateObjectAction({ getChannel: () => buildChannel() });
-    await expect(action.execute(buildActionInput({ object_type: 'widgets', name: 'x' }))).rejects.toThrow(/object_type/i);
+    await expect(
+      action.execute(buildActionInput({ object_type: 'widgets', name: 'x' })),
+    ).rejects.toThrow(/object_type/i);
   });
 
   it('surfaces a HubSpot error gracefully (no throw)', async () => {
     mockFetch(403, { message: 'Missing scope' });
     const action = createHubSpotCreateObjectAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({ object_type: 'companies', name: 'Acme' }));
+    const result = await action.execute(
+      buildActionInput({ object_type: 'companies', name: 'Acme' }),
+    );
     expect(result.data.created).toBe(false);
     expect(result.data.error).toBe('Missing scope');
   });
@@ -154,11 +173,13 @@ describe('hubspot_update_object', () => {
   it('PATCHes the object by id with the changed fields', async () => {
     const fetchMock = mockFetch(200, { id: 'D1' });
     const action = createHubSpotUpdateObjectAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({
-      object_type: 'deals',
-      object_id: 'D1',
-      amount: '8000',
-    }));
+    const result = await action.execute(
+      buildActionInput({
+        object_type: 'deals',
+        object_id: 'D1',
+        amount: '8000',
+      }),
+    );
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('/crm/v3/objects/deals/D1');
     expect((init as RequestInit).method).toBe('PATCH');
@@ -171,7 +192,9 @@ describe('hubspot_update_object', () => {
   it('returns an error when no updatable fields are provided (no API call)', async () => {
     const fetchMock = mockFetch(200, {});
     const action = createHubSpotUpdateObjectAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({ object_type: 'companies', object_id: 'CMP1' }));
+    const result = await action.execute(
+      buildActionInput({ object_type: 'companies', object_id: 'CMP1' }),
+    );
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result.data.updated).toBe(false);
     expect(result.data.error).toMatch(/no updatable fields/i);
@@ -179,7 +202,9 @@ describe('hubspot_update_object', () => {
 
   it('throws when object_id is missing', async () => {
     const action = createHubSpotUpdateObjectAction({ getChannel: () => buildChannel() });
-    await expect(action.execute(buildActionInput({ object_type: 'deals', amount: '1' }))).rejects.toThrow(/object_id is required/i);
+    await expect(
+      action.execute(buildActionInput({ object_type: 'deals', amount: '1' })),
+    ).rejects.toThrow(/object_id is required/i);
   });
 });
 
@@ -187,7 +212,9 @@ describe('hubspot_delete_object', () => {
   it('DELETEs the object by id', async () => {
     const fetchMock = mockFetch(200, {});
     const action = createHubSpotDeleteObjectAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({ object_type: 'companies', object_id: 'CMP1' }));
+    const result = await action.execute(
+      buildActionInput({ object_type: 'companies', object_id: 'CMP1' }),
+    );
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('/crm/v3/objects/companies/CMP1');
     expect((init as RequestInit).method).toBe('DELETE');
@@ -198,7 +225,9 @@ describe('hubspot_delete_object', () => {
   it('surfaces a delete error gracefully', async () => {
     mockFetch(404, { message: 'Not found' });
     const action = createHubSpotDeleteObjectAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({ object_type: 'deals', object_id: 'D9' }));
+    const result = await action.execute(
+      buildActionInput({ object_type: 'deals', object_id: 'D9' }),
+    );
     expect(result.data.deleted).toBe(false);
     expect(result.data.error).toBe('Not found');
   });
@@ -211,12 +240,18 @@ describe('hubspot_list_objects', () => {
       total: 1,
     });
     const action = createHubSpotListObjectsAction({ getChannel: () => buildChannel() });
-    const result = await action.execute(buildActionInput({ object_type: 'companies', name: 'Acme' }));
+    const result = await action.execute(
+      buildActionInput({ object_type: 'companies', name: 'Acme' }),
+    );
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('/crm/v3/objects/companies/search');
     const sent = JSON.parse((init as RequestInit).body as string);
-    expect(sent.filterGroups[0].filters).toContainEqual({ propertyName: 'name', operator: 'EQ', value: 'Acme' });
+    expect(sent.filterGroups[0].filters).toContainEqual({
+      propertyName: 'name',
+      operator: 'EQ',
+      value: 'Acme',
+    });
 
     expect(result.data.count).toBe(1);
     expect(result.data.objects[0].id).toBe('CMP1');
@@ -236,11 +271,17 @@ describe('hubspot_list_objects', () => {
 describe('connection guards', () => {
   it('throws when HubSpot is not configured', async () => {
     const action = createHubSpotListObjectsAction({ getChannel: () => null });
-    await expect(action.execute(buildActionInput({ object_type: 'contacts' }))).rejects.toThrow(/not configured/i);
+    await expect(action.execute(buildActionInput({ object_type: 'contacts' }))).rejects.toThrow(
+      /not configured/i,
+    );
   });
 
   it('throws when there is no access token', async () => {
-    const action = createHubSpotCreateObjectAction({ getChannel: () => buildChannel({ token: null }) });
-    await expect(action.execute(buildActionInput({ object_type: 'companies', name: 'x' }))).rejects.toThrow(/no access token/i);
+    const action = createHubSpotCreateObjectAction({
+      getChannel: () => buildChannel({ token: null }),
+    });
+    await expect(
+      action.execute(buildActionInput({ object_type: 'companies', name: 'x' })),
+    ).rejects.toThrow(/no access token/i);
   });
 });

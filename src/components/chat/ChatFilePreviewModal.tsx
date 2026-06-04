@@ -142,11 +142,7 @@ export default function ChatFilePreviewModal({
       aria-labelledby="chat-file-preview-title"
       className="fixed inset-0 z-[60] flex items-center justify-center"
     >
-      <div
-        className="absolute inset-0 bg-black/60 animate-fade-in"
-        onClick={onClose}
-        aria-hidden
-      />
+      <div className="absolute inset-0 bg-black/60 animate-fade-in" onClick={onClose} aria-hidden />
       <div
         ref={panelRef}
         onClick={(e) => e.stopPropagation()}
@@ -274,7 +270,10 @@ export default function ChatFilePreviewModal({
 
         {/* Body */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          {showLoading && state.effectiveKind !== 'markdown' && state.previewUrl === null && state.textContent === null ? (
+          {showLoading &&
+          state.effectiveKind !== 'markdown' &&
+          state.previewUrl === null &&
+          state.textContent === null ? (
             <div className="flex-1 flex items-center justify-center text-xs text-text-tertiary">
               {loadingLabel}
             </div>

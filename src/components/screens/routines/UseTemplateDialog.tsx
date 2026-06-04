@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Plug, Settings2, Sparkles, X } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Loader2,
+  Plug,
+  Settings2,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { RoutineTemplate, RequiredConnection } from '../../../types/routine-templates';
@@ -22,7 +32,9 @@ interface UseTemplateDialogProps {
   onOpenIntegrations?: () => void;
 }
 
-const CONNECTION_ICON: Partial<Record<RequiredConnection, (p: { size?: number; className?: string }) => JSX.Element>> = {
+const CONNECTION_ICON: Partial<
+  Record<RequiredConnection, (p: { size?: number; className?: string }) => JSX.Element>
+> = {
   whatsapp: WhatsAppIcon,
   hubspot: HubSpotIcon,
   telegram: TelegramIcon,
@@ -38,7 +50,12 @@ interface ConnectionStatus {
   detail: string;
 }
 
-export default function UseTemplateDialog({ template, onClose, onCreate, onOpenIntegrations }: UseTemplateDialogProps) {
+export default function UseTemplateDialog({
+  template,
+  onClose,
+  onCreate,
+  onOpenIntegrations,
+}: UseTemplateDialogProps) {
   const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
   const [connections, setConnections] = useState<ConnectionStatus[]>([]);
@@ -65,9 +82,12 @@ export default function UseTemplateDialog({ template, onClose, onCreate, onOpenI
         id: 'whatsapp',
         label: t('routineTemplates.waLabel'),
         connected: s.state === 'connected',
-        detail: s.state === 'connected'
-          ? t('routineTemplates.waConnected', { phone: s.phoneNumber ?? t('routineTemplates.unknownPhone') })
-          : t('routineTemplates.waNotConnected'),
+        detail:
+          s.state === 'connected'
+            ? t('routineTemplates.waConnected', {
+                phone: s.phoneNumber ?? t('routineTemplates.unknownPhone'),
+              })
+            : t('routineTemplates.waNotConnected'),
       });
     }
     if (needed.has('hubspot')) {
@@ -77,7 +97,9 @@ export default function UseTemplateDialog({ template, onClose, onCreate, onOpenI
         label: t('routineTemplates.hsLabel'),
         connected: s.hasToken,
         detail: s.hasToken
-          ? t('routineTemplates.hsConnected', { portal: s.portalId ?? t('routineTemplates.unknownPortal') })
+          ? t('routineTemplates.hsConnected', {
+              portal: s.portalId ?? t('routineTemplates.unknownPortal'),
+            })
           : t('routineTemplates.hsNotConnected'),
       });
     }
@@ -88,7 +110,9 @@ export default function UseTemplateDialog({ template, onClose, onCreate, onOpenI
         label: t('routineTemplates.tgLabel'),
         connected: Boolean(s.hasToken),
         detail: s.hasToken
-          ? t('routineTemplates.tgConnected', { username: s.botUsername ?? t('routineTemplates.unknownUsername') })
+          ? t('routineTemplates.tgConnected', {
+              username: s.botUsername ?? t('routineTemplates.unknownUsername'),
+            })
           : t('routineTemplates.tgNotConnected'),
       });
     }
@@ -100,8 +124,12 @@ export default function UseTemplateDialog({ template, onClose, onCreate, onOpenI
     // WhatsApp pushes status events; use those to avoid idle polling when the
     // only connection we care about is WA. HubSpot + Telegram don't emit, so
     // we fall back to a coarser poll for those.
-    const off = window.cerebro.whatsapp.onStatusChanged(() => { void refreshConnections(); });
-    const needsPolling = template.requiredConnections.some((c) => c === 'hubspot' || c === 'telegram');
+    const off = window.cerebro.whatsapp.onStatusChanged(() => {
+      void refreshConnections();
+    });
+    const needsPolling = template.requiredConnections.some(
+      (c) => c === 'hubspot' || c === 'telegram',
+    );
     const id = needsPolling ? setInterval(refreshConnections, 10_000) : null;
     return () => {
       off();
@@ -174,7 +202,10 @@ export default function UseTemplateDialog({ template, onClose, onCreate, onOpenI
   }, [materialized, onCreate, onClose, t]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center"
+      onClick={onClose}
+    >
       <div
         className="bg-bg-elevated border border-border-subtle rounded-lg shadow-2xl w-[640px] max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -185,7 +216,9 @@ export default function UseTemplateDialog({ template, onClose, onCreate, onOpenI
             <Sparkles size={16} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-text-primary truncate">{template.name.replace(/%%\w+%%/g, '…')}</div>
+            <div className="text-sm font-medium text-text-primary truncate">
+              {template.name.replace(/%%\w+%%/g, '…')}
+            </div>
             <div className="text-xs text-text-tertiary">
               {t('routineTemplates.stepCounter', { current: step, total: 3 })}
             </div>
@@ -265,7 +298,10 @@ export default function UseTemplateDialog({ template, onClose, onCreate, onOpenI
                       </p>
                       <ul className="mt-2 space-y-1">
                         {missingConnections.map((c) => (
-                          <li key={c.id} className="text-[11px] text-text-secondary flex items-center gap-1.5">
+                          <li
+                            key={c.id}
+                            className="text-[11px] text-text-secondary flex items-center gap-1.5"
+                          >
                             <span className="w-1 h-1 rounded-full bg-amber-400" />
                             <span className="font-medium text-text-primary">{c.label}</span>
                             <span className="text-text-tertiary">— {c.detail}</span>
@@ -320,8 +356,14 @@ export default function UseTemplateDialog({ template, onClose, onCreate, onOpenI
                 {t('routineTemplates.reviewBody')}
               </p>
               <div className="space-y-3 text-xs">
-                <ReviewRow label={t('routineTemplates.reviewNameLabel')} value={materialized.name} />
-                <ReviewRow label={t('routineTemplates.reviewDescriptionLabel')} value={materialized.description} />
+                <ReviewRow
+                  label={t('routineTemplates.reviewNameLabel')}
+                  value={materialized.name}
+                />
+                <ReviewRow
+                  label={t('routineTemplates.reviewDescriptionLabel')}
+                  value={materialized.description}
+                />
                 <div className="rounded-md border border-border-subtle bg-bg-surface p-3">
                   <div className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary mb-2">
                     {t('routineTemplates.reviewWhatItDoes')}
@@ -354,7 +396,9 @@ export default function UseTemplateDialog({ template, onClose, onCreate, onOpenI
             >
               <ArrowLeft size={12} /> {t('routineTemplates.back')}
             </button>
-          ) : <span />}
+          ) : (
+            <span />
+          )}
 
           {step === 1 ? (
             <button
@@ -400,7 +444,9 @@ function sameConnections(a: ConnectionStatus[], b: ConnectionStatus[]): boolean 
 function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">{label}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+        {label}
+      </div>
       <div className="mt-1 text-text-primary break-words">{value}</div>
     </div>
   );
@@ -434,7 +480,9 @@ function VariableInput(props: {
         >
           <option value="">{t('routineTemplates.selectPipelinePlaceholder')}</option>
           {pipelines.map((p) => (
-            <option key={p.id} value={p.id}>{p.label}</option>
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
           ))}
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">{variable.description}</p>
@@ -455,7 +503,9 @@ function VariableInput(props: {
         >
           <option value="">{t('routineTemplates.selectStagePlaceholder')}</option>
           {stages.map((s) => (
-            <option key={s.id} value={s.id}>{s.label}</option>
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
           ))}
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">{variable.description}</p>
@@ -474,7 +524,9 @@ function VariableInput(props: {
         >
           <option value="">{t('routineTemplates.selectPlaceholder')}</option>
           {(variable.options ?? []).map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
           ))}
         </select>
         <p className="mt-1 text-[11px] text-text-tertiary">{variable.description}</p>

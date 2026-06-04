@@ -142,7 +142,9 @@ async function backendGetSetting<T>(port: number, key: string): Promise<T | null
         return;
       }
       let data = '';
-      res.on('data', (c: Buffer) => { data += c.toString(); });
+      res.on('data', (c: Buffer) => {
+        data += c.toString();
+      });
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data) as { value: string };
@@ -186,10 +188,16 @@ function backendRequest<T = unknown>(
       },
       (res) => {
         let data = '';
-        res.on('data', (c: Buffer) => { data += c.toString(); });
+        res.on('data', (c: Buffer) => {
+          data += c.toString();
+        });
         res.on('end', () => {
           let parsed: T | null = null;
-          try { parsed = JSON.parse(data) as T; } catch { parsed = null; }
+          try {
+            parsed = JSON.parse(data) as T;
+          } catch {
+            parsed = null;
+          }
           resolve({
             ok: res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300,
             status: res.statusCode ?? 0,
@@ -199,7 +207,10 @@ function backendRequest<T = unknown>(
       },
     );
     req.on('error', () => resolve({ ok: false, status: 0, data: null }));
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, status: 0, data: null }); });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, status: 0, data: null });
+    });
     if (bodyStr) req.write(bodyStr);
     req.end();
   });
@@ -299,7 +310,10 @@ export class SlackBridge implements SlackChannel {
 
   private dedupe = new EventDedupe(10_000, 10 * 60_000);
   private authorizedRateLimiter = new SlidingWindowLimiter(AUTHORIZED_RATE_LIMIT_PER_MIN, 60_000);
-  private proactiveRateLimiter = new SlidingWindowLimiter(PROACTIVE_RATE_LIMIT_PER_HOUR, 60 * 60 * 1_000);
+  private proactiveRateLimiter = new SlidingWindowLimiter(
+    PROACTIVE_RATE_LIMIT_PER_HOUR,
+    60 * 60 * 1_000,
+  );
   private unknownLastReply = new Map<string, number>(); // userId → ms
 
   private activeRuns = new Map<string, ActiveSlackRun>(); // threadKey → run
@@ -379,9 +393,10 @@ export class SlackBridge implements SlackChannel {
       await this.loadSettings();
 
       if (!this.settings.enabled || !this.settings.botToken || !this.settings.appToken) {
-        const reason = !this.settings.botToken || !this.settings.appToken
-          ? 'Bot token and/or app-level token not configured.'
-          : 'Slack bridge is disabled.';
+        const reason =
+          !this.settings.botToken || !this.settings.appToken
+            ? 'Bot token and/or app-level token not configured.'
+            : 'Slack bridge is disabled.';
         this.lastError = reason;
         log(`bridge not started: ${reason}`);
         return;
@@ -456,7 +471,11 @@ export class SlackBridge implements SlackChannel {
 
     // Cancel in-flight runs.
     for (const [, run] of this.activeRuns) {
-      try { this.deps.agentRuntime.cancelRun(run.runId); } catch { /* ignore */ }
+      try {
+        this.deps.agentRuntime.cancelRun(run.runId);
+      } catch {
+        /* ignore */
+      }
     }
     this.activeRuns.clear();
     this.approvalThreadMap.clear();
@@ -467,7 +486,9 @@ export class SlackBridge implements SlackChannel {
     this.sttLoader.reset();
 
     if (this.app) {
-      try { await this.app.stop(); } catch (err) {
+      try {
+        await this.app.stop();
+      } catch (err) {
         logError('app.stop() threw:', err instanceof Error ? err.message : String(err));
       }
       this.app = null;
@@ -482,7 +503,10 @@ export class SlackBridge implements SlackChannel {
       const prevApp = this.settings.appToken;
       await this.loadSettings();
       this.routineCache = null;
-      if (this.running && (this.settings.botToken !== prevBot || this.settings.appToken !== prevApp)) {
+      if (
+        this.running &&
+        (this.settings.botToken !== prevBot || this.settings.appToken !== prevApp)
+      ) {
         return { ok: false, error: 'Tokens changed — disable and re-enable Slack to apply.' };
       }
       return { ok: true };
@@ -535,7 +559,10 @@ export class SlackBridge implements SlackChannel {
    * Persist the bot+app token pair (or clear them). Encrypts before writing.
    * If a clear is requested (both null), the bridge is stopped and stays off.
    */
-  async setTokens(args: { botToken: string | null; appToken: string | null }): Promise<{ ok: boolean; error?: string }> {
+  async setTokens(args: {
+    botToken: string | null;
+    appToken: string | null;
+  }): Promise<{ ok: boolean; error?: string }> {
     try {
       const port = this.deps.backendPort;
       const wasRunning = this.running;
@@ -550,8 +577,8 @@ export class SlackBridge implements SlackChannel {
       // dropping in-flight Socket Mode runs.
       const isReplacement = Boolean(args.botToken && args.appToken);
       if (wasRunning && isReplacement) {
-        const changed = args.botToken !== this.settings.botToken
-          || args.appToken !== this.settings.appToken;
+        const changed =
+          args.botToken !== this.settings.botToken || args.appToken !== this.settings.appToken;
         if (changed) {
           await backendPutSetting(port, SLACK_SETTING_KEYS.botToken, botVal);
           await backendPutSetting(port, SLACK_SETTING_KEYS.appToken, appVal);
@@ -583,12 +610,23 @@ export class SlackBridge implements SlackChannel {
     return this.setTokens({ botToken: null, appToken: null });
   }
 
-  async setAllowlist(args: { channels: string[]; users: string[] }): Promise<{ ok: boolean; error?: string }> {
+  async setAllowlist(args: {
+    channels: string[];
+    users: string[];
+  }): Promise<{ ok: boolean; error?: string }> {
     try {
       this.settings.allowlistChannels = [...new Set(args.channels)];
       this.settings.allowlistUsers = [...new Set(args.users)];
-      await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.allowlistChannels, this.settings.allowlistChannels);
-      await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.allowlistUsers, this.settings.allowlistUsers);
+      await backendPutSetting(
+        this.deps.backendPort,
+        SLACK_SETTING_KEYS.allowlistChannels,
+        this.settings.allowlistChannels,
+      );
+      await backendPutSetting(
+        this.deps.backendPort,
+        SLACK_SETTING_KEYS.allowlistUsers,
+        this.settings.allowlistUsers,
+      );
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -603,7 +641,11 @@ export class SlackBridge implements SlackChannel {
     try {
       const trimmed = (userId ?? '').trim() || null;
       this.settings.operatorUserId = trimmed;
-      await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.operatorUserId, trimmed ?? '');
+      await backendPutSetting(
+        this.deps.backendPort,
+        SLACK_SETTING_KEYS.operatorUserId,
+        trimmed ?? '',
+      );
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -621,45 +663,48 @@ export class SlackBridge implements SlackChannel {
     defaultExpertAccess: string[] | null;
     exceptions: Array<{ userId: string; displayName: string | null; expertIds: string[] }>;
   } {
-    const exceptions = Object.entries(this.settings.userExpertAccess).map(([userId, expertIds]) => ({
-      userId,
-      displayName: this.settings.userDisplayNames[userId] ?? null,
-      expertIds: Array.isArray(expertIds) ? [...expertIds] : [],
-    }));
+    const exceptions = Object.entries(this.settings.userExpertAccess).map(
+      ([userId, expertIds]) => ({
+        userId,
+        displayName: this.settings.userDisplayNames[userId] ?? null,
+        expertIds: Array.isArray(expertIds) ? [...expertIds] : [],
+      }),
+    );
     return {
-      defaultExpertAccess: this.settings.defaultExpertAccess === null ? null : [...this.settings.defaultExpertAccess],
+      defaultExpertAccess:
+        this.settings.defaultExpertAccess === null ? null : [...this.settings.defaultExpertAccess],
       exceptions,
     };
   }
 
-  async setExpertAccessConfig(
-    args: {
-      defaultExpertAccess: string[] | null;
-      exceptions: Array<{ userId: string; expertIds: string[] }>;
-    },
-  ): Promise<{ ok: boolean; error?: string }> {
+  async setExpertAccessConfig(args: {
+    defaultExpertAccess: string[] | null;
+    exceptions: Array<{ userId: string; expertIds: string[] }>;
+  }): Promise<{ ok: boolean; error?: string }> {
     try {
-      const def = args.defaultExpertAccess === null
-        ? null
-        : Array.from(new Set(
-          (args.defaultExpertAccess ?? []).filter((s): s is string => typeof s === 'string' && s.length > 0),
-        ));
+      const def =
+        args.defaultExpertAccess === null
+          ? null
+          : Array.from(
+              new Set(
+                (args.defaultExpertAccess ?? []).filter(
+                  (s): s is string => typeof s === 'string' && s.length > 0,
+                ),
+              ),
+            );
 
       const nextExceptions: Record<string, string[]> = {};
       for (const { userId, expertIds } of args.exceptions ?? []) {
         if (!userId || typeof userId !== 'string') continue;
         if (!Array.isArray(expertIds)) continue;
-        nextExceptions[userId] = Array.from(new Set(
-          expertIds.filter((s): s is string => typeof s === 'string' && s.length > 0),
-        ));
+        nextExceptions[userId] = Array.from(
+          new Set(expertIds.filter((s): s is string => typeof s === 'string' && s.length > 0)),
+        );
       }
 
       this.settings.defaultExpertAccess = def;
       this.settings.userExpertAccess = nextExceptions;
-      await Promise.all([
-        this.persistDefaultExpertAccess(),
-        this.persistUserExpertAccess(),
-      ]);
+      await Promise.all([this.persistDefaultExpertAccess(), this.persistUserExpertAccess()]);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -704,12 +749,16 @@ export class SlackBridge implements SlackChannel {
     try {
       const here = path.join(this.deps.dataDir, '..', 'app', 'slack-manifest.yaml');
       if (fs.existsSync(here)) return fs.readFileSync(here, 'utf8');
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
     // Fallback: read from the source path (dev mode).
     try {
       const dev = path.join(__dirname, 'manifest.yaml');
       if (fs.existsSync(dev)) return fs.readFileSync(dev, 'utf8');
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
     // Last resort: inline manifest (matches src/slack/manifest.yaml).
     return INLINE_MANIFEST;
   }
@@ -727,8 +776,11 @@ export class SlackBridge implements SlackChannel {
     // Telegram's "no allowlist = nothing happens"). Operators must explicitly
     // opt in their workspace.
     if (channels.length === 0 && users.length === 0) return false;
-    const channelOk = channels.length === 0 || channels.includes('*') || channels.includes(channelId);
-    const userOk = users.length === 0 || (userId !== undefined && (users.includes('*') || users.includes(userId)));
+    const channelOk =
+      channels.length === 0 || channels.includes('*') || channels.includes(channelId);
+    const userOk =
+      users.length === 0 ||
+      (userId !== undefined && (users.includes('*') || users.includes(userId)));
     if (channels.length > 0 && users.length > 0) return channelOk && userOk;
     if (channels.length > 0) return channelOk;
     return userOk;
@@ -801,7 +853,11 @@ export class SlackBridge implements SlackChannel {
     }
   }
 
-  async listChannels(): Promise<{ ok: boolean; channels?: Array<{ id: string; name: string; is_private: boolean }>; error?: string }> {
+  async listChannels(): Promise<{
+    ok: boolean;
+    channels?: Array<{ id: string; name: string; is_private: boolean }>;
+    error?: string;
+  }> {
     if (!this.api || !this.running) {
       return { ok: false, error: 'Slack bridge not running' };
     }
@@ -850,7 +906,9 @@ export class SlackBridge implements SlackChannel {
           threadTs: event.thread_ts,
           text: stripped,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          files: Array.isArray((event as any).files) ? ((event as any).files as SlackFile[]) : undefined,
+          files: Array.isArray((event as any).files)
+            ? ((event as any).files as SlackFile[])
+            : undefined,
           surface: 'app_mention',
         };
         await this.handleInbound(ctx);
@@ -910,7 +968,9 @@ export class SlackBridge implements SlackChannel {
             response_type: 'ephemeral',
             text: `:warning: Cerebro hit an error: ${scrubTokenish(msg)}`,
           });
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     });
 
@@ -969,7 +1029,9 @@ export class SlackBridge implements SlackChannel {
             text: ":no_entry: You're not authorized to resolve approvals here.",
           });
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return;
     }
 
@@ -981,10 +1043,15 @@ export class SlackBridge implements SlackChannel {
       resolved = await this.deps.executionEngine.resolveApproval(approvalId, approved, reason);
     } else {
       // Defensive fallback — shouldn't happen (bridge + engine share a process).
-      const res = await backendRequest(this.deps.backendPort, 'PATCH', `/engine/approvals/${approvalId}/resolve`, {
-        decision: approved ? 'approved' : 'denied',
-        reason: reason ?? null,
-      });
+      const res = await backendRequest(
+        this.deps.backendPort,
+        'PATCH',
+        `/engine/approvals/${approvalId}/resolve`,
+        {
+          decision: approved ? 'approved' : 'denied',
+          reason: reason ?? null,
+        },
+      );
       resolved = res.ok;
     }
 
@@ -993,8 +1060,15 @@ export class SlackBridge implements SlackChannel {
     if (!resolved && channelId && messageTs) {
       const text = ':information_source: This approval was already resolved.';
       try {
-        await this.api.chatUpdate({ channel: channelId, ts: messageTs, text, blocks: approvalResolvedBlocks(text) });
-      } catch { /* ignore */ }
+        await this.api.chatUpdate({
+          channel: channelId,
+          ts: messageTs,
+          text,
+          blocks: approvalResolvedBlocks(text),
+        });
+      } catch {
+        /* ignore */
+      }
       this.approvalThreadMap.delete(approvalId);
     }
   }
@@ -1010,9 +1084,9 @@ export class SlackBridge implements SlackChannel {
     //    code, route it to the orchestrator instead of dispatching to the
     //    runner (which would just hit the same auth failure again).
     if (
-      this.pendingLogin
-      && ctx.channelType === 'im'
-      && ctx.userId === this.pendingLogin.operatorUserId
+      this.pendingLogin &&
+      ctx.channelType === 'im' &&
+      ctx.userId === this.pendingLogin.operatorUserId
     ) {
       await this.handleOperatorAuthCode(ctx.text ?? '');
       return;
@@ -1031,7 +1105,9 @@ export class SlackBridge implements SlackChannel {
             thread_ts: ctx.threadTs,
             text: `Not authorised. Your Slack ID is ${ctx.userId}. Ask the Cerebro operator to add you to the allowlist.`,
           });
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
       return;
     }
@@ -1045,7 +1121,9 @@ export class SlackBridge implements SlackChannel {
           thread_ts: ctx.threadTs,
           text: 'Rate limit exceeded. Try again in a minute.',
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return;
     }
 
@@ -1103,16 +1181,17 @@ export class SlackBridge implements SlackChannel {
     const existing = this.activeRuns.get(key);
     if (existing) {
       const elapsedSec = Math.round((Date.now() - existing.startedAt) / 1000);
-      const elapsedLabel = elapsedSec < 60
-        ? `${elapsedSec}s`
-        : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+      const elapsedLabel =
+        elapsedSec < 60 ? `${elapsedSec}s` : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
       try {
         await this.api.chatPostMessage({
           channel: ctx.channel,
           thread_ts: ctx.threadTs ?? ctx.ts,
           text: `:hourglass_flowing_sand: Still working on your last message (${elapsedLabel} so far). One thing at a time per thread.`,
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return;
     }
 
@@ -1134,17 +1213,22 @@ export class SlackBridge implements SlackChannel {
       onDone: async (finalText, err) => {
         try {
           if (!err) {
-            await backendRequest(this.deps.backendPort, 'POST', `/conversations/${conversationId}/messages`, {
-              id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
-              role: 'assistant',
-              content: finalText,
-              metadata: {
-                source: 'slack',
-                slack_channel: ctx.channel,
-                slack_thread_ts: threadTsForReply,
-                slack_team_id: ctx.teamId,
+            await backendRequest(
+              this.deps.backendPort,
+              'POST',
+              `/conversations/${conversationId}/messages`,
+              {
+                id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+                role: 'assistant',
+                content: finalText,
+                metadata: {
+                  source: 'slack',
+                  slack_channel: ctx.channel,
+                  slack_thread_ts: threadTsForReply,
+                  slack_team_id: ctx.teamId,
+                },
               },
-            });
+            );
             this.emitConversationUpdated(conversationId, 'message');
           }
         } finally {
@@ -1161,7 +1245,9 @@ export class SlackBridge implements SlackChannel {
       // The user has lost access to the pinned expert since it was set. Drop
       // the pin and fall back to the default Cerebro agent (which will itself
       // honour accessibleExpertIds for any delegation).
-      log(`pinned expert ${expertId} no longer accessible to user ${ctx.userId}; falling back to default agent`);
+      log(
+        `pinned expert ${expertId} no longer accessible to user ${ctx.userId}; falling back to default agent`,
+      );
       delete this.settings.threadExpertMap[key];
       void this.persistThreadExpertMap();
       expertId = null;
@@ -1188,7 +1274,12 @@ export class SlackBridge implements SlackChannel {
       // The bridge doesn't ship a transcript — Claude Code's own --resume
       // carries history — so hint the create-vs-resume decision explicitly.
       resume: reused,
-      source: { kind: 'slack', channel: ctx.channel, threadTs: threadTsForReply, teamId: ctx.teamId },
+      source: {
+        kind: 'slack',
+        channel: ctx.channel,
+        threadTs: threadTsForReply,
+        teamId: ctx.teamId,
+      },
       accessibleExpertIds,
     };
 
@@ -1217,7 +1308,9 @@ export class SlackBridge implements SlackChannel {
             thread_ts: threadTsForReply,
             text: ':hourglass_flowing_sand: Still working on your last message — I’ll reply here when it’s done.',
           });
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         return;
       }
       logError('startRun failed', errMsg);
@@ -1227,7 +1320,9 @@ export class SlackBridge implements SlackChannel {
           thread_ts: threadTsForReply,
           text: ':warning: Something went wrong starting that. Please try again in a moment.',
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -1239,15 +1334,23 @@ export class SlackBridge implements SlackChannel {
       await this.replyExpertsList(ctx.channel, ctx.threadTs ?? ctx.ts, ctx.userId, key);
       return;
     }
-    if (args.toLowerCase() === 'clear' || args.toLowerCase() === 'reset' || args.toLowerCase() === 'off') {
+    if (
+      args.toLowerCase() === 'clear' ||
+      args.toLowerCase() === 'reset' ||
+      args.toLowerCase() === 'off'
+    ) {
       delete this.settings.threadExpertMap[key];
       await this.persistThreadExpertMap();
       try {
         await this.api.chatPostEphemeral({
-          channel: ctx.channel, user: ctx.userId, thread_ts: ctx.threadTs ?? ctx.ts,
+          channel: ctx.channel,
+          user: ctx.userId,
+          thread_ts: ctx.threadTs ?? ctx.ts,
           text: ':white_check_mark: Expert cleared. This thread now uses the default Cerebro agent.',
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return;
     }
     await this.setThreadExpert(ctx.channel, ctx.threadTs ?? ctx.ts, ctx.userId, key, args);
@@ -1256,8 +1359,19 @@ export class SlackBridge implements SlackChannel {
   // ── Slash command handler ──────────────────────────────────────
 
   private async handleSlashCommand(
-    command: { command: string; text: string; channel_id: string; user_id: string; team_id: string; response_url: string; trigger_id: string },
-    respond: (msg: { response_type?: 'ephemeral' | 'in_channel'; text: string }) => Promise<unknown>,
+    command: {
+      command: string;
+      text: string;
+      channel_id: string;
+      user_id: string;
+      team_id: string;
+      response_url: string;
+      trigger_id: string;
+    },
+    respond: (msg: {
+      response_type?: 'ephemeral' | 'in_channel';
+      text: string;
+    }) => Promise<unknown>,
   ): Promise<void> {
     // Allowlist check: even for slash commands, fall through if the user can't talk to Cerebro here.
     if (!this.isAllowlisted(command.channel_id, command.user_id)) {
@@ -1268,7 +1382,10 @@ export class SlackBridge implements SlackChannel {
       return;
     }
     if (!this.authorizedRateLimiter.allow(command.user_id)) {
-      await respond({ response_type: 'ephemeral', text: 'Rate limit exceeded. Try again in a minute.' });
+      await respond({
+        response_type: 'ephemeral',
+        text: 'Rate limit exceeded. Try again in a minute.',
+      });
       return;
     }
 
@@ -1283,7 +1400,9 @@ export class SlackBridge implements SlackChannel {
         `*Cerebro Slack bridge*`,
         `• Running: ${s.running ? ':white_check_mark:' : ':no_entry_sign:'}`,
         s.teamName ? `• Workspace: ${s.teamName}` : null,
-        s.lastEventAt ? `• Last event: <!date^${Math.floor(s.lastEventAt / 1000)}^{date_short_pretty} {time}|recently>` : null,
+        s.lastEventAt
+          ? `• Last event: <!date^${Math.floor(s.lastEventAt / 1000)}^{date_short_pretty} {time}|recently>`
+          : null,
         s.lastError ? `• Last error: \`${scrubTokenish(s.lastError)}\`` : null,
       ].filter(Boolean) as string[];
       await respond({ response_type: 'ephemeral', text: lines.join('\n') });
@@ -1317,7 +1436,14 @@ export class SlackBridge implements SlackChannel {
         await respond({ response_type: 'ephemeral', text: ':white_check_mark: Expert cleared.' });
         return;
       }
-      await this.setThreadExpert(command.channel_id, undefined, command.user_id, key, parsed.slug, respond);
+      await this.setThreadExpert(
+        command.channel_id,
+        undefined,
+        command.user_id,
+        key,
+        parsed.slug,
+        respond,
+      );
       return;
     }
     if (parsed.verb === 'ask') {
@@ -1329,12 +1455,20 @@ export class SlackBridge implements SlackChannel {
     }
     await respond({
       response_type: 'ephemeral',
-      text: 'I didn\'t understand that. Try `/cerebro help`.',
+      text: "I didn't understand that. Try `/cerebro help`.",
     });
   }
 
   private async runSlashCommandQuery(
-    command: { command: string; text: string; channel_id: string; user_id: string; team_id: string; response_url: string; trigger_id: string },
+    command: {
+      command: string;
+      text: string;
+      channel_id: string;
+      user_id: string;
+      team_id: string;
+      response_url: string;
+      trigger_id: string;
+    },
     text: string,
   ): Promise<void> {
     // Build a fresh conversation rooted in the slash command — slash commands
@@ -1382,8 +1516,13 @@ export class SlackBridge implements SlackChannel {
       isDestroyed: () => false,
     };
     const accessibleExpertIds = this.getAccessibleExpertIds(command.user_id);
-    let slashExpertId = this.settings.threadExpertMap[`${command.team_id}:${command.channel_id}:slash`] ?? null;
-    if (slashExpertId && accessibleExpertIds !== null && !accessibleExpertIds.includes(slashExpertId)) {
+    let slashExpertId =
+      this.settings.threadExpertMap[`${command.team_id}:${command.channel_id}:slash`] ?? null;
+    if (
+      slashExpertId &&
+      accessibleExpertIds !== null &&
+      !accessibleExpertIds.includes(slashExpertId)
+    ) {
       slashExpertId = null;
     }
     try {
@@ -1391,7 +1530,12 @@ export class SlackBridge implements SlackChannel {
         conversationId,
         content: text,
         expertId: slashExpertId,
-        source: { kind: 'slack', channel: command.channel_id, threadTs: undefined, teamId: command.team_id },
+        source: {
+          kind: 'slack',
+          channel: command.channel_id,
+          threadTs: undefined,
+          teamId: command.team_id,
+        },
         accessibleExpertIds,
       });
     } catch (err) {
@@ -1441,7 +1585,11 @@ export class SlackBridge implements SlackChannel {
     return { conversationId, reused: false };
   }
 
-  private async createConversation(key: string, ctx: SlackInboundContext, now: number): Promise<string> {
+  private async createConversation(
+    key: string,
+    ctx: SlackInboundContext,
+    now: number,
+  ): Promise<string> {
     const id = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
     const username = (await this.resolveDisplayName(ctx.userId)) ?? ctx.userId;
     const isDm = ctx.channelType === 'im' || ctx.channelType === 'mpim';
@@ -1468,7 +1616,11 @@ export class SlackBridge implements SlackChannel {
     if (!this.api || !ctx.threadTs) return '';
     let replies: Array<{ ts: string; user?: string; text: string }>;
     try {
-      replies = await this.api.conversationsReplies({ channel: ctx.channel, ts: ctx.threadTs, limit: 200 });
+      replies = await this.api.conversationsReplies({
+        channel: ctx.channel,
+        ts: ctx.threadTs,
+        limit: 200,
+      });
     } catch (err) {
       // Missing history scope (old install not yet reinstalled) or transient
       // error — degrade gracefully to no backfill rather than dropping the run.
@@ -1480,16 +1632,19 @@ export class SlackBridge implements SlackChannel {
     const prior = replies.filter((m) => {
       if (!m.text || !m.text.trim()) return false;
       const mt = parseFloat(m.ts);
-      if (!Number.isFinite(mt) || mt >= currentTs) return false;       // only earlier than what we're answering
-      if (since !== null && mt <= since) return false;                  // delta since last backfill
+      if (!Number.isFinite(mt) || mt >= currentTs) return false; // only earlier than what we're answering
+      if (since !== null && mt <= since) return false; // delta since last backfill
       return true;
     });
     if (prior.length === 0) return '';
     const lines: string[] = [];
     for (const m of prior) {
-      const who = m.user && m.user === this.settings.botUserId
-        ? 'Cerebro'
-        : (m.user ? (await this.resolveDisplayName(m.user)) ?? m.user : 'user');
+      const who =
+        m.user && m.user === this.settings.botUserId
+          ? 'Cerebro'
+          : m.user
+            ? ((await this.resolveDisplayName(m.user)) ?? m.user)
+            : 'user';
       const clean = stripBotMention(m.text, this.settings.botUserId).trim();
       if (!clean) continue;
       lines.push(`${who}: ${clean}`);
@@ -1507,7 +1662,10 @@ export class SlackBridge implements SlackChannel {
     ].join('\n');
   }
 
-  private async postUserMessageWithRecovery(conversationId: string, ctx: SlackInboundContext): Promise<string> {
+  private async postUserMessageWithRecovery(
+    conversationId: string,
+    ctx: SlackInboundContext,
+  ): Promise<string> {
     const body = {
       id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
       role: 'user' as const,
@@ -1521,7 +1679,12 @@ export class SlackBridge implements SlackChannel {
         slack_event_id: ctx.eventId,
       },
     };
-    const res = await backendRequest(this.deps.backendPort, 'POST', `/conversations/${conversationId}/messages`, body);
+    const res = await backendRequest(
+      this.deps.backendPort,
+      'POST',
+      `/conversations/${conversationId}/messages`,
+      body,
+    );
     if (res.status !== 404) return conversationId;
     // Stale mapping → recreate.
     const key = conversationKey(ctx).key;
@@ -1538,7 +1701,9 @@ export class SlackBridge implements SlackChannel {
     if (!this.webContents) return;
     try {
       this.webContents.send(IPC_CHANNELS.SLACK_CONVERSATION_UPDATED, { conversationId, kind });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   // ── Voice notes / attachments ───────────────────────────────────
@@ -1582,8 +1747,8 @@ export class SlackBridge implements SlackChannel {
     if (!ready) {
       await this.postNote(
         ctx,
-        '🎙️ Voice transcription is unavailable right now. '
-        + 'Try typing your message, or open Settings → Voice to set it up.',
+        '🎙️ Voice transcription is unavailable right now. ' +
+          'Try typing your message, or open Settings → Voice to set it up.',
       );
       return;
     }
@@ -1644,19 +1809,27 @@ export class SlackBridge implements SlackChannel {
       if (code === 'not_authed') {
         await this.postNote(
           ctx,
-          "🎙️ Couldn't fetch the voice note — the Slack app may need the "
-          + '`files:read` permission. Ask the Cerebro operator to reinstall the app.',
+          "🎙️ Couldn't fetch the voice note — the Slack app may need the " +
+            '`files:read` permission. Ask the Cerebro operator to reinstall the app.',
         );
       } else {
-        await this.postNote(ctx, "🎙️ Couldn't fetch that voice note. Try again or type your message.");
+        await this.postNote(
+          ctx,
+          "🎙️ Couldn't fetch that voice note. Try again or type your message.",
+        );
       }
       return null;
     }
 
-    const timer = setTimeout(() => {
-      fs.rm(dest, { force: true }, () => { /* ignore */ });
-      this.tempFiles.delete(dest);
-    }, 30 * 60 * 1000);
+    const timer = setTimeout(
+      () => {
+        fs.rm(dest, { force: true }, () => {
+          /* ignore */
+        });
+        this.tempFiles.delete(dest);
+      },
+      30 * 60 * 1000,
+    );
     this.tempFiles.set(dest, timer);
     return dest;
   }
@@ -1666,7 +1839,9 @@ export class SlackBridge implements SlackChannel {
     if (!this.api) return;
     try {
       await this.api.chatPostMessage({ channel: ctx.channel, thread_ts: ctx.threadTs, text });
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   private snippet(s: string): string {
@@ -1690,9 +1865,9 @@ export class SlackBridge implements SlackChannel {
   // ── Expert resolution ──────────────────────────────────────────
 
   private async fetchExperts(): Promise<Array<{ id: string; slug: string | null; name: string }>> {
-    const res = await backendRequest<{ experts: Array<{ id: string; slug: string | null; name: string }> }>(
-      this.deps.backendPort, 'GET', '/experts',
-    );
+    const res = await backendRequest<{
+      experts: Array<{ id: string; slug: string | null; name: string }>;
+    }>(this.deps.backendPort, 'GET', '/experts');
     return res.data?.experts ?? [];
   }
 
@@ -1720,7 +1895,10 @@ export class SlackBridge implements SlackChannel {
     return this.settings.defaultExpertAccess;
   }
 
-  private filterExpertsForUser<E extends { id: string }>(experts: E[], userId: string | undefined): E[] {
+  private filterExpertsForUser<E extends { id: string }>(
+    experts: E[],
+    userId: string | undefined,
+  ): E[] {
     const allow = this.getAccessibleExpertIds(userId);
     if (allow === null) return experts;
     const set = new Set(allow);
@@ -1732,28 +1910,36 @@ export class SlackBridge implements SlackChannel {
     threadTs: string | undefined,
     user: string,
     key: string,
-    respond?: (msg: { response_type?: 'ephemeral' | 'in_channel'; text: string }) => Promise<unknown>,
+    respond?: (msg: {
+      response_type?: 'ephemeral' | 'in_channel';
+      text: string;
+    }) => Promise<unknown>,
   ): Promise<void> {
     const all = await this.fetchExperts();
     if (all.length === 0) {
       const txt = 'No experts configured yet.';
       if (respond) await respond({ response_type: 'ephemeral', text: txt });
-      else if (this.api) await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
+      else if (this.api)
+        await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
       return;
     }
     const experts = this.filterExpertsForUser(all, user);
     if (experts.length === 0) {
       const txt = 'No experts have been assigned to you yet. Ask your Cerebro operator.';
       if (respond) await respond({ response_type: 'ephemeral', text: txt });
-      else if (this.api) await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
+      else if (this.api)
+        await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
       return;
     }
     const lines = experts.map((e) => `• \`${e.slug ?? e.id}\` — ${e.name}`);
     const current = this.settings.threadExpertMap[key];
-    const currentLine = current ? `\n\nCurrent: \`${current}\`` : '\n\n(using default Cerebro agent)';
+    const currentLine = current
+      ? `\n\nCurrent: \`${current}\``
+      : '\n\n(using default Cerebro agent)';
     const txt = `*Available experts*\n${lines.join('\n')}${currentLine}`;
     if (respond) await respond({ response_type: 'ephemeral', text: txt });
-    else if (this.api) await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
+    else if (this.api)
+      await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
   }
 
   private async setThreadExpert(
@@ -1762,30 +1948,38 @@ export class SlackBridge implements SlackChannel {
     user: string,
     key: string,
     slug: string,
-    respond?: (msg: { response_type?: 'ephemeral' | 'in_channel'; text: string }) => Promise<unknown>,
+    respond?: (msg: {
+      response_type?: 'ephemeral' | 'in_channel';
+      text: string;
+    }) => Promise<unknown>,
   ): Promise<void> {
     const experts = await this.fetchExperts();
     const match = experts.find(
-      (e) => e.slug?.toLowerCase() === slug.toLowerCase() || e.id.toLowerCase().startsWith(slug.toLowerCase()),
+      (e) =>
+        e.slug?.toLowerCase() === slug.toLowerCase() ||
+        e.id.toLowerCase().startsWith(slug.toLowerCase()),
     );
     if (!match) {
       const txt = `No expert matched "${slug}". Try \`/cerebro experts\` to see options.`;
       if (respond) await respond({ response_type: 'ephemeral', text: txt });
-      else if (this.api) await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
+      else if (this.api)
+        await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
       return;
     }
     const allow = this.getAccessibleExpertIds(user);
     if (allow !== null && !allow.includes(match.id)) {
       const txt = `You don't have access to *${match.name}*. Try \`/cerebro experts\` to see what you can use.`;
       if (respond) await respond({ response_type: 'ephemeral', text: txt });
-      else if (this.api) await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
+      else if (this.api)
+        await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
       return;
     }
     this.settings.threadExpertMap[key] = match.id;
     await this.persistThreadExpertMap();
     const txt = `:white_check_mark: Pinned this conversation to *${match.name}*.`;
     if (respond) await respond({ response_type: 'ephemeral', text: txt });
-    else if (this.api) await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
+    else if (this.api)
+      await this.api.chatPostEphemeral({ channel, user, thread_ts: threadTs, text: txt });
   }
 
   // ── User-name cache ─────────────────────────────────────────────
@@ -1796,11 +1990,11 @@ export class SlackBridge implements SlackChannel {
     try {
       const info = await this.api.usersInfo(userId);
       const name =
-        info?.profile?.display_name?.trim()
-        || info?.profile?.real_name?.trim()
-        || info?.real_name?.trim()
-        || info?.name?.trim()
-        || null;
+        info?.profile?.display_name?.trim() ||
+        info?.profile?.real_name?.trim() ||
+        info?.real_name?.trim() ||
+        info?.name?.trim() ||
+        null;
       if (name) {
         this.settings.userDisplayNames[userId] = name;
         await this.persistUserDisplayNames();
@@ -1829,7 +2023,9 @@ export class SlackBridge implements SlackChannel {
       return this.routineCache.routines;
     }
     const res = await backendRequest<{ routines: BackendRoutineRecord[] }>(
-      this.deps.backendPort, 'GET', '/routines?trigger_type=slack_message',
+      this.deps.backendPort,
+      'GET',
+      '/routines?trigger_type=slack_message',
     );
     const list = (res.data?.routines ?? [])
       .filter((r) => r.is_enabled)
@@ -1850,16 +2046,23 @@ export class SlackBridge implements SlackChannel {
       return;
     }
     try {
-      backendRequest(this.deps.backendPort, 'POST', `/routines/${routine.id}/run`).catch(() => { /* ignore */ });
+      backendRequest(this.deps.backendPort, 'POST', `/routines/${routine.id}/run`).catch(() => {
+        /* ignore */
+      });
       const runId = await engine.startRun(this.webContents, {
         dag: routine.dag,
         routineId: routine.id,
         triggerSource: 'slack_message',
         triggerPayload: payload,
       });
-      log(`dispatched routine "${routine.name}" (${routine.id}) from ${payload.channel} → run ${runId}`);
+      log(
+        `dispatched routine "${routine.name}" (${routine.id}) from ${payload.channel} → run ${runId}`,
+      );
     } catch (err) {
-      logError(`routine ${routine.name} dispatch failed:`, err instanceof Error ? err.message : String(err));
+      logError(
+        `routine ${routine.name} dispatch failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 
@@ -1871,7 +2074,10 @@ export class SlackBridge implements SlackChannel {
         void this.handleApprovalRequested(event, ctx);
         return;
       }
-      if ((event.type === 'approval_granted' || event.type === 'approval_denied') && 'approvalId' in event) {
+      if (
+        (event.type === 'approval_granted' || event.type === 'approval_denied') &&
+        'approvalId' in event
+      ) {
         void this.handleApprovalResolved(event);
         return;
       }
@@ -1889,7 +2095,11 @@ export class SlackBridge implements SlackChannel {
     conversationId: string | undefined,
   ): { channel: string; threadTs: string | undefined } | null {
     const run = pickApprovalRun(
-      [...this.activeRuns.values()].map((r) => ({ id: r, conversationId: r.conversationId, startedAt: r.startedAt })),
+      [...this.activeRuns.values()].map((r) => ({
+        id: r,
+        conversationId: r.conversationId,
+        startedAt: r.startedAt,
+      })),
       conversationId,
     );
     if (!run) return null;
@@ -1938,9 +2148,10 @@ export class SlackBridge implements SlackChannel {
     // clicked again) and the outcome is shown inline — fires no matter which
     // surface resolved it (Slack button, the in-chat card, or the Approvals
     // screen), since the engine broadcasts approval_granted/denied to all.
-    const text = event.type === 'approval_granted'
-      ? ':white_check_mark: Approved — continuing.'
-      : `:no_entry_sign: Denied${('reason' in event && event.reason) ? `: ${scrubTokenish(String(event.reason))}` : ''}.`;
+    const text =
+      event.type === 'approval_granted'
+        ? ':white_check_mark: Approved — continuing.'
+        : `:no_entry_sign: Denied${'reason' in event && event.reason ? `: ${scrubTokenish(String(event.reason))}` : ''}.`;
     try {
       await this.api.chatUpdate({
         channel: target.channel,
@@ -1949,7 +2160,10 @@ export class SlackBridge implements SlackChannel {
         blocks: approvalResolvedBlocks(text),
       });
     } catch (err) {
-      logError('approval resolve announce failed:', err instanceof Error ? err.message : String(err));
+      logError(
+        'approval resolve announce failed:',
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 
@@ -1957,7 +2171,22 @@ export class SlackBridge implements SlackChannel {
 
   private async loadSettings(): Promise<void> {
     const port = this.deps.backendPort;
-    const [storedBotToken, storedAppToken, enabled, allowChans, allowUsers, threadMap, expertMap, displayNames, defaultExpertAccess, userExpertAccess, teamName, botUserId, operatorUserId, sessionIdleHours] = await Promise.all([
+    const [
+      storedBotToken,
+      storedAppToken,
+      enabled,
+      allowChans,
+      allowUsers,
+      threadMap,
+      expertMap,
+      displayNames,
+      defaultExpertAccess,
+      userExpertAccess,
+      teamName,
+      botUserId,
+      operatorUserId,
+      sessionIdleHours,
+    ] = await Promise.all([
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.botToken),
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.appToken),
       backendGetSetting<boolean>(port, SLACK_SETTING_KEYS.enabled),
@@ -1979,11 +2208,15 @@ export class SlackBridge implements SlackChannel {
 
     if (botToken && isStoredPlaintext(storedBotToken) && secureTokenBackend() === 'os-keychain') {
       const re = encryptForStorage(botToken);
-      await backendPutSetting(port, SLACK_SETTING_KEYS.botToken, re).catch(() => { /* retry next load */ });
+      await backendPutSetting(port, SLACK_SETTING_KEYS.botToken, re).catch(() => {
+        /* retry next load */
+      });
     }
     if (appToken && isStoredPlaintext(storedAppToken) && secureTokenBackend() === 'os-keychain') {
       const re = encryptForStorage(appToken);
-      await backendPutSetting(port, SLACK_SETTING_KEYS.appToken, re).catch(() => { /* retry next load */ });
+      await backendPutSetting(port, SLACK_SETTING_KEYS.appToken, re).catch(() => {
+        /* retry next load */
+      });
     }
 
     this.settings = {
@@ -2000,28 +2233,57 @@ export class SlackBridge implements SlackChannel {
       teamName: typeof teamName === 'string' ? teamName : null,
       botUserId: typeof botUserId === 'string' ? botUserId : null,
       operatorUserId: typeof operatorUserId === 'string' && operatorUserId ? operatorUserId : null,
-      sessionIdleHours: typeof sessionIdleHours === 'number' && sessionIdleHours > 0 ? sessionIdleHours : null,
+      sessionIdleHours:
+        typeof sessionIdleHours === 'number' && sessionIdleHours > 0 ? sessionIdleHours : null,
     };
   }
 
   private async persistThreadConversationMap(): Promise<void> {
-    await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.threadConversationMap, this.settings.threadConversationMap);
+    await backendPutSetting(
+      this.deps.backendPort,
+      SLACK_SETTING_KEYS.threadConversationMap,
+      this.settings.threadConversationMap,
+    );
   }
   private async persistThreadExpertMap(): Promise<void> {
-    await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.threadExpertMap, this.settings.threadExpertMap);
+    await backendPutSetting(
+      this.deps.backendPort,
+      SLACK_SETTING_KEYS.threadExpertMap,
+      this.settings.threadExpertMap,
+    );
   }
   private async persistUserDisplayNames(): Promise<void> {
-    await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.userDisplayNames, this.settings.userDisplayNames);
+    await backendPutSetting(
+      this.deps.backendPort,
+      SLACK_SETTING_KEYS.userDisplayNames,
+      this.settings.userDisplayNames,
+    );
   }
   private async persistUserExpertAccess(): Promise<void> {
-    await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.userExpertAccess, this.settings.userExpertAccess);
+    await backendPutSetting(
+      this.deps.backendPort,
+      SLACK_SETTING_KEYS.userExpertAccess,
+      this.settings.userExpertAccess,
+    );
   }
   private async persistDefaultExpertAccess(): Promise<void> {
-    await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.defaultExpertAccess, this.settings.defaultExpertAccess);
+    await backendPutSetting(
+      this.deps.backendPort,
+      SLACK_SETTING_KEYS.defaultExpertAccess,
+      this.settings.defaultExpertAccess,
+    );
   }
   private async persistTeamMetadata(): Promise<void> {
-    await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.teamName, this.settings.teamName ?? '');
-    await backendPutSetting(this.deps.backendPort, SLACK_SETTING_KEYS.botUserId, this.settings.botUserId ?? '');
+    await backendPutSetting(
+      this.deps.backendPort,
+      SLACK_SETTING_KEYS.teamName,
+      this.settings.teamName ?? '',
+    );
+    await backendPutSetting(
+      this.deps.backendPort,
+      SLACK_SETTING_KEYS.botUserId,
+      this.settings.botUserId ?? '',
+    );
   }
 
   // ── Watchdogs ─────────────────────────────────────────────────
@@ -2033,14 +2295,22 @@ export class SlackBridge implements SlackChannel {
       for (const [key, run] of this.activeRuns) {
         if (now - run.lastActivityAt < RUN_IDLE_TIMEOUT_MS) continue;
         log(`watchdog: reclaiming stuck run ${run.runId} for thread ${key}`);
-        try { this.deps.agentRuntime.cancelRun(run.runId); } catch { /* ignore */ }
+        try {
+          this.deps.agentRuntime.cancelRun(run.runId);
+        } catch {
+          /* ignore */
+        }
         this.activeRuns.delete(key);
         if (this.api) {
-          this.api.chatPostMessage({
-            channel: run.channel,
-            thread_ts: run.threadTs,
-            text: ':warning: The previous request stopped responding and was cancelled. Send a new message to try again.',
-          }).catch(() => { /* ignore */ });
+          this.api
+            .chatPostMessage({
+              channel: run.channel,
+              thread_ts: run.threadTs,
+              text: ':warning: The previous request stopped responding and was cancelled. Send a new message to try again.',
+            })
+            .catch(() => {
+              /* ignore */
+            });
         }
       }
     }, RUN_WATCHDOG_INTERVAL_MS);
@@ -2090,7 +2360,10 @@ export class SlackBridge implements SlackChannel {
    * Returns false (let the sink post the default :warning:) when no
    * operator can be resolved — better than silently swallowing the error.
    */
-  private async handleAuthFailure(ctx: SlackInboundContext, originalText: string): Promise<boolean> {
+  private async handleAuthFailure(
+    ctx: SlackInboundContext,
+    originalText: string,
+  ): Promise<boolean> {
     if (!this.api) return false;
     if (this.pendingLogin) {
       // Another auth attempt is already in flight. Don't double-DM; the
@@ -2109,7 +2382,10 @@ export class SlackBridge implements SlackChannel {
     try {
       operatorDmChannel = await this.api.conversationsOpen(operatorUserId);
     } catch (err) {
-      logError('auth failure: conversations.open failed', err instanceof Error ? err.message : String(err));
+      logError(
+        'auth failure: conversations.open failed',
+        err instanceof Error ? err.message : String(err),
+      );
       return false;
     }
 
@@ -2125,7 +2401,10 @@ export class SlackBridge implements SlackChannel {
     try {
       snap = await orchestrator.start('setup-token');
     } catch (err) {
-      logError('auth failure: login start failed', err instanceof Error ? err.message : String(err));
+      logError(
+        'auth failure: login start failed',
+        err instanceof Error ? err.message : String(err),
+      );
       return false;
     }
 
@@ -2139,14 +2418,17 @@ export class SlackBridge implements SlackChannel {
       await this.api.chatPostMessage({
         channel: operatorDmChannel,
         text:
-          ':key: *Cerebro needs you to re-authenticate Claude.*\n\n'
-          + `1. Open this link in your browser: ${snap.url}\n`
-          + '2. Complete the sign-in.\n'
-          + '3. Reply to this DM with the code shown on the page.\n\n'
-          + '_I’ll resume the original request automatically once you reply._',
+          ':key: *Cerebro needs you to re-authenticate Claude.*\n\n' +
+          `1. Open this link in your browser: ${snap.url}\n` +
+          '2. Complete the sign-in.\n' +
+          '3. Reply to this DM with the code shown on the page.\n\n' +
+          '_I’ll resume the original request automatically once you reply._',
       });
     } catch (err) {
-      logError('auth failure: operator DM post failed', err instanceof Error ? err.message : String(err));
+      logError(
+        'auth failure: operator DM post failed',
+        err instanceof Error ? err.message : String(err),
+      );
       orchestrator.cancel(snap.loginId);
       return false;
     }
@@ -2163,7 +2445,9 @@ export class SlackBridge implements SlackChannel {
       }
     };
     orchestrator.on('update', update);
-    const unsubscribe = (): void => { orchestrator.off('update', update); };
+    const unsubscribe = (): void => {
+      orchestrator.off('update', update);
+    };
 
     const timeoutTimer = setTimeout(() => {
       void this.failAuthRecovery('Sign-in timed out after 10 minutes.');
@@ -2202,7 +2486,9 @@ export class SlackBridge implements SlackChannel {
             channel: pending.operatorDmChannel,
             text: `:warning: Couldn’t verify that code: ${scrubTokenish(msg)}\n\nPaste the code again, or open the link again to start over.`,
           });
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     }
   }
@@ -2221,7 +2507,9 @@ export class SlackBridge implements SlackChannel {
           channel: pending.operatorDmChannel,
           text: ':white_check_mark: Reconnected to Claude. Resuming the original request now.',
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     // Re-dispatch the original inbound so the requesting user finally gets
@@ -2246,7 +2534,11 @@ export class SlackBridge implements SlackChannel {
     this.pendingLogin = null;
     clearTimeout(pending.timeoutTimer);
     pending.unsubscribe();
-    try { getLoginOrchestrator().cancel(pending.loginId); } catch { /* noop */ }
+    try {
+      getLoginOrchestrator().cancel(pending.loginId);
+    } catch {
+      /* noop */
+    }
 
     if (this.api) {
       try {
@@ -2254,7 +2546,9 @@ export class SlackBridge implements SlackChannel {
           channel: pending.operatorDmChannel,
           text: `:warning: Claude sign-in didn’t complete: ${scrubTokenish(reason)}`,
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       // Tell the original requesting user we gave up.
       try {
         await this.api.chatPostMessage({
@@ -2262,13 +2556,19 @@ export class SlackBridge implements SlackChannel {
           thread_ts: pending.originalCtx.threadTs,
           text: ':warning: Couldn’t reconnect to Claude. The operator has been notified.',
         });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 
   // ── Error helpers ─────────────────────────────────────────────
 
-  private async safeReplyError(channel: string, threadTs: string | undefined, err: unknown): Promise<void> {
+  private async safeReplyError(
+    channel: string,
+    threadTs: string | undefined,
+    err: unknown,
+  ): Promise<void> {
     if (!this.api) return;
     const msg = err instanceof Error ? err.message : String(err);
     try {
@@ -2277,7 +2577,9 @@ export class SlackBridge implements SlackChannel {
         thread_ts: threadTs,
         text: `:warning: Cerebro hit an error: ${scrubTokenish(msg)}`,
       });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   // ── Home tab view ─────────────────────────────────────────────
@@ -2294,7 +2596,7 @@ export class SlackBridge implements SlackChannel {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: 'I\'m Cerebro — your team\'s AI brain.\n\n*How to talk to me:*\n• :speech_balloon: DM me directly\n• :mega: Mention `@Cerebro` in any channel and I\'ll reply in a thread\n• :keyboard: Use `/cerebro <question>` for an ephemeral one-shot',
+            text: "I'm Cerebro — your team's AI brain.\n\n*How to talk to me:*\n• :speech_balloon: DM me directly\n• :mega: Mention `@Cerebro` in any channel and I'll reply in a thread\n• :keyboard: Use `/cerebro <question>` for an ephemeral one-shot",
           },
         },
         {
@@ -2307,7 +2609,10 @@ export class SlackBridge implements SlackChannel {
         {
           type: 'context',
           elements: [
-            { type: 'mrkdwn', text: 'Each Slack thread is its own conversation. Need to configure me? Talk to whoever runs the Cerebro desktop app.' },
+            {
+              type: 'mrkdwn',
+              text: 'Each Slack thread is its own conversation. Need to configure me? Talk to whoever runs the Cerebro desktop app.',
+            },
           ],
         },
       ],
@@ -2316,7 +2621,7 @@ export class SlackBridge implements SlackChannel {
 
   private helpMenuText(): string {
     return [
-      ':wave: *Cerebro* — your team\'s AI brain.',
+      ":wave: *Cerebro* — your team's AI brain.",
       '',
       '*How to talk to me*',
       '• DM me directly — private 1:1 conversation',
@@ -2389,4 +2694,3 @@ settings:
   org_deploy_enabled: false
   socket_mode_enabled: true
 `;
-

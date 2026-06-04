@@ -12,11 +12,13 @@ describe('quality scripts', () => {
     });
   };
 
+  // These shell out to eslint/prettier over the whole tree, which takes
+  // longer than vitest's default 5s per-test timeout, so raise it.
   it('format:check passes on the checked-in tree', () => {
     expect(() => runScript('format:check')).not.toThrow();
-  });
+  }, 300_000);
 
   it('lint passes on the checked-in tree', () => {
     expect(() => runScript('lint')).not.toThrow();
-  });
+  }, 300_000);
 });

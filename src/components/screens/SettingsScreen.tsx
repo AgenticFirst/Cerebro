@@ -1,5 +1,17 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Brain, Palette, Info, Shield, FlaskConical, Mic, Archive, Activity, Plug, Sparkles, type LucideIcon } from 'lucide-react';
+import {
+  Brain,
+  Palette,
+  Info,
+  Shield,
+  FlaskConical,
+  Mic,
+  Archive,
+  Activity,
+  Plug,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import MemorySection from './settings/MemorySection';
@@ -20,7 +32,17 @@ const SkillsLibraryScreen = lazy(() => import('./SkillsLibraryScreen'));
 import { useFeatureFlags } from '../../context/FeatureFlagsContext';
 import { useOnboarding } from '../../context/OnboardingContext';
 
-type Section = 'memory' | 'integrations' | 'skills' | 'activity' | 'sandbox' | 'voice' | 'backup' | 'appearance' | 'beta' | 'about';
+type Section =
+  | 'memory'
+  | 'integrations'
+  | 'skills'
+  | 'activity'
+  | 'sandbox'
+  | 'voice'
+  | 'backup'
+  | 'appearance'
+  | 'beta'
+  | 'about';
 
 interface SectionNavItem {
   id: Section;
@@ -152,32 +174,32 @@ export default function SettingsScreen({ initialSection }: { initialSection?: Se
           </Suspense>
         </div>
       ) : (
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <div
-          data-tour-id={activeSection === 'memory' ? 'settings-memory' : undefined}
-          className={clsx(
-            'px-8 py-8',
-            activeSection === 'memory'
-              ? 'max-w-5xl h-full flex flex-col'
-              : activeSection === 'sandbox'
-                ? 'max-w-3xl'
-                : 'max-w-2xl',
-          )}
-        >
-          {activeSection === 'memory' && <MemorySection />}
-          {activeSection === 'sandbox' && <SandboxSection />}
-          {activeSection === 'voice' && <VoiceSection />}
-          {activeSection === 'backup' && <BackupSection />}
-          {activeSection === 'appearance' && <AppearanceSection />}
-          {activeSection === 'beta' && <BetaFeaturesSection />}
-          {activeSection === 'about' && (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <Info size={32} className="text-text-tertiary mb-3" />
-              <p className="text-sm text-text-tertiary">{t('settings.aboutComingSoon')}</p>
-            </div>
-          )}
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
+          <div
+            data-tour-id={activeSection === 'memory' ? 'settings-memory' : undefined}
+            className={clsx(
+              'px-8 py-8',
+              activeSection === 'memory'
+                ? 'max-w-5xl h-full flex flex-col'
+                : activeSection === 'sandbox'
+                  ? 'max-w-3xl'
+                  : 'max-w-2xl',
+            )}
+          >
+            {activeSection === 'memory' && <MemorySection />}
+            {activeSection === 'sandbox' && <SandboxSection />}
+            {activeSection === 'voice' && <VoiceSection />}
+            {activeSection === 'backup' && <BackupSection />}
+            {activeSection === 'appearance' && <AppearanceSection />}
+            {activeSection === 'beta' && <BetaFeaturesSection />}
+            {activeSection === 'about' && (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Info size={32} className="text-text-tertiary mb-3" />
+                <p className="text-sm text-text-tertiary">{t('settings.aboutComingSoon')}</p>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
       )}
     </div>
   );

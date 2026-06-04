@@ -61,7 +61,9 @@ vi.mock('../python/venv', () => ({
 // Import AFTER mocks are registered
 import { ClaudeCodeRunner } from './stream-adapter';
 
-async function startRunner(opts?: Partial<{ runId: string; prompt: string; agentName: string; cwd: string }>) {
+async function startRunner(
+  opts?: Partial<{ runId: string; prompt: string; agentName: string; cwd: string }>,
+) {
   const runner = new ClaudeCodeRunner();
   const events: Array<{ type: string; payload: any }> = [];
   const errors: string[] = [];

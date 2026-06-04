@@ -12,8 +12,8 @@
 // ── Incoming events (narrowed to what the bridge handles) ─────────
 
 export interface SlackUser {
-  id: string;            // U… (workspace) or W… (Enterprise Grid)
-  name?: string;         // legacy login (rarely useful)
+  id: string; // U… (workspace) or W… (Enterprise Grid)
+  name?: string; // legacy login (rarely useful)
   real_name?: string;
   team_id?: string;
   profile?: {
@@ -27,7 +27,7 @@ export interface SlackUser {
 }
 
 export interface SlackTeamInfo {
-  id: string;            // T…
+  id: string; // T…
   name: string;
   domain?: string;
 }
@@ -42,10 +42,10 @@ export interface SlackTeamInfo {
  * token>` fetch (scope `files:read`) — see `SlackApi.downloadFile`.
  */
 export interface SlackFile {
-  id: string;            // F…
+  id: string; // F…
   name?: string;
-  mimetype?: string;     // e.g. "audio/mp4", "audio/webm"
-  filetype?: string;     // Slack's short label, e.g. "m4a", "webm"
+  mimetype?: string; // e.g. "audio/mp4", "audio/webm"
+  filetype?: string; // Slack's short label, e.g. "m4a", "webm"
   url_private?: string;
   url_private_download?: string;
   size?: number;
@@ -83,9 +83,9 @@ export interface SlackInboundContext {
   surface: 'app_mention' | 'message_im' | 'slash_command';
   /** For slash commands only: the subcommand and remaining args. */
   slashCommand?: {
-    command: string;       // "/cerebro"
-    text: string;          // raw args
-    responseUrl: string;   // valid ~30 minutes after ack()
+    command: string; // "/cerebro"
+    text: string; // raw args
+    responseUrl: string; // valid ~30 minutes after ack()
     triggerId: string;
   };
   /** Slack-supplied locale on the user (e.g. "en-US", "es-ES"), if known. */

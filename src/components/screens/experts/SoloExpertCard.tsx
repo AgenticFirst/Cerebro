@@ -36,7 +36,7 @@ export default function SoloExpertCard({
 
   const subtitle = expert.domain
     ? expert.domain.charAt(0).toUpperCase() + expert.domain.slice(1)
-    : expert.description?.slice(0, 40) ?? '';
+    : (expert.description?.slice(0, 40) ?? '');
 
   return (
     <button
@@ -54,10 +54,7 @@ export default function SoloExpertCard({
         !expert.isEnabled && 'opacity-60',
       )}
     >
-      <div
-        className="absolute left-0 top-0 bottom-0 w-[3px]"
-        style={{ backgroundColor: accent }}
-      />
+      <div className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: accent }} />
       <div
         className="relative w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden"
         style={{
@@ -95,11 +92,7 @@ export default function SoloExpertCard({
             {expert.name}
           </span>
           {expert.isVerified && (
-            <BadgeCheck
-              size={12}
-              className="text-accent flex-shrink-0"
-              strokeWidth={2.25}
-            />
+            <BadgeCheck size={12} className="text-accent flex-shrink-0" strokeWidth={2.25} />
           )}
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
@@ -109,10 +102,7 @@ export default function SoloExpertCard({
               backgroundColor: expert.isEnabled ? '#22c55e' : '#71717a',
             }}
           />
-          <span
-            className="text-[11px] text-text-tertiary truncate"
-            title={subtitle}
-          >
+          <span className="text-[11px] text-text-tertiary truncate" title={subtitle}>
             {subtitle}
           </span>
         </div>

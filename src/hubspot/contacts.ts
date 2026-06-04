@@ -54,19 +54,17 @@ export async function findContact(
   value: string,
   signal?: AbortSignal,
 ): Promise<FindContactResult> {
-  const res = await callHubSpotApi<{ results?: Array<{ id?: string; properties?: Record<string, string> }> }>(
-    token,
-    '/crm/v3/objects/contacts/search',
-    {
-      method: 'POST',
-      body: {
-        filterGroups: [{ filters: [{ propertyName: property, operator: 'EQ', value }] }],
-        properties: SEARCH_PROPERTIES,
-        limit: 1,
-      },
-      signal,
+  const res = await callHubSpotApi<{
+    results?: Array<{ id?: string; properties?: Record<string, string> }>;
+  }>(token, '/crm/v3/objects/contacts/search', {
+    method: 'POST',
+    body: {
+      filterGroups: [{ filters: [{ propertyName: property, operator: 'EQ', value }] }],
+      properties: SEARCH_PROPERTIES,
+      limit: 1,
     },
-  );
+    signal,
+  });
   if (!res.ok) {
     return { contact: null, error: res.error };
   }
@@ -107,7 +105,12 @@ export async function upsertContact(
   const lifecyclestage = (fields.lifecyclestage ?? '').trim();
 
   if (!email && !phone) {
-    return { contactId: null, created: false, matchedBy: null, error: 'email or phone is required' };
+    return {
+      contactId: null,
+      created: false,
+      matchedBy: null,
+      error: 'email or phone is required',
+    };
   }
 
   const searchProperty = email ? 'email' : 'phone';
@@ -146,11 +149,15 @@ export async function upsertContact(
     return { contactId: matchedId, created: false, matchedBy: searchProperty, error: null };
   }
 
-  const createRes = await callHubSpotApi<Record<string, unknown>>(token, '/crm/v3/objects/contacts', {
-    method: 'POST',
-    body: { properties },
-    signal,
-  });
+  const createRes = await callHubSpotApi<Record<string, unknown>>(
+    token,
+    '/crm/v3/objects/contacts',
+    {
+      method: 'POST',
+      body: { properties },
+      signal,
+    },
+  );
   if (!createRes.ok) {
     log?.(`HubSpot contact create ${createRes.status}: ${createRes.error}`);
     return { contactId: null, created: false, matchedBy: null, error: createRes.error };

@@ -20,21 +20,30 @@ export function backendGetSetting<T>(port: number, key: string): Promise<T | nul
         return;
       }
       let data = '';
-      res.on('data', (c: Buffer) => { data += c.toString(); });
+      res.on('data', (c: Buffer) => {
+        data += c.toString();
+      });
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data) as { value: string };
           resolve(JSON.parse(parsed.value) as T);
-        } catch { resolve(null); }
+        } catch {
+          resolve(null);
+        }
       });
     });
     req.on('error', () => resolve(null));
-    req.setTimeout(5_000, () => { req.destroy(); resolve(null); });
+    req.setTimeout(5_000, () => {
+      req.destroy();
+      resolve(null);
+    });
   });
 }
 
 export async function backendPutSetting(port: number, key: string, value: unknown): Promise<void> {
-  await backendJsonRequest(port, 'PUT', `/settings/${encodeURIComponent(key)}`, { value: JSON.stringify(value) });
+  await backendJsonRequest(port, 'PUT', `/settings/${encodeURIComponent(key)}`, {
+    value: JSON.stringify(value),
+  });
 }
 
 export interface BackendJsonResponse<T> {
@@ -65,10 +74,16 @@ export function backendJsonRequest<T = unknown>(
       },
       (res) => {
         let data = '';
-        res.on('data', (c: Buffer) => { data += c.toString(); });
+        res.on('data', (c: Buffer) => {
+          data += c.toString();
+        });
         res.on('end', () => {
           let parsed: T | null = null;
-          try { parsed = JSON.parse(data) as T; } catch { parsed = null; }
+          try {
+            parsed = JSON.parse(data) as T;
+          } catch {
+            parsed = null;
+          }
           resolve({
             ok: res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300,
             status: res.statusCode ?? 0,
@@ -78,7 +93,10 @@ export function backendJsonRequest<T = unknown>(
       },
     );
     req.on('error', () => resolve({ ok: false, status: 0, data: null }));
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, status: 0, data: null }); });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, status: 0, data: null });
+    });
     if (bodyStr) req.write(bodyStr);
     req.end();
   });
