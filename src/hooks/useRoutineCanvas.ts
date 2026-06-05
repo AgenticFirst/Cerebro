@@ -619,11 +619,18 @@ export function useRoutineCanvas(routine: Routine) {
       setSaveStatus('saving');
       try {
         const dag = serialize();
-        await updateRoutine(routine.id, { dag_json: JSON.stringify(dag) });
-        setIsDirty(false);
-        setSaveStatus('saved');
-        if (savedResetTimerRef.current) clearTimeout(savedResetTimerRef.current);
-        savedResetTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+        const ok = await updateRoutine(routine.id, { dag_json: JSON.stringify(dag) });
+        if (ok) {
+          setIsDirty(false);
+          setSaveStatus('saved');
+          if (savedResetTimerRef.current) clearTimeout(savedResetTimerRef.current);
+          savedResetTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+        } else {
+          // The PATCH didn't persist. Keep the canvas dirty so the edits aren't
+          // dropped (the next change re-triggers autosave) and surface the
+          // failure instead of a misleading "Saved".
+          setSaveStatus('error');
+        }
       } catch (err) {
         console.error('[Autosave] Failed:', err);
         setSaveStatus('error');
@@ -667,11 +674,17 @@ export function useRoutineCanvas(routine: Routine) {
     try {
       const dag = serialize();
       const dagJson = JSON.stringify(dag);
-      await updateRoutine(routine.id, { dag_json: dagJson });
-      setIsDirty(false);
-      setSaveStatus('saved');
-      if (savedResetTimerRef.current) clearTimeout(savedResetTimerRef.current);
-      savedResetTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+      const ok = await updateRoutine(routine.id, { dag_json: dagJson });
+      if (ok) {
+        setIsDirty(false);
+        setSaveStatus('saved');
+        if (savedResetTimerRef.current) clearTimeout(savedResetTimerRef.current);
+        savedResetTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+      } else {
+        // Save didn't persist — keep the canvas dirty and show the error so the
+        // user knows their changes are not yet stored.
+        setSaveStatus('error');
+      }
     } catch (err) {
       console.error('[Save] Failed:', err);
       setSaveStatus('error');

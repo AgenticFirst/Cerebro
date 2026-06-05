@@ -33,7 +33,8 @@ interface RoutineContextValue {
   setEditingRoutineId: (id: string | null) => void;
   loadRoutines: () => Promise<void>;
   createRoutine: (input: CreateRoutineInput) => Promise<Routine | null>;
-  updateRoutine: (id: string, fields: Partial<ApiRoutine>) => Promise<void>;
+  /** Resolves true when the PATCH persisted, false when it failed. */
+  updateRoutine: (id: string, fields: Partial<ApiRoutine>) => Promise<boolean>;
   deleteRoutine: (id: string) => Promise<void>;
   toggleEnabled: (routine: Routine) => Promise<void>;
   runRoutine: (id: string) => Promise<void>;
@@ -121,7 +122,7 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
   );
 
   const updateRoutine = useCallback(
-    async (id: string, fields: Partial<ApiRoutine>) => {
+    async (id: string, fields: Partial<ApiRoutine>): Promise<boolean> => {
       try {
         const res: BackendResponse<ApiRoutine> = await window.cerebro.invoke({
           method: 'PATCH',
@@ -134,10 +135,17 @@ export function RoutineProvider({ children }: { children: ReactNode }) {
           if (Object.keys(fields).some((k) => SCHEDULE_FIELDS.has(k))) {
             window.cerebro.scheduler.sync().catch(console.error);
           }
+          return true;
         }
+        // Non-ok HTTP response (e.g. 4xx/5xx). Treat as a failure so callers
+        // such as the autosave loop don't mistake it for a successful save.
+        console.error('Failed to update routine:', res);
+        addToast('Failed to update routine', 'error');
+        return false;
       } catch (e) {
         console.error('Failed to update routine:', e);
         addToast('Failed to update routine', 'error');
+        return false;
       }
     },
     [addToast],
