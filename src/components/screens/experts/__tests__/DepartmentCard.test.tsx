@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import DepartmentCard from '../DepartmentCard';
 import type { Expert } from '../../../../context/ExpertContext';
@@ -52,10 +52,7 @@ function makeExpert(overrides: Partial<Expert> = {}): Expert {
 }
 
 function renderCard(overrides: Partial<React.ComponentProps<typeof DepartmentCard>> = {}) {
-  const members = [
-    makeExpert({ id: 'm1', name: 'Alice' }),
-    makeExpert({ id: 'm2', name: 'Bob' }),
-  ];
+  const members = [makeExpert({ id: 'm1', name: 'Alice' }), makeExpert({ id: 'm2', name: 'Bob' })];
   const team = makeExpert({
     id: 't1',
     name: 'Engineering',
