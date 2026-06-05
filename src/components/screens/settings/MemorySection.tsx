@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileText, FolderOpen, Maximize2, Plus, Save, Trash2 } from 'lucide-react';
+import { FileText, FolderOpen, Maximize2, Plus, Save, Search, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useMemory } from '../../../context/MemoryContext';
+import { useExperts } from '../../../context/ExpertContext';
 import { useMarkdownDocument } from '../../../context/MarkdownDocumentContext';
 import { timeAgo } from '../activity/helpers';
+import { buildSlugLabelMap, matchesQuery, resolveAgentLabel } from './memory-labels';
 import type { AgentMemoryFileContent } from '../../../types/memory';
 
 export default function MemorySection() {
   const { t } = useTranslation();
   const { directories, files, loadDirectories, loadFiles, readFile, writeFile, deleteFile } =
     useMemory();
+  const { experts } = useExperts();
   const { open: openMarkdown } = useMarkdownDocument();
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -18,6 +21,21 @@ export default function MemorySection() {
   const [original, setOriginal] = useState<string>('');
   const [creating, setCreating] = useState(false);
   const [newPath, setNewPath] = useState('');
+  const [agentQuery, setAgentQuery] = useState('');
+
+  // Map each on-disk memory slug to its friendly expert/team name so the list
+  // reads as recognizable names instead of hashed slugs (issue #66).
+  const slugLabels = useMemo(() => buildSlugLabelMap(experts), [experts]);
+  const labelForSlug = useMemo(
+    () => (slug: string) => resolveAgentLabel(slug, slugLabels),
+    [slugLabels],
+  );
+
+  // Filter the agent list by friendly name or raw slug.
+  const visibleDirectories = useMemo(
+    () => directories.filter((dir) => matchesQuery(labelForSlug(dir.slug), dir.slug, agentQuery)),
+    [directories, labelForSlug, agentQuery],
+  );
 
   // Initial directory load
   useEffect(() => {
@@ -99,14 +117,36 @@ export default function MemorySection() {
             <div className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary mb-2 px-2">
               {t('memory.agents')}
             </div>
+            {directories.length > 0 && (
+              <div className="relative mb-2 px-2">
+                <Search
+                  size={12}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none"
+                />
+                <input
+                  type="text"
+                  value={agentQuery}
+                  onChange={(e) => setAgentQuery(e.target.value)}
+                  placeholder={t('memory.searchPlaceholder')}
+                  aria-label={t('memory.searchPlaceholder')}
+                  className="w-full bg-bg-base border border-border-subtle rounded pl-7 pr-2 py-1 text-xs text-text-primary placeholder:text-text-tertiary/50 focus:outline-none focus:border-accent/40"
+                />
+              </div>
+            )}
             <div className="space-y-px">
               {directories.length === 0 && (
                 <div className="text-xs text-text-tertiary px-2 py-3">
                   {t('memory.noAgentsYet')}
                 </div>
               )}
-              {directories.map((dir) => {
+              {directories.length > 0 && visibleDirectories.length === 0 && (
+                <div className="text-xs text-text-tertiary px-2 py-3">
+                  {t('memory.noAgentsMatch')}
+                </div>
+              )}
+              {visibleDirectories.map((dir) => {
                 const active = dir.slug === selectedSlug;
+                const label = labelForSlug(dir.slug);
                 return (
                   <button
                     key={dir.slug}
@@ -114,6 +154,7 @@ export default function MemorySection() {
                       setSelectedSlug(dir.slug);
                       setSelectedFile(null);
                     }}
+                    title={dir.slug}
                     className={clsx(
                       'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors cursor-pointer',
                       active
@@ -125,8 +166,13 @@ export default function MemorySection() {
                       size={13}
                       className={active ? 'text-accent' : 'text-text-tertiary'}
                     />
-                    <span className="text-xs flex-1 truncate">{dir.slug}</span>
-                    <span className="text-[10px] text-text-tertiary">{dir.fileCount}</span>
+                    <span className="text-xs flex-1 truncate">{label}</span>
+                    <span
+                      className="text-[10px] text-text-tertiary"
+                      title={t('memory.fileCountTooltip', { count: dir.fileCount })}
+                    >
+                      {dir.fileCount}
+                    </span>
                   </button>
                 );
               })}
@@ -205,7 +251,9 @@ export default function MemorySection() {
             <>
               <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
                 <div className="text-xs text-text-secondary truncate">
-                  <span className="text-text-tertiary">{selectedSlug}</span>
+                  <span className="text-text-tertiary" title={selectedSlug}>
+                    {labelForSlug(selectedSlug)}
+                  </span>
                   <span className="text-text-tertiary mx-1">/</span>
                   <span className="text-text-primary font-mono">{selectedFile}</span>
                 </div>
@@ -215,7 +263,7 @@ export default function MemorySection() {
                       if (!selectedSlug || !selectedFile) return;
                       openMarkdown({
                         title: selectedFile,
-                        subtitle: selectedSlug,
+                        subtitle: labelForSlug(selectedSlug),
                         content,
                         initialMode: 'split',
                         onSave: async (md) => {
