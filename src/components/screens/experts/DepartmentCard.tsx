@@ -83,94 +83,100 @@ export default function DepartmentCard({
     >
       <div className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: accent }} />
 
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelectTeam();
-        }}
-        onContextMenu={(e) => onTeamContextMenu(team, e)}
-        className="expert-node w-full flex items-center gap-3 px-3.5 py-3 text-left hover:bg-bg-hover/50 transition-colors"
-      >
-        <div
-          className="relative w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden"
-          style={{
-            backgroundColor: 'rgba(13, 13, 16, 0.95)',
-            border: `1.5px solid ${accent}66`,
+      {/* Header row. The team-select control and the expand toggle are SIBLING
+          buttons inside this non-interactive flex container — never nested.
+          A <button> inside a <button> is invalid HTML (validateDOMNesting) and
+          collapses keyboard/AT semantics into a single ambiguous control. */}
+      <div className="expert-node w-full flex items-center gap-3 px-3.5 py-3 hover:bg-bg-hover/50 transition-colors">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectTeam();
           }}
+          onContextMenu={(e) => onTeamContextMenu(team, e)}
+          className="flex flex-1 min-w-0 items-center gap-3 text-left"
         >
-          {teamAvatar ? (
-            <span
-              className="twemoji leading-none pointer-events-none select-none"
-              style={{ fontSize: 28 }}
-              aria-label={teamAvatar.label}
-            >
-              {teamAvatar.emoji}
-            </span>
-          ) : (
-            <Users size={18} style={{ color: accent }} />
-          )}
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-sm font-semibold text-text-primary truncate" title={team.name}>
-              {team.name}
-            </span>
-            {team.isVerified && (
-              <BadgeCheck size={13} className="text-accent flex-shrink-0" strokeWidth={2.25} />
-            )}
-            {team.isPinned && <Pin size={11} className="text-accent flex-shrink-0" />}
-          </div>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <div
-              className="w-[6px] h-[6px] rounded-full flex-shrink-0"
-              style={{
-                backgroundColor: team.isEnabled ? '#22c55e' : '#71717a',
-              }}
-            />
-            <span className="text-[11px] text-text-tertiary truncate">
-              {subtitleParts.join(' · ')}
-            </span>
-          </div>
-        </div>
-
-        {/* Inline avatar cluster — only when collapsed, so the card is visually
-            complete at its natural (short) height rather than floating inside
-            a grid row stretched by expanded siblings. */}
-        {!expanded && memberCount > 0 && (
-          <div className="flex items-center flex-shrink-0">
-            <div className="flex -space-x-1.5">
-              {members.slice(0, 3).map((m) => {
-                const a = getAvatar(m.avatarUrl);
-                return (
-                  <div
-                    key={m.id}
-                    className="w-6 h-6 rounded-full border-2 border-bg-surface bg-bg-base overflow-hidden flex items-center justify-center"
-                    title={m.name}
-                  >
-                    {a ? (
-                      <span
-                        className="twemoji leading-none"
-                        style={{ fontSize: 14 }}
-                        aria-label={a.label}
-                      >
-                        {a.emoji}
-                      </span>
-                    ) : (
-                      <span className="text-[9px] text-text-tertiary">{m.name.slice(0, 1)}</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            {memberCount > 3 && (
-              <span className="ml-1.5 text-[10px] text-text-tertiary tabular-nums">
-                +{memberCount - 3}
+          <div
+            className="relative w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden"
+            style={{
+              backgroundColor: 'rgba(13, 13, 16, 0.95)',
+              border: `1.5px solid ${accent}66`,
+            }}
+          >
+            {teamAvatar ? (
+              <span
+                className="twemoji leading-none pointer-events-none select-none"
+                style={{ fontSize: 28 }}
+                aria-label={teamAvatar.label}
+              >
+                {teamAvatar.emoji}
               </span>
+            ) : (
+              <Users size={18} style={{ color: accent }} />
             )}
           </div>
-        )}
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-semibold text-text-primary truncate" title={team.name}>
+                {team.name}
+              </span>
+              {team.isVerified && (
+                <BadgeCheck size={13} className="text-accent flex-shrink-0" strokeWidth={2.25} />
+              )}
+              {team.isPinned && <Pin size={11} className="text-accent flex-shrink-0" />}
+            </div>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div
+                className="w-[6px] h-[6px] rounded-full flex-shrink-0"
+                style={{
+                  backgroundColor: team.isEnabled ? '#22c55e' : '#71717a',
+                }}
+              />
+              <span className="text-[11px] text-text-tertiary truncate">
+                {subtitleParts.join(' · ')}
+              </span>
+            </div>
+          </div>
+
+          {/* Inline avatar cluster — only when collapsed, so the card is visually
+              complete at its natural (short) height rather than floating inside
+              a grid row stretched by expanded siblings. */}
+          {!expanded && memberCount > 0 && (
+            <div className="flex items-center flex-shrink-0">
+              <div className="flex -space-x-1.5">
+                {members.slice(0, 3).map((m) => {
+                  const a = getAvatar(m.avatarUrl);
+                  return (
+                    <div
+                      key={m.id}
+                      className="w-6 h-6 rounded-full border-2 border-bg-surface bg-bg-base overflow-hidden flex items-center justify-center"
+                      title={m.name}
+                    >
+                      {a ? (
+                        <span
+                          className="twemoji leading-none"
+                          style={{ fontSize: 14 }}
+                          aria-label={a.label}
+                        >
+                          {a.emoji}
+                        </span>
+                      ) : (
+                        <span className="text-[9px] text-text-tertiary">{m.name.slice(0, 1)}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {memberCount > 3 && (
+                <span className="ml-1.5 text-[10px] text-text-tertiary tabular-nums">
+                  +{memberCount - 3}
+                </span>
+              )}
+            </div>
+          )}
+        </button>
 
         <button
           type="button"
@@ -189,7 +195,7 @@ export default function DepartmentCard({
             )}
           />
         </button>
-      </button>
+      </div>
 
       {expanded &&
         (memberCount === 0 ? (
