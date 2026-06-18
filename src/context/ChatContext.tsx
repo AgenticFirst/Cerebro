@@ -48,6 +48,10 @@ export interface ChatError {
   navigateTo?: Screen;
 }
 
+// Draft scope key used by the Welcome view, where no conversation exists yet.
+// Per-conversation drafts are keyed by conversation id instead.
+export const NEW_CHAT_DRAFT_KEY = '__new_chat__';
+
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
@@ -58,6 +62,8 @@ interface ChatState {
   activeExpertId: string | null;
   chatError: ChatError | null;
   pendingActivityRunId: string | null;
+  /** Unsent input text keyed by draft scope (conversation id, NEW_CHAT_DRAFT_KEY, expert key). */
+  drafts: Record<string, string>;
 }
 
 interface CreateConversationOptions {
@@ -86,6 +92,8 @@ interface ChatActions {
   getConversationsForExpert: (expertId: string) => Conversation[];
   generalConversations: Conversation[];
   consumePendingActivityRunId: () => void;
+  /** Persist (or clear, when value is '') the unsent draft for a scope key. */
+  setDraft: (key: string, value: string) => void;
 }
 
 type ChatContextValue = ChatState &
@@ -184,7 +192,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [activeExpertId, setActiveExpertId] = useState<string | null>(null);
   const [chatError, setChatError] = useState<ChatError | null>(null);
   const [pendingActivityRunId, setPendingActivityRunId] = useState<string | null>(null);
+  // Unsent input drafts keyed by scope. Lives here (above the screen router) so
+  // a half-typed message survives leaving and returning to the chat screen.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const conversationsRef = useRef<Conversation[]>([]);
+
+  const setDraft = useCallback((key: string, value: string) => {
+    setDrafts((prev) => {
+      if (value === '') {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      if (prev[key] === value) return prev;
+      return { ...prev, [key]: value };
+    });
+  }, []);
 
   // Keep ref in sync so async callbacks always see latest state
   conversationsRef.current = conversations;
@@ -973,20 +997,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
 
       let convId = activeConversationId;
-      let createdHere = false;
       if (!convId) {
         // Auto-scope new conversations to the selected expert so threads
         // started from the Experts > Messages tab are discoverable there.
         convId = createConversation(content, { expertId: activeExpertId });
-        createdHere = true;
       }
+
+      // Whether this is the conversation's first user message. Covers both the
+      // lazily-created case above and a pre-created empty conversation (the
+      // "New Chat" button and new expert threads create one before any message,
+      // so `activeConversationId` is already set here). Checked before
+      // addMessage so the user turn we're about to add isn't counted.
+      const existing = conversationsRef.current.find((c) => c.id === convId);
+      const isFirstUserTurn = !existing || !existing.messages.some((m) => m.role === 'user');
+
       addMessage(convId, 'user', content);
 
-      // Phase 1 auto-title: fire-and-forget the moment a new conversation is
-      // born. Runs in parallel with the assistant response. The renameConversation
-      // and deleteConversation callbacks invalidate the ref, so a manual edit
+      // Phase 1 auto-title: fire-and-forget on the first user message. Runs in
+      // parallel with the assistant response. The renameConversation and
+      // deleteConversation callbacks invalidate the ref, so a manual edit
       // mid-flight wins.
-      if (createdHere) {
+      if (isFirstUserTurn) {
         autoTitledIdsRef.current.add(convId);
         runAutoTitle(convId, content).catch((err) =>
           console.warn('[chat] auto-title phase-1 error:', err),
@@ -1347,6 +1378,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         activeExpertId,
         chatError,
         pendingActivityRunId,
+        drafts,
         activeConversation,
         createConversation,
         startNewChat,
@@ -1364,6 +1396,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         getConversationsForExpert,
         generalConversations,
         consumePendingActivityRunId,
+        setDraft,
       }}
     >
       {children}

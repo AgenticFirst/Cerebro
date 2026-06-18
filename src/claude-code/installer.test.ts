@@ -157,6 +157,24 @@ describe('installer materialization', () => {
     expect(fs.existsSync(cerebroFile)).toBe(true);
   });
 
+  it('cerebro prompt tells the agent read-only lookups run without approval', async () => {
+    // Guards the bug fix at the prompt layer: the agent must NOT announce or
+    // expect an approval pause for read-only lookups (HubSpot search/get/list,
+    // calendar query, Slack channel list). Bulk reads like "review 20 contacts"
+    // should just run. If this copy regresses, the agent reverts to gating reads.
+    await installAll({ dataDir, backendPort: backend.port });
+    const paths = resolvePaths(dataDir);
+    const cerebro = fs.readFileSync(path.join(paths.agentsDir, 'cerebro.md'), 'utf-8');
+
+    // Explicit statement that read-only lookups don't pause.
+    expect(cerebro).toContain('Read-only lookups never pause');
+    // The run-chat-action summary must scope approval to writes/sends.
+    expect(cerebro).toMatch(/[Rr]ead-only lookups.*run.*immediately/);
+    // The reported scenario (bulk reads) is called out in both languages.
+    expect(cerebro).toContain('review 20 contacts');
+    expect(cerebro).toContain('revisa 20 contactos');
+  });
+
   it('installAll writes the knowledge-base skill and its scripts', async () => {
     await installAll({ dataDir, backendPort: backend.port });
     const paths = resolvePaths(dataDir);
@@ -186,6 +204,25 @@ describe('installer materialization', () => {
     // The main Cerebro agent should advertise the skill.
     const cerebro = fs.readFileSync(path.join(paths.agentsDir, 'cerebro.md'), 'utf-8');
     expect(cerebro).toContain('`knowledge-base`');
+  });
+
+  it('run-chat-action.sh stamps the conversation id onto the request body', async () => {
+    // The shell link in the chain that surfaces approvals inline: it must read
+    // CEREBRO_CONVERSATION_ID and inject it as `conversation_id` into the body
+    // posted to /chat-actions/run. Without this, the engine can't attribute the
+    // approval to a conversation and the inline card never appears.
+    await installAll({ dataDir, backendPort: backend.port });
+    const paths = resolvePaths(dataDir);
+
+    const scriptPath = path.join(paths.scriptsDir, 'run-chat-action.sh');
+    expect(fs.existsSync(scriptPath), `expected script at ${scriptPath}`).toBe(true);
+    const script = fs.readFileSync(scriptPath, 'utf-8');
+
+    expect(script).toContain('CEREBRO_CONVERSATION_ID');
+    // The jq merge that adds the field to the JSON body.
+    expect(script).toContain('conversation_id: $cid');
+    // It still POSTs the (possibly stamped) payload to the run endpoint.
+    expect(script).toContain('/chat-actions/run');
   });
 
   it('installExpert writes a single expert .md file with valid frontmatter', async () => {

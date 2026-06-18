@@ -51,6 +51,7 @@ export function createGitHubFetchPrAction(deps: {
     type: 'github_fetch_pr',
     name: 'GitHub: Fetch pull request',
     description: 'Read PR metadata and (optionally) the diff for downstream steps.',
+    readOnly: true,
 
     inputSchema: {
       type: 'object',

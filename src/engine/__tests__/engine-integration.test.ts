@@ -233,6 +233,9 @@ describe('engine integration: happy path', () => {
     expect(runCreate!.body.total_steps).toBe(3);
     expect(runCreate!.body.routine_id).toBe('routine-123');
     expect(runCreate!.body.dag_json).toBeDefined();
+    // No conversation on a routine run → persisted as null (stays on the
+    // Approvals screen only, never surfaces inline in an unrelated chat).
+    expect(runCreate!.body.conversation_id).toBeNull();
 
     // Verify POST /engine/runs/{id}/steps was called with 3 step records
     const stepCreate = capturedRequests.find(
@@ -281,6 +284,35 @@ describe('engine integration: happy path', () => {
     for (let i = 0; i < events.length; i++) {
       expect(events[i].seq).toBe(i);
     }
+  }, 10_000);
+
+  it('persists conversation_id so chat-triggered approvals surface inline', async () => {
+    resetCaptures();
+    const engine = new ExecutionEngine(serverPort, makeMockRuntime());
+    const webContents = makeMockWebContents();
+
+    const request: EngineRunRequest = {
+      dag: { steps: [makeStep({ id: 'solo' })] },
+      runType: 'chat_action',
+      triggerSource: 'chat',
+      conversationId: 'conv-abc',
+    };
+
+    const runId = await engine.startRun(webContents, request);
+
+    await waitForRequests((reqs) =>
+      reqs.some((r) => r.method === 'POST' && r.path === '/engine/runs'),
+    );
+
+    const runCreate = capturedRequests.find(
+      (r) => r.method === 'POST' && r.path === '/engine/runs',
+    );
+    expect(runCreate).toBeDefined();
+    expect(runCreate!.body.id).toBe(runId);
+    // The run row must carry the originating conversation; the approvals list
+    // endpoint joins this onto each approval so InlineApprovals can match it to
+    // the open chat and render the approve/deny card inline.
+    expect(runCreate!.body.conversation_id).toBe('conv-abc');
   }, 10_000);
 });
 

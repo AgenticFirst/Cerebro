@@ -332,6 +332,13 @@ const es: TranslationKeys = {
   tasks: {
     title: 'Tareas',
     newTask: 'Nueva tarea',
+    doneNotificationTitle: 'Tarea lista',
+    doneNotificationBody: '«{{title}}» ha terminado y está lista para revisar.',
+    failedNotificationTitle: 'La tarea falló',
+    failedNotificationBody: '«{{title}}» encontró un error.',
+    doneToast: '«{{title}}» está lista para revisar.',
+    failedToast: '«{{title}}» encontró un error.',
+    viewToastAction: 'Ver',
     emptyTitle: 'A\u00fan no hay tareas',
     emptyDescription:
       'Crea una tarea y as\u00edgnala a un Experto. La ejecutar\u00e1 de forma aut\u00f3noma mientras observas.',
@@ -603,6 +610,7 @@ const es: TranslationKeys = {
 
   // ── Editor de rutinas ───────────────────────────────────────
   routineEditor: {
+    deleteStep: 'Eliminar paso',
     setSchedule: 'Definir programaci\u00f3n',
     savingInProgress: 'Guardado en progreso...',
     noPromptSet: 'Sin prompt definido',

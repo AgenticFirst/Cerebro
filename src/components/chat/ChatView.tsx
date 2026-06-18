@@ -23,7 +23,7 @@ interface ChatViewProps {
 export default function ChatView({ conversation, onSend, isStreaming, isThinking }: ChatViewProps) {
   const { t } = useTranslation();
   const chatInputRef = useRef<ChatInputHandle>(null);
-  const { setActiveExpertId, stopMessage } = useChat();
+  const { setActiveExpertId, stopMessage, drafts, setDraft } = useChat();
   const [telegramUsername, setTelegramUsername] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -98,6 +98,8 @@ export default function ChatView({ conversation, onSend, isStreaming, isThinking
             onSend={onSend}
             onStop={stopMessage}
             isStreaming={isStreaming}
+            draftValue={drafts[conversation.id] ?? ''}
+            onDraftChange={(v) => setDraft(conversation.id, v)}
           />
         </div>
       </div>

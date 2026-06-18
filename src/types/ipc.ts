@@ -858,6 +858,8 @@ export interface ChatActionCatalogEntry {
   group: string;
   setupHref?: string;
   inputSchema: Record<string, unknown>;
+  /** True for read-only lookups that run without the approval gate. */
+  readOnly: boolean;
 }
 
 export interface IntegrationProposalEventPayload {

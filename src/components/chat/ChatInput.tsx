@@ -2,6 +2,7 @@ import {
   useState,
   useRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   forwardRef,
   type KeyboardEvent,
@@ -22,6 +23,14 @@ interface ChatInputProps {
   onStop?: () => void;
   isStreaming?: boolean;
   placeholder?: string;
+  /**
+   * Optional controlled draft. When `onDraftChange` is provided the textarea
+   * reads its value from `draftValue` (persisted by the parent / ChatContext)
+   * instead of local state, so an unsent message survives unmount. Omit both
+   * to keep the original uncontrolled behavior.
+   */
+  draftValue?: string;
+  onDraftChange?: (value: string) => void;
 }
 
 export interface ChatInputHandle {
@@ -29,12 +38,23 @@ export interface ChatInputHandle {
 }
 
 const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
-  { onSend, onStop, isStreaming = false, placeholder },
+  { onSend, onStop, isStreaming = false, placeholder, draftValue, onDraftChange },
   ref,
 ) {
   const { t } = useTranslation();
   const { addToast } = useToast();
-  const [value, setValue] = useState('');
+  // Controlled when the parent owns the draft (onDraftChange present); otherwise
+  // fall back to local state so callers that don't persist drafts still work.
+  const isControlled = onDraftChange !== undefined;
+  const [internalValue, setInternalValue] = useState('');
+  const value = isControlled ? (draftValue ?? '') : internalValue;
+  const setValue = useCallback(
+    (v: string) => {
+      if (isControlled) onDraftChange!(v);
+      else setInternalValue(v);
+    },
+    [isControlled, onDraftChange],
+  );
   const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,6 +80,14 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     const maxHeight = 6 * 24; // ~6 rows
     textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
   }, []);
+
+  // Resize to fit a restored draft. The per-keystroke handler below only fires
+  // on user input, so without this a multi-line draft would show as a single
+  // collapsed row when the input remounts (screen nav) or its controlled value
+  // changes from outside (switching conversations).
+  useEffect(() => {
+    adjustHeight();
+  }, [value, adjustHeight]);
 
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);

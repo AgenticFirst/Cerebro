@@ -54,6 +54,7 @@ export function createHubSpotSearchTicketsAction(deps: {
       'Search HubSpot tickets by creation date, pipeline, stage, or free text. Read-only. Returns a list of tickets.',
 
     chatExposable: true,
+    readOnly: true,
     chatGroup: 'hubspot',
     chatLabel: { en: 'List HubSpot tickets', es: 'Listar tickets de HubSpot' },
     chatDescription: {

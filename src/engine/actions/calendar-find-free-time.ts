@@ -26,6 +26,7 @@ export function createCalendarFindFreeTimeAction(deps: {
     description: 'Find open time slots of a given duration within a window.',
 
     chatExposable: true,
+    readOnly: true,
     chatGroup: 'calendar',
     chatLabel: { en: 'Find free time', es: 'Encontrar tiempo libre' },
     chatDescription: {

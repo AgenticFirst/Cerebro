@@ -10,6 +10,7 @@ import {
   parseAllowlistRaw,
   parseSlashCommandText,
   chunkSlackText,
+  extractTrailingFilePaths,
   EventDedupe,
   SlidingWindowLimiter,
   redactSlackPayload,
@@ -17,8 +18,10 @@ import {
   parseSlackTriggerRoutine,
   matchSlackRoutineTriggers,
   matchesSlackFilter,
+  pickAudioAttachment,
   type BackendRoutineRecord,
 } from '../helpers';
+import type { SlackFile } from '../types';
 
 describe('conversationKey', () => {
   it('keeps a DM stable across messages (ignores per-message ts)', () => {
@@ -230,6 +233,73 @@ describe('chunkSlackText', () => {
     expect(chunks.length).toBe(Math.ceil(10000 / 3500));
     for (const c of chunks) expect(c.length).toBeLessThanOrEqual(3500);
     expect(chunks.join('').length).toBe(10000);
+  });
+});
+
+describe('extractTrailingFilePaths', () => {
+  it('splits a single trailing @/path from the prose', () => {
+    const { prose, paths } = extractTrailingFilePaths(
+      'Aquí tienes el logo:\n\n@/home/agents-ia/Desktop/cerebro-logo.png',
+    );
+    expect(prose).toBe('Aquí tienes el logo:');
+    expect(paths).toEqual(['/home/agents-ia/Desktop/cerebro-logo.png']);
+  });
+
+  it('returns multiple trailing paths in original order', () => {
+    const { prose, paths } = extractTrailingFilePaths(
+      'Here are both files:\n@/tmp/a.docx\n@/tmp/b.xlsx',
+    );
+    expect(prose).toBe('Here are both files:');
+    expect(paths).toEqual(['/tmp/a.docx', '/tmp/b.xlsx']);
+  });
+
+  it('returns no paths for a plain prose reply', () => {
+    const { prose, paths } = extractTrailingFilePaths('Just a normal answer.');
+    expect(prose).toBe('Just a normal answer.');
+    expect(paths).toEqual([]);
+  });
+
+  it('leaves a mid-message @/path untouched', () => {
+    const text = 'See @/tmp/x.png in the middle.\nMore prose after it.';
+    const { prose, paths } = extractTrailingFilePaths(text);
+    expect(prose).toBe(text);
+    expect(paths).toEqual([]);
+  });
+
+  it('tolerates trailing blank lines after the path', () => {
+    const { prose, paths } = extractTrailingFilePaths('Logo:\n\n@/tmp/logo.png\n\n  \n');
+    expect(prose).toBe('Logo:');
+    expect(paths).toEqual(['/tmp/logo.png']);
+  });
+
+  it('handles a reply that is only the path', () => {
+    const { prose, paths } = extractTrailingFilePaths('@/tmp/only.pdf');
+    expect(prose).toBe('');
+    expect(paths).toEqual(['/tmp/only.pdf']);
+  });
+
+  it('preserves spaces inside a path', () => {
+    const { prose, paths } = extractTrailingFilePaths(
+      'Listo:\n@/Users/jane/Desktop/Informe Final Q3.docx',
+    );
+    expect(prose).toBe('Listo:');
+    expect(paths).toEqual(['/Users/jane/Desktop/Informe Final Q3.docx']);
+  });
+
+  it('tolerates CRLF line endings', () => {
+    const { prose, paths } = extractTrailingFilePaths('Aquí está:\r\n\r\n@/tmp/a.pdf\r\n');
+    expect(prose).toBe('Aquí está:');
+    expect(paths).toEqual(['/tmp/a.pdf']);
+  });
+
+  it('does not treat a bare @mention or email as a path', () => {
+    // Lines must start with `@/` — `@channel` / `user@host` never match.
+    expect(extractTrailingFilePaths('ping @here when ready').paths).toEqual([]);
+    expect(extractTrailingFilePaths('email me at a@b.com').paths).toEqual([]);
+  });
+
+  it('returns an empty result for empty input', () => {
+    expect(extractTrailingFilePaths('')).toEqual({ prose: '', paths: [] });
   });
 });
 
@@ -466,5 +536,73 @@ describe('matchSlackRoutineTriggers', () => {
         text: 'hi',
       }).length,
     ).toBe(0);
+  });
+});
+
+describe('pickAudioAttachment', () => {
+  const file = (over: Partial<SlackFile>): SlackFile => ({ id: 'F0', ...over });
+
+  it('detects a native Slack voice clip (audio/mp4 + slack_audio) and remaps the ext to m4a', () => {
+    // The reported bug: native clips are AAC-in-MP4 (filetype/name "mp4"),
+    // which MediaIngestService classifies as video → STT never ran. The ext
+    // MUST come back m4a so the download routes to STT.
+    const picked = pickAudioAttachment([
+      file({
+        id: 'F1',
+        name: 'audio_message.mp4',
+        mimetype: 'audio/mp4',
+        filetype: 'mp4',
+        subtype: 'slack_audio',
+      }),
+    ]);
+    expect(picked?.file.id).toBe('F1');
+    expect(picked?.ext).toBe('m4a');
+  });
+
+  it('detects a slack_audio clip even when MIME is missing/odd', () => {
+    const picked = pickAudioAttachment([
+      file({ id: 'F1b', filetype: 'mp4', subtype: 'slack_audio' }),
+    ]);
+    expect(picked?.file.id).toBe('F1b');
+    expect(picked?.ext).toBe('m4a'); // mp4 isn't an audio ext → fall back to m4a
+  });
+
+  it('detects a webm voice note', () => {
+    const picked = pickAudioAttachment([
+      file({ id: 'F2', mimetype: 'audio/webm', filetype: 'webm', subtype: 'slack_audio' }),
+    ]);
+    expect(picked?.ext).toBe('webm');
+  });
+
+  it('detects a shared mp3 by MIME/extension', () => {
+    const picked = pickAudioAttachment([
+      file({ id: 'F3', name: 'clip.mp3', mimetype: 'audio/mpeg', filetype: 'mp3' }),
+    ]);
+    expect(picked?.ext).toBe('mp3');
+  });
+
+  it('ignores a real video mp4 (no audio MIME, no slack_audio)', () => {
+    const picked = pickAudioAttachment([
+      file({ id: 'F4', name: 'demo.mp4', mimetype: 'video/mp4', filetype: 'mp4' }),
+    ]);
+    expect(picked).toBeNull();
+  });
+
+  it('ignores images/docs and returns null for empty/undefined input', () => {
+    expect(
+      pickAudioAttachment([
+        file({ id: 'F5', name: 'a.png', mimetype: 'image/png', filetype: 'png' }),
+      ]),
+    ).toBeNull();
+    expect(pickAudioAttachment([])).toBeNull();
+    expect(pickAudioAttachment(undefined)).toBeNull();
+  });
+
+  it('picks the first audio file when several are attached', () => {
+    const picked = pickAudioAttachment([
+      file({ id: 'IMG', mimetype: 'image/png', filetype: 'png' }),
+      file({ id: 'AUD', mimetype: 'audio/mp4', filetype: 'mp4', subtype: 'slack_audio' }),
+    ]);
+    expect(picked?.file.id).toBe('AUD');
   });
 });

@@ -704,6 +704,7 @@ export function useRoutineCanvas(routine: Routine) {
     addNode,
     updateNodeData,
     addStickyNote,
+    deleteNode,
     deleteSelected,
     runAutoLayout,
     saveToBackend,

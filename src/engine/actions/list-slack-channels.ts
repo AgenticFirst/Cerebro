@@ -18,6 +18,7 @@ export function createListSlackChannelsAction(deps: {
     description: 'Return the list of Slack channels the bot is a member of.',
 
     chatExposable: true,
+    readOnly: true,
     chatGroup: 'slack',
     chatLabel: { en: 'List Slack channels', es: 'Listar canales de Slack' },
     chatDescription: {

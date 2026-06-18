@@ -22,6 +22,7 @@ export function createCalendarQueryEventsAction(deps: {
     description: 'List calendar events within a time window.',
 
     chatExposable: true,
+    readOnly: true,
     chatGroup: 'calendar',
     chatLabel: { en: 'Look up calendar events', es: 'Consultar eventos del calendario' },
     chatDescription: {

@@ -7,6 +7,7 @@ import { useExperts } from '../../context/ExpertContext';
 import { useFeatureFlags } from '../../context/FeatureFlagsContext';
 import { useToast } from '../../context/ToastContext';
 import { IS_MAC } from '../../lib/platform';
+import { showOsNotification } from '../../lib/os-notification';
 import Sidebar from './Sidebar';
 import UpdateBanner from '../update/UpdateBanner';
 import ChatView from '../chat/ChatView';
@@ -26,31 +27,6 @@ import CommandPalette from '../command-palette/CommandPalette';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
 
-/**
- * Show a native OS notification for a pending approval. Electron renders the
- * web Notification API as a real OS notification. Best-effort: if notifications
- * aren't permitted we silently skip (the sidebar badge + focus-refresh still
- * keep the UI correct).
- */
-function notifyApprovalPending(title: string, body: string, onClick: () => void): void {
-  if (typeof Notification === 'undefined') return;
-  const show = () => {
-    try {
-      const n = new Notification(title, { body });
-      n.onclick = onClick;
-    } catch {
-      /* notifications unavailable — badge/toast still cover it */
-    }
-  };
-  if (Notification.permission === 'granted') {
-    show();
-  } else if (Notification.permission !== 'denied') {
-    void Notification.requestPermission().then((perm) => {
-      if (perm === 'granted') show();
-    });
-  }
-}
-
 export default function AppLayout() {
   const { t } = useTranslation();
   const {
@@ -63,7 +39,12 @@ export default function AppLayout() {
     dismissChatError,
     setActiveScreen,
   } = useChat();
-  const { pendingFailurePrompts, confirmFailurePrompt, dismissFailurePrompt } = useTasks();
+  const {
+    pendingFailurePrompts,
+    confirmFailurePrompt,
+    dismissFailurePrompt,
+    subscribeTaskCompletion,
+  } = useTasks();
   const { flags } = useFeatureFlags();
   const { experts } = useExperts();
   const { addToast } = useToast();
@@ -84,7 +65,7 @@ export default function AppLayout() {
       if (event.type !== 'approval_requested') return;
 
       if (!document.hasFocus()) {
-        notifyApprovalPending(
+        showOsNotification(
           t('approvals.newNotificationTitle'),
           t('approvals.newNotificationBody'),
           () => {
@@ -103,6 +84,37 @@ export default function AppLayout() {
     });
     return unsubscribe;
   }, [addToast, setActiveScreen, t]);
+
+  // Alert when a Kanban task run finishes (success or failure) so the user
+  // hears about it even when they've walked away. Mirrors the approval flow:
+  //   • window unfocused → native OS notification; click refocuses on Tasks
+  //   • focused, another screen → clickable in-app toast that jumps to Tasks
+  //   • focused, already on Tasks → no-op (the card visibly moves columns)
+  useEffect(() => {
+    const openTasks = () => setActiveScreen('tasks');
+    return subscribeTaskCompletion(({ title, outcome }) => {
+      const isError = outcome === 'error';
+      const osTitle = t(isError ? 'tasks.failedNotificationTitle' : 'tasks.doneNotificationTitle');
+      const osBody = t(isError ? 'tasks.failedNotificationBody' : 'tasks.doneNotificationBody', {
+        title,
+      });
+
+      if (!document.hasFocus()) {
+        showOsNotification(osTitle, osBody, () => {
+          window.cerebro.focusWindow();
+          openTasks();
+        });
+        return;
+      }
+
+      if (activeScreenRef.current === 'tasks') return;
+      const toastMessage = t(isError ? 'tasks.failedToast' : 'tasks.doneToast', { title });
+      addToast(toastMessage, isError ? 'error' : 'success', {
+        label: t('tasks.viewToastAction'),
+        onClick: openTasks,
+      });
+    });
+  }, [addToast, setActiveScreen, subscribeTaskCompletion, t]);
 
   // Show one failure prompt at a time (FIFO).
   const activePrompt = pendingFailurePrompts[0] ?? null;

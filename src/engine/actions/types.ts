@@ -57,6 +57,13 @@ export interface ActionDefinition {
   chatGroup?: string;
   /** Optional setup pointer the UI can deep-link to when not_connected. */
   setupHref?: string;
+  /**
+   * Declares the action only reads/queries and never creates, mutates, or sends
+   * anything externally. Read-only chat actions skip the approval gate in
+   * `runChatAction()`. Default (undefined) = treated as a write → still gated.
+   * Set this ONLY on actions verified to have no side effects.
+   */
+  readOnly?: boolean;
 }
 
 // ── Action I/O ──────────────────────────────────────────────────

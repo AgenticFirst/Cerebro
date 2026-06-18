@@ -15,7 +15,13 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { ipcMain } from 'electron';
-import type { AgentRunRequest, ActiveRunInfo, MessageSnapshot, RendererAgentEvent } from './types';
+import type {
+  AgentRunRequest,
+  AgentRunSource,
+  ActiveRunInfo,
+  MessageSnapshot,
+  RendererAgentEvent,
+} from './types';
 
 /**
  * Minimal sink interface for run events. Both WebContents (renderer) and
@@ -316,6 +322,41 @@ function buildSeedPrompt(history: MessageSnapshot[], newMessage: string): string
     totalChars += line.length;
   }
   return `<conversation_history>\n${lines.join('\n')}\n</conversation_history>\n\n<instructions>\nThe block above is the full prior transcript of this conversation, reloaded once because your session was not on disk. Treat every previous turn as already answered. Respond ONLY to the new user message below. Do not re-answer earlier questions or recap prior content unless explicitly asked. For short follow-ups ("sí", "ok", "save that"), interpret them as confirmations of the most recent proposal in the history.\n</instructions>\n\n${newMessage}`;
+}
+
+/**
+ * For inbound messaging surfaces (Slack/Telegram), build a short preamble that
+ * tells the agent its reply is ALREADY delivered to the current channel/chat so
+ * it doesn't double-post by also firing a send_* chat-action at the same
+ * destination. Returns null for UI runs and task runs (no such source kind).
+ */
+function buildOriginPreamble(source: AgentRunSource | undefined): string | null {
+  if (!source) return null;
+  if (source.kind === 'slack') {
+    const threadAttr = source.threadTs ? ` thread_ts="${source.threadTs}"` : '';
+    return (
+      `<conversation_origin service="slack" channel="${source.channel}"${threadAttr}>\n` +
+      `This conversation is happening in Slack. Your reply to this turn is delivered to this ` +
+      `exact channel/thread automatically — you do NOT need to, and MUST NOT, use ` +
+      `send_slack_message or send_slack_file to post your answer back to THIS channel/thread; ` +
+      `that double-posts the same content. Only use the Slack send actions to reach a DIFFERENT ` +
+      `channel or DM. The one exception is sharing a file in THIS thread: a normal reply can't ` +
+      `carry an upload, so send_slack_file to this channel is fine for that.\n` +
+      `</conversation_origin>`
+    );
+  }
+  if (source.kind === 'telegram') {
+    return (
+      `<conversation_origin service="telegram" chat_id="${source.chatId}">\n` +
+      `This conversation is happening in Telegram. Your reply to this turn is delivered to this ` +
+      `exact chat automatically — you do NOT need to, and MUST NOT, use send_telegram_message to ` +
+      `post your answer back to THIS chat; that double-posts the same content. Only use the ` +
+      `Telegram send action to reach a DIFFERENT chat, or to send media (which a normal reply ` +
+      `can't carry).\n` +
+      `</conversation_origin>`
+    );
+  }
+  return null;
 }
 
 interface ExpertNameLookup {
@@ -752,6 +793,19 @@ Your FINAL output MUST be a deliverable block in this exact shape, with real con
 Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE — no pipes, no placeholder ellipsis). Replace \`title\` with a short task-specific label. Replace the inner \`…\` with your actual markdown result. Do not end with prose outside the block. Without this block the task is finalized as an error no matter how much work you did. This applies to every task, including trivial ones.
 </task_direct>`;
     }
+
+    // Origin awareness for inbound messaging surfaces. When the user is
+    // talking to Cerebro from inside Slack/Telegram, the agent's reply is
+    // ALREADY delivered to that exact channel/chat by the bridge's stream
+    // sink. Without knowing this, the model would also reach for the
+    // send_slack_message / send_telegram_message chat-action to "post its
+    // answer back", double-posting the same content. Task runs never carry
+    // these source kinds, so this only fires for inbound chat turns.
+    const originPreamble = buildOriginPreamble(request.source);
+    if (originPreamble) {
+      fullPrompt = `${originPreamble}\n\n${fullPrompt}`;
+    }
+
     // Chat mode does NOT inject conversation history anymore. We rely on
     // Claude Code's own per-session transcript (--resume reloads it from
     // disk). The lossy `<conversation_history>` block this used to build —

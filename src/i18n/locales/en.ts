@@ -329,6 +329,13 @@ const en = {
   tasks: {
     title: 'Tasks',
     newTask: 'New task',
+    doneNotificationTitle: 'Task ready',
+    doneNotificationBody: '"{{title}}" is finished and ready for review.',
+    failedNotificationTitle: 'Task failed',
+    failedNotificationBody: '"{{title}}" ran into an error.',
+    doneToast: '"{{title}}" is ready for review.',
+    failedToast: '"{{title}}" ran into an error.',
+    viewToastAction: 'View',
     emptyTitle: 'No tasks yet',
     emptyDescription:
       'Create a task and assign it to an Expert. They\u2019ll execute it autonomously while you watch.',
@@ -592,6 +599,7 @@ const en = {
 
   // ── Routine editor ──────────────────────────────────────────
   routineEditor: {
+    deleteStep: 'Delete step',
     setSchedule: 'Set schedule',
     savingInProgress: 'Saving in progress...',
     noPromptSet: 'No prompt set',

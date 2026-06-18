@@ -42,6 +42,7 @@ function CanvasInner({ routine }: { routine: Routine }) {
     addNode,
     addStickyNote,
     updateNodeData,
+    deleteNode,
     deleteSelected,
     runAutoLayout,
     saveToBackend,
@@ -227,6 +228,7 @@ function CanvasInner({ routine }: { routine: Routine }) {
             node={selectedNode}
             allNodes={nodes}
             onUpdate={updateNodeData}
+            onDelete={deleteNode}
             onClose={() => setSelectedNodeId(null)}
           />
         )}

@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Search,
   Check,
+  Trash2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -4153,6 +4154,7 @@ interface StepConfigPanelProps {
   node: Node;
   allNodes?: Node[];
   onUpdate: (nodeId: string, partial: Record<string, unknown>) => void;
+  onDelete: (nodeId: string) => void;
   onClose: () => void;
 }
 
@@ -4160,6 +4162,7 @@ export default function StepConfigPanel({
   node,
   allNodes,
   onUpdate,
+  onDelete,
   onClose,
 }: StepConfigPanelProps) {
   const { t } = useTranslation();
@@ -4394,6 +4397,17 @@ export default function StepConfigPanel({
             </div>
           </Section>
         )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-5 py-4 border-t border-border-subtle flex-shrink-0">
+        <button
+          onClick={() => onDelete(node.id)}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium text-red-400 border border-red-400/30 hover:bg-red-400/10 transition-colors"
+        >
+          <Trash2 size={14} />
+          {t('routineEditor.deleteStep')}
+        </button>
       </div>
     </div>
   );

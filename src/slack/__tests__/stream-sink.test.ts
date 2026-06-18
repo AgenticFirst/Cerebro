@@ -4,6 +4,9 @@
  * lightweight in-memory recorder.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { SlackStreamSink } from '../SlackStreamSink';
 import type { SlackApi } from '../api';
 
@@ -20,19 +23,44 @@ interface DeletedMessage {
   ts: string;
   channel: string;
 }
+interface UploadedFile {
+  channelId: string;
+  filePath: string;
+  threadTs?: string;
+  fileName?: string;
+}
 
 function makeStubApi(
   opts: {
     failPost?: boolean;
     failUpdate?: boolean;
     failDelete?: boolean | string;
+    failUpload?: boolean;
   } = {},
 ) {
   const posted: PostedMessage[] = [];
   const updated: UpdatedMessage[] = [];
   const deleted: DeletedMessage[] = [];
+  const uploaded: UploadedFile[] = [];
   let counter = 0;
   const stub: Partial<SlackApi> = {
+    filesUpload: vi.fn(
+      async ({
+        channelId,
+        filePath,
+        threadTs,
+        fileName,
+      }: {
+        channelId: string;
+        filePath: string;
+        threadTs?: string;
+        fileName?: string;
+      }) => {
+        if (opts.failUpload) throw new Error('upload boom');
+        uploaded.push({ channelId, filePath, threadTs, fileName });
+        return { fileId: `F${uploaded.length}` };
+      },
+    ),
     chatPostMessage: vi.fn(
       async ({
         channel,
@@ -62,7 +90,7 @@ function makeStubApi(
       deleted.push({ ts, channel });
     }),
   };
-  return { api: stub as SlackApi, posted, updated, deleted };
+  return { api: stub as SlackApi, posted, updated, deleted, uploaded };
 }
 
 describe('SlackStreamSink', () => {
@@ -237,5 +265,248 @@ describe('SlackStreamSink', () => {
     expect(finalText).toBe(md);
     const last = posted[posted.length - 1];
     expect(last.text).toBe('*Hola*\n*negrita* y <https://x.test|enlace>');
+  });
+
+  describe('file delivery (trailing @/path)', () => {
+    let tmpDir: string;
+    let realFile: string;
+
+    beforeEach(() => {
+      // Real timers are restored per-test by the outer afterEach; mkdtemp is fine
+      // under fake timers since it doesn't schedule anything.
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cerebro-sink-'));
+      realFile = path.join(tmpDir, 'cerebro-logo.png');
+      fs.writeFileSync(realFile, 'png-bytes');
+    });
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('uploads a trailing @/path file and strips the path from the posted text', async () => {
+      const { api, posted, uploaded } = makeStubApi();
+      const sink = new SlackStreamSink({
+        api,
+        channel: 'C1',
+        threadTs: '1.000',
+        onDone: () => undefined,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      const reply = `Aquí tienes el logo de Cerebro (316 KB, PNG):\n\n@${realFile}`;
+      sink.send('engine:any-event', { type: 'done', runId: 'r1', messageContent: reply });
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+
+      // The real file was uploaded into the same channel/thread.
+      expect(uploaded.length).toBe(1);
+      expect(uploaded[0]).toMatchObject({
+        channelId: 'C1',
+        filePath: realFile,
+        threadTs: '1.000',
+        fileName: 'cerebro-logo.png',
+      });
+      // The prose was posted, but the raw @/path line is gone from it.
+      const last = posted[posted.length - 1];
+      expect(last.text).toContain('Aquí tienes el logo de Cerebro');
+      expect(last.text).not.toContain('@/');
+      expect(last.text).not.toContain(realFile);
+    });
+
+    it('uploads with no text post when the reply is only the file path', async () => {
+      const { api, posted, uploaded } = makeStubApi();
+      const sink = new SlackStreamSink({
+        api,
+        channel: 'C1',
+        threadTs: '1.000',
+        onDone: () => undefined,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      sink.send('engine:any-event', {
+        type: 'done',
+        runId: 'r1',
+        messageContent: `@${realFile}`,
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+
+      expect(uploaded.length).toBe(1);
+      // Only the placeholder was ever posted — no empty/"(empty response)" body.
+      expect(posted.length).toBe(1);
+      expect(posted[0].text).toMatch(/thinking/i);
+    });
+
+    it('keeps a non-existent @/path as text and does not upload', async () => {
+      const { api, posted, uploaded } = makeStubApi();
+      const sink = new SlackStreamSink({
+        api,
+        channel: 'C1',
+        threadTs: '1.000',
+        onDone: () => undefined,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      const missing = path.join(tmpDir, 'nope.png');
+      const reply = `Here you go:\n\n@${missing}`;
+      sink.send('engine:any-event', { type: 'done', runId: 'r1', messageContent: reply });
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+
+      expect(uploaded.length).toBe(0);
+      const last = posted[posted.length - 1];
+      expect(last.text).toContain('Here you go');
+      expect(last.text).toContain(`@${missing}`);
+    });
+
+    it('falls back to posting the path as text when the upload fails', async () => {
+      const { api, posted, uploaded } = makeStubApi({ failUpload: true });
+      const sink = new SlackStreamSink({
+        api,
+        channel: 'C1',
+        threadTs: '1.000',
+        onDone: () => undefined,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      sink.send('engine:any-event', {
+        type: 'done',
+        runId: 'r1',
+        messageContent: `Logo:\n\n@${realFile}`,
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+
+      expect(uploaded.length).toBe(0);
+      // The prose posted, then a fallback message carrying the path.
+      const texts = posted.map((p) => p.text);
+      expect(texts.some((t) => t.includes('Logo'))).toBe(true);
+      expect(texts.some((t) => t.includes(`@${realFile}`))).toBe(true);
+    });
+
+    it('does not upload anything for a plain prose reply', async () => {
+      const { api, uploaded } = makeStubApi();
+      const sink = new SlackStreamSink({
+        api,
+        channel: 'C1',
+        threadTs: '1.000',
+        onDone: () => undefined,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      sink.send('engine:any-event', {
+        type: 'done',
+        runId: 'r1',
+        messageContent: 'Just a normal answer.',
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+      expect(uploaded.length).toBe(0);
+    });
+
+    it('uploads multiple files in order with a single prose post', async () => {
+      const second = path.join(tmpDir, 'report.pdf');
+      fs.writeFileSync(second, 'pdf-bytes');
+      const { api, posted, uploaded } = makeStubApi();
+      const sink = new SlackStreamSink({
+        api,
+        channel: 'C1',
+        threadTs: '1.000',
+        onDone: () => undefined,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      const reply = `Aquí tienes ambos:\n@${realFile}\n@${second}`;
+      sink.send('engine:any-event', { type: 'done', runId: 'r1', messageContent: reply });
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+
+      expect(uploaded.map((u) => u.filePath)).toEqual([realFile, second]);
+      // Exactly one final prose post (placeholder + one body), not one per file.
+      const bodyPosts = posted.filter((p) => !/thinking/i.test(p.text));
+      expect(bodyPosts.length).toBe(1);
+      expect(bodyPosts[0].text).toContain('Aquí tienes ambos');
+      expect(bodyPosts[0].text).not.toContain('@/');
+    });
+
+    it('uploads at top level (no thread_ts) for a DM reply', async () => {
+      const { api, uploaded } = makeStubApi();
+      const sink = new SlackStreamSink({
+        api,
+        channel: 'D1',
+        threadTs: undefined,
+        onDone: () => undefined,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      sink.send('engine:any-event', { type: 'done', runId: 'r1', messageContent: `@${realFile}` });
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+      expect(uploaded.length).toBe(1);
+      expect(uploaded[0].channelId).toBe('D1');
+      expect(uploaded[0].threadTs).toBeUndefined();
+    });
+
+    it('uploads the real file but keeps a missing one as text (mixed)', async () => {
+      const missing = path.join(tmpDir, 'gone.pdf');
+      const { api, posted, uploaded } = makeStubApi();
+      const sink = new SlackStreamSink({
+        api,
+        channel: 'C1',
+        threadTs: '1.000',
+        onDone: () => undefined,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      const reply = `Files:\n@${realFile}\n@${missing}`;
+      sink.send('engine:any-event', { type: 'done', runId: 'r1', messageContent: reply });
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+
+      // Only the existing file uploaded.
+      expect(uploaded.map((u) => u.filePath)).toEqual([realFile]);
+      // The missing path survives in the posted text; the uploaded one does not.
+      const body = posted
+        .filter((p) => !/thinking/i.test(p.text))
+        .map((p) => p.text)
+        .join('\n');
+      expect(body).toContain(`@${missing}`);
+      expect(body).not.toContain(realFile);
+    });
+
+    it('uploads a path containing spaces', async () => {
+      const spaced = path.join(tmpDir, 'Informe Final Q3.docx');
+      fs.writeFileSync(spaced, 'docx-bytes');
+      const { api, uploaded } = makeStubApi();
+      const sink = new SlackStreamSink({
+        api,
+        channel: 'C1',
+        threadTs: '1.000',
+        onDone: () => undefined,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      sink.send('engine:any-event', {
+        type: 'done',
+        runId: 'r1',
+        messageContent: `Listo:\n@${spaced}`,
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+      expect(uploaded.length).toBe(1);
+      expect(uploaded[0].filePath).toBe(spaced);
+      expect(uploaded[0].fileName).toBe('Informe Final Q3.docx');
+    });
+
+    it('keeps the literal @/path in the conversation log via onDone', async () => {
+      const { api } = makeStubApi();
+      let logged = '';
+      const reply = `Aquí está el logo:\n\n@${realFile}`;
+      const sink = new SlackStreamSink({
+        api,
+        channel: 'C1',
+        threadTs: '1.000',
+        onDone: (t) => {
+          logged = t;
+        },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      sink.send('engine:any-event', { type: 'done', runId: 'r1', messageContent: reply });
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+      // onDone records the agent's full message (incl. the path line) so the
+      // conversation memory matches what the model actually said.
+      expect(logged).toBe(reply);
+    });
   });
 });

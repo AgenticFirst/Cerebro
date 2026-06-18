@@ -26,6 +26,7 @@ export function createHubSpotSearchContactAction(deps: {
       'Find a HubSpot contact by email or phone. Read-only. Returns contact_id and identity.',
 
     chatExposable: true,
+    readOnly: true,
     chatGroup: 'hubspot',
     chatLabel: { en: 'Find HubSpot contact', es: 'Buscar contacto de HubSpot' },
     chatDescription: {

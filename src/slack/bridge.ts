@@ -63,6 +63,9 @@ import {
   stripBotMention,
   redactSlackPayload,
   chunkSlackText,
+  pickAudioAttachment,
+  ALLOWED_AUDIO_MIME,
+  AUDIO_MIME_TO_EXT,
   type SlackConversationKey,
   type SlackTriggerRoutine,
   type BackendRoutineRecord,
@@ -96,30 +99,9 @@ const RUN_WATCHDOG_INTERVAL_MS = 30_000;
 const IDLE_WATCHDOG_MS = 5 * 60_000;
 const IDLE_WATCHDOG_INTERVAL_MS = 60_000;
 
-// Voice-note / attachment handling (mirrors Telegram bridge).
+// Voice-note / attachment handling (mirrors Telegram bridge). The audio MIME
+// set + MIME→ext map live in ./helpers (shared with pickAudioAttachment).
 const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
-
-// Audio MIME types Slack uses for voice notes / shared audio. Native voice
-// notes arrive as audio/mp4 (.m4a) or audio/webm; shared clips can be any.
-const ALLOWED_AUDIO_MIME = new Set([
-  'audio/mp4',
-  'audio/webm',
-  'audio/ogg',
-  'audio/mpeg',
-  'audio/wav',
-  'audio/x-wav',
-]);
-
-// Fallback when a file lacks an extension in its name — MediaIngestService
-// keys its category off the on-disk extension.
-const AUDIO_MIME_TO_EXT: Record<string, string> = {
-  'audio/mp4': 'm4a',
-  'audio/webm': 'webm',
-  'audio/ogg': 'ogg',
-  'audio/mpeg': 'mp3',
-  'audio/wav': 'wav',
-  'audio/x-wav': 'wav',
-};
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -926,9 +908,12 @@ export class SlackBridge implements SlackChannel {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const m = event as any;
       if (m.channel_type !== 'im') return;
-      // Skip edits, bot_messages, joins, etc. — but let `file_share` through so
-      // voice notes and other attachments reach handleInbound.
-      if (m.subtype && m.subtype !== 'file_share') return;
+      // Skip edits, bot_messages, joins, etc. — but never drop a message that
+      // carries files. Slack has been inconsistent about the subtype on native
+      // audio clips (file_share vs. none), so gate on the files array, not just
+      // `file_share`, to be sure voice notes reach handleInbound.
+      const hasFiles = Array.isArray(m.files) && m.files.length > 0;
+      if (m.subtype && m.subtype !== 'file_share' && !hasFiles) return;
       if (m.bot_id || m.user === this.settings.botUserId) return;
       try {
         const eid = body.event_id ?? `${m.channel}:${m.ts}`;
@@ -1729,15 +1714,18 @@ export class SlackBridge implements SlackChannel {
     if (!files || files.length === 0) return;
 
     // Pick the first audio attachment. Slack's one-voice-note-per-message model
-    // means combining isn't needed; any caption arrives in ctx.text.
-    const audio = files.find((f) => {
-      const ext = this.fileExt(f);
-      return MediaIngestService.categoryForExt(ext) === 'audio';
-    });
-    if (!audio) return;
+    // means combining isn't needed; any caption arrives in ctx.text. Detection
+    // keys off MIME / `slack_audio` subtype / audio extension — NOT extension
+    // category alone: a native clip is audio/mp4 with filetype "mp4", which
+    // MediaIngestService would otherwise classify as video.
+    const picked = pickAudioAttachment(files);
+    if (!picked) return;
+    const audio = picked.file;
 
     const mime = (audio.mimetype ?? '').toLowerCase();
-    if (mime && !ALLOWED_AUDIO_MIME.has(mime)) {
+    // Reject only a *known* non-audio MIME. A native clip already passed the
+    // subtype check above, so don't drop it on a quirky/missing MIME.
+    if (mime && audio.subtype !== 'slack_audio' && !ALLOWED_AUDIO_MIME.has(mime)) {
       log(`voice note rejected: mime ${mime} not allowed`);
       return;
     }
@@ -1758,7 +1746,7 @@ export class SlackBridge implements SlackChannel {
       return;
     }
 
-    const dest = await this.downloadSlackFile(ctx, audio);
+    const dest = await this.downloadSlackFile(ctx, audio, picked.ext);
     if (!dest) return; // downloadSlackFile already notified the user on failure.
 
     let resolved: ResolvedAttachment;
@@ -1799,12 +1787,19 @@ export class SlackBridge implements SlackChannel {
    * Download a Slack file to the staging dir and schedule TTL cleanup. Returns
    * the dest path, or null on failure (after notifying the user).
    */
-  private async downloadSlackFile(ctx: SlackInboundContext, f: SlackFile): Promise<string | null> {
+  private async downloadSlackFile(
+    ctx: SlackInboundContext,
+    f: SlackFile,
+    extOverride?: string,
+  ): Promise<string | null> {
     if (!this.api) return null;
     const url = f.url_private_download ?? f.url_private;
     if (!url) return null;
 
-    const ext = this.fileExt(f) || 'bin';
+    // Prefer the caller-supplied extension (audio notes pass an STT-friendly
+    // ext mapped from MIME, e.g. m4a for an audio/mp4 clip) so the on-disk file
+    // reaches MediaIngestService's STT branch instead of the video branch.
+    const ext = extOverride || this.fileExt(f) || 'bin';
     const dest = path.join(this.tempDir(), `${crypto.randomUUID()}.${ext}`);
     try {
       await this.api.downloadFile(url, dest);

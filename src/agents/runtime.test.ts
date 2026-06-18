@@ -202,6 +202,23 @@ describe('AgentRuntime.startRun — chat', () => {
     expect(runnerStarts[0].cwd).toBe(dataDir);
   });
 
+  it('exports CEREBRO_CONVERSATION_ID so run-chat-action.sh can stamp the approval', async () => {
+    // run-chat-action.sh reads this env var and stamps it onto the action
+    // request body; the engine then persists it on the run so the approval can
+    // be approved inline in this exact conversation. Drop it here and inline
+    // approvals silently regress to sidebar-only.
+    const rt = new AgentRuntime(backend.port, dataDir);
+    const { sink } = makeSink();
+    await rt.startRun(sink, {
+      conversationId: 'conv-stamp-1',
+      content: 'create a ticket',
+    } as any);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(runnerStarts).toHaveLength(1);
+    const extraEnv = (runnerStarts[0] as { extraEnv?: Record<string, string> }).extraEnv;
+    expect(extraEnv?.CEREBRO_CONVERSATION_ID).toBe('conv-stamp-1');
+  });
+
   it('expert in index AND file on disk → resolves from index, spawns', async () => {
     // Install an index + file manually
     const agentName = 'design-expert-abc123';
@@ -607,5 +624,102 @@ describe('AgentRuntime.startRun — chat', () => {
       );
       expect(errorEvents.length).toBeGreaterThan(0);
     }
+  });
+
+  // ── Slack/Telegram double-post fix ──────────────────────────────
+  // Bug: when a user chats with Cerebro from inside Slack, the agent's reply
+  // is already delivered to that channel by SlackStreamSink. With no runtime
+  // awareness of the origin, the model also fired send_slack_message at the
+  // SAME channel, so the content appeared twice. The fix prepends a
+  // <conversation_origin> guardrail to the prompt for messaging surfaces.
+  // We can't unit-test that the LLM obeys the instruction, but we CAN lock
+  // that the instruction is present in the exact prompt the runner receives
+  // (and absent for UI runs, so we never pollute the desktop chat prompt).
+
+  it('Slack source → prompt carries the conversation_origin guardrail with channel + thread_ts', async () => {
+    const rt = new AgentRuntime(backend.port, dataDir);
+    const { sink } = makeSink();
+    await rt.startRun(sink, {
+      conversationId: 'c-slack',
+      content: 'describe al Experto Creador de Manuales de Ventas',
+      source: { kind: 'slack', channel: 'C999', threadTs: '2.000', teamId: 'T1' },
+    } as any);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(runnerStarts).toHaveLength(1);
+    const { prompt } = runnerStarts[0];
+    expect(prompt).toContain(
+      '<conversation_origin service="slack" channel="C999" thread_ts="2.000">',
+    );
+    // The operative instruction that prevents the double-post.
+    expect(prompt).toContain('MUST NOT');
+    expect(prompt).toContain('send_slack_message or send_slack_file');
+    expect(prompt).toContain('DIFFERENT');
+    expect(prompt).toContain('</conversation_origin>');
+    // The user's actual message must still be present, after the preamble.
+    expect(prompt).toContain('describe al Experto Creador de Manuales de Ventas');
+    expect(prompt.indexOf('<conversation_origin')).toBeLessThan(
+      prompt.indexOf('describe al Experto'),
+    );
+  });
+
+  it('Slack DM (no threadTs) → guardrail present without a thread_ts attribute', async () => {
+    const rt = new AgentRuntime(backend.port, dataDir);
+    const { sink } = makeSink();
+    await rt.startRun(sink, {
+      conversationId: 'c-slack-dm',
+      content: 'hola',
+      source: { kind: 'slack', channel: 'D123', threadTs: undefined, teamId: 'T1' },
+    } as any);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(runnerStarts).toHaveLength(1);
+    const { prompt } = runnerStarts[0];
+    expect(prompt).toContain('<conversation_origin service="slack" channel="D123">');
+    expect(prompt).not.toContain('thread_ts=');
+  });
+
+  it('Telegram source → prompt carries the telegram guardrail with chat_id', async () => {
+    const rt = new AgentRuntime(backend.port, dataDir);
+    const { sink } = makeSink();
+    await rt.startRun(sink, {
+      conversationId: 'c-tg',
+      content: 'hi',
+      source: { kind: 'telegram', chatId: 42 },
+    } as any);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(runnerStarts).toHaveLength(1);
+    const { prompt } = runnerStarts[0];
+    expect(prompt).toContain('<conversation_origin service="telegram" chat_id="42">');
+    expect(prompt).toContain('send_telegram_message');
+    expect(prompt).toContain('MUST NOT');
+  });
+
+  it('UI source → NO conversation_origin preamble (desktop reply is not echoed anywhere)', async () => {
+    const rt = new AgentRuntime(backend.port, dataDir);
+    const { sink } = makeSink();
+    await rt.startRun(sink, {
+      conversationId: 'c-ui',
+      content: 'plain desktop message',
+      source: { kind: 'ui' },
+    } as any);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(runnerStarts).toHaveLength(1);
+    expect(runnerStarts[0].prompt).not.toContain('<conversation_origin');
+  });
+
+  it('no source at all → NO conversation_origin preamble', async () => {
+    const rt = new AgentRuntime(backend.port, dataDir);
+    const { sink } = makeSink();
+    await rt.startRun(sink, {
+      conversationId: 'c-nosrc',
+      content: 'hey',
+    } as any);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(runnerStarts).toHaveLength(1);
+    expect(runnerStarts[0].prompt).not.toContain('<conversation_origin');
   });
 });

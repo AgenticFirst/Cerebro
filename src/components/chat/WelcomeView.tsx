@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import ChatInput, { type ChatInputHandle } from './ChatInput';
 import CapabilitiesModal from './CapabilitiesModal';
 import { useDropZone } from '../../hooks/useDropZone';
-import { useChat } from '../../context/ChatContext';
+import { useChat, NEW_CHAT_DRAFT_KEY } from '../../context/ChatContext';
 
 interface WelcomeViewProps {
   onSend: (content: string) => void;
@@ -14,7 +14,7 @@ interface WelcomeViewProps {
 export default function WelcomeView({ onSend }: WelcomeViewProps) {
   const { t } = useTranslation();
   const chatInputRef = useRef<ChatInputHandle>(null);
-  const { setActiveExpertId } = useChat();
+  const { setActiveExpertId, drafts, setDraft } = useChat();
   const [helpOpen, setHelpOpen] = useState(false);
 
   // Welcome view starts a fresh Cerebro chat — ensure no expert is pinned.
@@ -55,7 +55,12 @@ export default function WelcomeView({ onSend }: WelcomeViewProps) {
           {t('chat.welcomeTitle')}
         </h1>
         <p className="text-sm text-text-secondary text-center mb-8">{t('chat.welcomeSubtitle')}</p>
-        <ChatInput ref={chatInputRef} onSend={onSend} />
+        <ChatInput
+          ref={chatInputRef}
+          onSend={onSend}
+          draftValue={drafts[NEW_CHAT_DRAFT_KEY] ?? ''}
+          onDraftChange={(v) => setDraft(NEW_CHAT_DRAFT_KEY, v)}
+        />
 
         <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-2">
           {capabilities.map((cap) => {

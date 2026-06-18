@@ -27,6 +27,8 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
     sendMessage,
     stopMessage,
     getConversationsForExpert,
+    drafts,
+    setDraft,
   } = useChat();
 
   const chatInputRef = useRef<ChatInputHandle>(null);
@@ -89,6 +91,10 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
 
   const showEmptyThread = !activeConversation || activeConversation.expertId !== expert.id;
 
+  // Keep an unsent draft per thread; before the first send (no thread yet) scope
+  // the draft to the expert so it survives navigating away and back.
+  const draftKey = showEmptyThread ? `expert:${expert.id}` : activeConversation!.id;
+
   return (
     <div className="flex-1 flex flex-col min-h-0 relative" {...dropProps}>
       <ThreadHeader
@@ -126,6 +132,8 @@ export default function ExpertThreadView({ expert, onOpenProfile }: ExpertThread
             onStop={stopMessage}
             isStreaming={isStreaming}
             placeholder={expert.type === 'team' ? t('experts.teamMessageComposer') : undefined}
+            draftValue={drafts[draftKey] ?? ''}
+            onDraftChange={(v) => setDraft(draftKey, v)}
           />
         </div>
       </div>

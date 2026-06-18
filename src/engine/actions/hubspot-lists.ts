@@ -69,6 +69,7 @@ export function createHubSpotListListsAction(deps: {
       'List or search HubSpot lists (segments). Read-only. Returns each list id, name, type, and size.',
 
     chatExposable: true,
+    readOnly: true,
     chatGroup: 'hubspot',
     chatLabel: { en: 'List HubSpot lists', es: 'Listar listas de HubSpot' },
     chatDescription: {

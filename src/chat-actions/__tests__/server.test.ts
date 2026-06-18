@@ -196,6 +196,40 @@ describe('ChatActionServer', () => {
     expect(body.data?.sent).toBe(true);
   });
 
+  it('forwards conversation_id from the body so the approval surfaces inline in chat', async () => {
+    // The chat subprocess (run-chat-action.sh) stamps the originating
+    // conversation onto the body. The server must pass it through to
+    // runChatAction → startRun, otherwise the run record is saved with a null
+    // conversation and the inline approval card never renders.
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/run',
+      token,
+      body: {
+        type: 'hubspot_create_ticket',
+        params: { subject: 'x' },
+        conversation_id: 'conv-xyz',
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(mockEngine.runChatAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ type: 'hubspot_create_ticket', conversationId: 'conv-xyz' }),
+    );
+  });
+
+  it('passes conversationId=undefined when the body omits conversation_id (desktop chat)', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/run',
+      token,
+      body: { type: 'send_telegram_message', params: { chat_id: '1', message: 'hi' } },
+    });
+    expect(res.status).toBe(200);
+    const call = mockEngine.runChatAction.mock.calls.at(-1)!;
+    expect((call[1] as { conversationId?: string }).conversationId).toBeUndefined();
+  });
+
   it('rejects /run with a malformed JSON body with 400, not 500', async () => {
     const res = await request(port, {
       method: 'POST',

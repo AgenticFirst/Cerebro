@@ -43,6 +43,7 @@ export function createGitHubFetchIssueAction(deps: {
     type: 'github_fetch_issue',
     name: 'GitHub: Fetch issue',
     description: 'Read an issue (title, body, labels, optionally comments) for downstream steps.',
+    readOnly: true,
 
     inputSchema: {
       type: 'object',

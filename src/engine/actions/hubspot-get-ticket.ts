@@ -40,6 +40,7 @@ export function createHubSpotGetTicketAction(deps: {
       'Fetch one HubSpot ticket by id, including its associated contacts and companies (the company is resolved through the contact when the ticket has no direct company link). Read-only.',
 
     chatExposable: true,
+    readOnly: true,
     chatGroup: 'hubspot',
     chatLabel: { en: 'Get HubSpot ticket', es: 'Obtener ticket de HubSpot' },
     chatDescription: {

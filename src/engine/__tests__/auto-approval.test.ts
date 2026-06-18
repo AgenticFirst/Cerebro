@@ -18,6 +18,19 @@ import http from 'node:http';
 import { EventEmitter } from 'node:events';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { ExecutionEngine } from '../engine';
+import { findContact } from '../../hubspot/contacts';
+
+// hubspot_search_contact calls findContact() against the live HubSpot API. Mock
+// it so the read-only bulk-lookup test runs fully offline and deterministically.
+vi.mock('../../hubspot/contacts', () => ({
+  findContact: vi.fn(async (_token: string, _property: string, value: string) => ({
+    contact: {
+      id: `contact_${value}`,
+      properties: { email: value, firstname: 'Test', lastname: 'User' },
+    },
+    error: null,
+  })),
+}));
 
 // ── Mock backend ────────────────────────────────────────────────
 
@@ -70,6 +83,11 @@ function makeMockSlackChannel() {
     isConnected: () => true,
     isAllowlisted: () => true,
     sendActionMessage: vi.fn(async () => ({ messageTs: '1700000000.000100', error: null })),
+    listChannels: vi.fn(async () => ({
+      ok: true,
+      channels: [{ id: 'C123', name: 'general', is_private: false }],
+      error: null,
+    })),
   } as any;
 }
 
@@ -179,9 +197,24 @@ afterAll(async () => {
   await new Promise<void>((resolve) => mockServer.close(() => resolve()));
 });
 
+/** A connected HubSpot channel; only getAccessToken + isConnected are exercised. */
+function makeMockHubSpotChannel() {
+  return {
+    getAccessToken: () => 'test-token',
+    isConnected: () => true,
+    getDefaultPipeline: () => 'p1',
+    getDefaultStage: () => 's1',
+    getFollowUpProperty: () => null,
+    getDueDateProperty: () => null,
+    getPortalId: () => '12345',
+    listPipelines: vi.fn(async () => ({ ok: true, pipelines: [] })),
+  } as any;
+}
+
 beforeEach(() => {
   captured = [];
   autoApprovalTotal = 0;
+  (findContact as any).mockClear();
 });
 
 function makeEngine() {
@@ -241,6 +274,95 @@ describe('runChatAction auto-approval bypass', () => {
     await engine.resolveApproval(approvalPost!.body.id, true);
     const result = await runPromise;
     expect(result.status).toBe('succeeded');
+  });
+});
+
+// ── Read-only actions skip the gate entirely ────────────────────
+
+describe('runChatAction read-only bypass', () => {
+  it('runs a read-only action without gating or even checking auto-approval rules', async () => {
+    autoApprovalTotal = 0; // no rule — a write would gate here
+    const engine = makeEngine();
+
+    const result = await engine.runChatAction(makeMockWebContents(), {
+      type: 'list_slack_channels',
+      params: {},
+    });
+
+    expect(result.status).toBe('succeeded');
+
+    // No approval was ever created — read-only means no pause.
+    const approvalPost = captured.find(
+      (r) => r.method === 'POST' && r.path === '/engine/approvals',
+    );
+    expect(approvalPost).toBeUndefined();
+
+    // The read-only branch short-circuits before the rule lookup, so we never
+    // even query /engine/auto-approvals for it.
+    const lookup = captured.find(
+      (r) => r.method === 'GET' && r.path.startsWith('/engine/auto-approvals'),
+    );
+    expect(lookup).toBeUndefined();
+  });
+
+  it('still gates a write action with no matching rule (regression guard)', async () => {
+    autoApprovalTotal = 0;
+    const engine = makeEngine();
+
+    const runPromise = engine.runChatAction(makeMockWebContents(), {
+      type: 'send_slack_message',
+      params: { channel: 'C999', text: 'hello' },
+    });
+
+    await waitFor(() =>
+      captured.some((r) => r.method === 'POST' && r.path === '/engine/approvals'),
+    );
+    const approvalPost = captured.find(
+      (r) => r.method === 'POST' && r.path === '/engine/approvals',
+    );
+    expect(approvalPost).toBeDefined();
+
+    await engine.resolveApproval(approvalPost!.body.id, true);
+    const result = await runPromise;
+    expect(result.status).toBe('succeeded');
+  });
+});
+
+// ── Regression: the exact reported bug ──────────────────────────
+// "Reviewing 20 HubSpot contacts asked for approval one-by-one." A HubSpot
+// contact lookup is read-only, so each call must run immediately with no gate.
+
+describe('regression: bulk HubSpot contact reads never request approval', () => {
+  it('looks up 20 contacts via runChatAction with zero approval requests', async () => {
+    autoApprovalTotal = 0; // no auto-approval rules exist
+    const engine = makeEngine();
+    engine.setHubSpotChannel(makeMockHubSpotChannel());
+
+    const emails = Array.from({ length: 20 }, (_, i) => `person${i}@example.com`);
+    const results = [];
+    for (const email of emails) {
+      results.push(
+        await engine.runChatAction(makeMockWebContents(), {
+          type: 'hubspot_search_contact',
+          params: { email },
+        }),
+      );
+    }
+
+    // Every lookup succeeded...
+    expect(results).toHaveLength(20);
+    expect(results.every((r) => r.status === 'succeeded')).toBe(true);
+    expect((findContact as any).mock.calls).toHaveLength(20);
+
+    // ...and not a single approval was created across all 20.
+    const approvals = captured.filter((r) => r.method === 'POST' && r.path === '/engine/approvals');
+    expect(approvals).toHaveLength(0);
+
+    // Read-only short-circuits before the rule lookup too — no auto-approval GETs.
+    const ruleLookups = captured.filter(
+      (r) => r.method === 'GET' && r.path.startsWith('/engine/auto-approvals'),
+    );
+    expect(ruleLookups).toHaveLength(0);
   });
 });
 

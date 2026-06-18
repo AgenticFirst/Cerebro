@@ -144,6 +144,16 @@ interface UpdateTaskInput {
   tags?: string[];
 }
 
+/**
+ * Fired when a task run reaches a terminal state worth alerting the user about.
+ * Cancellations are excluded — the user triggered those, so no alert is needed.
+ */
+export interface TaskCompletion {
+  taskId: string;
+  title: string;
+  outcome: 'done' | 'error';
+}
+
 interface TaskContextValue {
   tasks: Task[];
   stats: TaskStats;
@@ -211,6 +221,13 @@ interface TaskContextValue {
    * should be resumable from the card.
    */
   liveTaskIds: ReadonlySet<string>;
+  /**
+   * Subscribe to task-run completions (success or failure). Returns an
+   * unsubscribe fn. Lets surfaces that own the active-screen/focus state
+   * (e.g. AppLayout) raise the right alert without TaskContext needing to read
+   * navigation state it sits above in the provider tree.
+   */
+  subscribeTaskCompletion: (listener: (event: TaskCompletion) => void) => () => void;
 }
 
 const TaskContext = createContext<TaskContextValue | null>(null);
@@ -232,6 +249,22 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   // Map of taskId -> unsubscribe function for agent event listeners.
   // Persists across renders so listeners aren't leaked on re-render.
   const runListeners = useRef<Map<string, () => void>>(new Map());
+
+  // Completion listeners (success/failure alerts). Kept in a ref so the
+  // terminal handler can fire them without re-subscribing on every task change.
+  const completionListeners = useRef<Set<(event: TaskCompletion) => void>>(new Set());
+
+  // Live mirror of `tasks` for stale-free title lookups inside callbacks that
+  // intentionally don't depend on `tasks` (avoids re-subscribe churn).
+  const tasksRef = useRef<Task[]>(tasks);
+  tasksRef.current = tasks;
+
+  const subscribeTaskCompletion = useCallback((listener: (event: TaskCompletion) => void) => {
+    completionListeners.current.add(listener);
+    return () => {
+      completionListeners.current.delete(listener);
+    };
+  }, []);
 
   // Map of taskId -> internal Electron runId. On retries, task.run_id is pinned
   // to the ORIGINAL Claude session, so we can't use it to cancel the live run.
@@ -823,6 +856,20 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         console.warn(`[task] Failed to post ${eventType}:`, err);
       }
 
+      // Alert listeners on terminal success/failure (not user-initiated
+      // cancellations). AppLayout turns these into a toast or OS notification
+      // depending on focus/active screen.
+      if (outcome === 'done' || outcome === 'error') {
+        const title = tasksRef.current.find((task) => task.id === taskId)?.title ?? '';
+        completionListeners.current.forEach((listener) => {
+          try {
+            listener({ taskId, title, outcome });
+          } catch (err) {
+            console.warn('[task] completion listener threw:', err);
+          }
+        });
+      }
+
       // Tear down the listener (idempotent — registerRunListener clears prior).
       const u = runListeners.current.get(taskId);
       if (u) u();
@@ -1207,6 +1254,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         promoteChecklistItem,
         getActiveRunId,
         liveTaskIds,
+        subscribeTaskCompletion,
       }}
     >
       {children}

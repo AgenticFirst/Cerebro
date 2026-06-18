@@ -149,6 +149,7 @@ export function createHubSpotListObjectsAction(deps: {
       'List or search HubSpot contacts, companies, or deals. Read-only. Filter by free text or specific fields (email, domain, name, dealstage, pipeline).',
 
     chatExposable: true,
+    readOnly: true,
     chatGroup: 'hubspot',
     chatLabel: { en: 'List HubSpot records', es: 'Listar registros de HubSpot' },
     chatDescription: {

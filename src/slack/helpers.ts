@@ -4,8 +4,84 @@
  */
 
 import { scrubTokenish } from './api';
-import type { SlackConversationEntry } from './types';
+import type { SlackConversationEntry, SlackFile } from './types';
 import type { DAGDefinition } from '../engine/dag/types';
+
+// ── Voice-note / audio attachment handling ────────────────────────
+
+// Audio MIME types Slack uses for voice notes / shared audio. Native voice
+// notes arrive as audio/mp4 (.m4a) or audio/webm; shared clips can be any.
+export const ALLOWED_AUDIO_MIME = new Set([
+  'audio/mp4',
+  'audio/webm',
+  'audio/ogg',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/x-wav',
+]);
+
+// MIME → ingest/Whisper-friendly on-disk extension. Every value is in the
+// MediaIngestService audio set below, so a file saved with this extension
+// routes to STT rather than the video/unknown branch. Crucially this maps
+// audio/mp4 → m4a: Slack's native voice clip is AAC-in-MP4 with filetype/name
+// "mp4", which MediaIngestService would otherwise classify as video.
+export const AUDIO_MIME_TO_EXT: Record<string, string> = {
+  'audio/mp4': 'm4a',
+  'audio/webm': 'webm',
+  'audio/ogg': 'ogg',
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+};
+
+// Extensions MediaIngestService treats as audio (mirrors AUDIO_EXTS in
+// src/files/media-ingest.ts). Kept in sync deliberately — a file saved with
+// one of these reaches the STT branch.
+const AUDIO_EXTS = new Set(['mp3', 'm4a', 'wav', 'ogg', 'opus', 'flac', 'aac', 'webm']);
+
+/** Lowercase extension for a Slack file (name → filetype → mime), mirroring
+ * SlackBridge.fileExt. Only treats the name as carrying an extension when it
+ * actually contains a dot. */
+function slackFileExt(f: SlackFile): string {
+  if (f.name && f.name.includes('.')) {
+    const fromName = f.name.split('.').pop()?.toLowerCase() ?? '';
+    if (fromName) return fromName;
+  }
+  if (f.filetype) return f.filetype.toLowerCase();
+  const mime = (f.mimetype ?? '').toLowerCase();
+  return AUDIO_MIME_TO_EXT[mime] ?? '';
+}
+
+export interface PickedAudio {
+  file: SlackFile;
+  /** Extension to write to disk so MediaIngestService routes the file to STT. */
+  ext: string;
+}
+
+/**
+ * Pick the first attachment that is an audio note. A file counts as audio when
+ * ANY of: its `subtype` is `'slack_audio'` (native voice clip), its MIME is in
+ * ALLOWED_AUDIO_MIME, or its extension is already an audio extension.
+ *
+ * Returns the file plus the on-disk extension to use — mapped from MIME when
+ * available (so a Slack `audio/mp4` clip lands as `.m4a`, not the video-classed
+ * `.mp4`). A real `video/mp4` (no audio MIME, no `slack_audio`) returns null.
+ */
+export function pickAudioAttachment(files: SlackFile[] | undefined): PickedAudio | null {
+  if (!files || files.length === 0) return null;
+  for (const f of files) {
+    const mime = (f.mimetype ?? '').toLowerCase();
+    const ext = slackFileExt(f);
+    const isAudio =
+      f.subtype === 'slack_audio' ||
+      (mime !== '' && ALLOWED_AUDIO_MIME.has(mime)) ||
+      AUDIO_EXTS.has(ext);
+    if (!isAudio) continue;
+    const diskExt = AUDIO_MIME_TO_EXT[mime] ?? (AUDIO_EXTS.has(ext) ? ext : 'm4a');
+    return { file: f, ext: diskExt };
+  }
+  return null;
+}
 
 // ── Conversation keying ───────────────────────────────────────────
 
@@ -202,6 +278,39 @@ export function chunkSlackText(text: string, max = 3500): string[] {
   }
   if (rest.length > 0) out.push(rest);
   return out;
+}
+
+// ── Trailing file-attachment parsing ──────────────────────────────
+
+/**
+ * Cerebro's main agent prompt teaches the model to deliver a requested file by
+ * ending its reply with one literal `@/absolute/path` line per file, on the very
+ * last lines, with nothing after them (see the "Producing files for the user"
+ * section of the installer prompt). In the native desktop UI those lines render
+ * as clickable download chips; over Slack they would otherwise post as useless
+ * raw paths. This splits a final reply into its prose body and that contiguous
+ * trailing block of `@/path` lines so the sink can upload the files instead.
+ *
+ * Pure (no disk access) — the caller verifies each path exists before uploading.
+ * Paths are returned with the leading `@` already stripped, in original order.
+ * A `@/path` that appears mid-message (not in the trailing block) is left in the
+ * prose untouched.
+ */
+export function extractTrailingFilePaths(text: string): { prose: string; paths: string[] } {
+  const lines = text.split('\n');
+  // Drop trailing blank lines so a path followed by newlines still qualifies.
+  let end = lines.length;
+  while (end > 0 && lines[end - 1].trim() === '') end--;
+
+  // Walk up while each line is a bare `@/…` attachment line.
+  let start = end;
+  while (start > 0 && lines[start - 1].trim().startsWith('@/')) start--;
+
+  if (start === end) return { prose: text, paths: [] };
+
+  const paths = lines.slice(start, end).map((l) => l.trim().slice(1)); // drop leading '@'
+  const prose = lines.slice(0, start).join('\n').replace(/\s+$/, '');
+  return { prose, paths };
 }
 
 // ── Event dedupe LRU ──────────────────────────────────────────────

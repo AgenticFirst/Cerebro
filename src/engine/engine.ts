@@ -258,6 +258,11 @@ export class ExecutionEngine {
     const runPersisted: Promise<unknown> = this.backendRequest('POST', '/engine/runs', {
       id: runId,
       routine_id: request.routineId ?? null,
+      // Persist the originating conversation so chat-triggered approvals can be
+      // surfaced and resolved inline in that chat (InlineApprovals filters on
+      // it). Routine/cron runs have no conversation → null, so they stay on the
+      // Approvals screen only.
+      conversation_id: request.conversationId ?? null,
       run_type: request.runType ?? 'routine',
       trigger: request.triggerSource ?? 'manual',
       dag_json: JSON.stringify(request.dag),
@@ -660,6 +665,7 @@ export class ExecutionEngine {
     group: string;
     setupHref?: string;
     inputSchema: Record<string, unknown>;
+    readOnly: boolean;
   }> {
     return this.buildChatExposableDefs().map((def) => ({
       type: def.type,
@@ -670,14 +676,18 @@ export class ExecutionEngine {
       group: def.chatGroup ?? 'other',
       setupHref: def.setupHref,
       inputSchema: def.inputSchema,
+      // Read-only lookups run without the approval gate (see runChatAction).
+      readOnly: def.readOnly === true,
     }));
   }
 
   /**
-   * Run a single chat-triggered action through the routine engine. Always
-   * gates on approval (per product decision). Resolves when the underlying
-   * run reaches a terminal state. Long-running by design: the chat subprocess
-   * holds the HTTP connection open until this returns.
+   * Run a single chat-triggered action through the routine engine. Writes and
+   * sends gate on approval by default; read-only lookups (`def.readOnly`) run
+   * immediately without a gate, and a send to a destination with a standing
+   * "don't ask again" rule also skips it. Resolves when the underlying run
+   * reaches a terminal state. Long-running by design: the chat subprocess holds
+   * the HTTP connection open until this returns.
    */
   async runChatAction(
     webContents: WebContents,
@@ -703,14 +713,24 @@ export class ExecutionEngine {
       return { status: 'unavailable', error: `Action "${def.name}" is not connected.` };
     }
 
-    // Honor a persistent "don't ask again" rule for this exact destination
-    // (e.g. Slack messages to one channel). Only action types in
-    // AUTO_APPROVAL_TARGET_PARAM can ever skip the gate; everything else — and
-    // any target without a matching rule — still pauses for approval.
-    const autoTarget = this.resolveAutoApprovalTarget(def.type, options.params);
-    const requiresApproval = autoTarget
-      ? !(await this.hasAutoApprovalRule(def.type, autoTarget))
-      : true;
+    // Read-only lookups (search/get/list/fetch/query) never mutate anything, so
+    // they run without the approval gate — the same policy routines already use
+    // (getStepDefaults defaults requiresApproval:false). Writes/sends fall
+    // through to the per-destination auto-approval rule check.
+    //
+    // For everything else, honor a persistent "don't ask again" rule for this
+    // exact destination (e.g. Slack messages to one channel). Only action types
+    // in AUTO_APPROVAL_TARGET_PARAM can ever skip the gate that way; everything
+    // else — and any target without a matching rule — still pauses for approval.
+    let requiresApproval: boolean;
+    if (def.readOnly) {
+      requiresApproval = false;
+    } else {
+      const autoTarget = this.resolveAutoApprovalTarget(def.type, options.params);
+      requiresApproval = autoTarget
+        ? !(await this.hasAutoApprovalRule(def.type, autoTarget))
+        : true;
+    }
 
     const stepId = 'step_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
     const dag = {

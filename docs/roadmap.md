@@ -81,7 +81,7 @@
 | Remote Access UI in Integrations (toggle, status, webhook URL) | Not Started |
 | Identity pairing flows (Telegram, WhatsApp, Email) | Not Started |
 | Inbound event handler (validate and route) | Not Started |
-| Default safety policy (read-only auto, writes need approval) | Not Started |
+| Default safety policy (read-only auto, writes need approval) | Done — `readOnly` actions skip the chat-action approval gate; writes/sends still gated |
 | Test Remote Access button | Not Started |
 | **11. Sandbox Environment** | |
 | Workspace/project directory model (user-designated allowed paths) | Done |

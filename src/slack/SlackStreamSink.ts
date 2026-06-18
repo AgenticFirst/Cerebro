@@ -21,10 +21,17 @@
  * bridge directly, which makes it trivially unit-testable with a stub.
  */
 
+import * as fs from 'fs';
 import type { AgentEventSink, RendererAgentEvent } from '../agents/runtime';
 import { SlackApi, scrubTokenish } from './api';
-import { chunkSlackText } from './helpers';
+import { chunkSlackText, extractTrailingFilePaths } from './helpers';
 import { markdownToMrkdwn } from './mrkdwn';
+
+/** basename without pulling in `path` just for one call. */
+function basename(p: string): string {
+  const i = p.lastIndexOf('/');
+  return i === -1 ? p : p.slice(i + 1);
+}
 
 const EDIT_DEBOUNCE_MS = 1_500; // 1.5s minimum between edits
 const EDIT_CHUNK_CHARS = 600; // or 600 chars of new visible text
@@ -228,42 +235,100 @@ export class SlackStreamSink implements AgentEventSink {
       }
     }
 
-    const finalText =
-      this.accumulated.trim().length === 0 ? '_(empty response)_' : this.accumulated;
-    // Convert to Slack mrkdwn before chunking — link/header rewrites change
-    // length and we want chunk boundaries to land on the actual sent text.
-    const renderedFinal = markdownToMrkdwn(finalText);
-    const chunks = chunkSlackText(renderedFinal, MAX_MESSAGE_CHARS);
+    const finalText = this.accumulated;
+
+    // The agent ends a file delivery with one literal `@/abs/path` line per
+    // file (the native UI renders these as download chips). Slack has no chip
+    // renderer, so pull those trailing lines out and upload the real bytes
+    // instead of posting an unusable path. Done on the RAW text — mrkdwn
+    // conversion would mangle the path line.
+    const { prose, paths } = extractTrailingFilePaths(finalText);
+    const uploads: string[] = [];
+    const unresolved: string[] = [];
+    for (const p of paths) {
+      const abs = p.startsWith('@/') ? p.slice(1) : p;
+      try {
+        if (abs.startsWith('/') && fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+          uploads.push(abs);
+          continue;
+        }
+      } catch {
+        /* fall through to unresolved */
+      }
+      // Couldn't verify it on disk — keep it as text so nothing is lost.
+      unresolved.push(`@${p}`);
+    }
+
+    // Body = prose plus any path lines we couldn't upload. When the whole reply
+    // was just the file (empty prose) and we have a real upload, skip the text
+    // post entirely rather than emitting "_(empty response)_".
+    const bodyParts = [prose, ...unresolved].filter((s) => s.trim().length > 0);
+    let body = bodyParts.join('\n');
+    if (body.trim().length === 0 && uploads.length === 0) {
+      body = '_(empty response)_';
+    }
 
     // Edits don't fire Slack notifications, so we delete the placeholder
     // and post the final answer fresh. The new chat.postMessage rings the
     // user's client exactly like a human reply would.
     await this.deletePlaceholderIfAny();
 
-    // First (and possibly only) chunk → notifying post.
-    try {
-      await this.deps.api.chatPostMessage({
-        channel: this.deps.channel,
-        thread_ts: this.deps.threadTs,
-        text: chunks[0],
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[Slack] finalize chat.postMessage failed:', scrubTokenish(msg));
-    }
+    if (body.trim().length > 0) {
+      // Convert to Slack mrkdwn before chunking — link/header rewrites change
+      // length and we want chunk boundaries to land on the actual sent text.
+      const chunks = chunkSlackText(markdownToMrkdwn(body), MAX_MESSAGE_CHARS);
 
-    // Remaining chunks → additional in-thread messages.
-    for (let i = 1; i < chunks.length; i++) {
+      // First (and possibly only) chunk → notifying post.
       try {
-        const sent = await this.deps.api.chatPostMessage({
+        await this.deps.api.chatPostMessage({
           channel: this.deps.channel,
           thread_ts: this.deps.threadTs,
-          text: chunks[i],
+          text: chunks[0],
         });
-        this.overflowTs.push(sent.ts);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error('[Slack] finalize chunk postMessage failed:', scrubTokenish(msg));
+        console.error('[Slack] finalize chat.postMessage failed:', scrubTokenish(msg));
+      }
+
+      // Remaining chunks → additional in-thread messages.
+      for (let i = 1; i < chunks.length; i++) {
+        try {
+          const sent = await this.deps.api.chatPostMessage({
+            channel: this.deps.channel,
+            thread_ts: this.deps.threadTs,
+            text: chunks[i],
+          });
+          this.overflowTs.push(sent.ts);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error('[Slack] finalize chunk postMessage failed:', scrubTokenish(msg));
+        }
+      }
+    }
+
+    // Upload each delivered file into the same channel/thread.
+    for (const abs of uploads) {
+      try {
+        await this.deps.api.filesUpload({
+          channelId: this.deps.channel,
+          filePath: abs,
+          threadTs: this.deps.threadTs,
+          fileName: basename(abs),
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[Slack] finalize file upload failed:', scrubTokenish(msg));
+        // Never worse than before: fall back to posting the path as text so
+        // the user at least knows which file we meant.
+        try {
+          await this.deps.api.chatPostMessage({
+            channel: this.deps.channel,
+            thread_ts: this.deps.threadTs,
+            text: `@${abs}`,
+          });
+        } catch {
+          /* ignore */
+        }
       }
     }
 
