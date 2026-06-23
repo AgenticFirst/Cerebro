@@ -208,10 +208,7 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
     return id;
   }, [pendingDetailExpertId]);
 
-  const specialistExperts = useMemo(
-    () => experts.filter((e) => !isCerebroExpert(e)),
-    [experts],
-  );
+  const specialistExperts = useMemo(() => experts.filter((e) => !isCerebroExpert(e)), [experts]);
 
   // Counts describe manageable specialists, so they exclude the builtin Cerebro row.
   const activeCount = useMemo(
