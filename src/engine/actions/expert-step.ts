@@ -89,7 +89,9 @@ export function createExpertStepAction(deps: ExpertStepContext): ActionDefinitio
 
       // Empty-string expertId means "no expert selected" — fall back to the
       // global Cerebro agent. The `?? null` form would have left an empty
-      // string here, which the runtime cannot resolve.
+      // string here, which the runtime cannot resolve. The builtin Cerebro
+      // expert id ('cerebro') passes through and is mapped by the runtime to
+      // the orchestrator agent, which delegates as it sees fit.
       const expertId = params.expertId?.trim() || null;
 
       // Routine-shape context. Tells the expert "you are step 1 of 2,

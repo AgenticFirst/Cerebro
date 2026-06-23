@@ -117,15 +117,45 @@ interface PendingApproval {
 const EVENT_BUFFER_TTL_MS = 60_000;
 
 /**
- * Chat actions a user can mark "don't ask again" for, mapped to the param that
- * identifies the destination (the `target_key` of an auto-approval rule). An
- * action absent from this map can NEVER skip the approval gate — this map is the
- * entire bypass surface. Slack message + file both key off `channel`.
+ * The input param that names a send action's destination, so a "don't ask
+ * again" rule can be scoped to one exact channel / chat / recipient. This map
+ * is the **destination resolver only** — it no longer decides eligibility.
+ * Eligibility (which actions/modules can have a rule at all) is decided by
+ * `autoApprovalSupported()` off the live action catalog, so a per-action ('*')
+ * or per-module rule can bypass the gate even for actions absent from this map
+ * (e.g. HubSpot/GitHub/calendar writes, which have no single destination param).
  */
-const AUTO_APPROVAL_TARGET_PARAM: Record<string, string> = {
+export const AUTO_APPROVAL_TARGET_PARAM: Record<string, string> = {
+  // Slack — channel id (C…/G…/D…)
   send_slack_message: 'channel',
   send_slack_file: 'channel',
+  // Telegram — numeric chat id
+  send_telegram_message: 'chat_id',
+  send_telegram_photo: 'chat_id',
+  send_telegram_document: 'chat_id',
+  send_telegram_audio: 'chat_id',
+  send_telegram_voice: 'chat_id',
+  send_telegram_video: 'chat_id',
+  send_telegram_sticker: 'chat_id',
+  send_telegram_location: 'chat_id',
+  // WhatsApp — phone number (E.164) or full JID
+  send_whatsapp_message: 'phone_number',
+  send_whatsapp_photo: 'phone_number',
+  send_whatsapp_document: 'phone_number',
+  send_whatsapp_audio: 'phone_number',
+  send_whatsapp_voice: 'phone_number',
+  send_whatsapp_video: 'phone_number',
+  send_whatsapp_sticker: 'phone_number',
+  send_whatsapp_location: 'phone_number',
 };
+
+/** Sentinel `target_key` meaning "any destination" — used by per-action and
+ *  per-module rules (e.g. all HubSpot writes, regardless of which record). */
+const AUTO_APPROVAL_ANY_TARGET = '*';
+
+/** Prefix that turns a `chatGroup` into a module-scoped rule's `action_type`
+ *  (e.g. `module:hubspot` → every HubSpot write skips the gate). */
+const AUTO_APPROVAL_MODULE_PREFIX = 'module:';
 
 export class ExecutionEngine {
   private backendPort: number;
@@ -689,6 +719,35 @@ export class ExecutionEngine {
    * reaches a terminal state. Long-running by design: the chat subprocess holds
    * the HTTP connection open until this returns.
    */
+  /**
+   * True when a chat-triggered send targets the very channel/chat the current
+   * conversation is already replying into — i.e. it would double-post the reply
+   * the Slack/Telegram stream sink delivers automatically. Matches on
+   * destination only (a send to a different channel/chat is legitimate) and only
+   * for text sends — file/media uploads ride a separate path the guardrail
+   * explicitly allows in the origin thread. Uses an EXACT conversationId match
+   * against the bridges' in-flight runs, so routine runs and unrelated
+   * conversations never trip it.
+   */
+  private detectSelfPost(
+    type: string,
+    params: Record<string, unknown>,
+    conversationId: string | undefined,
+  ): boolean {
+    if (!conversationId) return false;
+    if (type === 'send_slack_message' && this.slackChannel) {
+      const origin = this.slackChannel.activeConversationOrigin(conversationId);
+      const target = String(params.channel ?? '').trim();
+      return !!origin && target !== '' && target === origin.channel;
+    }
+    if (type === 'send_telegram_message' && this.telegramChannel) {
+      const chatId = this.telegramChannel.activeConversationChatId(conversationId);
+      const target = String(params.chat_id ?? '').trim();
+      return chatId !== null && target !== '' && target === String(chatId);
+    }
+    return false;
+  }
+
   async runChatAction(
     webContents: WebContents,
     options: {
@@ -713,23 +772,34 @@ export class ExecutionEngine {
       return { status: 'unavailable', error: `Action "${def.name}" is not connected.` };
     }
 
+    // Deterministic double-post guard. When the conversation originates from
+    // Slack/Telegram the agent's reply is auto-delivered to that exact channel/
+    // chat by the stream sink — so a send_* action the model fires at that same
+    // destination would post the identical content twice. The prompt guardrail
+    // (buildOriginPreamble) asks the model not to; this enforces it. Sends to a
+    // DIFFERENT destination, file/media uploads, and routine runs (never in the
+    // bridges' active-run maps) are untouched.
+    if (this.detectSelfPost(def.type, options.params, options.conversationId)) {
+      return {
+        status: 'succeeded',
+        summary: 'Reply already delivered to this conversation; skipped duplicate send.',
+        data: { sent: false, skipped: true, reason: 'same_destination_as_origin' },
+      };
+    }
+
     // Read-only lookups (search/get/list/fetch/query) never mutate anything, so
     // they run without the approval gate — the same policy routines already use
-    // (getStepDefaults defaults requiresApproval:false). Writes/sends fall
-    // through to the per-destination auto-approval rule check.
+    // (getStepDefaults defaults requiresApproval:false).
     //
-    // For everything else, honor a persistent "don't ask again" rule for this
-    // exact destination (e.g. Slack messages to one channel). Only action types
-    // in AUTO_APPROVAL_TARGET_PARAM can ever skip the gate that way; everything
-    // else — and any target without a matching rule — still pauses for approval.
+    // Writes/sends pause for approval unless the user has recorded a "don't ask
+    // again" rule that covers this action at any scope — this exact destination,
+    // this whole action type, or this whole integration module (see
+    // `isAutoApproved`). Anything without a matching rule still gates.
     let requiresApproval: boolean;
     if (def.readOnly) {
       requiresApproval = false;
     } else {
-      const autoTarget = this.resolveAutoApprovalTarget(def.type, options.params);
-      requiresApproval = autoTarget
-        ? !(await this.hasAutoApprovalRule(def.type, autoTarget))
-        : true;
+      requiresApproval = !(await this.isAutoApproved(def, options.params));
     }
 
     const stepId = 'step_' + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
@@ -1089,10 +1159,50 @@ export class ExecutionEngine {
 
   // ── Auto-approval ("don't ask again") rules ──────────────────────
 
-  /** Whether an action type is eligible for "don't ask again" rules at all.
-   *  The bridge rejects rules for anything that could never skip the gate. */
+  /**
+   * Whether a rule key is eligible for "don't ask again" at all. The bridge
+   * rejects rules for anything that could never (meaningfully) skip the gate:
+   *  - `module:<group>` — valid when that integration has ≥1 chat-exposable
+   *    write action (read-only-only modules would never gate, so no rule needed).
+   *  - a concrete action type — valid when it's a chat-exposable write. Read-only
+   *    actions never gate (a rule is meaningless) and unknown types are rejected,
+   *    so the bridge can surface `not_auto_approvable:<type>`.
+   * Scope is independent of `AUTO_APPROVAL_TARGET_PARAM`: a per-action or
+   * per-module rule covers actions with no single destination param too.
+   */
   autoApprovalSupported(actionType: string): boolean {
-    return actionType in AUTO_APPROVAL_TARGET_PARAM;
+    if (actionType.startsWith(AUTO_APPROVAL_MODULE_PREFIX)) {
+      const group = actionType.slice(AUTO_APPROVAL_MODULE_PREFIX.length);
+      return this.buildChatExposableDefs().some((d) => d.chatGroup === group && !d.readOnly);
+    }
+    return this.buildChatExposableDefs().some((d) => d.type === actionType && !d.readOnly);
+  }
+
+  /**
+   * True when a "don't ask again" rule covers this write at any scope. Checks,
+   * most-specific first: this exact destination → this whole action type → this
+   * whole integration module. Short-circuits on the first match.
+   */
+  private async isAutoApproved(
+    def: ActionDefinition,
+    params: Record<string, unknown> | undefined,
+  ): Promise<boolean> {
+    const candidates: Array<{ actionType: string; targetKey: string }> = [];
+    const destination = this.resolveAutoApprovalTarget(def.type, params);
+    if (destination) {
+      candidates.push({ actionType: def.type, targetKey: destination });
+    }
+    candidates.push({ actionType: def.type, targetKey: AUTO_APPROVAL_ANY_TARGET });
+    if (def.chatGroup) {
+      candidates.push({
+        actionType: AUTO_APPROVAL_MODULE_PREFIX + def.chatGroup,
+        targetKey: AUTO_APPROVAL_ANY_TARGET,
+      });
+    }
+    for (const c of candidates) {
+      if (await this.hasAutoApprovalRule(c.actionType, c.targetKey)) return true;
+    }
+    return false;
   }
 
   /**

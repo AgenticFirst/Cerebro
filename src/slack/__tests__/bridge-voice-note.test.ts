@@ -190,8 +190,11 @@ describe('SlackBridge.buildPromptFromContext — audio detection', () => {
     expect(stubs.ingest).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves a real video mp4 untouched (no download, no STT)', async () => {
+  it('treats a non-audio file (video mp4) as a generic attachment, not audio', async () => {
     const { bridge, stubs } = makeBridge('should not be used');
+    // Generic ingest result — MediaIngestService returns a descriptive injection
+    // for video (it has no STT transcript).
+    stubs.ingest.mockResolvedValue({ promptInjection: '[video attached at /tmp/demo.mp4]' });
     const video: SlackFile = {
       id: 'F_VID',
       name: 'demo.mp4',
@@ -203,8 +206,269 @@ describe('SlackBridge.buildPromptFromContext — audio detection', () => {
     const ctx = { ...dmVoiceCtx('', [video]), text: '' };
     await (bridge as unknown as Internals).buildPromptFromContext(ctx);
 
-    expect(ctx.text).toBe(''); // unchanged — not treated as audio
+    // Downloaded + ingested as a file, NOT routed through the STT/audio branch.
+    expect(stubs.downloadFile).toHaveBeenCalledTimes(1);
+    expect(stubs.ingest).toHaveBeenCalledTimes(1);
+    // The caption text is untouched; the injection rides on attachmentPrompt so
+    // history isn't polluted with a dead staging path.
+    expect(ctx.text).toBe('');
+    expect(ctx.attachmentPrompt).toBe('[video attached at /tmp/demo.mp4]');
+    expect(ctx.attachmentSummary).toBe('📎 demo.mp4');
+  });
+
+  it('ingests an image/PDF attachment into attachmentPrompt', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.ingest.mockResolvedValue({
+      promptInjection: '@/tmp/report.md\n[parsed from report.pdf]',
+    });
+    const pdf: SlackFile = {
+      id: 'F_PDF',
+      name: 'report.pdf',
+      mimetype: 'application/pdf',
+      filetype: 'pdf',
+      url_private_download: 'https://files.slack.com/report.pdf',
+      size: 4096,
+    };
+    const ctx = { ...dmVoiceCtx('', [pdf]), text: '' };
+    await (bridge as unknown as Internals).buildPromptFromContext(ctx);
+
+    expect(stubs.downloadFile).toHaveBeenCalledTimes(1);
+    expect(stubs.ingest).toHaveBeenCalledTimes(1);
+    expect(ctx.attachmentPrompt).toBe('@/tmp/report.md\n[parsed from report.pdf]');
+    expect(ctx.attachmentSummary).toBe('📎 report.pdf');
+  });
+});
+
+/**
+ * End-to-end coverage for the original bug: "Cerebro no acepta archivos
+ * adjuntados directos desde Slack" — a file attached in Slack was never
+ * recognized. These drive the REAL handleInbound (only backend-touching
+ * collaborators are stubbed) and assert at the agent-run boundary, so they
+ * prove the whole path: detect file → download with the real extension →
+ * MediaIngest → injection folded into the run prompt → run actually starts
+ * (the empty-body guard no longer drops a caption-less upload).
+ */
+describe('SlackBridge — non-audio file attachments end-to-end', () => {
+  const pdf = (over: Partial<SlackFile> = {}): SlackFile => ({
+    id: 'F_PDF',
+    name: 'report.pdf',
+    mimetype: 'application/pdf',
+    filetype: 'pdf',
+    url_private_download: 'https://files.slack.com/report.pdf',
+    size: 4096,
+    ...over,
+  });
+
+  function fileCtx(text: string, files: SlackFile[], over: Record<string, unknown> = {}) {
+    return { ...dmVoiceCtx(text, files), text, ...over } as ReturnType<typeof dmVoiceCtx>;
+  }
+
+  it('starts a run for a CAPTION-LESS file — the exact regression that was reported', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.ingest.mockResolvedValue({
+      promptInjection: '@/tmp/report.md\n[parsed from report.pdf]',
+    });
+
+    await (bridge as unknown as Internals).handleInbound(fileCtx('', [pdf()]));
+
+    // Downloaded with the REAL extension so MediaIngest categorizes it (a .pdf,
+    // not a generic .bin) — and the old code returned before this point.
+    expect(stubs.downloadFile).toHaveBeenCalledTimes(1);
+    expect(stubs.downloadFile.mock.calls[0][1] as string).toMatch(/\.pdf$/);
+    expect(stubs.ingest).toHaveBeenCalledTimes(1);
+    // THE fix: a file with no text survived the empty-body guard and reached the
+    // agent run with the parsed-file injection as its content.
+    expect(stubs.startRun).toHaveBeenCalledTimes(1);
+    const runRequest = stubs.startRun.mock.calls[0][1] as { content: string };
+    expect(runRequest.content).toBe('@/tmp/report.md\n[parsed from report.pdf]');
+  });
+
+  it('prepends the file injection ahead of a typed caption', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.ingest.mockResolvedValue({ promptInjection: '@/tmp/report.md' });
+
+    await (bridge as unknown as Internals).handleInbound(fileCtx('please summarise', [pdf()]));
+
+    const runRequest = stubs.startRun.mock.calls[0][1] as { content: string };
+    expect(runRequest.content).toBe('@/tmp/report.md\n\nplease summarise');
+  });
+
+  it('ingests MULTIPLE attached files and joins their injections', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.ingest
+      .mockResolvedValueOnce({ promptInjection: '@/tmp/a.md' })
+      .mockResolvedValueOnce({ promptInjection: '@/tmp/b.png' });
+    const img: SlackFile = {
+      id: 'F_IMG',
+      name: 'b.png',
+      mimetype: 'image/png',
+      filetype: 'png',
+      url_private_download: 'https://files.slack.com/b.png',
+      size: 2048,
+    };
+
+    await (bridge as unknown as Internals).handleInbound(
+      fileCtx('', [pdf({ id: 'F_A', name: 'a.pdf' }), img]),
+    );
+
+    expect(stubs.downloadFile).toHaveBeenCalledTimes(2);
+    expect(stubs.ingest).toHaveBeenCalledTimes(2);
+    const runRequest = stubs.startRun.mock.calls[0][1] as { content: string };
+    expect(runRequest.content).toBe('@/tmp/a.md\n\n@/tmp/b.png');
+  });
+
+  it('persists a human-readable label (not the @path) when there is no caption', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.ingest.mockResolvedValue({ promptInjection: '@/tmp/secret-staging-path.md' });
+
+    await (bridge as unknown as Internals).handleInbound(fileCtx('', [pdf()]));
+
+    // The ctx handed to persistence carries the label + empty text, so the
+    // persisted body resolves to "📎 report.pdf" rather than a staging path that
+    // is TTL-deleted minutes later.
+    const persist = (bridge as unknown as Record<string, { mock: { calls: unknown[][] } }>)
+      .postUserMessageWithRecovery;
+    const persistedCtx = persist.mock.calls[0][1] as {
+      text: string;
+      attachmentSummary?: string;
+    };
+    expect(persistedCtx.text).toBe('');
+    expect(persistedCtx.attachmentSummary).toBe('📎 report.pdf');
+    // Sanity: the agent still received the real injection, not the label.
+    expect((stubs.startRun.mock.calls[0][1] as { content: string }).content).toBe(
+      '@/tmp/secret-staging-path.md',
+    );
+  });
+
+  it('skips an OVERSIZE file and does NOT start a run when there is no caption', async () => {
+    const { bridge, stubs } = makeBridge('');
+
+    await (bridge as unknown as Internals).handleInbound(
+      fileCtx('', [pdf({ size: 25 * 1024 * 1024 })]),
+    );
+
     expect(stubs.downloadFile).not.toHaveBeenCalled();
     expect(stubs.ingest).not.toHaveBeenCalled();
+    expect(stubs.startRun).not.toHaveBeenCalled();
+    const notes = stubs.chatPostMessage.mock.calls.map((c) => (c[0] as { text: string }).text);
+    expect(notes.some((t) => /too large/i.test(t))).toBe(true);
+  });
+
+  it('still answers a typed caption even when the attached file is oversize', async () => {
+    const { bridge, stubs } = makeBridge('');
+
+    await (bridge as unknown as Internals).handleInbound(
+      fileCtx('what do you make of this?', [pdf({ size: 25 * 1024 * 1024 })]),
+    );
+
+    expect(stubs.startRun).toHaveBeenCalledTimes(1);
+    expect((stubs.startRun.mock.calls[0][1] as { content: string }).content).toBe(
+      'what do you make of this?',
+    );
+  });
+
+  it('does NOT start a run when the download fails and there is no caption', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.downloadFile.mockRejectedValue(new Error('network boom'));
+
+    await (bridge as unknown as Internals).handleInbound(fileCtx('', [pdf()]));
+
+    expect(stubs.downloadFile).toHaveBeenCalledTimes(1);
+    expect(stubs.ingest).not.toHaveBeenCalled();
+    expect(stubs.startRun).not.toHaveBeenCalled();
+    const notes = stubs.chatPostMessage.mock.calls.map((c) => (c[0] as { text: string }).text);
+    expect(notes.some((t) => /couldn't fetch that file/i.test(t))).toBe(true);
+  });
+
+  it('does NOT start a run when ingest returns an empty injection (no caption)', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.ingest.mockResolvedValue({ promptInjection: '   ' }); // blank → unusable
+
+    await (bridge as unknown as Internals).handleInbound(fileCtx('', [pdf()]));
+
+    expect(stubs.downloadFile).toHaveBeenCalledTimes(1);
+    expect(stubs.startRun).not.toHaveBeenCalled();
+  });
+
+  it('keeps the injection when an @mention with a file arrives inside a thread', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.ingest.mockResolvedValue({ promptInjection: '@/tmp/spec.md' });
+
+    // channel + thread_ts → conversationKey resolves to the "thread" surface,
+    // which runs the thread-context branch. buildThreadContext degrades to ''
+    // here (no conversationsReplies stub), so the run content is the injection
+    // + caption — proving that branch wraps promptContent (with the injection),
+    // not the bare caption as it did before the fix.
+    await (bridge as unknown as Internals).handleInbound(
+      fileCtx('check the spec', [pdf({ name: 'spec.pdf' })], {
+        channelType: 'channel',
+        surface: 'app_mention',
+        threadTs: '111.000',
+      }),
+    );
+
+    expect(stubs.startRun).toHaveBeenCalledTimes(1);
+    expect((stubs.startRun.mock.calls[0][1] as { content: string }).content).toBe(
+      '@/tmp/spec.md\n\ncheck the spec',
+    );
+  });
+
+  it('audio still takes precedence — a voice note is transcribed, not file-ingested', async () => {
+    // Regression guard: when both an audio clip and the audio path apply, we
+    // transcribe (existing behavior) and never fall through to file ingest.
+    const { bridge, stubs } = makeBridge('the spoken words');
+
+    await (bridge as unknown as Internals).handleInbound(dmVoiceCtx(''));
+
+    expect(stubs.startRun).toHaveBeenCalledTimes(1);
+    expect((stubs.startRun.mock.calls[0][1] as { content: string }).content).toBe(
+      'the spoken words',
+    );
+  });
+
+  it('does NOT persist an "(empty message)" row for a content-less failed upload', async () => {
+    // Fix for the persistence quirk: a failed media upload with no caption must
+    // bail out BEFORE persistence so it leaves no empty row behind.
+    const { bridge, stubs } = makeBridge('');
+    stubs.downloadFile.mockRejectedValue(new Error('network boom'));
+
+    await (bridge as unknown as Internals).handleInbound(fileCtx('', [pdf()]));
+
+    const persist = (bridge as unknown as Record<string, { mock: { calls: unknown[][] } }>)
+      .postUserMessageWithRecovery;
+    expect(persist.mock.calls.length).toBe(0);
+    expect(stubs.startRun).not.toHaveBeenCalled();
+  });
+
+  it('localizes the oversize note to Spanish when ui_language is es', async () => {
+    const { bridge, stubs } = makeBridge('');
+    (bridge as unknown as { appLanguage: string }).appLanguage = 'es';
+
+    await (bridge as unknown as Internals).handleInbound(
+      fileCtx('', [pdf({ size: 25 * 1024 * 1024 })]),
+    );
+
+    const notes = stubs.chatPostMessage.mock.calls.map((c) => (c[0] as { text: string }).text);
+    expect(notes.some((t) => /demasiado grande/i.test(t))).toBe(true);
+  });
+
+  it('localizes the "got files" ack and the download-failure note to Spanish', async () => {
+    // ack path
+    const ok = makeBridge('');
+    (ok.bridge as unknown as { appLanguage: string }).appLanguage = 'es';
+    ok.stubs.ingest.mockResolvedValue({ promptInjection: '@/tmp/x.md' });
+    await (ok.bridge as unknown as Internals).handleInbound(fileCtx('', [pdf()]));
+    const okNotes = ok.stubs.chatPostMessage.mock.calls.map((c) => (c[0] as { text: string }).text);
+    expect(okNotes.some((t) => /Recibí/i.test(t))).toBe(true);
+
+    // failure path uses the file-flavored Spanish string, not the voice one
+    const fail = makeBridge('');
+    (fail.bridge as unknown as { appLanguage: string }).appLanguage = 'es';
+    fail.stubs.downloadFile.mockRejectedValue(new Error('boom'));
+    await (fail.bridge as unknown as Internals).handleInbound(fileCtx('', [pdf()]));
+    const failNotes = fail.stubs.chatPostMessage.mock.calls.map(
+      (c) => (c[0] as { text: string }).text,
+    );
+    expect(failNotes.some((t) => /No pude obtener ese archivo/i.test(t))).toBe(true);
   });
 });

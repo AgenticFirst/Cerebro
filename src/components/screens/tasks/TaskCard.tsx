@@ -14,6 +14,7 @@ import {
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { Task, TaskColumn } from '../../../context/TaskContext';
+import { useExperts } from '../../../context/ExpertContext';
 import { countFiles } from '../../../utils/workspace-tree';
 import AlertModal from '../../ui/AlertModal';
 
@@ -93,11 +94,15 @@ export default function TaskCard({
   onMove,
   onStart,
   onDelete,
-  expertName,
+  expertName: expertNameProp,
   isDragOverlay,
   isLiveRun = true,
 }: TaskCardProps) {
   const { t } = useTranslation();
+  const { experts } = useExperts();
+  // Resolve the assigned expert's name from context when not passed explicitly,
+  // so the assignee avatar renders (including the builtin "Cerebro" assignee).
+  const expertName = expertNameProp ?? experts.find((e) => e.id === task.expert_id)?.name;
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [fileCount, setFileCount] = useState(0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);

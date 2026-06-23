@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { expertAgentName, slugify, hashSuffix } from './agent-name';
+import {
+  expertAgentName,
+  slugify,
+  hashSuffix,
+  isCerebroExpert,
+  CEREBRO_EXPERT_ID,
+} from './agent-name';
 
 describe('expertAgentName', () => {
   it('matches the exact directory name the installer wrote for a real user expert', () => {
@@ -54,5 +60,36 @@ describe('expertAgentName', () => {
     expect(hashSuffix('')).toMatch(/^[0-9a-z]{6}$/);
     expect(hashSuffix('x')).toMatch(/^[0-9a-z]{6}$/);
     expect(hashSuffix('very-long-identifier-' + 'a'.repeat(200))).toMatch(/^[0-9a-z]{6}$/);
+  });
+});
+
+describe('isCerebroExpert / CEREBRO_EXPERT_ID', () => {
+  it("the well-known id is exactly 'cerebro' (mirrors backend CEREBRO_EXPERT_ID)", () => {
+    // This literal is hard-coded in the backend seeder, the runtime routing
+    // guard, the installer skip, and list-experts.sh. If it ever drifts here,
+    // task assignment to Cerebro silently stops routing to the orchestrator.
+    expect(CEREBRO_EXPERT_ID).toBe('cerebro');
+  });
+
+  it('matches the bare id string', () => {
+    expect(isCerebroExpert('cerebro')).toBe(true);
+    expect(isCerebroExpert(CEREBRO_EXPERT_ID)).toBe(true);
+  });
+
+  it('matches an expert-shaped object by id', () => {
+    expect(isCerebroExpert({ id: 'cerebro' })).toBe(true);
+    expect(isCerebroExpert({ id: 'e-123' })).toBe(false);
+  });
+
+  it('does not match other experts or empty values', () => {
+    expect(isCerebroExpert('e-123')).toBe(false);
+    expect(isCerebroExpert('')).toBe(false);
+    expect(isCerebroExpert(null)).toBe(false);
+    expect(isCerebroExpert(undefined)).toBe(false);
+  });
+
+  it('is case-sensitive (only the exact id routes to the orchestrator)', () => {
+    expect(isCerebroExpert('Cerebro')).toBe(false);
+    expect(isCerebroExpert('CEREBRO')).toBe(false);
   });
 });

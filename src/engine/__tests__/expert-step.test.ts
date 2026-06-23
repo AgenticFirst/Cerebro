@@ -93,6 +93,82 @@ describe('expert_step action', () => {
     });
   });
 
+  it('falls back to no expert (Cerebro) when expertId is blank', async () => {
+    const webContents = createMockWebContents();
+    const runtime = createMockRuntime(webContents, [
+      { type: 'done', runId: 'agent-run-abc123', messageContent: 'Done' },
+    ]);
+
+    const action = createExpertStepAction({
+      agentRuntime: runtime as any,
+      webContents: webContents as any,
+    });
+
+    await action.execute({
+      params: { prompt: 'Plan the launch', expertId: '   ' },
+      wiredInputs: {},
+      scratchpad: new RunScratchpad(),
+      context: makeContext(),
+    });
+
+    // Blank → null so the runtime falls back to the Cerebro orchestrator.
+    expect(runtime.startRun).toHaveBeenCalledWith(
+      webContents,
+      expect.objectContaining({ expertId: null }),
+    );
+  });
+
+  it('passes the builtin Cerebro expert id through to the runtime', async () => {
+    const webContents = createMockWebContents();
+    const runtime = createMockRuntime(webContents, [
+      { type: 'done', runId: 'agent-run-abc123', messageContent: 'Done' },
+    ]);
+
+    const action = createExpertStepAction({
+      agentRuntime: runtime as any,
+      webContents: webContents as any,
+    });
+
+    await action.execute({
+      params: { prompt: 'Plan the launch', expertId: 'cerebro' },
+      wiredInputs: {},
+      scratchpad: new RunScratchpad(),
+      context: makeContext(),
+    });
+
+    // 'cerebro' is a real expert id — the runtime (not expert-step) maps it to
+    // the orchestrator agent, so it must reach startRun unchanged.
+    expect(runtime.startRun).toHaveBeenCalledWith(
+      webContents,
+      expect.objectContaining({ expertId: 'cerebro' }),
+    );
+  });
+
+  it('passes a team id through unchanged', async () => {
+    const webContents = createMockWebContents();
+    const runtime = createMockRuntime(webContents, [
+      { type: 'done', runId: 'agent-run-abc123', messageContent: 'Done' },
+    ]);
+
+    const action = createExpertStepAction({
+      agentRuntime: runtime as any,
+      webContents: webContents as any,
+    });
+
+    await action.execute({
+      params: { prompt: 'Review the PR', expertId: 'team-code-review' },
+      wiredInputs: {},
+      scratchpad: new RunScratchpad(),
+      context: makeContext(),
+    });
+
+    // A team is just another expert id — it resolves to the team coordinator.
+    expect(runtime.startRun).toHaveBeenCalledWith(
+      webContents,
+      expect.objectContaining({ expertId: 'team-code-review' }),
+    );
+  });
+
   it('prepends additionalContext to prompt', async () => {
     const webContents = createMockWebContents();
     const runtime = createMockRuntime(webContents, [

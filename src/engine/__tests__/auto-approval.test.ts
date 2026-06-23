@@ -2,11 +2,13 @@
  * Tests for the "don't ask again" auto-approval path.
  *
  * Covers:
- *  - runChatAction skips the approval gate (no POST /engine/approvals, no
- *    approval_requested) when a matching rule exists for the exact Slack target.
- *  - runChatAction still gates when no rule matches.
- *  - The action_type→target-param map is the entire bypass surface: a non-mapped
- *    action never resolves a target, so it can never bypass.
+ *  - runChatAction skips the approval gate (no POST /engine/approvals) when a
+ *    matching rule exists at any scope: exact destination, whole action type
+ *    (target '*'), or whole integration module (`module:<group>` / '*').
+ *  - runChatAction still gates when no rule matches at any scope.
+ *  - autoApprovalSupported accepts write actions + module tokens and rejects
+ *    read-only actions / unknown types; resolveAutoApprovalTarget reads the
+ *    right destination param per integration.
  *  - The rule-management methods hit the right backend endpoints.
  *
  * A mock HTTP backend intercepts persistence calls (no real Python backend),
@@ -17,7 +19,8 @@
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
-import { ExecutionEngine } from '../engine';
+import { ExecutionEngine, AUTO_APPROVAL_TARGET_PARAM } from '../engine';
+import type { ActionDefinition } from '../actions/types';
 import { findContact } from '../../hubspot/contacts';
 
 // hubspot_search_contact calls findContact() against the live HubSpot API. Mock
@@ -44,8 +47,15 @@ let mockServer: http.Server;
 let serverPort: number;
 let captured: CapturedRequest[];
 
-// Dynamic per-test: how many auto-approval rules the GET lookup reports.
-let autoApprovalTotal = 0;
+// Dynamic per-test: the auto-approval rules the mock backend holds. The GET
+// handler filters by action_type/target_key when present (mirroring router.py),
+// so tests can exercise destination-, action-, and module-scoped matching.
+interface MockRule {
+  action_type: string;
+  target_key: string;
+  target_label?: string | null;
+}
+let mockRules: MockRule[] = [];
 
 function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -113,16 +123,23 @@ beforeAll(async () => {
         res.end(JSON.stringify(payload));
       };
 
-      // Auto-approval lookup / management.
+      // Auto-approval lookup / management. Filters by action_type/target_key
+      // exactly like the real backend, so scoped-rule matching is faithful.
       if (method === 'GET' && url.startsWith('/engine/auto-approvals')) {
-        const rules = Array.from({ length: autoApprovalTotal }, (_, i) => ({
+        const params = new URL(url, 'http://x').searchParams;
+        const at = params.get('action_type');
+        const tk = params.get('target_key');
+        let matched = mockRules;
+        if (at) matched = matched.filter((r) => r.action_type === at);
+        if (tk) matched = matched.filter((r) => r.target_key === tk);
+        const rules = matched.map((r, i) => ({
           id: `rule${i}`,
-          action_type: 'send_slack_message',
-          target_key: 'C123',
-          target_label: '#general',
+          action_type: r.action_type,
+          target_key: r.target_key,
+          target_label: r.target_label ?? null,
           created_at: new Date().toISOString(),
         }));
-        return json(200, { rules, total: autoApprovalTotal });
+        return json(200, { rules, total: rules.length });
       }
       if (method === 'POST' && url === '/engine/auto-approvals') {
         return json(201, {
@@ -213,7 +230,7 @@ function makeMockHubSpotChannel() {
 
 beforeEach(() => {
   captured = [];
-  autoApprovalTotal = 0;
+  mockRules = [];
   (findContact as any).mockClear();
 });
 
@@ -226,8 +243,11 @@ function makeEngine() {
 // ── runChatAction bypass behavior ───────────────────────────────
 
 describe('runChatAction auto-approval bypass', () => {
-  it('skips the approval gate when a matching rule exists', async () => {
-    autoApprovalTotal = 1; // rule present for (send_slack_message, C123)
+  it('skips the approval gate when a matching destination rule exists', async () => {
+    // Rule present for the exact destination (send_slack_message, C123).
+    mockRules = [
+      { action_type: 'send_slack_message', target_key: 'C123', target_label: '#general' },
+    ];
     const engine = makeEngine();
 
     const result = await engine.runChatAction(makeMockWebContents(), {
@@ -237,13 +257,14 @@ describe('runChatAction auto-approval bypass', () => {
 
     expect(result.status).toBe('succeeded');
 
-    // It looked up the rule for the exact target...
-    const lookup = captured.find(
+    // It looked up the rule for the exact target first (most-specific), and
+    // short-circuited there — exactly one auto-approval lookup, no module check.
+    const lookups = captured.filter(
       (r) => r.method === 'GET' && r.path.startsWith('/engine/auto-approvals'),
     );
-    expect(lookup).toBeDefined();
-    expect(lookup!.path).toContain('action_type=send_slack_message');
-    expect(lookup!.path).toContain('target_key=C123');
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0].path).toContain('action_type=send_slack_message');
+    expect(lookups[0].path).toContain('target_key=C123');
 
     // ...and never created an approval (no gate, no pause).
     const approvalPost = captured.find(
@@ -252,8 +273,51 @@ describe('runChatAction auto-approval bypass', () => {
     expect(approvalPost).toBeUndefined();
   });
 
+  it('skips the gate for a per-action rule (any destination)', async () => {
+    // "Don't ask before any Slack message" — target '*', no destination rule.
+    mockRules = [{ action_type: 'send_slack_message', target_key: '*' }];
+    const engine = makeEngine();
+
+    const result = await engine.runChatAction(makeMockWebContents(), {
+      type: 'send_slack_message',
+      params: { channel: 'C999', text: 'hello' },
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(
+      captured.find((r) => r.method === 'POST' && r.path === '/engine/approvals'),
+    ).toBeUndefined();
+  });
+
+  it('skips the gate for a per-module rule (whole integration)', async () => {
+    // "Don't ask for Slack at all" — module:slack / '*'. The matching logic is
+    // integration-agnostic, so testing it via Slack (clean mock) also proves the
+    // reported HubSpot case (module:hubspot would match the same way).
+    mockRules = [{ action_type: 'module:slack', target_key: '*' }];
+    const engine = makeEngine();
+
+    const result = await engine.runChatAction(makeMockWebContents(), {
+      type: 'send_slack_message',
+      params: { channel: 'C999', text: 'hello' },
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(
+      captured.find((r) => r.method === 'POST' && r.path === '/engine/approvals'),
+    ).toBeUndefined();
+    // The module-scoped lookup was consulted.
+    expect(
+      captured.some(
+        (r) =>
+          r.method === 'GET' &&
+          r.path.includes('action_type=module%3Aslack') &&
+          r.path.includes('target_key=*'),
+      ),
+    ).toBe(true);
+  });
+
   it('still requires approval when no rule matches', async () => {
-    autoApprovalTotal = 0; // no rule
+    mockRules = []; // no rule at any scope
     const engine = makeEngine();
 
     const runPromise = engine.runChatAction(makeMockWebContents(), {
@@ -281,7 +345,7 @@ describe('runChatAction auto-approval bypass', () => {
 
 describe('runChatAction read-only bypass', () => {
   it('runs a read-only action without gating or even checking auto-approval rules', async () => {
-    autoApprovalTotal = 0; // no rule — a write would gate here
+    mockRules = []; // no rule — a write would gate here
     const engine = makeEngine();
 
     const result = await engine.runChatAction(makeMockWebContents(), {
@@ -306,7 +370,7 @@ describe('runChatAction read-only bypass', () => {
   });
 
   it('still gates a write action with no matching rule (regression guard)', async () => {
-    autoApprovalTotal = 0;
+    mockRules = [];
     const engine = makeEngine();
 
     const runPromise = engine.runChatAction(makeMockWebContents(), {
@@ -334,7 +398,7 @@ describe('runChatAction read-only bypass', () => {
 
 describe('regression: bulk HubSpot contact reads never request approval', () => {
   it('looks up 20 contacts via runChatAction with zero approval requests', async () => {
-    autoApprovalTotal = 0; // no auto-approval rules exist
+    mockRules = []; // no auto-approval rules exist
     const engine = makeEngine();
     engine.setHubSpotChannel(makeMockHubSpotChannel());
 
@@ -366,26 +430,50 @@ describe('regression: bulk HubSpot contact reads never request approval', () => 
   });
 });
 
-// ── Bypass surface is exactly the mapped action types ────────────
+// ── Eligibility: which actions/modules can have a rule at all ─────
 
-describe('auto-approval target resolution', () => {
-  it('resolves the Slack channel as the target for mapped actions', () => {
+describe('autoApprovalSupported', () => {
+  it('accepts write actions (any integration) and module tokens', () => {
     const engine = makeEngine();
     expect(engine.autoApprovalSupported('send_slack_message')).toBe(true);
     expect(engine.autoApprovalSupported('send_slack_file')).toBe(true);
+    expect(engine.autoApprovalSupported('send_telegram_message')).toBe(true);
+    expect(engine.autoApprovalSupported('send_whatsapp_message')).toBe(true);
+    // The reported case: HubSpot writes are now eligible (no longer "Slack only").
+    expect(engine.autoApprovalSupported('hubspot_create_ticket')).toBe(true);
+    expect(engine.autoApprovalSupported('module:hubspot')).toBe(true);
+    expect(engine.autoApprovalSupported('module:slack')).toBe(true);
+  });
+
+  it('rejects read-only actions, unknown types, and empty modules', () => {
+    const engine = makeEngine();
+    // Read-only actions never gate, so a rule would be meaningless.
+    expect(engine.autoApprovalSupported('hubspot_search_contact')).toBe(false);
+    expect(engine.autoApprovalSupported('list_slack_channels')).toBe(false);
+    // Unknown action type / module with no writable action → rejected.
+    expect(engine.autoApprovalSupported('definitely_not_an_action')).toBe(false);
+    expect(engine.autoApprovalSupported('module:nope')).toBe(false);
+  });
+});
+
+describe('resolveAutoApprovalTarget', () => {
+  it('resolves the destination param for messaging sends', () => {
+    const engine = makeEngine();
     expect(engine.resolveAutoApprovalTarget('send_slack_message', { channel: 'C123' })).toBe(
       'C123',
     );
-    // Missing/empty target → null (always gates).
+    expect(engine.resolveAutoApprovalTarget('send_telegram_message', { chat_id: '99' })).toBe('99');
+    expect(
+      engine.resolveAutoApprovalTarget('send_whatsapp_message', { phone_number: '+14155552671' }),
+    ).toBe('+14155552671');
+    // Missing/empty target → null.
     expect(engine.resolveAutoApprovalTarget('send_slack_message', {})).toBeNull();
     expect(engine.resolveAutoApprovalTarget('send_slack_message', { channel: '  ' })).toBeNull();
   });
 
-  it('never resolves a target for non-mapped actions (so they can never bypass)', () => {
+  it('returns null for actions with no single destination param (they use action/module scope)', () => {
     const engine = makeEngine();
-    expect(engine.autoApprovalSupported('send_notification')).toBe(false);
-    expect(engine.autoApprovalSupported('hubspot_create_ticket')).toBe(false);
-    expect(engine.resolveAutoApprovalTarget('send_notification', { channel: 'C123' })).toBeNull();
+    expect(engine.resolveAutoApprovalTarget('hubspot_create_ticket', { subject: 'x' })).toBeNull();
   });
 });
 
@@ -405,7 +493,10 @@ describe('auto-approval rule management', () => {
   });
 
   it('listAutoApprovalRules GETs the list', async () => {
-    autoApprovalTotal = 2;
+    mockRules = [
+      { action_type: 'send_slack_message', target_key: 'C123' },
+      { action_type: 'module:hubspot', target_key: '*' },
+    ];
     const engine = makeEngine();
     const rules = await engine.listAutoApprovalRules();
     expect(rules).toHaveLength(2);
@@ -423,5 +514,150 @@ describe('auto-approval rule management', () => {
     );
     expect(del!.path).toContain('action_type=send_slack_file');
     expect(del!.path).toContain('target_key=C123');
+  });
+});
+
+// ── Production invariants over the live action catalog ───────────
+//
+// These don't test a scenario — they assert the structural guarantees the fix
+// depends on, against the REAL action registry. They fail the build the moment
+// someone adds a write action without a `chatGroup`, mis-maps a destination
+// param, or leaves a dead entry in AUTO_APPROVAL_TARGET_PARAM — i.e. the exact
+// regressions that would silently let "don't ask for <X>" stop covering part of
+// an integration in production.
+
+/** The exact action defs runChatAction gates against. */
+function chatExposableDefs(engine: ExecutionEngine): ActionDefinition[] {
+  return (engine as any).buildChatExposableDefs() as ActionDefinition[];
+}
+
+describe('catalog invariant: every write is coverable by action AND module scope', () => {
+  it('each chat-exposable write action has a chatGroup and is auto-approvable at both scopes', () => {
+    const engine = makeEngine();
+    const writes = chatExposableDefs(engine).filter((d) => !d.readOnly);
+
+    // Sanity: the catalog actually contains writes (guards a broken mock/registry).
+    expect(writes.length).toBeGreaterThan(10);
+
+    for (const def of writes) {
+      // A non-empty chatGroup is what a `module:<group>` rule keys off. Without
+      // it, "don't ask for this integration" could never cover this action.
+      expect(def.chatGroup, `write action '${def.type}' is missing chatGroup`).toBeTruthy();
+
+      // Per-action scope: the user can always silence this one action type.
+      expect(
+        engine.autoApprovalSupported(def.type),
+        `write action '${def.type}' should be auto-approvable by action type`,
+      ).toBe(true);
+
+      // Per-module scope: the user can silence the whole integration.
+      expect(
+        engine.autoApprovalSupported(`module:${def.chatGroup}`),
+        `module:${def.chatGroup} should be auto-approvable (covers '${def.type}')`,
+      ).toBe(true);
+    }
+  });
+
+  it('the reported integrations all expose at least one auto-approvable write', () => {
+    const engine = makeEngine();
+    const groups = new Set(
+      chatExposableDefs(engine)
+        .filter((d) => !d.readOnly && d.chatGroup)
+        .map((d) => d.chatGroup as string),
+    );
+    // HubSpot is the integration from the bug report; the others were in scope.
+    for (const g of ['hubspot', 'slack', 'telegram', 'whatsapp', 'github', 'calendar']) {
+      expect(groups.has(g), `expected writable integration '${g}' in the catalog`).toBe(true);
+      expect(engine.autoApprovalSupported(`module:${g}`)).toBe(true);
+    }
+  });
+});
+
+describe('catalog invariant: read-only actions can never carry a rule', () => {
+  it('every read-only chat action is rejected by autoApprovalSupported', () => {
+    const engine = makeEngine();
+    const reads = chatExposableDefs(engine).filter((d) => d.readOnly);
+    expect(reads.length).toBeGreaterThan(0);
+    for (const def of reads) {
+      expect(
+        engine.autoApprovalSupported(def.type),
+        `read-only action '${def.type}' must not be auto-approvable (it never gates)`,
+      ).toBe(false);
+    }
+  });
+});
+
+describe('catalog invariant: AUTO_APPROVAL_TARGET_PARAM has no drift', () => {
+  it('every mapped action exists, is a write, and actually has that destination param', () => {
+    const engine = makeEngine();
+    const byType = new Map(chatExposableDefs(engine).map((d) => [d.type, d]));
+
+    for (const [actionType, paramName] of Object.entries(AUTO_APPROVAL_TARGET_PARAM)) {
+      const def = byType.get(actionType);
+      // No dead/typo'd entries — every mapped action is a real chat action.
+      expect(
+        def,
+        `AUTO_APPROVAL_TARGET_PARAM entry '${actionType}' is not a chat action`,
+      ).toBeDefined();
+      // Read-only actions never gate, so mapping a destination for them is a bug.
+      expect(def!.readOnly, `mapped action '${actionType}' must be a write`).toBeFalsy();
+      // The mapped param must exist in the action's input schema, or a
+      // destination-scoped rule would silently never match.
+      const props = (def!.inputSchema as any)?.properties ?? {};
+      expect(
+        Object.prototype.hasOwnProperty.call(props, paramName),
+        `'${actionType}' has no input param '${paramName}' (destination map drift)`,
+      ).toBe(true);
+    }
+  });
+});
+
+// ── The reported bug, decided against the REAL HubSpot write def ─────
+//
+// Proves the gate decision for an actual HubSpot write — without executing it —
+// so we cover the exact "don't ask for HubSpot" path end-to-end at the engine's
+// decision boundary (isAutoApproved is what runChatAction branches on).
+
+describe('regression: a real HubSpot write is bypassed by a module/action rule', () => {
+  function hubspotWriteDef(engine: ExecutionEngine): ActionDefinition {
+    const def = chatExposableDefs(engine).find((d) => d.type === 'hubspot_create_ticket');
+    if (!def) throw new Error('hubspot_create_ticket not found in catalog');
+    return def;
+  }
+
+  it('gates by default (no rule)', async () => {
+    mockRules = [];
+    const engine = makeEngine();
+    const approved = await (engine as any).isAutoApproved(hubspotWriteDef(engine), {
+      subject: 'Help',
+    });
+    expect(approved).toBe(false);
+  });
+
+  it('is bypassed by a per-module rule (module:hubspot / *)', async () => {
+    mockRules = [{ action_type: 'module:hubspot', target_key: '*' }];
+    const engine = makeEngine();
+    const approved = await (engine as any).isAutoApproved(hubspotWriteDef(engine), {
+      subject: 'Help',
+    });
+    expect(approved).toBe(true);
+  });
+
+  it('is bypassed by a per-action rule (hubspot_create_ticket / *)', async () => {
+    mockRules = [{ action_type: 'hubspot_create_ticket', target_key: '*' }];
+    const engine = makeEngine();
+    const approved = await (engine as any).isAutoApproved(hubspotWriteDef(engine), {
+      subject: 'Help',
+    });
+    expect(approved).toBe(true);
+  });
+
+  it('is NOT bypassed by an unrelated module rule (module:slack)', async () => {
+    mockRules = [{ action_type: 'module:slack', target_key: '*' }];
+    const engine = makeEngine();
+    const approved = await (engine as any).isAutoApproved(hubspotWriteDef(engine), {
+      subject: 'Help',
+    });
+    expect(approved).toBe(false);
   });
 });

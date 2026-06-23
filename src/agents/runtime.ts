@@ -47,6 +47,7 @@ import {
   installExpert,
   expertAgentName,
 } from '../claude-code/installer';
+import { CEREBRO_EXPERT_ID } from '../shared/agent-name';
 import { MediaIngestService } from '../files/media-ingest';
 import type { ResolvedAttachment } from '../files/types';
 import fsSync from 'node:fs';
@@ -463,7 +464,10 @@ export class AgentRuntime {
     // unexpectedly" error.
     let agentName = 'cerebro';
     let agentResolutionError: string | null = null;
-    if (expertId) {
+    // The builtin Cerebro expert maps to the main `cerebro` agent (it
+    // re-routes/delegates). Skip slug resolution — it has no materialized
+    // persona file, so resolveExpertAgentSlug would fail.
+    if (expertId && expertId !== CEREBRO_EXPERT_ID) {
       agentName = await this.resolveExpertAgentSlug(expertId).catch((err: Error) => {
         agentResolutionError = err.message;
         return '';
@@ -1683,6 +1687,23 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
    */
   getLiveRunIds(): string[] {
     return Array.from(this.activeRuns.keys());
+  }
+
+  /**
+   * Set of TASK IDs that currently have a live run in this runtime. Keyed by
+   * conversationId, which for task runs equals the task id (see TaskContext
+   * startTask). This is what the TaskReconciler health-check uses for liveness:
+   * task.run_id in the DB is the *reported* run id (the original Claude session
+   * on resume/retry), which does NOT match the internal activeRuns key, so
+   * getLiveRunIds() can't be trusted to recognize a resumed task as live.
+   * Keying on the task id sidesteps that mismatch entirely.
+   */
+  getLiveTaskIds(): string[] {
+    const ids: string[] = [];
+    for (const run of this.activeRuns.values()) {
+      if (run.isTaskRun && run.conversationId) ids.push(run.conversationId);
+    }
+    return ids;
   }
 
   // ── Internals ──────────────────────────────────────────────────

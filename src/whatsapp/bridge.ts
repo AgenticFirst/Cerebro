@@ -31,6 +31,7 @@ import {
 } from '../shared/backend-settings';
 import { SlidingWindowLimiter } from '../shared/channel-helpers';
 import {
+  inboundPhone,
   isAllowed,
   normalizePhone,
   parseWhatsAppTriggerRoutine,
@@ -60,9 +61,15 @@ const HISTORY_MESSAGES_IN_PAYLOAD = 20;
 // 60s query timeout (avoids false positives on a slow round-trip), while 3
 // consecutive misses recovers a dead socket in ~2-3 min without flapping on a
 // single transient blip.
-const WATCHDOG_INTERVAL_MS = 45_000; // probe a connected socket every 45s
+const WATCHDOG_INTERVAL_MS = 45_000; // probe a healthy socket every 45s
 const WATCHDOG_PROBE_TIMEOUT_MS = 20_000; // a probe that hangs >20s counts as a failure
-const WATCHDOG_MAX_FAILURES = 3; // ~2-3 min of silence before forced reconnect
+const WATCHDOG_MAX_FAILURES = 3; // forced reconnect after this many in a row
+// First probe lands just past the ~30s init-queries timeout window, so a socket
+// that wedges right after connect is caught in the first minute. Once a probe
+// fails we re-probe on a tight cadence instead of the slow steady-state one, so
+// the 3 failures accrue in well under a minute rather than ~2-3 min.
+const WATCHDOG_FIRST_PROBE_MS = 35_000;
+const WATCHDOG_RECHECK_MS = 3_000;
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -137,7 +144,8 @@ export class WhatsAppBridge implements WhatsAppChannel {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   /** Liveness watchdog: detects a connected-but-dead socket and forces a
    *  reconnect. See WATCHDOG_* constants and startWatchdog(). */
-  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  private watchdogActive = false;
   private watchdogFailures = 0;
   private watchdogProbing = false;
 
@@ -277,6 +285,38 @@ export class WhatsAppBridge implements WhatsAppChannel {
     this.settings.enabled = false;
     await backendPutSetting(this.deps.backendPort, WHATSAPP_SETTING_KEYS.enabled, false);
     await this.stop();
+  }
+
+  /** Tear down and re-open the socket without touching the saved session — the
+   *  manual recovery lever for a wedged/zombie socket (e.g. a stranded receiver
+   *  after an init-queries timeout) when the watchdog hasn't cycled yet. Creds
+   *  are already persisted via `creds.update`, so no pairing or data is lost. */
+  async reconnect(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.settings.enabled) {
+      return { ok: false, error: 'WhatsApp bridge is disabled.' };
+    }
+    if (!this.hasSessionOnDisk()) {
+      return { ok: false, error: 'No WhatsApp session — pair a device first.' };
+    }
+    if (this.pairingRequested) {
+      return { ok: false, error: 'Pairing in progress — finish or cancel it first.' };
+    }
+    if (this.transitioning) {
+      return { ok: false, error: 'Bridge is busy — try again in a moment.' };
+    }
+    this.transitioning = true;
+    try {
+      await this.stop();
+      await this.connect({ pairing: false });
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError('manual reconnect failed:', msg);
+      this.setState({ state: 'error', lastError: msg });
+      return { ok: false, error: msg };
+    } finally {
+      this.transitioning = false;
+    }
   }
 
   /** Force a re-read of settings (used by the UI after a save). */
@@ -623,22 +663,32 @@ export class WhatsAppBridge implements WhatsAppChannel {
 
   // ── Liveness watchdog ────────────────────────────────────────
 
-  /** Begin periodic liveness probing of the live socket. Idempotent: a second
-   *  call while a timer is already running is a no-op, so reconnects that re-open
-   *  the connection can't stack timers. */
+  /** Begin liveness probing of the live socket. Idempotent: a second call while
+   *  already active is a no-op, so reconnects that re-open the connection can't
+   *  stack timers. The probe self-reschedules (see probeLiveness) so the cadence
+   *  can tighten while a socket looks wedged. */
   private startWatchdog(): void {
-    if (this.watchdogTimer) return;
+    if (this.watchdogActive) return;
+    this.watchdogActive = true;
     this.watchdogFailures = 0;
-    this.watchdogTimer = setInterval(() => {
+    this.scheduleProbe(WATCHDOG_FIRST_PROBE_MS);
+  }
+
+  /** (Re)arm the single watchdog timer. */
+  private scheduleProbe(delayMs: number): void {
+    if (this.watchdogTimer) clearTimeout(this.watchdogTimer);
+    this.watchdogTimer = setTimeout(() => {
+      this.watchdogTimer = null;
       void this.probeLiveness();
-    }, WATCHDOG_INTERVAL_MS);
+    }, delayMs);
     // Don't let the watchdog keep the process alive on its own.
     if (typeof this.watchdogTimer.unref === 'function') this.watchdogTimer.unref();
   }
 
   private stopWatchdog(): void {
+    this.watchdogActive = false;
     if (this.watchdogTimer) {
-      clearInterval(this.watchdogTimer);
+      clearTimeout(this.watchdogTimer);
       this.watchdogTimer = null;
     }
     this.watchdogFailures = 0;
@@ -650,8 +700,14 @@ export class WhatsAppBridge implements WhatsAppChannel {
    *  consecutive failures we tear the socket down and let the `connection:
    *  'close'` handler schedule the reconnect (single reconnect funnel). */
   private async probeLiveness(): Promise<void> {
-    if (this.watchdogProbing) return; // a prior probe is still in flight
-    if (!this.sock || this.state.state !== 'connected') return;
+    if (this.watchdogProbing) return; // in-flight probe will re-arm the timer
+    if (!this.watchdogActive) return;
+    if (!this.sock || this.state.state !== 'connected') {
+      // Not probeable yet (e.g. mid-reconnect). Stay armed so probing resumes
+      // once the socket is back; a real close calls stopWatchdog to clear this.
+      this.scheduleProbe(WATCHDOG_INTERVAL_MS);
+      return;
+    }
     this.watchdogProbing = true;
     const sock = this.sock;
     try {
@@ -692,6 +748,12 @@ export class WhatsAppBridge implements WhatsAppChannel {
       }
     } finally {
       this.watchdogProbing = false;
+      // Re-arm unless a failure already tore the socket down (stopWatchdog
+      // clears watchdogActive). Recheck fast while a failure is outstanding so
+      // we confirm a wedge in seconds, not minutes.
+      if (this.watchdogActive && sock === this.sock) {
+        this.scheduleProbe(this.watchdogFailures > 0 ? WATCHDOG_RECHECK_MS : WATCHDOG_INTERVAL_MS);
+      }
     }
   }
 
@@ -703,16 +765,25 @@ export class WhatsAppBridge implements WhatsAppChannel {
     if (!msg?.message) return;
     if (msg.key?.fromMe) return;
     const remoteJid: string | undefined = msg.key?.remoteJid;
-    if (!remoteJid || !remoteJid.endsWith('@s.whatsapp.net')) return;
+    // Accept classic `<pn>@s.whatsapp.net` and newer `<lid>@lid` 1:1 senders;
+    // groups / broadcast / newsletter stay out of scope. `inboundPhone` resolves
+    // the dialable number — for `@lid` that means reading `senderPn`, since the
+    // lid itself is an opaque id rather than a phone.
+    const phone = inboundPhone(msg.key);
+    if (!phone) {
+      // An `@lid` message whose phone we can't resolve would otherwise vanish
+      // before any log line — surface it so a real customer isn't invisible.
+      if (remoteJid?.endsWith('@lid')) {
+        log('ignoring @lid message with no resolvable phone:', remoteJid);
+      }
+      return;
+    }
 
     const inbound = extractInbound(msg);
     let text = inbound.text;
 
     // If there's no text AND no media, nothing for us to do.
     if (!text && !inbound.media) return;
-
-    const phone = normalizePhone(remoteJid);
-    if (!phone) return;
 
     if (!this.isAllowlisted(phone)) {
       log(`ignoring message from non-allowlisted ${phone}`);
@@ -776,7 +847,9 @@ export class WhatsAppBridge implements WhatsAppChannel {
     // fire in parallel so slow routines don't block faster ones.
     const payload: WhatsAppTriggerPayload = {
       phone_number: toDisplayPhone(phone),
-      wa_jid: remoteJid,
+      // Always the dialable `<pn>@s.whatsapp.net` form — for an `@lid` sender the
+      // raw remoteJid is an opaque lid that can't be messaged back.
+      wa_jid: toUserJid(phone),
       customer_display_name: pushName ?? this.settings.phoneUsernames[phone] ?? '',
       message_text: text,
       message_id: msg.key?.id ?? '',

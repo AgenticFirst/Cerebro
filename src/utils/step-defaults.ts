@@ -23,7 +23,6 @@ import {
   Globe2,
   Calendar,
   Mail,
-  MessageCircle,
   Activity,
   Github,
   StickyNote,
@@ -45,6 +44,7 @@ import {
   TelegramIcon as TelegramBrandIcon,
   WhatsAppIcon as WhatsAppBrandIcon,
   HubSpotIcon as HubSpotBrandIcon,
+  SlackIcon as SlackBrandIcon,
 } from '../components/icons/BrandIcons';
 import type { RoutineStepData } from './dag-flow-mapping';
 import { DEFAULT_CLAUDE_MODEL } from './claude-models';
@@ -54,6 +54,7 @@ import { DEFAULT_CLAUDE_MODEL } from './claude-models';
 const TelegramIcon = TelegramBrandIcon as unknown as LucideIcon;
 const WhatsAppIcon = WhatsAppBrandIcon as unknown as LucideIcon;
 const HubSpotIcon = HubSpotBrandIcon as unknown as LucideIcon;
+const SlackIcon = SlackBrandIcon as unknown as LucideIcon;
 
 // ── Action Categories ─────────────────────────────────────────
 
@@ -310,15 +311,15 @@ export const ACTION_META: Record<string, ActionMeta> = {
     isAvailable: false,
     keywords: ['email', 'gmail', 'google', 'mail'],
   },
-  integration_slack: {
-    name: 'Slack',
-    icon: MessageCircle,
+  list_slack_channels: {
+    name: 'List Slack Channels',
+    icon: SlackIcon,
     color: 'amber',
     colorHex: '#f59e0b',
-    description: 'Send/read messages',
+    description: 'List channels the Slack bot can see',
     category: 'integrations',
-    isAvailable: false,
-    keywords: ['slack', 'chat', 'channel', 'message'],
+    isAvailable: true,
+    keywords: ['slack', 'channels', 'list', 'lookup', 'id'],
   },
   hubspot_create_ticket: {
     name: 'HubSpot: Create Ticket',
@@ -584,6 +585,26 @@ export const ACTION_META: Record<string, ActionMeta> = {
     isAvailable: true,
     keywords: ['whatsapp', 'chat', 'message', 'reply', 'send', 'support'],
   },
+  send_slack_message: {
+    name: 'Send Slack Message',
+    icon: SlackIcon,
+    color: 'emerald',
+    colorHex: '#10b981',
+    description: 'Send a message to a Slack channel or DM',
+    category: 'output',
+    isAvailable: true,
+    keywords: ['slack', 'channel', 'message', 'dm', 'send'],
+  },
+  send_slack_file: {
+    name: 'Send Slack File',
+    icon: SlackIcon,
+    color: 'emerald',
+    colorHex: '#10b981',
+    description: 'Upload a file to a Slack channel or DM',
+    category: 'output',
+    isAvailable: true,
+    keywords: ['slack', 'file', 'upload', 'attachment', 'document'],
+  },
   send_email: {
     name: 'Send Email',
     icon: Mail,
@@ -791,6 +812,27 @@ export function getDefaultStepData(
       return { ...base, params: { chat_id: '', message: '', parse_mode: 'none' } };
     case 'send_whatsapp_message':
       return { ...base, params: { phone_number: '', message: '' } };
+    case 'send_slack_message':
+      return {
+        requiresApproval: true,
+        onError: 'fail' as const,
+        params: { channel: '', text: '', thread_ts: '' },
+      };
+    case 'send_slack_file':
+      return {
+        requiresApproval: true,
+        onError: 'fail' as const,
+        params: {
+          channel: '',
+          file_item_id: '',
+          file_path: '',
+          comment: '',
+          file_name: '',
+          thread_ts: '',
+        },
+      };
+    case 'list_slack_channels':
+      return { ...base, params: {} };
 
     // HubSpot
     case 'hubspot_create_ticket':

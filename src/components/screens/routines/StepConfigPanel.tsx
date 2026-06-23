@@ -18,6 +18,7 @@ import type { RoutineStepData } from '../../../utils/dag-flow-mapping';
 import { ACTION_META, resolveActionType } from '../../../utils/step-defaults';
 import { getAllOutputs, sanitizeVarName, uniqueVarName } from '../../../utils/action-outputs';
 import { useExperts } from '../../../context/ExpertContext';
+import { isCerebroExpert } from '../../../shared/agent-name';
 import { useFiles } from '../../../context/FilesContext';
 import { CLAUDE_MODELS, DEFAULT_CLAUDE_MODEL, findClaudeModel } from '../../../utils/claude-models';
 import Toggle from '../../ui/Toggle';
@@ -709,13 +710,32 @@ function RunExpertParams({ params, onChange, step, sourceSteps, onAddMapping }: 
   // teams when the feature flag is off) so users never stare at an empty
   // dropdown. Disabled experts stay visible with a tag — the user may be
   // picking one they intend to re-enable.
-  const expertChoices = experts.map((e) => ({
-    id: e.id,
-    name: e.name,
-    domain: e.domain,
-    isEnabled: e.isEnabled,
-    type: e.type,
-  }));
+  const cerebro = experts.find((e) => isCerebroExpert(e));
+  const expertChoices: ExpertChoice[] = [
+    // Pin the builtin Cerebro expert to the top — selecting it runs the
+    // orchestrator, which decides which experts/teams the step needs and
+    // delegates to them. It's a real expert row, so it resolves like any other.
+    ...(cerebro
+      ? [
+          {
+            id: cerebro.id,
+            name: cerebro.name,
+            domain: cerebro.domain,
+            isEnabled: cerebro.isEnabled,
+            type: cerebro.type,
+          },
+        ]
+      : []),
+    ...experts
+      .filter((e) => !isCerebroExpert(e))
+      .map((e) => ({
+        id: e.id,
+        name: e.name,
+        domain: e.domain,
+        isEnabled: e.isEnabled,
+        type: e.type,
+      })),
+  ];
   const expertPresent = expertChoices.some((c) => c.id === expertId);
 
   const maxTurns = (params.maxTurns as number) ?? (params.max_turns as number) ?? 10;
@@ -3670,6 +3690,287 @@ function SendWhatsAppParams({ params, onChange, step, sourceSteps, onAddMapping 
   );
 }
 
+function SendSlackParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const [channel, setChannel] = useState((params.channel as string) ?? '');
+  const [text, setText] = useState((params.text as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const channelRef = useRef<HTMLInputElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const lastFocused = useRef<'channel' | 'text'>('text');
+
+  const handleChannelChange = (v: string) => {
+    setChannel(v);
+    onChange({ ...paramsRef.current, channel: v });
+  };
+  const handleTextChange = (v: string) => {
+    setText(v);
+    onChange({ ...paramsRef.current, text: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const field = lastFocused.current;
+    const el = field === 'channel' ? channelRef.current : textRef.current;
+    if (!el) return;
+    const current = field === 'channel' ? channel : text;
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    if (field === 'channel') handleChannelChange(next);
+    else handleTextChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const [channelTouched, setChannelTouched] = useState(false);
+  const [textTouched, setTextTouched] = useState(false);
+  const channelEmpty = channel.trim().length === 0;
+  const textEmpty = text.trim().length === 0;
+  const showChannelError = channelTouched && channelEmpty;
+  const showTextError = textTouched && textEmpty;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <FieldLabel text="Channel" />
+        <input
+          ref={channelRef}
+          value={channel}
+          onChange={(e) => handleChannelChange(e.target.value)}
+          onFocus={() => {
+            lastFocused.current = 'channel';
+          }}
+          onBlur={() => setChannelTouched(true)}
+          placeholder="C0123456789  or  {{__trigger__.channel}}"
+          aria-invalid={showChannelError}
+          className={clsx(
+            inputCls,
+            showChannelError && 'border-red-500/60 focus:border-red-500/60',
+          )}
+        />
+        {showChannelError ? (
+          <FieldError text="Required — must be in the Slack allowlist." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Slack channel id (<code>C…</code>/<code>G…</code>) or DM id (<code>D…</code>). Add a{' '}
+            <em>List Slack Channels</em> step to resolve <code>#name</code> → id. Use{' '}
+            <code>{'{{__trigger__.channel}}'}</code> to reply in the triggering channel.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <FieldLabel text="Message" />
+        <textarea
+          ref={textRef}
+          value={text}
+          onChange={(e) => handleTextChange(e.target.value)}
+          onFocus={() => {
+            lastFocused.current = 'text';
+          }}
+          onBlur={() => setTextTouched(true)}
+          rows={4}
+          placeholder="Daily summary: {{summary_step.text}}"
+          aria-invalid={showTextError}
+          className={clsx(
+            textareaCls,
+            showTextError && 'border-red-500/60 focus:border-red-500/60',
+          )}
+        />
+        {showTextError ? (
+          <FieldError text="Required — empty messages aren't sent." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Use <code>{'{{step_name.field}}'}</code> to insert outputs from earlier steps.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <FieldLabel text="Thread (optional)" />
+        <input
+          value={(params.thread_ts as string) ?? ''}
+          onChange={(e) => onChange({ ...paramsRef.current, thread_ts: e.target.value })}
+          placeholder="{{__trigger__.thread_ts}}"
+          className={inputCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Thread root <code>ts</code>. When set, the message lands as a reply in that thread.
+        </p>
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+    </div>
+  );
+}
+
+function SendSlackFileParams({ params, onChange, step, sourceSteps, onAddMapping }: PWithStep) {
+  const [channel, setChannel] = useState((params.channel as string) ?? '');
+  const [comment, setComment] = useState((params.comment as string) ?? '');
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+
+  const channelRef = useRef<HTMLInputElement>(null);
+  const commentRef = useRef<HTMLTextAreaElement>(null);
+  const lastFocused = useRef<'channel' | 'comment'>('comment');
+
+  const handleChannelChange = (v: string) => {
+    setChannel(v);
+    onChange({ ...paramsRef.current, channel: v });
+  };
+  const handleCommentChange = (v: string) => {
+    setComment(v);
+    onChange({ ...paramsRef.current, comment: v });
+  };
+
+  const insertAtCursor = (token: string) => {
+    const field = lastFocused.current;
+    const el = field === 'channel' ? channelRef.current : commentRef.current;
+    if (!el) return;
+    const current = field === 'channel' ? channel : comment;
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const next = current.slice(0, start) + token + current.slice(end);
+    if (field === 'channel') handleChannelChange(next);
+    else handleCommentChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const [channelTouched, setChannelTouched] = useState(false);
+  const channelEmpty = channel.trim().length === 0;
+  const showChannelError = channelTouched && channelEmpty;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <FieldLabel text="Channel" />
+        <input
+          ref={channelRef}
+          value={channel}
+          onChange={(e) => handleChannelChange(e.target.value)}
+          onFocus={() => {
+            lastFocused.current = 'channel';
+          }}
+          onBlur={() => setChannelTouched(true)}
+          placeholder="C0123456789  or  {{__trigger__.channel}}"
+          aria-invalid={showChannelError}
+          className={clsx(
+            inputCls,
+            showChannelError && 'border-red-500/60 focus:border-red-500/60',
+          )}
+        />
+        {showChannelError ? (
+          <FieldError text="Required — must be in the Slack allowlist." />
+        ) : (
+          <p className="mt-1 text-[11px] text-text-tertiary">
+            Slack channel id (<code>C…</code>/<code>G…</code>) or DM id (<code>D…</code>).
+          </p>
+        )}
+      </div>
+
+      <div>
+        <FieldLabel text="File id (preferred)" />
+        <input
+          value={(params.file_item_id as string) ?? ''}
+          onChange={(e) => onChange({ ...paramsRef.current, file_item_id: e.target.value })}
+          placeholder="{{generate_step.file_item_id}}"
+          className={inputCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Id of a file Cerebro registered (e.g. one an earlier step produced). Uploads the actual
+          bytes.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="File path (fallback)" />
+        <input
+          value={(params.file_path as string) ?? ''}
+          onChange={(e) => onChange({ ...paramsRef.current, file_path: e.target.value })}
+          placeholder="/absolute/path/to/report.pdf"
+          className={inputCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Absolute path to a file on disk. Use only when you don't have a file id.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="Comment (optional)" />
+        <textarea
+          ref={commentRef}
+          value={comment}
+          onChange={(e) => handleCommentChange(e.target.value)}
+          onFocus={() => {
+            lastFocused.current = 'comment';
+          }}
+          rows={3}
+          placeholder="Here's the daily report."
+          className={textareaCls}
+        />
+      </div>
+
+      <div>
+        <FieldLabel text="Filename (optional)" />
+        <input
+          value={(params.file_name as string) ?? ''}
+          onChange={(e) => onChange({ ...paramsRef.current, file_name: e.target.value })}
+          placeholder="report.pdf"
+          className={inputCls}
+        />
+        <p className="mt-1 text-[11px] text-text-tertiary">
+          Overrides the displayed filename in Slack.
+        </p>
+      </div>
+
+      <div>
+        <FieldLabel text="Thread (optional)" />
+        <input
+          value={(params.thread_ts as string) ?? ''}
+          onChange={(e) => onChange({ ...paramsRef.current, thread_ts: e.target.value })}
+          placeholder="{{__trigger__.thread_ts}}"
+          className={inputCls}
+        />
+      </div>
+
+      <AvailableVariablesSection
+        step={step}
+        onInsert={insertAtCursor}
+        sourceSteps={sourceSteps}
+        onAddMapping={onAddMapping}
+      />
+    </div>
+  );
+}
+
+function ListSlackChannelsParams() {
+  return (
+    <div className="rounded-lg bg-bg-base border border-border-subtle p-3 space-y-2">
+      <p className="text-xs text-text-secondary">
+        Lists the public and private channels the Slack bot can see. No configuration needed.
+      </p>
+      <p className="text-[11px] text-text-tertiary">
+        Outputs <code>channels</code> — an array of <code>{'{ id, name, is_private }'}</code>.
+        Reference it in a later step via <code>{'{{step_name.channels}}'}</code> to pick a
+        destination.
+      </p>
+    </div>
+  );
+}
+
 function HubSpotCreateTicketParams({
   params,
   onChange,
@@ -4120,6 +4421,28 @@ function ParamForm({
           onAddMapping={onAddMapping}
         />
       );
+    case 'send_slack_message':
+      return (
+        <SendSlackParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'send_slack_file':
+      return (
+        <SendSlackFileParams
+          params={params}
+          onChange={onChange}
+          step={step}
+          sourceSteps={sourceSteps}
+          onAddMapping={onAddMapping}
+        />
+      );
+    case 'list_slack_channels':
+      return <ListSlackChannelsParams />;
 
     // CRM
     case 'hubspot_create_ticket':

@@ -1233,6 +1233,19 @@ export class TelegramBridge implements TelegramChannel {
     );
   }
 
+  /**
+   * Exact-match origin lookup for the engine's self-post guard. Unlike
+   * findOriginChatIdForRun, this NEVER falls back to the most-recent run — a
+   * wrong match would wrongly drop a legitimate send to a different chat.
+   * Returns the chat id only when `conversationId` is an in-flight inbound run.
+   */
+  activeConversationChatId(conversationId: string): number | null {
+    for (const [chatId, run] of this.activeRuns) {
+      if (run.conversationId === conversationId) return chatId;
+    }
+    return null;
+  }
+
   private async loadSettings(): Promise<void> {
     const port = this.deps.backendPort;
     const [

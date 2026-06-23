@@ -352,6 +352,12 @@ class Task(Base):
     result_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # markdown | code_app | mixed
 
+    # When set, the completed intel brief was already pushed to GoHighLevel
+    # (Sales Intel Analyst expert only). Guards against a duplicate external
+    # push when the health-check pulls a prematurely-reviewed task back to
+    # in_progress and it later completes a second time.
+    intel_pushed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

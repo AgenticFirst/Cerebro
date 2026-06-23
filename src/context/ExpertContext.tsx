@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { BackendResponse } from '../types/ipc';
 import { useFeatureFlags } from './FeatureFlagsContext';
+import { isCerebroExpert } from '../shared/agent-name';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -151,6 +152,12 @@ export type ExpertsTab = 'messages' | 'hierarchy';
 
 interface ExpertContextValue {
   experts: Expert[];
+  /**
+   * `experts` minus the builtin Cerebro orchestrator — the list every "manage
+   * your specialists" surface wants. Centralized here so consumers don't each
+   * re-filter Cerebro out (and so the counts below stay consistent).
+   */
+  specialistExperts: Expert[];
   total: number;
   isLoading: boolean;
   activeCount: number;
@@ -201,9 +208,21 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
     return id;
   }, [pendingDetailExpertId]);
 
-  const activeCount = useMemo(() => experts.filter((e) => e.isEnabled).length, [experts]);
+  const specialistExperts = useMemo(
+    () => experts.filter((e) => !isCerebroExpert(e)),
+    [experts],
+  );
 
-  const pinnedCount = useMemo(() => experts.filter((e) => e.isPinned).length, [experts]);
+  // Counts describe manageable specialists, so they exclude the builtin Cerebro row.
+  const activeCount = useMemo(
+    () => specialistExperts.filter((e) => e.isEnabled).length,
+    [specialistExperts],
+  );
+
+  const pinnedCount = useMemo(
+    () => specialistExperts.filter((e) => e.isPinned).length,
+    [specialistExperts],
+  );
 
   const loadExperts = useCallback(async () => {
     setIsLoading(true);
@@ -316,6 +335,7 @@ export function ExpertProvider({ children }: { children: ReactNode }) {
     <ExpertContext.Provider
       value={{
         experts,
+        specialistExperts,
         total,
         isLoading,
         activeCount,

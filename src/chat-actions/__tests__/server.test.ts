@@ -116,8 +116,12 @@ describe('ChatActionServer', () => {
         data: { sent: true },
       }),
       dryRunRoutine: mockEngineDryRun,
-      autoApprovalSupported: vi.fn(
-        (t: string) => t === 'send_slack_message' || t === 'send_slack_file',
+      // Mirrors the real policy: write actions + module tokens are eligible;
+      // read-only actions and unknown types are not.
+      autoApprovalSupported: vi.fn((t: string) =>
+        t.startsWith('module:')
+          ? t === 'module:hubspot' || t === 'module:slack'
+          : ['send_slack_message', 'send_slack_file', 'hubspot_create_ticket'].includes(t),
       ),
       addAutoApprovalRule: vi.fn(
         async (action_type: string, target_key: string, target_label?: string) => ({
@@ -524,12 +528,42 @@ describe('ChatActionServer', () => {
     expect(body.rule.target_key).toBe('C123');
   });
 
-  it('rejects an auto-approval rule for an ineligible action', async () => {
+  it('creates a per-action rule (target "*") for an eligible write action', async () => {
     const res = await request(port, {
       method: 'POST',
       path: '/chat-actions/auto-approvals',
       token,
-      body: { action_type: 'hubspot_create_ticket', target_key: 'X' },
+      body: {
+        action_type: 'hubspot_create_ticket',
+        target_key: '*',
+        target_label: 'HubSpot tickets',
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(mockEngine.addAutoApprovalRule).toHaveBeenCalledWith(
+      'hubspot_create_ticket',
+      '*',
+      'HubSpot tickets',
+    );
+  });
+
+  it('creates a per-module rule (module:<group> / "*")', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/auto-approvals',
+      token,
+      body: { action_type: 'module:hubspot', target_key: '*', target_label: 'HubSpot' },
+    });
+    expect(res.status).toBe(200);
+    expect(mockEngine.addAutoApprovalRule).toHaveBeenCalledWith('module:hubspot', '*', 'HubSpot');
+  });
+
+  it('rejects an auto-approval rule for an ineligible (read-only) action', async () => {
+    const res = await request(port, {
+      method: 'POST',
+      path: '/chat-actions/auto-approvals',
+      token,
+      body: { action_type: 'hubspot_search_contact', target_key: '*' },
     });
     expect(res.status).toBe(400);
     expect((res.body as { error: string }).error).toContain('not_auto_approvable');

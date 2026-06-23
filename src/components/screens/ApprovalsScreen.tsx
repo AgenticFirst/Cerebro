@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ShieldCheck, Loader2, ShieldOff, Trash2, Hash } from 'lucide-react';
+import { ShieldCheck, Loader2, ShieldOff, Trash2, Hash, Zap, Layers } from 'lucide-react';
 import clsx from 'clsx';
 import { useApprovals } from '../../context/ApprovalContext';
 import type {
@@ -13,16 +13,51 @@ import ApprovalCard from './approvals/ApprovalCard';
 
 type Tab = 'pending' | 'history' | 'auto';
 
-/** Humanize an auto-approval action type for display, e.g. "Slack message". */
+/** Sentinel target meaning "any destination" — see engine AUTO_APPROVAL_ANY_TARGET. */
+const ANY_TARGET = '*';
+const MODULE_PREFIX = 'module:';
+
+const INTEGRATION_NAMES: Record<string, string> = {
+  hubspot: 'HubSpot',
+  slack: 'Slack',
+  telegram: 'Telegram',
+  whatsapp: 'WhatsApp',
+  github: 'GitHub',
+  calendar: 'Calendar',
+  http: 'HTTP',
+  system: 'System',
+};
+
+/** Title-case an action/group token as a fallback, e.g. "hubspot_create_ticket"
+ *  → "Hubspot create ticket". */
+function humanizeToken(token: string): string {
+  const words = token.replace(/[_:]/g, ' ').trim().split(/\s+/);
+  return words.map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(' ');
+}
+
+/** Humanize an auto-approval action type / module token for display, e.g.
+ *  "Slack message", "HubSpot — all actions". */
 function actionTypeLabel(actionType: string): string {
+  if (actionType.startsWith(MODULE_PREFIX)) {
+    const group = actionType.slice(MODULE_PREFIX.length);
+    return `${INTEGRATION_NAMES[group] ?? humanizeToken(group)} — all actions`;
+  }
   switch (actionType) {
     case 'send_slack_message':
       return 'Slack message';
     case 'send_slack_file':
       return 'Slack file';
     default:
-      return actionType;
+      return humanizeToken(actionType);
   }
+}
+
+/** The icon that conveys a rule's scope: destination (channel), whole action
+ *  type, or whole integration module. */
+function ruleScopeIcon(rule: AutoApprovalRule) {
+  if (rule.action_type.startsWith(MODULE_PREFIX)) return Layers;
+  if (rule.target_key === ANY_TARGET) return Zap;
+  return Hash;
 }
 
 export default function ApprovalsScreen() {
@@ -229,36 +264,43 @@ export default function ApprovalsScreen() {
         ) : (
           <div className="space-y-3 max-w-2xl">
             <p className="text-[12px] text-text-tertiary mb-1">{t('approvals.autoSubtitle')}</p>
-            {autoRules.map((rule) => (
-              <div
-                key={rule.id}
-                className="flex items-center gap-3 rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3"
-              >
-                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent/10 flex-shrink-0">
-                  <Hash size={15} className="text-accent" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-medium text-text-primary truncate">
-                    {rule.target_label || rule.target_key}
-                  </p>
-                  <p className="text-[11px] text-text-tertiary truncate">
-                    {actionTypeLabel(rule.action_type)}
-                  </p>
-                </div>
-                <button
-                  onClick={() => revokeAutoRule(rule.id)}
-                  disabled={revokingId === rule.id}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-text-secondary hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+            {autoRules.map((rule) => {
+              const ScopeIcon = ruleScopeIcon(rule);
+              const destinationLabel =
+                rule.target_key === ANY_TARGET
+                  ? t('approvals.anyDestination')
+                  : rule.target_label || rule.target_key;
+              return (
+                <div
+                  key={rule.id}
+                  className="flex items-center gap-3 rounded-xl border border-border-subtle bg-white/[0.02] px-4 py-3"
                 >
-                  {revokingId === rule.id ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={13} />
-                  )}
-                  {t('approvals.revoke')}
-                </button>
-              </div>
-            ))}
+                  <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-accent/10 flex-shrink-0">
+                    <ScopeIcon size={15} className="text-accent" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-text-primary truncate">
+                      {destinationLabel}
+                    </p>
+                    <p className="text-[11px] text-text-tertiary truncate">
+                      {actionTypeLabel(rule.action_type)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => revokeAutoRule(rule.id)}
+                    disabled={revokingId === rule.id}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-text-secondary hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                  >
+                    {revokingId === rule.id ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={13} />
+                    )}
+                    {t('approvals.revoke')}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

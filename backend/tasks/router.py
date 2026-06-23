@@ -380,16 +380,28 @@ async def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_
         # Ensure a RunRecord exists for this run_id — tasks.run_id has a FK to it.
         # The Electron runtime mints the runId but doesn't create the DB row for
         # task runs, so we create it here on first sight.
-        if run_id and not db.get(RunRecord, run_id):
-            db.add(RunRecord(
-                id=run_id,
-                expert_id=task.expert_id,
-                status="running",
-                run_type="task",
-                trigger="manual",
-                started_at=_utcnow(),
-            ))
-            db.flush()
+        if run_id:
+            run = db.get(RunRecord, run_id)
+            if run is None:
+                db.add(RunRecord(
+                    id=run_id,
+                    expert_id=task.expert_id,
+                    status="running",
+                    run_type="task",
+                    trigger="manual",
+                    started_at=_utcnow(),
+                ))
+                db.flush()
+            else:
+                # Resume/retry: task.run_id is pinned to the original Claude
+                # session, so the RunRecord already exists and may still carry a
+                # stale completed/failed status from the prior run. Reset it to
+                # running so liveness/reconcile reflects the live run (otherwise
+                # the health-check would read "completed" and bounce the live
+                # card back to to_review).
+                run.status = "running"
+                run.completed_at = None
+                run.error = None
         task.column = "in_progress"
         task.run_id = run_id
         task.started_at = task.started_at or _utcnow()
@@ -430,8 +442,12 @@ async def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_
                     run.status = "completed"
                     run.completed_at = _utcnow()
             _add_system_comment(db, task.id, "Expert finished — ready for review")
-            # Fire GHL integration for the Sales Intel Analyst expert.
-            if task.expert_id == SALES_INTEL_ANALYST_ID:
+            # Fire GHL integration for the Sales Intel Analyst expert — exactly
+            # once per task. The health-check can pull a prematurely-reviewed
+            # task back to in_progress, so run_completed may fire more than once;
+            # the intel_pushed_at marker guards against a duplicate CRM push.
+            if task.expert_id == SALES_INTEL_ANALYST_ID and task.intel_pushed_at is None:
+                task.intel_pushed_at = _utcnow()
                 asyncio.create_task(_push_to_ghl(db, task))
         elif event_type == "run_failed":
             task.column = "error"
@@ -460,42 +476,45 @@ async def handle_run_event(task_id: str, event: dict, db: Session = Depends(get_
     return {"ok": True}
 
 
-# ── Reconciler (live orphan recovery, polled from Electron main) ──
+# ── Reconciler / health check (polled from Electron main) ──
 
 @router.post("/reconcile")
 def reconcile_tasks(body: TaskReconcileRequest, db: Session = Depends(get_db)):
-    """Reconcile in_progress tasks whose run is no longer alive in the runtime.
+    """Keep a task's column in sync with whether its run is actually alive.
 
-    The Electron AgentRuntime posts its set of currently-live run IDs on a
-    periodic tick. Any task still pinned to in_progress whose run is NOT in
-    that set is orphaned — the PTY exited but the renderer's run-event POST
-    (normally driven by the 'done'/'error' IPC listener in TaskContext) never
-    landed. We sync the task's column with its linked RunRecord status, or
-    mark the run as failed if the runtime dropped it without persisting a
-    terminal state.
+    The Electron AgentRuntime posts its set of currently-live work on a
+    periodic tick. When it sends `live_task_ids` (task-id keyed liveness), we
+    run a *bidirectional* health check; otherwise we fall back to the legacy
+    `live_run_ids` path for old clients (keeps existing behavior/tests).
+
+    Invariant A (orphan): a task pinned to in_progress whose run is NOT alive
+      — the PTY exited but the renderer's run-event POST never landed. Sync the
+      column with its linked RunRecord status, or mark it failed if the runtime
+      dropped the run without persisting a terminal state.
+
+    Invariant B (premature review): a task sitting in to_review whose run is
+      STILL alive — a completion was reported early (e.g. the runtime detected a
+      <deliverable> echo, or a resumed card was bounced) while the subprocess
+      keeps working. Pull it back to in_progress and let the run finish; the
+      real run_completed will move it to to_review when the subprocess truly
+      ends. Scoped to to_review only: a user cancel legitimately lands a
+      briefly-still-live task in error, and covering error would fight it.
+
+    Liveness is keyed on TASK id, not run id: task.run_id is the *reported* run
+    id (the original Claude session on resume/retry) and does not match the
+    runtime's internal run id, so a run-id check mis-flags live resumed tasks.
     """
-    live_run_ids = set(body.live_run_ids)
     now = _utcnow()
 
-    orphans = (
-        db.query(Task)
-        .filter(Task.column == "in_progress")
-        .filter(Task.run_id.isnot(None))
-        .all()
-    )
-    candidate_run_ids = [t.run_id for t in orphans if t.run_id not in live_run_ids]
-    runs_by_id: dict[str, RunRecord] = {
-        r.id: r for r in db.query(RunRecord).filter(RunRecord.id.in_(candidate_run_ids)).all()
-    } if candidate_run_ids else {}
+    # Legacy clients only send live_run_ids; keep the old run-id behavior so
+    # their in_progress orphans still reconcile. New clients send live_task_ids.
+    task_id_mode = body.live_task_ids is not None
+    live_task_ids = set(body.live_task_ids or [])
+    live_run_ids = set(body.live_run_ids)
 
-    reconciled = 0
-    for task in orphans:
-        if task.run_id in live_run_ids:
-            continue
-
-        run = runs_by_id.get(task.run_id)
+    def _finalize_orphan(task: Task, run: RunRecord | None) -> None:
+        """Invariant A — task is in_progress but its run is not alive."""
         run_status = run.status if run else None
-
         if run_status == "completed":
             task.column = "to_review"
             task.completed_at = now
@@ -518,7 +537,59 @@ def reconcile_tasks(body: TaskReconcileRequest, db: Session = Depends(get_db)):
                 run.completed_at = now
             _add_system_comment(db, task.id, "Reconciled — subprocess no longer alive.")
 
-        reconciled += 1
+    reconciled = 0
+
+    # ── Invariant A: orphaned in_progress tasks ──
+    orphans = (
+        db.query(Task)
+        .filter(Task.column == "in_progress")
+        .filter(Task.run_id.isnot(None))
+        .all()
+    )
+    if task_id_mode:
+        dead = [t for t in orphans if t.id not in live_task_ids]
+    else:
+        dead = [t for t in orphans if t.run_id not in live_run_ids]
+    if dead:
+        run_ids = [t.run_id for t in dead]
+        runs_by_id: dict[str, RunRecord] = {
+            r.id: r for r in db.query(RunRecord).filter(RunRecord.id.in_(run_ids)).all()
+        }
+        for task in dead:
+            _finalize_orphan(task, runs_by_id.get(task.run_id))
+            reconciled += 1
+
+    # ── Invariant B: prematurely-reviewed tasks whose run is still alive ──
+    # Only runs in task-id mode (legacy run-id liveness can't recognize a
+    # resumed run, which would cause false pull-backs).
+    #
+    # The action here is deliberately MINIMAL — flip the column back and clear
+    # the completion stamp/error, but DO NOT touch the deliverable or the
+    # RunRecord. live_task_ids is a snapshot taken in the renderer before this
+    # POST; a run can genuinely complete in the round-trip window (TOCTOU),
+    # landing a real deliverable in to_review just before we read the stale
+    # "still live" signal. Keeping the change minimal makes that race
+    # non-destructive AND self-healing: on the next tick the task is no longer
+    # live and its RunRecord still reads "completed", so Invariant A restores it
+    # to to_review with the deliverable intact. A truly-premature run stays
+    # in_progress across ticks (it remains live) until its real run_completed
+    # arrives. Resetting the RunRecord here would instead let Invariant A mark
+    # that genuine completion as an error and drop the deliverable.
+    if task_id_mode and live_task_ids:
+        premature = (
+            db.query(Task)
+            .filter(Task.column == "to_review")
+            .filter(Task.id.in_(live_task_ids))
+            .all()
+        )
+        for task in premature:
+            task.column = "in_progress"
+            task.completed_at = None
+            task.last_error = None
+            _add_system_comment(
+                db, task.id, "Health check — run still active, returned to In Progress."
+            )
+            reconciled += 1
 
     if reconciled:
         db.commit()

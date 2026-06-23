@@ -355,6 +355,8 @@ const en = {
     descriptionPlaceholder: 'Add details (markdown supported)\u2026',
     expertLabel: 'Expert',
     expertNone: 'Unassigned',
+    expertGroupExperts: 'Experts',
+    expertGroupTeams: 'Teams',
     priorityLabel: 'Priority',
     priority_low: 'Low',
     priority_normal: 'Normal',
@@ -1120,10 +1122,11 @@ const en = {
     pendingTabCount: 'Pending ({{count}})',
     historyTab: 'History',
     autoTab: 'Auto-approved',
-    autoSubtitle: 'These destinations send without asking. Revoke any to require approval again.',
-    noAuto: 'No auto-approved destinations',
+    autoSubtitle: 'These run without asking. Revoke any to require approval again.',
+    anyDestination: 'Any destination',
+    noAuto: 'No auto-approved rules',
     noAutoDescription:
-      'Tell Cerebro in chat to stop asking for approval for a specific Slack channel, and it will appear here.',
+      'Tell Cerebro in chat to stop asking for approval for a destination, an action, or a whole integration, and it will appear here.',
     revoke: 'Revoke',
     noPending: 'No pending approvals',
     noPendingDescription: 'When a routine step requires your sign-off, it will appear here.',
@@ -1667,6 +1670,22 @@ const en = {
     userExpertAccessAllAdded: 'Everyone in the workspace is already an exception.',
   },
 
+  // ── Slack bridge notes (posted back into Slack by the main process) ──
+  slackBridge: {
+    voiceTooLarge: '🎙️ That voice note is too large to transcribe.',
+    transcribeFailed: "🎙️ Couldn't transcribe that — try typing your message.",
+    sttUnavailable:
+      '🎙️ Voice transcription is unavailable right now. Try typing your message, or open Settings → Voice to set it up.',
+    fileTooLarge: '📎 "{{name}}" is too large to process (max 20 MB).',
+    filesReceived: '📎 Got {{names}}.',
+    fetchFailedAuthVoice:
+      "🎙️ Couldn't fetch the voice note — the Slack app may need the `files:read` permission. Ask the Cerebro operator to reinstall the app.",
+    fetchFailedAuthFile:
+      "📎 Couldn't fetch the file — the Slack app may need the `files:read` permission. Ask the Cerebro operator to reinstall the app.",
+    fetchFailedVoice: "🎙️ Couldn't fetch that voice note. Try again or type your message.",
+    fetchFailedFile: "📎 Couldn't fetch that file. Try again or type your message.",
+  },
+
   // ── Telegram section (within Channels) ──────────────────────
   telegramSection: {
     title: 'Telegram',
@@ -2053,6 +2072,9 @@ const en = {
     cancel: 'Cancel',
 
     disconnect: 'Disconnect + wipe session',
+    reconnect: 'Reconnect',
+    reconnectHint:
+      'Restart the connection without losing the paired session — use if messages stop arriving.',
 
     allowlistLabel: 'Allowed customer numbers',
     allowlistPlaceholder: '+14155552671, +491701234567    or    *',

@@ -296,3 +296,83 @@ describe('installer materialization', () => {
     }
   });
 });
+
+describe('installer — builtin Cerebro is never materialized as a persona', () => {
+  // The backend returns Cerebro as a normal type='expert' row (so it shows in
+  // task pickers), but it must NOT get its own persona agent file: the runtime
+  // maps the 'cerebro' id to the canonical cerebro.md orchestrator. A duplicate
+  // `cerebro-<hash>.md` would be dead litter and a confusing second roster entry.
+  let dataDir: string;
+  let backend: { port: number; close: () => void };
+
+  const cerebroFixture: ExpertFixture = {
+    id: 'cerebro',
+    name: 'Cerebro',
+    slug: 'cerebro',
+    description: 'Your personal AI assistant.',
+    system_prompt: 'You are Cerebro.',
+    domain: null,
+    policies: null,
+    is_enabled: true,
+  };
+  const realExpert: ExpertFixture = {
+    id: 'e9',
+    name: 'Growth Expert',
+    slug: null,
+    description: 'Growth',
+    system_prompt: 'You are a growth expert.',
+    domain: 'marketing',
+    policies: null,
+    is_enabled: true,
+  };
+
+  beforeEach(async () => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cerebro-installer-skip-'));
+    backend = await startBackend([cerebroFixture, realExpert]);
+  });
+
+  afterEach(() => {
+    backend.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('installAll skips the Cerebro builtin: no persona file, no index entry', async () => {
+    await installAll({ dataDir, backendPort: backend.port });
+    const paths = resolvePaths(dataDir);
+    const index = JSON.parse(fs.readFileSync(paths.indexPath, 'utf-8')) as {
+      experts: Record<string, string>;
+    };
+
+    // No id-hashed persona file for Cerebro…
+    const personaSlug = expertAgentName('cerebro', 'Cerebro');
+    expect(fs.existsSync(path.join(paths.agentsDir, `${personaSlug}.md`))).toBe(false);
+    // …and no index entry pointing the Cerebro id at a persona agent.
+    expect(index.experts['cerebro']).toBeUndefined();
+    expect(getAgentNameForExpert(dataDir, 'cerebro')).toBeNull();
+
+    // The canonical orchestrator file is still written…
+    expect(fs.existsSync(path.join(paths.agentsDir, 'cerebro.md'))).toBe(true);
+    // …and ordinary experts are still materialized normally.
+    const realSlug = index.experts['e9'];
+    expect(realSlug).toBeTruthy();
+    expect(fs.existsSync(path.join(paths.agentsDir, `${realSlug}.md`))).toBe(true);
+  });
+
+  it('installExpert is a no-op for the Cerebro builtin', async () => {
+    await installExpert({ dataDir, backendPort: backend.port }, cerebroFixture);
+    const paths = resolvePaths(dataDir);
+    const personaSlug = expertAgentName('cerebro', 'Cerebro');
+    expect(fs.existsSync(path.join(paths.agentsDir, `${personaSlug}.md`))).toBe(false);
+    expect(getAgentNameForExpert(dataDir, 'cerebro')).toBeNull();
+  });
+
+  it('list-experts.sh filters out the orchestrator so it never delegates to itself', () => {
+    // The generated delegation-roster script must exclude id 'cerebro'.
+    const paths = resolvePaths(dataDir);
+    // installScript writes builtin scripts during installAll.
+    return installAll({ dataDir, backendPort: backend.port }).then(() => {
+      const script = fs.readFileSync(path.join(paths.scriptsDir, 'list-experts.sh'), 'utf-8');
+      expect(script).toContain('select(.id != "cerebro")');
+    });
+  });
+});

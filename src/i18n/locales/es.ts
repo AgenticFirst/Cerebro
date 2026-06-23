@@ -358,6 +358,8 @@ const es: TranslationKeys = {
     descriptionPlaceholder: 'A\u00f1ade detalles (markdown soportado)\u2026',
     expertLabel: 'Experto',
     expertNone: 'Sin asignar',
+    expertGroupExperts: 'Expertos',
+    expertGroupTeams: 'Equipos',
     priorityLabel: 'Prioridad',
     priority_low: 'Baja',
     priority_normal: 'Normal',
@@ -1133,10 +1135,11 @@ const es: TranslationKeys = {
     historyTab: 'Historial',
     autoTab: 'Auto-aprobados',
     autoSubtitle:
-      'Estos destinos se envían sin preguntar. Revoca cualquiera para volver a exigir aprobación.',
-    noAuto: 'No hay destinos auto-aprobados',
+      'Estas acciones se ejecutan sin preguntar. Revoca cualquiera para volver a exigir aprobación.',
+    anyDestination: 'Cualquier destino',
+    noAuto: 'No hay reglas auto-aprobadas',
     noAutoDescription:
-      'Dile a Cerebro en el chat que deje de pedir aprobación para un canal de Slack específico y aparecerá aquí.',
+      'Dile a Cerebro en el chat que deje de pedir aprobación para un destino, una acción o una integración completa y aparecerá aquí.',
     revoke: 'Revocar',
     noPending: 'No hay aprobaciones pendientes',
     noPendingDescription:
@@ -1691,6 +1694,23 @@ const es: TranslationKeys = {
     userExpertAccessAllAdded: 'Todos los del workspace ya están como excepción.',
   },
 
+  // ── Notas del puente de Slack (publicadas en Slack por el proceso principal) ──
+  slackBridge: {
+    voiceTooLarge: '🎙️ Esa nota de voz es demasiado larga para transcribirla.',
+    transcribeFailed: '🎙️ No pude transcribir eso — intenta escribir tu mensaje.',
+    sttUnavailable:
+      '🎙️ La transcripción de voz no está disponible ahora mismo. Intenta escribir tu mensaje o abre Ajustes → Voz para configurarla.',
+    fileTooLarge: '📎 "{{name}}" es demasiado grande para procesarlo (máx. 20 MB).',
+    filesReceived: '📎 Recibí {{names}}.',
+    fetchFailedAuthVoice:
+      '🎙️ No pude obtener la nota de voz — puede que la app de Slack necesite el permiso `files:read`. Pide al operador de Cerebro que reinstale la app.',
+    fetchFailedAuthFile:
+      '📎 No pude obtener el archivo — puede que la app de Slack necesite el permiso `files:read`. Pide al operador de Cerebro que reinstale la app.',
+    fetchFailedVoice:
+      '🎙️ No pude obtener esa nota de voz. Inténtalo de nuevo o escribe tu mensaje.',
+    fetchFailedFile: '📎 No pude obtener ese archivo. Inténtalo de nuevo o escribe tu mensaje.',
+  },
+
   telegramSection: {
     title: 'Telegram',
     description:
@@ -2074,6 +2094,9 @@ const es: TranslationKeys = {
     cancel: 'Cancelar',
 
     disconnect: 'Desconectar y borrar sesión',
+    reconnect: 'Reconectar',
+    reconnectHint:
+      'Reinicia la conexión sin perder la sesión vinculada — úsalo si dejan de llegar mensajes.',
 
     allowlistLabel: 'Números de clientes permitidos',
     allowlistPlaceholder: '+14155552671, +491701234567    o    *',

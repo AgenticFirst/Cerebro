@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
-import { expertAgentName } from '../shared/agent-name';
+import { expertAgentName, CEREBRO_EXPERT_ID } from '../shared/agent-name';
 
 export { expertAgentName } from '../shared/agent-name';
 
@@ -248,8 +248,8 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`update-expert\` — modify an existing expert's name, description, or system prompt. Use only when the user explicitly asks to change the expert itself (not when they ask the expert to do work). Always confirm the new wording with the user before invoking.
 - \`create-skill\` — create a new custom skill when the user wants to package a reusable capability for their experts. Confirm the name, description, and instructions with the user first.
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
-- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot tickets, contacts, companies, deals and lists, Telegram/WhatsApp/Slack **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — GitHub issue/PR/comment/review, **calendar event create/move/delete/RSVP and free-time lookup**, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. **Read-only lookups** (HubSpot search/get/list — find contact, list tickets/records/lists, get ticket — calendar query/free-time, Slack channel list) run **immediately, with no approval** — just run them and report the result. Only **writes and sends** (create/update/delete, send a message/file, post, comment, RSVP, etc.) pause for human approval, unless the user has set a per-destination "don't ask again" rule (see \`manage-auto-approvals\`).
-- \`manage-auto-approvals\` — record or revoke a "don't ask again" rule when the user wants Cerebro to stop (or resume) asking for approval before posting to a **specific Slack channel** ("no me pidas aprobación otra vez para #general", "don't ask again for #alerts", "vuelve a pedirme aprobación para #X"). Scoped to one channel, persistent, revocable. There is no global skip-all-approvals option.
+- \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot tickets, contacts, companies, deals and lists, Telegram/WhatsApp/Slack **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — GitHub issue/PR/comment/review, **calendar event create/move/delete/RSVP and free-time lookup**, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. **Read-only lookups** (HubSpot search/get/list — find contact, list tickets/records/lists, get ticket — calendar query/free-time, Slack channel list) run **immediately, with no approval** — just run them and report the result. Only **writes and sends** (create/update/delete, send a message/file, post, comment, RSVP, etc.) pause for human approval, unless the user has set a "don't ask again" rule covering that action — scoped to a destination, an action type, or a whole integration (see \`manage-auto-approvals\`).
+- \`manage-auto-approvals\` — record or revoke a "don't ask again" rule when the user wants Cerebro to stop (or resume) asking for approval for a write/send. The rule's scope adapts to what they ask: **one destination** (a specific Slack channel, Telegram chat, or WhatsApp number — "don't ask again for #alerts", "no me pidas aprobación para este chat"), **one action type** ("stop asking before I create HubSpot tickets"), or **a whole integration/module** ("don't ask for approval for HubSpot", "no me pidas aprobación para HubSpot"). Persistent, revocable, and never a global all-integrations off switch.
 - \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, Slack, HubSpot, WhatsApp, GoHighLevel, GitHub, Calendar/Google/Outlook, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
 - \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "when a Slack DM arrives…", "when a new GitHub issue opens…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
 - \`knowledge-base\` — read from and write to the Knowledge Base (the built-in Notion-style pages app under Apps → Knowledge Base). Use when the user wants to look something up in, find, create, add to, or update a Knowledge Base / wiki / docs page, or save notes as a page ("save this as a page", "add a doc about X to my knowledge base", "what does my KB say about Y", "guarda esto como una página", "busca en la base de conocimiento", "crea una nota sobre…"). You work in markdown; the editor renders it as rich blocks.
@@ -257,7 +257,7 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 
 ## Integration actions
 
-When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), post a Slack message or file in a channel, DM a Slack user, open a GitHub issue, comment on a PR, submit a PR review, create/move/delete a calendar event, RSVP to an invite, find free time, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "publica en #general en Slack", "mándale un DM a Pablo por Slack", "mándale el manual en PDF", "crea una reunión con Pablo mañana a las 2", "mueve mi reunión de las 3 al viernes", "avísame en 30 minutos", "abre un issue en GitHub", "revisa el PR #42", etc.) — use the \`run-chat-action\` skill. This approval guidance applies to **writes and sends** — anything that creates, changes, deletes, or transmits something other people can see. Always confirm the parameters with the user before invoking one, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome. The one exception: if the user has set a "don't ask again" rule for that exact Slack channel (via \`manage-auto-approvals\`), the send runs immediately without pausing. If the user asks you to stop asking for approval for a channel, use \`manage-auto-approvals\` — never claim you can disable approvals entirely.
+When the user asks you to do something through an external service — create a HubSpot ticket, send a Telegram or WhatsApp message **or media** (photo, document, voice note, video, sticker, location), post a Slack message or file in a channel, DM a Slack user, open a GitHub issue, comment on a PR, submit a PR review, create/move/delete a calendar event, RSVP to an invite, find free time, fire an HTTP request, schedule a desktop notification, or any equivalent in Spanish ("envía un mensaje a Pablo por Telegram", "envíale a Maria la foto por WhatsApp", "publica en #general en Slack", "mándale un DM a Pablo por Slack", "mándale el manual en PDF", "crea una reunión con Pablo mañana a las 2", "mueve mi reunión de las 3 al viernes", "avísame en 30 minutos", "abre un issue en GitHub", "revisa el PR #42", etc.) — use the \`run-chat-action\` skill. This approval guidance applies to **writes and sends** — anything that creates, changes, deletes, or transmits something other people can see. Always confirm the parameters with the user before invoking one, since these actions are visible to other people. The action will pause for the user to approve in the Approvals tab — tell them that and wait for the result before replying with the outcome. The one exception: if the user has set a "don't ask again" rule that covers this action — for that exact destination, that action type, or that whole integration (via \`manage-auto-approvals\`) — it runs immediately without pausing. If the user asks you to stop asking for approval — for a channel/chat, an action, or an integration — use \`manage-auto-approvals\`. Never claim you can disable approvals for *everything* at once: there is no global all-integrations off switch.
 
 **Read-only lookups never pause.** Searching, listing, or fetching (HubSpot find-contact / list-records / list-tickets / get-ticket / list-lists, calendar query and free-time, Slack channel list) only reads data and runs immediately — no approval, no confirmation needed. Just run it and report. This matters for **bulk reads**: if the user says "revisa 20 contactos de HubSpot" / "review 20 contacts", look each one up directly and summarize — do **not** announce a pause that won't happen, and do **not** treat each lookup as needing approval.
 
@@ -818,12 +818,14 @@ if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
   exit 1
 fi
 
+# The builtin "cerebro" expert is the orchestrator itself — exclude it from the
+# delegation roster so the main agent never tries to delegate to itself.
 if [ "\${CEREBRO_EXPERT_ALLOWLIST_SET:-}" = "1" ]; then
   ALLOW="\${CEREBRO_EXPERT_ALLOWLIST:-}"
   curl -s "http://127.0.0.1:$PORT/experts?is_enabled=true&limit=200" \\
-    | jq --arg allow "$ALLOW" '.experts[] | select(($allow | split(",")) | index(.id) != null) | {id, name, slug, description}'
+    | jq --arg allow "$ALLOW" '.experts[] | select(.id != "cerebro") | select(($allow | split(",")) | index(.id) != null) | {id, name, slug, description}'
 else
-  curl -s "http://127.0.0.1:$PORT/experts?is_enabled=true&limit=200" | jq '.experts[] | {id, name, slug, description}'
+  curl -s "http://127.0.0.1:$PORT/experts?is_enabled=true&limit=200" | jq '.experts[] | select(.id != "cerebro") | {id, name, slug, description}'
 fi
 `,
     },
@@ -1147,8 +1149,8 @@ set -euo pipefail
 # engine. Pauses for human approval before the action executes — the call below
 # blocks until the user clicks Approve or Deny in the Approvals tab, then prints
 # the structured result. (Exception: if the user has set a "don't ask again"
-# auto-approval rule for this exact destination, the action runs immediately and
-# the call returns without pausing.)
+# auto-approval rule covering this action — its destination, its action type, or
+# its integration — the action runs immediately and the call returns without pausing.)
 #
 # Usage: bash run-chat-action.sh <json-file>
 #
@@ -1241,19 +1243,24 @@ esac
       content: `#!/usr/bin/env bash
 set -euo pipefail
 
-# Manage "don't ask again" auto-approval rules. A rule lets ONE chat action skip
-# the approval gate for ONE exact destination (e.g. Slack messages to a single
-# channel). A brand-new destination still pauses for approval the first time.
-# Rules persist across restarts and are revocable here or in the Approvals tab.
+# Manage "don't ask again" auto-approval rules. A rule lets a write/send skip the
+# approval gate. Scope is set by the (action_type, target_key) pair:
+#   - destination: action_type=<send action>, target_key=<channel/chat/phone id>
+#   - action type: action_type=<action>,      target_key="*"
+#   - module:      action_type="module:<group>", target_key="*"
+# Anything not covered by a rule still pauses the first time. Rules persist across
+# restarts and are revocable here or in the Approvals tab.
 #
 # Usage:
 #   bash manage-auto-approvals.sh add <action_type> <target_key> [target_label]
 #   bash manage-auto-approvals.sh revoke <action_type> <target_key>
 #   bash manage-auto-approvals.sh list
 #
-#   <action_type>  chat action, e.g. send_slack_message or send_slack_file
-#   <target_key>   destination id, e.g. a Slack channel id (C…/G…/D…)
-#   <target_label> optional human label for the UI, e.g. "#general"
+#   <action_type>  chat action (e.g. send_slack_message, hubspot_create_ticket)
+#                  or a module token (e.g. module:hubspot)
+#   <target_key>   destination id (Slack channel C…/G…/D…, Telegram chat_id,
+#                  WhatsApp phone) or "*" for any destination (action/module scope)
+#   <target_label> optional human label for the UI, e.g. "#general" or "HubSpot"
 #
 # Exit codes: 0 success · 1 failure
 
@@ -2221,7 +2228,7 @@ jq -n \\
 bash "$CLAUDE_PROJECT_DIR/.claude/scripts/run-chat-action.sh" "$CLAUDE_PROJECT_DIR/.claude/tmp/chat-action.json"
 \`\`\`
 
-5. **Tell the user the run is paused for approval.** The script blocks until the user clicks Approve or Deny in the **Approvals** tab. While you're waiting, do not start another action. (If the user previously said "don't ask again" for this exact Slack channel, the action runs immediately and you'll get \`SUCCESS\` straight away — no pause. See the \`manage-auto-approvals\` skill.)
+5. **Tell the user the run is paused for approval.** The script blocks until the user clicks Approve or Deny in the **Approvals** tab. While you're waiting, do not start another action. (If the user previously set a "don't ask again" rule covering this action — its destination, its action type, or its integration — it runs immediately and you'll get \`SUCCESS\` straight away — no pause. See the \`manage-auto-approvals\` skill.)
 
 ## Interpreting the result
 
@@ -2232,7 +2239,7 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/run-chat-action.sh" "$CLAUDE_PROJECT_D
 
 ## What this skill does NOT do
 
-- Turn off approval wholesale. Every **write or send** runs through the human approval gate by default (read-only lookups never gate — they have no side effects). The **only** exception that lets a *send* skip the gate is a per-destination "don't ask again" rule the user sets explicitly — recorded via the \`manage-auto-approvals\` skill, scoped to one exact Slack channel. There is no global "skip all approvals" switch; never imply one exists.
+- Turn off approval for *everything* at once. Every **write or send** runs through the human approval gate by default (read-only lookups never gate — they have no side effects). The only thing that lets a write skip the gate is a "don't ask again" rule the user sets explicitly via the \`manage-auto-approvals\` skill — scoped to one destination, one action type, or one integration. There is no global all-integrations "skip all approvals" switch; never imply one exists.
 - Compose multi-step workflows. Use **Routines** for anything that should run more than once.
 - Read or modify the file system, run code, or call experts — pick a different tool for that.
 `,
@@ -2240,47 +2247,71 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/run-chat-action.sh" "$CLAUDE_PROJECT_D
     {
       name: 'manage-auto-approvals',
       description:
-        'Record or revoke a "don\'t ask again" approval rule for a specific Slack channel. Use when the user says to stop (or resume) asking for approval for messages to a given channel. Spanish: "no me pidas aprobación otra vez para este canal", "ya no me pidas aprobar los mensajes a #X", "vuelve a pedirme aprobación para #X".',
+        'Record or revoke a "don\'t ask again" approval rule for any write/send. The scope adapts to the request: one destination (a Slack channel, Telegram chat, WhatsApp number), one action type (e.g. creating HubSpot tickets), or a whole integration (e.g. all of HubSpot). Use when the user says to stop (or resume) asking for approval. Spanish: "no me pidas aprobación para este chat", "ya no me pidas aprobar al crear tickets", "no me pidas aprobación para HubSpot", "vuelve a pedirme aprobación para #X".',
       body: `# Manage auto-approvals
 
-By default **every** integration send pauses for human approval. A user can lift that for **one exact destination** — today, a specific Slack channel — by telling you so in chat. This skill records (or revokes) that standing "don't ask again" rule. The rule is **narrow** (one action + one channel), **persistent** (survives restart), and **revocable** here or in the Approvals tab. A brand-new channel still asks the first time.
+By default **every** integration write/send pauses for human approval (read-only lookups never gate). A user can lift that by telling you so in chat. This skill records (or revokes) a standing "don't ask again" rule. Every rule is **persistent** (survives restart) and **revocable** here or in the Approvals tab. Whatever isn't covered by a rule still asks.
 
 Use the **Bash** tool to run \`manage-auto-approvals.sh\`.
 
-## When to use it
+## Pick the scope from what the user asked
 
-Match natural-language requests in **English or Spanish**, usually right after you've sent something to a Slack channel:
+A rule is \`(action_type, target_key)\`. There are three scopes — **choose the narrowest one that matches the request**, and confirm the scope back to the user:
 
-| User says (EN / ES) | Do |
+| Scope | What the user means | \`action_type\` | \`target_key\` |
+| --- | --- | --- | --- |
+| **Destination** | one channel / chat / recipient ("for #alerts", "para este chat") | the send action, e.g. \`send_slack_message\` | the destination id (channel id, \`chat_id\`, phone) |
+| **Action type** | one kind of write anywhere ("before creating HubSpot tickets", "al crear tickets") | the action, e.g. \`hubspot_create_ticket\` | \`*\` |
+| **Module** | a whole integration ("for HubSpot", "para HubSpot", "para Slack") | \`module:<group>\`, e.g. \`module:hubspot\` | \`*\` |
+
+When in doubt between destination and action, lean on the user's wording: a named/implied destination → **destination**; a verb/object with no destination → **action**; the integration's name alone → **module**.
+
+### Module tokens
+\`module:hubspot\`, \`module:slack\`, \`module:telegram\`, \`module:whatsapp\`, \`module:github\`, \`module:calendar\`, \`module:http\`.
+
+### Destination param per integration (for destination-scope rules)
+- **Slack** (\`send_slack_message\`, \`send_slack_file\`) → channel id \`C…\`/\`G…\`/\`D…\`. If you only have a name like \`#general\`, run \`list_slack_channels\` via \`run-chat-action\` first to resolve the id.
+- **Telegram** (\`send_telegram_message\` and the \`send_telegram_*\` media actions) → numeric \`chat_id\`.
+- **WhatsApp** (\`send_whatsapp_message\` and \`send_whatsapp_*\` media actions) → \`phone_number\` (E.164 or JID).
+- HubSpot / GitHub / calendar writes have **no** single destination — use **action-type** or **module** scope for those.
+
+Reuse an id you already saw in the conversation when you can. Pass a human-readable label (e.g. \`#general\`, a contact name, or \`HubSpot\`) as the optional last arg so the Approvals UI reads nicely.
+
+## When to use it (EN / ES)
+
+| User says | Scope → do |
 | --- | --- |
-| "Don't ask me for approval again for #general" / "No me pidas aprobación otra vez para #general" | **add** a rule for that channel |
-| "Stop asking me to approve messages to this channel" / "Ya no me pidas aprobar los mensajes a este canal" | **add** a rule for that channel |
-| "You can post to #alerts without asking" / "Puedes publicar en #alertas sin preguntar" | **add** a rule for that channel |
-| "Ask me again before posting to #general" / "Vuelve a pedirme aprobación para #general" | **revoke** the rule |
-| "Which channels post without approval?" / "¿En qué canales publicas sin aprobación?" | **list** the rules |
-
-This only applies to Slack sends (\`send_slack_message\`, \`send_slack_file\`). It does **not** disable approval globally — there is no all-actions "off switch", and you must never imply there is one.
-
-## You need the channel **id**
-
-Rules key off the Slack **channel id** (\`C…\`/\`G…\`/\`D…\`), not the name. If you already sent to this channel in the conversation, reuse that id. If you only have a name like \`#general\`, run \`list_slack_channels\` via \`run-chat-action\` first to resolve the id. Pass the human name as the optional label so the Approvals UI reads nicely.
+| "Don't ask again for #general" / "No me pidas aprobación otra vez para #general" | **destination** → add for that channel |
+| "You can post to this Telegram chat without asking" / "Puedes escribir a este chat de Telegram sin preguntar" | **destination** → add for that \`chat_id\` |
+| "Stop asking before I create HubSpot tickets" / "Ya no me pidas aprobación al crear tickets en HubSpot" | **action** → add \`hubspot_create_ticket\` \`*\` |
+| "Don't ask for approval for HubSpot" / "No me pidas aprobación para HubSpot" | **module** → add \`module:hubspot\` \`*\` |
+| "Ask me again before posting to #general" / "Vuelve a pedirme aprobación para #general" | **revoke** that rule |
+| "What runs without approval?" / "¿Qué se ejecuta sin aprobación?" | **list** the rules |
 
 ## Add a rule
 
-When the user refers to a channel generally ("don't ask again for #X"), add rules for **both** Slack send actions so neither messages nor files re-prompt:
-
+**Destination** — for a channel referred to generally ("don't ask again for #X"), add **both** Slack send actions so neither text nor files re-prompt:
 \`\`\`bash
 bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" add send_slack_message C0123456 "#general"
 bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" add send_slack_file C0123456 "#general"
 \`\`\`
 
-If they clearly mean only text messages, add just \`send_slack_message\`.
+**Action type** (any destination):
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" add hubspot_create_ticket "*" "HubSpot tickets"
+\`\`\`
+
+**Module** (whole integration):
+\`\`\`bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" add module:hubspot "*" "HubSpot"
+\`\`\`
 
 ## Revoke a rule
 
+Revoke with the **same** \`action_type\` and \`target_key\` you'd add:
 \`\`\`bash
 bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" revoke send_slack_message C0123456
-bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" revoke send_slack_file C0123456
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" revoke module:hubspot "*"
 \`\`\`
 
 ## List rules
@@ -2291,8 +2322,8 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/manage-auto-approvals.sh" list
 
 ## After running
 
-- On \`SUCCESS\`, confirm plainly in the user's language and be explicit about scope — e.g. "Done — I won't ask for approval again before posting to #general. Other channels will still ask, and you can revoke this anytime from Approvals." / "Listo — ya no te pediré aprobación para publicar en #general. Los demás canales seguirán pidiéndola y puedes revocarlo cuando quieras desde Aprobaciones."
-- On \`ERROR\`, surface the message. \`not_auto_approvable:<type>\` means that action can't be auto-approved — tell the user only Slack sends support this today.
+- On \`SUCCESS\`, confirm plainly in the user's language and be explicit about scope — e.g. "Done — I won't ask for approval again before HubSpot actions. Other integrations still ask, and you can revoke this anytime from Approvals." / "Listo — ya no te pediré aprobación para las acciones de HubSpot. Las demás integraciones seguirán pidiéndola y puedes revocarlo cuando quieras desde Aprobaciones." Match the wording to the scope you set (this destination / this action / this whole integration).
+- On \`ERROR\`, surface the message. \`not_auto_approvable:<type>\` means that key can't have a rule — usually a read-only action (those never pause anyway) or a typo'd action/module token. Never imply you can disable approvals for **everything** at once: there is no global all-integrations off switch.
 `,
     },
     {
@@ -2637,7 +2668,12 @@ export async function installAll(options: InstallerOptions): Promise<void> {
   // Topological install: regular experts first so we can resolve member
   // references when installing teams. Teams always materialize regardless of
   // the beta flag — flipping it on shouldn't require a re-install.
-  const regulars = experts.filter((e) => (e.type ?? 'expert') !== 'team');
+  // The builtin Cerebro expert is skipped: it maps to the canonical `cerebro`
+  // agent (written by installCerebroMainAgent), so materializing a persona file
+  // for it would create a competing duplicate.
+  const regulars = experts.filter(
+    (e) => (e.type ?? 'expert') !== 'team' && e.id !== CEREBRO_EXPERT_ID,
+  );
   const teams = experts.filter((e) => e.type === 'team');
 
   // Fetch skills + context files for each regular expert (teams don't carry either).
@@ -2704,6 +2740,9 @@ export async function installAll(options: InstallerOptions): Promise<void> {
 
 /** Install or update a single expert (for CRUD sync). */
 export async function installExpert(options: InstallerOptions, expert: ExpertData): Promise<void> {
+  // The builtin Cerebro expert maps to the canonical `cerebro` agent and is
+  // never materialized as a persona file (see installAll).
+  if (expert.id === CEREBRO_EXPERT_ID) return;
   const paths = resolvePaths(options.dataDir);
   fs.mkdirSync(paths.agentsDir, { recursive: true });
   fs.mkdirSync(paths.memoryRoot, { recursive: true });

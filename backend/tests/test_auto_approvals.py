@@ -113,3 +113,33 @@ def test_delete_by_target_no_match_returns_zero(client):
     )
     assert r.status_code == 200
     assert r.json()["deleted"] == 0
+
+
+def test_store_holds_action_and_module_scoped_rules(client):
+    # The store is scope-agnostic: per-action ('*') and per-module
+    # ('module:<group>' / '*') rules persist and look up just like destination
+    # rules. The engine encodes scope in (action_type, target_key); the backend
+    # only needs to store and exact-match them.
+    _create_rule(client, action_type="hubspot_create_ticket", target_key="*", target_label="HubSpot tickets")
+    _create_rule(client, action_type="module:hubspot", target_key="*", target_label="HubSpot")
+
+    # Per-module exact-match lookup (what the engine does before gating a write).
+    r = client.get(
+        "/engine/auto-approvals",
+        params={"action_type": "module:hubspot", "target_key": "*"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["rules"][0]["action_type"] == "module:hubspot"
+    assert body["rules"][0]["target_key"] == "*"
+
+    # Revoke the module rule by target; the per-action rule is untouched.
+    r = client.delete(
+        "/engine/auto-approvals",
+        params={"action_type": "module:hubspot", "target_key": "*"},
+    )
+    assert r.json()["deleted"] == 1
+    r = client.get("/engine/auto-approvals")
+    assert r.json()["total"] == 1
+    assert r.json()["rules"][0]["action_type"] == "hubspot_create_ticket"

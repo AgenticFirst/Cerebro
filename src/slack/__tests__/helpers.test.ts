@@ -19,6 +19,7 @@ import {
   matchSlackRoutineTriggers,
   matchesSlackFilter,
   pickAudioAttachment,
+  pickNonAudioFiles,
   type BackendRoutineRecord,
 } from '../helpers';
 import type { SlackFile } from '../types';
@@ -604,5 +605,37 @@ describe('pickAudioAttachment', () => {
       file({ id: 'AUD', mimetype: 'audio/mp4', filetype: 'mp4', subtype: 'slack_audio' }),
     ]);
     expect(picked?.file.id).toBe('AUD');
+  });
+});
+
+describe('pickNonAudioFiles', () => {
+  const file = (over: Partial<SlackFile>): SlackFile => ({ id: 'F0', ...over });
+
+  it('returns images, PDFs and docs', () => {
+    const files = [
+      file({ id: 'IMG', name: 'a.png', mimetype: 'image/png', filetype: 'png' }),
+      file({ id: 'PDF', name: 'b.pdf', mimetype: 'application/pdf', filetype: 'pdf' }),
+      file({ id: 'DOC', name: 'c.docx', filetype: 'docx' }),
+    ];
+    expect(pickNonAudioFiles(files).map((f) => f.id)).toEqual(['IMG', 'PDF', 'DOC']);
+  });
+
+  it('excludes audio notes (slack_audio, audio MIME, audio ext)', () => {
+    const files = [
+      file({ id: 'AUD', mimetype: 'audio/mp4', filetype: 'mp4', subtype: 'slack_audio' }),
+      file({ id: 'MP3', name: 'clip.mp3', mimetype: 'audio/mpeg', filetype: 'mp3' }),
+      file({ id: 'IMG', name: 'a.png', mimetype: 'image/png', filetype: 'png' }),
+    ];
+    expect(pickNonAudioFiles(files).map((f) => f.id)).toEqual(['IMG']);
+  });
+
+  it('keeps a real video mp4 (not audio)', () => {
+    const files = [file({ id: 'VID', name: 'demo.mp4', mimetype: 'video/mp4', filetype: 'mp4' })];
+    expect(pickNonAudioFiles(files).map((f) => f.id)).toEqual(['VID']);
+  });
+
+  it('returns [] for empty/undefined input', () => {
+    expect(pickNonAudioFiles([])).toEqual([]);
+    expect(pickNonAudioFiles(undefined)).toEqual([]);
   });
 });

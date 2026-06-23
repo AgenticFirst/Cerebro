@@ -6,6 +6,22 @@
  * and with backend sync that fetches these names.
  */
 
+/**
+ * Fixed id of the builtin "Cerebro" expert (mirrors backend
+ * `CEREBRO_EXPERT_ID`). Selecting it as a task assignee runs the main
+ * `cerebro` agent (which delegates / re-routes) instead of a materialized
+ * persona agent. Kept distinct from a null/"Unassigned" expert so it can be an
+ * explicit choice.
+ */
+export const CEREBRO_EXPERT_ID = 'cerebro';
+
+/** True when the given expert id (or object) is the builtin Cerebro expert. */
+export function isCerebroExpert(expert: string | { id: string } | null | undefined): boolean {
+  if (!expert) return false;
+  const id = typeof expert === 'string' ? expert : expert.id;
+  return id === CEREBRO_EXPERT_ID;
+}
+
 export function slugify(name: string): string {
   return name
     .toLowerCase()

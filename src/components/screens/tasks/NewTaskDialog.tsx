@@ -7,6 +7,7 @@ import { useExperts } from '../../../context/ExpertContext';
 import { extractMentionIds } from '../../../lib/mentions';
 import ProjectFolderField from './ProjectFolderField';
 import MentionTextarea from './MentionTextarea';
+import AssigneeSelect from './AssigneeSelect';
 
 interface NewTaskDialogProps {
   open: boolean;
@@ -161,21 +162,15 @@ export default function NewTaskDialog({ open, onClose }: NewTaskDialogProps) {
                 {t('tasks.expertLabel')}{' '}
                 <span className="text-text-tertiary font-normal">{t('common.optional')}</span>
               </label>
-              <select
+              <AssigneeSelect
                 value={expertId}
-                onChange={(e) => {
-                  setExpertId(e.target.value);
+                onChange={(v) => {
+                  setExpertId(v);
                   autoAssignedRef.current = false;
                 }}
+                noneLabel={t('tasks.expertNone')}
                 className="w-full bg-bg-surface border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent/40 transition-colors appearance-none"
-              >
-                <option value="">{t('tasks.expertNone')}</option>
-                {assignableExperts.map((expert) => (
-                  <option key={expert.id} value={expert.id}>
-                    {expert.name}
-                  </option>
-                ))}
-              </select>
+              />
               {autoAssignedRef.current && expertId && (
                 <p className="mt-1 text-[10px] text-accent">{t('tasks.autoAssignedFromMention')}</p>
               )}

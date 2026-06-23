@@ -18,6 +18,7 @@ import { ExternalLink, Wrench, Sparkles, Users, MessageSquare, X } from 'lucide-
 import clsx from 'clsx';
 import type { ChatActionCatalogEntry } from '../../types/ipc';
 import type { Skill } from '../../types/skills';
+import { isCerebroExpert } from '../../shared/agent-name';
 
 interface CapabilitiesModalProps {
   onClose: () => void;
@@ -63,7 +64,8 @@ export default function CapabilitiesModal({ onClose }: CapabilitiesModalProps) {
           method: 'GET',
           path: '/experts?is_enabled=true&limit=200',
         })
-        .then((res) => (res.ok ? res.data.experts : []))
+        // Cerebro is the assistant itself, not a specialist capability — omit it.
+        .then((res) => (res.ok ? res.data.experts.filter((e) => !isCerebroExpert(e)) : []))
         .catch(() => []),
     ]).then(([catalog, sk, ex]) => {
       if (cancelled) return;

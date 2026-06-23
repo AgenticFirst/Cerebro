@@ -79,6 +79,18 @@ export interface SlackInboundContext {
   text: string;
   /** Files attached to the inbound message (voice notes, images, docs). */
   files?: SlackFile[];
+  /**
+   * Model-facing prompt injection(s) built from non-audio attachments
+   * (@-path to a parsed sidecar / passthrough file). Set by the bridge after
+   * ingesting files; folded into the run prompt but NOT persisted verbatim
+   * (staging paths are TTL-deleted, so history would show a dead link).
+   */
+  attachmentPrompt?: string;
+  /**
+   * Human-readable label for ingested attachments (e.g. "📎 report.pdf"),
+   * used as the persisted message body when the user typed no caption.
+   */
+  attachmentSummary?: string;
   /** Surface that produced the event — drives routing. */
   surface: 'app_mention' | 'message_im' | 'slash_command';
   /** For slash commands only: the subcommand and remaining args. */

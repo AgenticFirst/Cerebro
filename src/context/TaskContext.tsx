@@ -662,6 +662,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           window.cerebro.taskTerminal.removeBuffer(resumeSessionId).catch(() => {});
         }
 
+        // The assignee id passes straight through to the runtime. A team id
+        // resolves to its coordinator agent; the builtin Cerebro expert id
+        // ('cerebro') is mapped by the runtime to the orchestrator agent, which
+        // delegates to whatever experts/teams it judges necessary.
         const runId = await window.cerebro.agent.run({
           conversationId: taskId,
           content: prompt,

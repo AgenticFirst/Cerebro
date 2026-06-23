@@ -33,7 +33,13 @@ class TaskMove(BaseModel):
 
 
 class TaskReconcileRequest(BaseModel):
+    # Internal Electron run IDs still alive (legacy liveness signal).
     live_run_ids: list[str] = Field(default_factory=list)
+    # Task IDs whose run is still alive in the runtime. When present (not None),
+    # the reconciler keys liveness on task id — robust to the runId/sessionId
+    # mismatch on resumed runs — and runs the bidirectional health check.
+    # None means a legacy client that only sent live_run_ids.
+    live_task_ids: list[str] | None = None
 
 
 class TaskRead(BaseModel):

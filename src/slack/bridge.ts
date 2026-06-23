@@ -64,6 +64,7 @@ import {
   redactSlackPayload,
   chunkSlackText,
   pickAudioAttachment,
+  pickNonAudioFiles,
   ALLOWED_AUDIO_MIME,
   AUDIO_MIME_TO_EXT,
   type SlackConversationKey,
@@ -80,6 +81,7 @@ import { MediaIngestService } from '../files/media-ingest';
 import { IntegrationStaging } from '../files/staging';
 import type { ResolvedAttachment } from '../files/types';
 import { SttLoader, STT_LOADING_NOTICE } from '../files/stt-loader';
+import { bridgeT, normalizeBridgeLang, type BridgeLang } from '../i18n/bridge-i18n';
 import type { SlackStatusResponse } from '../types/ipc';
 
 // ── Tunables ──────────────────────────────────────────────────────
@@ -344,6 +346,9 @@ export class SlackBridge implements SlackChannel {
   private tempFiles = new Map<string, NodeJS.Timeout>();
   /** Voice STT lazy-load, shared across bridges (coalesces concurrent loads). */
   private readonly sttLoader = new SttLoader(() => this.deps.backendPort);
+  /** App UI language (from the `ui_language` setting) — drives the language of
+   *  notes the bridge posts back into Slack. Refreshed on every loadSettings. */
+  private appLanguage: BridgeLang = 'en';
 
   constructor(deps: SlackBridgeDeps) {
     this.deps = deps;
@@ -1128,6 +1133,13 @@ export class SlackBridge implements SlackChannel {
       return;
     }
 
+    // 4b. Skip content-less messages BEFORE we persist or match routines, so a
+    //     failed media upload (download/transcription failed, no caption) never
+    //     leaves an "(empty message)" row behind. A file-only upload is NOT
+    //     empty: buildPromptFromContext stashed its injection on
+    //     ctx.attachmentPrompt, so it falls through and runs normally.
+    if (!trimmed && !ctx.attachmentPrompt) return;
+
     const keyInfo = conversationKey(ctx);
     const key = keyInfo.key;
     // `reused` tells the runtime whether to --resume an existing Claude Code
@@ -1159,9 +1171,6 @@ export class SlackBridge implements SlackChannel {
       }
       return;
     }
-
-    // 7. Skip empty bodies.
-    if (!trimmed) return;
 
     // 8. Concurrency: one in-flight run per thread.
     const existing = this.activeRuns.get(key);
@@ -1246,11 +1255,18 @@ export class SlackBridge implements SlackChannel {
     // For channel-thread mentions, backfill the thread Cerebro didn't see
     // (it only receives messages that mention it) as a context preamble, then
     // advance the high-water mark so the next mention only sends the delta.
-    let promptContent = trimmed;
+    // Prepend any attachment injection (an @-path to a parsed sidecar / file)
+    // ahead of the typed caption so the model sees the file. For a file-only
+    // upload `trimmed` is empty, so the injection stands alone.
+    let promptContent = ctx.attachmentPrompt
+      ? trimmed
+        ? `${ctx.attachmentPrompt}\n\n${trimmed}`
+        : ctx.attachmentPrompt
+      : trimmed;
     if (keyInfo.surface === 'thread') {
       const entry = this.settings.threadConversationMap[key];
       const threadContext = await this.buildThreadContext(ctx, entry?.lastSeenTs);
-      if (threadContext) promptContent = `${threadContext}\n\n${trimmed}`;
+      if (threadContext) promptContent = `${threadContext}\n\n${promptContent}`;
       if (entry) {
         entry.lastSeenTs = ctx.ts;
         await this.persistThreadConversationMap();
@@ -1659,7 +1675,7 @@ export class SlackBridge implements SlackChannel {
     const body = {
       id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
       role: 'user' as const,
-      content: ctx.text || '(empty message)',
+      content: ctx.text || ctx.attachmentSummary || '(empty message)',
       metadata: {
         source: 'slack',
         slack_channel: ctx.channel,
@@ -1704,9 +1720,9 @@ export class SlackBridge implements SlackChannel {
    * and fold the transcript into `ctx.text` so the rest of `handleInbound`
    * treats it exactly like a typed message. Mutates `ctx` in place.
    *
-   * No-op for text-only messages. Non-audio attachments (images/docs) are not
-   * processed yet — we leave `ctx.text` untouched rather than handing Claude
-   * Code a binary path it can't read.
+   * No-op for text-only messages. Non-audio attachments (images / PDFs / Office
+   * docs) are routed through MediaIngestService — same path as chat uploads —
+   * and their prompt injection is stashed on `ctx.attachmentPrompt` for the run.
    */
   private async buildPromptFromContext(ctx: SlackInboundContext): Promise<void> {
     if (!this.api) return;
@@ -1719,7 +1735,11 @@ export class SlackBridge implements SlackChannel {
     // category alone: a native clip is audio/mp4 with filetype "mp4", which
     // MediaIngestService would otherwise classify as video.
     const picked = pickAudioAttachment(files);
-    if (!picked) return;
+    if (!picked) {
+      // No voice note — fall through to images / docs / PDFs.
+      await this.ingestNonAudioFiles(ctx, files);
+      return;
+    }
     const audio = picked.file;
 
     const mime = (audio.mimetype ?? '').toLowerCase();
@@ -1730,7 +1750,7 @@ export class SlackBridge implements SlackChannel {
       return;
     }
     if (audio.size !== undefined && audio.size > ATTACHMENT_MAX_BYTES) {
-      await this.postNote(ctx, '🎙️ That voice note is too large to transcribe.');
+      await this.postNote(ctx, this.t('voiceTooLarge'));
       return;
     }
 
@@ -1738,11 +1758,7 @@ export class SlackBridge implements SlackChannel {
     // voice note in a session may need to download it (~30–60s).
     const ready = await this.ensureSTTReady(ctx.channel, ctx.threadTs);
     if (!ready) {
-      await this.postNote(
-        ctx,
-        '🎙️ Voice transcription is unavailable right now. ' +
-          'Try typing your message, or open Settings → Voice to set it up.',
-      );
+      await this.postNote(ctx, this.t('sttUnavailable'));
       return;
     }
 
@@ -1763,7 +1779,7 @@ export class SlackBridge implements SlackChannel {
       // audio path to Claude Code. If the user also typed a caption, just let
       // that flow through (ctx.text is untouched); otherwise nudge them to type.
       if (!(ctx.text ?? '').trim()) {
-        await this.postNote(ctx, "🎙️ Couldn't transcribe that — try typing your message.");
+        await this.postNote(ctx, this.t('transcribeFailed'));
       }
       return;
     }
@@ -1772,6 +1788,54 @@ export class SlackBridge implements SlackChannel {
     const caption = (ctx.text ?? '').trim();
     ctx.text = caption ? `${transcript}\n\n${caption}` : transcript;
     await this.postNote(ctx, `🎙️ ${this.snippet(transcript)}`);
+  }
+
+  /**
+   * Download and ingest every non-audio attachment (images, PDFs, Office docs,
+   * text, …) through MediaIngestService — the same path chat uploads take. The
+   * resulting prompt injection(s) are stashed on `ctx.attachmentPrompt` (folded
+   * into the run prompt by handleInbound) and a human-readable label on
+   * `ctx.attachmentSummary` (used as the persisted body when there's no caption).
+   * Mutates `ctx` in place. No-op when there are no non-audio files.
+   */
+  private async ingestNonAudioFiles(ctx: SlackInboundContext, files: SlackFile[]): Promise<void> {
+    const targets = pickNonAudioFiles(files);
+    if (targets.length === 0) return;
+
+    const injections: string[] = [];
+    const names: string[] = [];
+    for (const f of targets) {
+      const name = f.name ?? f.id;
+      if (f.size !== undefined && f.size > ATTACHMENT_MAX_BYTES) {
+        await this.postNote(ctx, this.t('fileTooLarge', { name }));
+        continue;
+      }
+
+      const dest = await this.downloadSlackFile(ctx, f, undefined, 'file');
+      if (!dest) continue; // downloadSlackFile already notified the user on failure.
+
+      try {
+        const resolved = await this.mediaIngest.ingest({ filePath: dest, source: 'slack-inbound' });
+        // MediaIngestService always returns a non-empty injection in practice;
+        // guard anyway so a blank one can't manufacture a phantom (empty)
+        // attachmentPrompt that the empty-body check would then drop silently.
+        const injection = (resolved.promptInjection ?? '').trim();
+        if (!injection) {
+          logError('media ingest returned empty injection', name);
+          continue;
+        }
+        injections.push(injection);
+        names.push(name);
+      } catch (err) {
+        logError('media ingest failed', err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    if (injections.length === 0) return;
+
+    ctx.attachmentPrompt = injections.join('\n\n');
+    ctx.attachmentSummary = `📎 ${names.join(', ')}`;
+    await this.postNote(ctx, this.t('filesReceived', { names: names.join(', ') }));
   }
 
   /** Best-effort lowercase extension for a Slack file (name → filetype → mime). */
@@ -1791,8 +1855,10 @@ export class SlackBridge implements SlackChannel {
     ctx: SlackInboundContext,
     f: SlackFile,
     extOverride?: string,
+    kind: 'voice' | 'file' = 'voice',
   ): Promise<string | null> {
     if (!this.api) return null;
+    const suffix = kind === 'file' ? 'File' : 'Voice';
     const url = f.url_private_download ?? f.url_private;
     if (!url) return null;
 
@@ -1806,18 +1872,10 @@ export class SlackBridge implements SlackChannel {
     } catch (err) {
       const code = err instanceof SlackApiError ? err.code : null;
       logError('file download failed', err instanceof Error ? err.message : String(err));
-      if (code === 'not_authed') {
-        await this.postNote(
-          ctx,
-          "🎙️ Couldn't fetch the voice note — the Slack app may need the " +
-            '`files:read` permission. Ask the Cerebro operator to reinstall the app.',
-        );
-      } else {
-        await this.postNote(
-          ctx,
-          "🎙️ Couldn't fetch that voice note. Try again or type your message.",
-        );
-      }
+      await this.postNote(
+        ctx,
+        this.t(code === 'not_authed' ? `fetchFailedAuth${suffix}` : `fetchFailed${suffix}`),
+      );
       return null;
     }
 
@@ -1832,6 +1890,11 @@ export class SlackBridge implements SlackChannel {
     );
     this.tempFiles.set(dest, timer);
     return dest;
+  }
+
+  /** Localize a `slackBridge.*` note into the app's UI language. */
+  private t(key: string, vars?: Record<string, string | number>): string {
+    return bridgeT(this.appLanguage, `slackBridge.${key}`, vars);
   }
 
   /** Post a short, non-fatal note back to the originating channel/thread. */
@@ -2106,6 +2169,19 @@ export class SlackBridge implements SlackChannel {
     return { channel: run.channel, threadTs: run.threadTs };
   }
 
+  /**
+   * Exact-match origin lookup for the engine's self-post guard. Unlike
+   * resolveApprovalTarget, this NEVER falls back to another run — a wrong match
+   * here would wrongly drop a legitimate send to a different channel. Returns
+   * the origin channel only when `conversationId` is an in-flight inbound run.
+   */
+  activeConversationOrigin(conversationId: string): { channel: string } | null {
+    for (const run of this.activeRuns.values()) {
+      if (run.conversationId === conversationId) return { channel: run.channel };
+    }
+    return null;
+  }
+
   private async handleApprovalRequested(
     event: Extract<ExecutionEvent, { type: 'approval_requested' }>,
     ctx: EngineEventContext,
@@ -2186,6 +2262,7 @@ export class SlackBridge implements SlackChannel {
       botUserId,
       operatorUserId,
       sessionIdleHours,
+      uiLanguage,
     ] = await Promise.all([
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.botToken),
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.appToken),
@@ -2201,7 +2278,11 @@ export class SlackBridge implements SlackChannel {
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.botUserId),
       backendGetSetting<string>(port, SLACK_SETTING_KEYS.operatorUserId),
       backendGetSetting<number>(port, SLACK_SETTING_KEYS.sessionIdleHours),
+      // App-wide UI language (not a Slack-scoped key) — drives note language.
+      backendGetSetting<string>(port, 'ui_language'),
     ]);
+
+    this.appLanguage = normalizeBridgeLang(uiLanguage);
 
     const botToken = decryptFromStorage(storedBotToken);
     const appToken = decryptFromStorage(storedAppToken);

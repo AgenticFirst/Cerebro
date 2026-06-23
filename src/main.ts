@@ -2485,6 +2485,11 @@ function registerIpcHandlers(): void {
     await whatsAppBridge.disable();
   });
 
+  ipcMain.handle(IPC_CHANNELS.WHATSAPP_RECONNECT, async () => {
+    if (!whatsAppBridge) return { ok: false, error: 'Bridge not initialized' };
+    return whatsAppBridge.reconnect();
+  });
+
   // --- Supabase backend sync ---
 
   const supabaseDisconnectedStatus = (): SupabaseStatus => ({

@@ -29,6 +29,7 @@ import LivePreview from './LivePreview';
 import TagChipInput from './TagChipInput';
 import TaskFilesTab from './TaskFilesTab';
 import ProjectFolderField from './ProjectFolderField';
+import AssigneeSelect from './AssigneeSelect';
 import AlertModal from '../../ui/AlertModal';
 import { flattenFiles } from '../../../utils/workspace-tree';
 import { treeFingerprint } from './file-preview-helpers';
@@ -79,6 +80,11 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
     () => experts.find((e) => e.id === task?.expert_id) ?? null,
     [experts, task?.expert_id],
   );
+
+  // Display name for the live "working" banner. The assignee (expert, team, or
+  // the builtin Cerebro expert) all resolve to a real row, so the name comes
+  // straight from the resolved expert (null when unassigned).
+  const assigneeName = assignedExpert?.name ?? null;
 
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [fileCount, setFileCount] = useState(0);
@@ -549,20 +555,12 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
       <div className="flex items-center gap-4 px-5 py-2.5 border-b border-border-subtle text-sm flex-shrink-0 flex-wrap">
         <div className="flex items-center gap-1.5">
           <span className="text-text-tertiary text-xs">{t('tasks.drawerExpert')}</span>
-          <select
+          <AssigneeSelect
             value={task.expert_id ?? ''}
-            onChange={(e) => updateTask(task.id, { expert_id: e.target.value || null })}
+            onChange={(v) => updateTask(task.id, { expert_id: v || null })}
+            noneLabel={t('tasks.drawerUnassigned')}
             className="bg-bg-elevated text-text-primary text-xs rounded-md px-2 py-1 border border-border-subtle outline-none focus:border-accent cursor-pointer"
-          >
-            <option value="">{t('tasks.drawerUnassigned')}</option>
-            {experts
-              .filter((e) => e.type === 'expert' && e.isEnabled)
-              .map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name}
-                </option>
-              ))}
-          </select>
+          />
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -622,8 +620,8 @@ export default function TaskDetailDrawer({ task, onClose }: TaskDetailDrawerProp
             <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
           </span>
           <span className="text-xs font-medium text-cyan-300 truncate">
-            {assignedExpert
-              ? t('tasks.expertWorking', { expert: assignedExpert.name })
+            {assigneeName
+              ? t('tasks.expertWorking', { expert: assigneeName })
               : t('tasks.taskRunningLive')}
           </span>
           <span className="ml-auto text-[11px] font-medium text-cyan-400/80 group-hover:text-cyan-300 flex-shrink-0">

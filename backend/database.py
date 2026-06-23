@@ -42,6 +42,7 @@ def _migrate(eng) -> None:
         ("tasks", "result_md", "TEXT"),
         ("tasks", "result_title", "VARCHAR(200)"),
         ("tasks", "result_kind", "VARCHAR(16)"),
+        ("tasks", "intel_pushed_at", "DATETIME"),
         ("task_comments", "queue_status", "VARCHAR(20)"),
         ("task_comments", "pending_expert_id", "VARCHAR(32) REFERENCES experts(id) ON DELETE SET NULL"),
         ("conversations", "expert_id", "VARCHAR(32) REFERENCES experts(id) ON DELETE SET NULL"),

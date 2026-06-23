@@ -20,6 +20,12 @@ export interface TelegramChannel {
    *  chat-actions catalog to decide if Telegram is invokable from chat. */
   isConnected(): boolean;
 
+  /** Numeric chat id an in-flight inbound run for `conversationId` is replying
+   *  into, or null. Lets the engine drop a chat-triggered send_telegram_message
+   *  aimed at that same chat — otherwise the model's send double-posts content
+   *  the stream sink already delivered. Null for routine runs / no exact match. */
+  activeConversationChatId(conversationId: string): number | null;
+
   // ── Outbound media (multipart) ────────────────────────────────
   // Each returns `{ messageId, error }` mirroring `sendActionMessage` so the
   // action layer can branch on either without throwing. The bridge enforces

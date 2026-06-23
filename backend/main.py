@@ -70,12 +70,18 @@ async def lifespan(application: FastAPI):
     if not getattr(application.state, "skip_seed", False):
         from database import SessionLocal
         from skills.seed import seed_builtin_skills
-        from experts.seed import seed_verified_experts, seed_verified_teams
+        from experts.seed import (
+            seed_verified_experts,
+            seed_verified_teams,
+            seed_cerebro_expert,
+        )
         if SessionLocal is not None:
             db = SessionLocal()
             try:
                 seed_builtin_skills(db)
                 print("[Cerebro] Builtin skills seeded")
+                seed_cerebro_expert(db)
+                print("[Cerebro] Cerebro expert seeded")
                 seed_verified_experts(db)
                 print("[Cerebro] Verified experts seeded")
                 seed_verified_teams(db)

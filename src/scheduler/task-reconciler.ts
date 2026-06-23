@@ -1,19 +1,23 @@
 /**
- * TaskReconciler — periodic cleanup for tasks stuck in_progress after the
- * backing Claude Code run has ended.
+ * TaskReconciler — periodic health check that keeps a task's column in sync
+ * with whether its Claude Code run is actually alive.
  *
  * The normal task-finalize flow is: AgentRuntime emits 'done'/'error' → the
  * renderer catches it via IPC and POSTs /tasks/{id}/run-event → backend
  * flips task.column. That path is fragile. A destroyed webContents, an
  * unfocused renderer, a crashed renderer, or an IPC hiccup can drop the
- * event and strand the task at in_progress indefinitely.
+ * event and strand the task — or a premature completion can flip a card to
+ * "to_review" while the subprocess is still working.
  *
- * This reconciler polls every 30 seconds and gives the backend the set of
- * run IDs currently alive in AgentRuntime. The backend reconciles any
- * in_progress task whose run is NOT in that set, syncing its column with
- * the linked RunRecord's status. The 30s cadence is fast enough to mask a
- * dropped renderer IPC event without straining the backend (the reconcile
- * endpoint is a single in-memory query over in_progress tasks).
+ * Every 30 seconds we hand the backend the set of TASK IDs currently alive
+ * in AgentRuntime (getLiveTaskIds — keyed by task id, robust to the
+ * runId/sessionId mismatch on resumed runs). The backend reconciles in both
+ * directions:
+ *   - in_progress task that is NOT live  → finalize to to_review/error
+ *   - to_review task that IS still live  → pull back to in_progress
+ * The 30s cadence is fast enough to mask a dropped renderer IPC event
+ * without straining the backend (the reconcile endpoint is a couple of
+ * in-memory queries over non-terminal tasks).
  */
 
 import http from 'node:http';
@@ -52,8 +56,10 @@ export class TaskReconciler {
     if (this.running) return;
     this.running = true;
     try {
+      const liveTaskIds = this.runtime.getLiveTaskIds();
       const liveRunIds = this.runtime.getLiveRunIds();
       const result = await this.post<{ reconciled: number }>('/tasks/reconcile', {
+        live_task_ids: liveTaskIds,
         live_run_ids: liveRunIds,
       });
       if (result && result.reconciled > 0) {

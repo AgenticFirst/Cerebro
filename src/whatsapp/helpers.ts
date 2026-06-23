@@ -52,6 +52,37 @@ export function toDisplayPhone(raw: string): string {
   return digits ? `+${digits}` : '';
 }
 
+/** The subset of a Baileys inbound message key we read to identify the sender. */
+export interface InboundMessageKey {
+  remoteJid?: string | null;
+  senderPn?: string | null;
+  participantPn?: string | null;
+}
+
+/**
+ * Resolve the dialable customer phone (bare digits) for an inbound 1:1 message.
+ *
+ * WhatsApp increasingly addresses senders with a "linked identifier" JID
+ * (`<lid>@lid`) instead of the classic `<pn>@s.whatsapp.net`. The lid is an
+ * opaque id — NOT a phone number — so `normalizePhone` on it yields garbage and
+ * the allowlist never matches. For `@lid` senders the real number rides along
+ * in the key as `senderPn` (and `participantPn`), both `<digits>@s.whatsapp.net`.
+ *
+ * Returns '' for groups (`@g.us`), broadcast, newsletter, or any `@lid` message
+ * with no PN attribute — i.e. anything the 1:1 support flow can't act on.
+ */
+export function inboundPhone(key: InboundMessageKey | null | undefined): string {
+  const remoteJid = key?.remoteJid ?? '';
+  if (!remoteJid) return '';
+  if (remoteJid.endsWith('@s.whatsapp.net')) {
+    return normalizePhone(remoteJid);
+  }
+  if (remoteJid.endsWith('@lid')) {
+    return normalizePhone(key?.senderPn || key?.participantPn || '');
+  }
+  return '';
+}
+
 // ── Allowlist parsing / check ────────────────────────────────────
 
 /** Parse a comma/space separated list of phone numbers into normalized digits.

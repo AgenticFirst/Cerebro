@@ -200,6 +200,7 @@ export const IPC_CHANNELS = {
   WHATSAPP_SET_ALLOWLIST: 'whatsapp:set-allowlist',
   WHATSAPP_ENABLE: 'whatsapp:enable',
   WHATSAPP_DISABLE: 'whatsapp:disable',
+  WHATSAPP_RECONNECT: 'whatsapp:reconnect',
   WHATSAPP_STATUS_CHANGED: 'whatsapp:status-changed',
   WHATSAPP_CONVERSATION_UPDATED: 'whatsapp:conversation-updated',
 
@@ -1151,6 +1152,7 @@ export interface WhatsAppAPI {
   setAllowlist(list: string[]): Promise<{ ok: boolean; error?: string }>;
   enable(): Promise<{ ok: boolean; error?: string }>;
   disable(): Promise<void>;
+  reconnect(): Promise<{ ok: boolean; error?: string }>;
   onStatusChanged(callback: (status: WhatsAppStatusResponse) => void): () => void;
   onConversationUpdated(callback: (event: WhatsAppConversationUpdatedEvent) => void): () => void;
 }

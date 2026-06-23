@@ -226,6 +226,17 @@ export class ClaudeCodeRunner extends EventEmitter {
     }
     args.push('--output-format', 'stream-json');
     args.push('--verbose');
+    // Stream partial message chunks (text/thinking deltas + tool-input
+    // input_json_delta) as they generate. Without this, the CLI only writes
+    // stdout at whole-assistant-message boundaries, so a single large turn —
+    // a big Write/Edit whose tool input is the entire new file, or a long
+    // thinking block — produces NO stdout and opens no tool for the duration
+    // of generation. The idle-watchdog's no-tool ceiling (90s) then fires
+    // mid-generation and kills a perfectly healthy run. Partial chunks keep
+    // stdout flowing so resetIdleTimers() fires throughout, leaving the 90s
+    // ceiling to catch only true silence (a real wedge). Valid only with
+    // --output-format=stream-json (already set above).
+    args.push('--include-partial-messages');
     args.push('--dangerously-skip-permissions');
 
     if (typeof options.maxTurns === 'number') {
@@ -918,6 +929,12 @@ export class ClaudeCodeRunner extends EventEmitter {
         'message_stop',
         'ping',
         'message_delta',
+        // Partial message chunks (enabled via --include-partial-messages).
+        // They keep stdout flowing so the idle-watchdog resets during long
+        // generations; we don't surface them as system events (one per token
+        // would flood the Activity panel). Reply text still accumulates from
+        // the consolidated `assistant` message above.
+        'stream_event',
       ]);
       if (!SKIP.has(type)) {
         this.emit('event', {

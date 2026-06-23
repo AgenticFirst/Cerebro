@@ -70,17 +70,35 @@ export interface PickedAudio {
 export function pickAudioAttachment(files: SlackFile[] | undefined): PickedAudio | null {
   if (!files || files.length === 0) return null;
   for (const f of files) {
-    const mime = (f.mimetype ?? '').toLowerCase();
-    const ext = slackFileExt(f);
-    const isAudio =
-      f.subtype === 'slack_audio' ||
-      (mime !== '' && ALLOWED_AUDIO_MIME.has(mime)) ||
-      AUDIO_EXTS.has(ext);
-    if (!isAudio) continue;
-    const diskExt = AUDIO_MIME_TO_EXT[mime] ?? (AUDIO_EXTS.has(ext) ? ext : 'm4a');
-    return { file: f, ext: diskExt };
+    if (isAudioFile(f)) {
+      const mime = (f.mimetype ?? '').toLowerCase();
+      const ext = slackFileExt(f);
+      const diskExt = AUDIO_MIME_TO_EXT[mime] ?? (AUDIO_EXTS.has(ext) ? ext : 'm4a');
+      return { file: f, ext: diskExt };
+    }
   }
   return null;
+}
+
+/** True when a Slack file is an audio note (mirrors pickAudioAttachment's test). */
+function isAudioFile(f: SlackFile): boolean {
+  const mime = (f.mimetype ?? '').toLowerCase();
+  const ext = slackFileExt(f);
+  return (
+    f.subtype === 'slack_audio' ||
+    (mime !== '' && ALLOWED_AUDIO_MIME.has(mime)) ||
+    AUDIO_EXTS.has(ext)
+  );
+}
+
+/**
+ * Every attachment that is NOT an audio note — images, PDFs, Office docs, etc.
+ * These flow through MediaIngestService just like chat uploads. Audio is handled
+ * separately (transcription) via pickAudioAttachment, so it's excluded here.
+ */
+export function pickNonAudioFiles(files: SlackFile[] | undefined): SlackFile[] {
+  if (!files || files.length === 0) return [];
+  return files.filter((f) => !isAudioFile(f));
 }
 
 // ── Conversation keying ───────────────────────────────────────────

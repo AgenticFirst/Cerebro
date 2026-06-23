@@ -500,6 +500,9 @@ const api: CerebroAPI = {
     disable(): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_DISABLE);
     },
+    reconnect(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.WHATSAPP_RECONNECT);
+    },
     onStatusChanged(callback: (status: WhatsAppStatusResponse) => void): () => void {
       const listener = (_event: Electron.IpcRendererEvent, data: WhatsAppStatusResponse) =>
         callback(data);

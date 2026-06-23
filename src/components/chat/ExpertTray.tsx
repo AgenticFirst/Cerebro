@@ -12,7 +12,7 @@ import { useChat } from '../../context/ChatContext';
 
 export default function ExpertTray() {
   const { t } = useTranslation();
-  const { experts, loadExperts } = useExperts();
+  const { specialistExperts, loadExperts } = useExperts();
   const { activeExpertId, setActiveExpertId } = useChat();
 
   useEffect(() => {
@@ -21,10 +21,10 @@ export default function ExpertTray() {
 
   const enabledExperts = useMemo(
     () =>
-      experts
+      specialistExperts
         .filter((e) => e.isEnabled && e.type === 'expert')
         .sort((a, b) => (a.isPinned === b.isPinned ? 0 : a.isPinned ? -1 : 1)),
-    [experts],
+    [specialistExperts],
   );
 
   // Don't show if no experts exist

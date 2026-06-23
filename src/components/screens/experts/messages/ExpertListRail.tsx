@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { BadgeCheck, Search, Star } from 'lucide-react';
 import clsx from 'clsx';
 import type { Expert } from '../../../../context/ExpertContext';
+import { isCerebroExpert } from '../../../../shared/agent-name';
 import ExpertAvatar from './ExpertAvatar';
 import TeamAvatar from './TeamAvatar';
 
@@ -137,7 +138,9 @@ export default function ExpertListRail({
   const [query, setQuery] = useState('');
 
   const { starred, direct, teams, expertsById } = useMemo(() => {
-    const enabledExperts = experts.filter((e) => e.isEnabled && e.type === 'expert');
+    const enabledExperts = experts.filter(
+      (e) => e.isEnabled && e.type === 'expert' && !isCerebroExpert(e),
+    );
     const enabledTeams = experts.filter((e) => e.isEnabled && e.type === 'team');
     const filteredExperts = filterExperts(enabledExperts, query);
     const filteredTeams = filterExperts(enabledTeams, query);

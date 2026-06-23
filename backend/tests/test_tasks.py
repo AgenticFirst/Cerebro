@@ -677,6 +677,188 @@ def test_reconcile_respects_idempotent_terminal_tasks(client):
     assert r.json()["reconciled"] == 0
 
 
+# ── A8b. Health check (taskId-keyed, bidirectional) ───────────────
+
+
+def _get_run_fields(run_id: str) -> tuple[str | None, object, str | None]:
+    """(status, completed_at, error) for a RunRecord."""
+    from database import SessionLocal
+    from models import RunRecord
+    assert SessionLocal is not None
+    db = SessionLocal()
+    try:
+        run = db.get(RunRecord, run_id)
+        return (run.status, run.completed_at, run.error) if run else (None, None, None)
+    finally:
+        db.close()
+
+
+def _get_intel_pushed_at(task_id: str):
+    from database import SessionLocal
+    from models import Task
+    assert SessionLocal is not None
+    db = SessionLocal()
+    try:
+        task = db.get(Task, task_id)
+        return task.intel_pushed_at if task else None
+    finally:
+        db.close()
+
+
+def test_reconcile_pulls_live_to_review_back_to_in_progress(client):
+    """A premature completion flipped the card to to_review while the
+    subprocess is still alive — the health check returns it to in_progress.
+
+    The pull-back is deliberately minimal: column + completion stamp only. The
+    deliverable and RunRecord are left untouched so a TOCTOU genuine completion
+    is non-destructive (see test_reconcile_toctou_genuine_completion_self_heals)."""
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    # Premature completion (e.g. a <deliverable> echo) → to_review + completed.
+    _run_event(client, task["id"], "run_completed", run_id, result_md="draft")
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "to_review"
+
+    # Runtime still reports the task as live → pull it back.
+    r = client.post("/tasks/reconcile", json={"live_task_ids": [task["id"]]})
+    assert r.status_code == 200
+    assert r.json()["reconciled"] == 1
+
+    got = client.get(f"/tasks/{task['id']}").json()
+    assert got["column"] == "in_progress"
+    assert got["completed_at"] is None
+    # Deliverable + RunRecord are intentionally preserved (self-heal safety).
+    assert got["result_md"] == "draft"
+    assert _get_run_fields(run_id)[0] == "completed"
+
+
+def test_reconcile_toctou_genuine_completion_self_heals(client):
+    """If a run genuinely completes in the snapshot→POST window, Invariant B may
+    pull it back once on a stale 'still live' signal — but it must be
+    non-destructive: the next tick (now not live, RunRecord still completed)
+    restores to_review with the deliverable intact, never error."""
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _run_event(client, task["id"], "run_completed", run_id, result_md="final report")
+
+    # Tick A: stale snapshot still lists the task as live → minimal pull-back.
+    client.post("/tasks/reconcile", json={"live_task_ids": [task["id"]]})
+    mid = client.get(f"/tasks/{task['id']}").json()
+    assert mid["column"] == "in_progress"
+    assert mid["result_md"] == "final report"  # deliverable survived
+
+    # Tick B: subprocess is really gone now → Invariant A heals it.
+    client.post("/tasks/reconcile", json={"live_task_ids": []})
+    healed = client.get(f"/tasks/{task['id']}").json()
+    assert healed["column"] == "to_review"        # restored, not error
+    assert healed["result_md"] == "final report"  # deliverable still intact
+
+
+def test_reconcile_leaves_error_task_alone_when_live(client):
+    """A user-cancelled task lands in error while the subprocess drains;
+    the health check must not fight the cancel (B is scoped to to_review)."""
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _run_event(client, task["id"], "run_cancelled", run_id)
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "error"
+
+    r = client.post("/tasks/reconcile", json={"live_task_ids": [task["id"]]})
+    assert r.json()["reconciled"] == 0
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "error"
+
+
+def test_reconcile_leaves_to_review_when_not_live(client):
+    """A genuinely completed task sits in to_review with no live run — left as is."""
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _run_event(client, task["id"], "run_completed", run_id)
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "to_review"
+
+    r = client.post("/tasks/reconcile", json={"live_task_ids": []})
+    assert r.json()["reconciled"] == 0
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "to_review"
+
+
+def test_reconcile_taskid_orphan_finalizes_to_review(client):
+    """Invariant A in taskId mode: in_progress + completed run + not live → to_review."""
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _set_run_status(run_id, "completed")
+
+    r = client.post("/tasks/reconcile", json={"live_task_ids": []})
+    assert r.json()["reconciled"] == 1
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "to_review"
+
+
+def test_reconcile_bidirectional_converges(client):
+    """Pull a stale to_review back while live, then finalize once the run truly
+    ends — and confirm no A/B ping-pong on a third idle tick."""
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _run_event(client, task["id"], "run_completed", run_id)
+
+    # Tick 1: still live → back to in_progress.
+    client.post("/tasks/reconcile", json={"live_task_ids": [task["id"]]})
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "in_progress"
+
+    # The run truly finishes now (subprocess gone, RunRecord completed).
+    _set_run_status(run_id, "completed")
+    # Tick 2: not live → finalize to to_review.
+    client.post("/tasks/reconcile", json={"live_task_ids": []})
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "to_review"
+
+    # Tick 3: nothing left to do — no oscillation.
+    r = client.post("/tasks/reconcile", json={"live_task_ids": []})
+    assert r.json()["reconciled"] == 0
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "to_review"
+
+
+def test_run_started_resets_existing_runrecord(client):
+    """Resuming a task reuses the original RunRecord; run_started must reset its
+    stale completed/failed status back to running."""
+    task = _create_task(client)
+    run_id = _start_run(client, task["id"])
+    _set_run_status(run_id, "completed", error="prior")
+
+    # Resume: same run_id (pinned to the original Claude session).
+    _run_event(client, task["id"], "run_started", run_id)
+
+    status, completed_at, error = _get_run_fields(run_id)
+    assert status == "running"
+    assert completed_at is None
+    assert error is None
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "in_progress"
+
+
+def test_ghl_push_guarded_against_duplicate(client, monkeypatch):
+    """The Sales Intel brief is pushed to GHL at most once even when a
+    health-check pull-back causes run_completed to fire twice."""
+    import tasks.router as tr
+
+    async def _noop_push(db, task):  # avoid real GHL import / network
+        return None
+
+    expert_id = _create_expert(client, name="Sales Intel")
+    monkeypatch.setattr(tr, "_push_to_ghl", _noop_push)
+    monkeypatch.setattr(tr, "SALES_INTEL_ANALYST_ID", expert_id)
+
+    task = _create_task(client, expert_id=expert_id)
+    run_id = _start_run(client, task["id"])
+
+    # First completion → marks intel_pushed_at (push scheduled once).
+    _run_event(client, task["id"], "run_completed", run_id)
+    first = _get_intel_pushed_at(task["id"])
+    assert first is not None
+
+    # Health check pulls it back; the marker must survive the reset.
+    client.post("/tasks/reconcile", json={"live_task_ids": [task["id"]]})
+    assert client.get(f"/tasks/{task['id']}").json()["column"] == "in_progress"
+    assert _get_intel_pushed_at(task["id"]) == first
+
+    # Second (real) completion → guard skips the duplicate push.
+    _run_event(client, task["id"], "run_completed", run_id)
+    assert _get_intel_pushed_at(task["id"]) == first
+
+
 # ── A9. Startup recovery (interrupted-by-shutdown) ────────────────
 
 

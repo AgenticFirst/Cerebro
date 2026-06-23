@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Trans, useTranslation } from 'react-i18next';
-import { CheckCircle2, Loader2, ShieldAlert, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, RefreshCw, ShieldAlert, XCircle } from 'lucide-react';
 import { WhatsAppIcon } from '../../icons/BrandIcons';
 import type { WhatsAppStatusResponse } from '../../../types/ipc';
 import { parseAllowlistRaw } from '../../../whatsapp/helpers';
@@ -16,6 +16,7 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
   const [allowlistRaw, setAllowlistRaw] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
   const [pairingBusy, setPairingBusy] = useState(false);
+  const [reconnectBusy, setReconnectBusy] = useState(false);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshStatus = useCallback(async () => {
@@ -46,6 +47,16 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
   const disconnect = useCallback(async () => {
     await window.cerebro.whatsapp.clearSession();
     await refreshStatus();
+  }, [refreshStatus]);
+
+  const reconnect = useCallback(async () => {
+    setReconnectBusy(true);
+    try {
+      await window.cerebro.whatsapp.reconnect();
+      await refreshStatus();
+    } finally {
+      setReconnectBusy(false);
+    }
   }, [refreshStatus]);
 
   const saveAllowlist = useCallback(async () => {
@@ -165,6 +176,16 @@ export default function WhatsAppSection({ showHeader = false }: WhatsAppSectionP
 
       {(state === 'connected' || state === 'connecting') && (
         <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={reconnect}
+            disabled={reconnectBusy}
+            title={t('whatsappSection.reconnectHint')}
+            className="px-3 py-1.5 text-xs rounded-md font-medium text-text-secondary hover:text-accent disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <RefreshCw size={12} className={reconnectBusy ? 'animate-spin' : undefined} />
+            {t('whatsappSection.reconnect')}
+          </button>
           <button
             type="button"
             onClick={disconnect}

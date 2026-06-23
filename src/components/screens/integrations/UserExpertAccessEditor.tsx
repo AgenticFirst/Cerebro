@@ -46,7 +46,7 @@ interface ExceptionRow {
  */
 export default function UserExpertAccessEditor({ status }: Props) {
   const { t } = useTranslation();
-  const { experts: allExperts } = useExperts();
+  const { experts: allExperts, specialistExperts } = useExperts();
 
   // ── Workspace default ───────────────────────────────────────
   const [defaultMode, setDefaultMode] = useState<AccessMode>('all');
@@ -70,8 +70,11 @@ export default function UserExpertAccessEditor({ status }: Props) {
 
   // ── Derived data ────────────────────────────────────────────
   const sortedExperts = useMemo<Expert[]>(
-    () => [...allExperts].filter((e) => e.isEnabled).sort((a, b) => a.name.localeCompare(b.name)),
-    [allExperts],
+    () =>
+      [...specialistExperts]
+        .filter((e) => e.isEnabled)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [specialistExperts],
   );
 
   const expertById = useMemo(() => {

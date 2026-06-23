@@ -17,6 +17,14 @@ from sqlalchemy.orm import Session
 from models import Expert, _uuid_hex
 
 
+# Fixed, well-known id for the builtin "Cerebro" expert. Unlike other experts
+# (random hex ids), Cerebro uses a stable, readable id so the runtime and
+# installer can special-case it: selecting it as a task assignee runs the main
+# `cerebro` agent (which delegates / re-routes) rather than materializing a
+# separate persona agent file.
+CEREBRO_EXPERT_ID = "cerebro"
+
+
 # ── Verified expert definitions ──────────────────────────────────
 
 VERIFIED_EXPERTS: list[dict] = [
@@ -673,5 +681,57 @@ def seed_verified_teams(db: Session) -> None:
             )
             db.add(team)
             db.flush()
+
+    db.commit()
+
+
+def seed_cerebro_expert(db: Session) -> None:
+    """Upsert the builtin "Cerebro" expert.
+
+    Cerebro is the main orchestrator agent; exposing it as a selectable expert
+    lets users assign a task to "Cerebro" so it re-routes to the right
+    specialist. It carries a fixed id (CEREBRO_EXPERT_ID) so it satisfies the
+    Task.expert_id foreign key, and ships as source='builtin'/is_verified so the
+    router blocks edit/delete. It is NOT materialized as its own agent file —
+    the runtime maps this id to the canonical `cerebro` agent.
+    """
+    description = (
+        "Your personal AI assistant. Assign a task to Cerebro to have it "
+        "coordinate the work and delegate to the right specialist experts."
+    )
+    system_prompt = (
+        "You are Cerebro, the user's personal AI assistant. You coordinate a "
+        'team of specialist subagents (called "experts") and route work to '
+        "whoever is best suited to it."
+    )
+
+    existing = db.get(Expert, CEREBRO_EXPERT_ID)
+    if existing:
+        # Refresh persona content but keep user-owned toggles (is_pinned).
+        existing.slug = "cerebro"
+        existing.name = "Cerebro"
+        existing.description = description
+        existing.system_prompt = system_prompt
+        existing.source = "builtin"
+        existing.is_verified = True
+        existing.is_enabled = True
+        existing.type = "expert"
+    else:
+        cerebro = Expert(
+            id=CEREBRO_EXPERT_ID,
+            slug="cerebro",
+            name="Cerebro",
+            description=description,
+            domain=None,
+            system_prompt=system_prompt,
+            source="builtin",
+            is_verified=True,
+            is_enabled=True,
+            is_pinned=False,
+            type="expert",
+            version="1.0.0",
+        )
+        db.add(cerebro)
+        db.flush()
 
     db.commit()

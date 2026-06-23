@@ -335,6 +335,96 @@ describe('ClaudeCodeRunner happy path', () => {
   });
 });
 
+describe('ClaudeCodeRunner partial-message streaming', () => {
+  beforeEach(() => {
+    currentChild = null;
+    spawnCalls.length = 0;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('spawns with --include-partial-messages alongside stream-json output', async () => {
+    // The fix: without this flag the CLI only writes stdout at whole-message
+    // boundaries, so a long single-turn generation (a big Write, a long think)
+    // produces no stdout and opens no tool — the 90s no-tool idle watchdog then
+    // kills a perfectly healthy run (idle_hang → "Eso tardó más de lo
+    // esperado"). The flag makes the CLI emit partial chunks that keep stdout
+    // flowing throughout generation. Partial streaming is only valid with
+    // --output-format=stream-json, so assert both are present.
+    await startRunner();
+    const { args } = spawnCalls[0];
+    expect(args).toContain('--include-partial-messages');
+    expect(args).toContain('--output-format');
+    const fmtIdx = args.indexOf('--output-format');
+    expect(args[fmtIdx + 1]).toBe('stream-json');
+  });
+
+  it('treats stream_event partials as inert: no system-event flood, no duplicate reply text', async () => {
+    const { events, dones } = await startRunner();
+    // Partial chunks exactly as the CLI emits them mid-generation with
+    // --include-partial-messages: streamed assistant text plus a tool-input
+    // json delta (the big-Write case that triggered the production bug).
+    const partials = [
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'text_delta', text: 'Agre' },
+        },
+      },
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'text_delta', text: 'go.' },
+        },
+      },
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 1,
+          delta: { type: 'input_json_delta', partial_json: '{"file_path":"play' },
+        },
+      },
+    ];
+    for (const p of partials) {
+      currentChild!.stdout.write(JSON.stringify(p) + '\n');
+    }
+    await new Promise((r) => setImmediate(r));
+    // The consolidated assistant message is still emitted with partials on and
+    // remains the single source of truth for the reply body.
+    const assistantBlock = {
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'Agrego.' }] },
+    };
+    currentChild!.stdout.write(JSON.stringify(assistantBlock) + '\n');
+    await new Promise((r) => setImmediate(r));
+    currentChild!.emit('close', 0, null);
+    await Promise.resolve();
+
+    // No Activity-panel flood: partials must NOT surface as system events
+    // (one per token would bury the feed).
+    const streamSystemEvents = events.filter(
+      (e) =>
+        e.type === 'system' &&
+        (e.payload.subtype === 'stream_event' || e.payload.message === 'stream_event'),
+    );
+    expect(streamSystemEvents).toHaveLength(0);
+    // Reply text comes only from the assistant message — partials don't double
+    // it and the input_json_delta doesn't leak in as text.
+    expect(dones).toHaveLength(1);
+    expect(dones[0]).toBe('Agrego.');
+    const textDeltas = events.filter((e) => e.type === 'text_delta');
+    expect(textDeltas).toHaveLength(1);
+    expect(textDeltas[0].payload.delta).toBe('Agrego.');
+  });
+});
+
 describe('ClaudeCodeRunner idle watchdog', () => {
   beforeEach(() => {
     currentChild = null;
@@ -415,6 +505,56 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     expect(errorEvents).toHaveLength(1);
     // Output was seen (the tool round-trip), so this is a retryable idle_hang,
     // not the no-output-ever auth wedge.
+    expect(errorEvents[0].payload.error).toMatch(/produced no output for 90 seconds/);
+    expect(runner.getLastErrorClass()).toBe('idle_hang');
+  });
+
+  it('survives a >90s generation while partial stream_event chunks flow, then still kills on true silence', async () => {
+    // Reproduces the exact production bug timeline: the agent streams a short
+    // plan ("Agrego las reglas ahora mismo."), then the model spends minutes
+    // composing one large turn (a big playbook Write). No full assistant
+    // message and no tool is open during that turn. Pre-fix nothing reached
+    // stdout, so the 90s no-tool watchdog killed a healthy run and the user
+    // saw "Eso tardó más de lo esperado". With --include-partial-messages the
+    // CLI emits partial chunks throughout generation; each arrives on stdout
+    // and resets the idle timer. This locks that contract: if a future change
+    // ever stops partials from resetting the watchdog, this goes red.
+    const { runner, events } = await startRunner();
+
+    // Agent streams its plan first (matches the real transcript).
+    currentChild!.stdout.write(
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Agrego las reglas ahora mismo.' }] },
+      }) + '\n',
+    );
+    vi.advanceTimersByTime(0);
+
+    // The long generation: a partial chunk lands every 80s for ~6.5 minutes.
+    // Each gap is under the 90s ceiling, so the run must survive far past it.
+    for (let i = 0; i < 5; i++) {
+      vi.advanceTimersByTime(80_000);
+      expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+      currentChild!.stdout.write(
+        JSON.stringify({
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            index: 0,
+            delta: { type: 'input_json_delta', partial_json: '"recomendacion","texto":' },
+          },
+        }) + '\n',
+      );
+      vi.advanceTimersByTime(0);
+    }
+    // ~400s elapsed without a kill — pre-fix this would have died at 90s.
+    expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+
+    // Generation ends and the CLI goes truly silent. The watchdog must still
+    // fire — the fix widens the window for real work, it does not disable it.
+    vi.advanceTimersByTime(90_001);
+    const errorEvents = events.filter((e) => e.type === 'error');
+    expect(errorEvents).toHaveLength(1);
     expect(errorEvents[0].payload.error).toMatch(/produced no output for 90 seconds/);
     expect(runner.getLastErrorClass()).toBe('idle_hang');
   });

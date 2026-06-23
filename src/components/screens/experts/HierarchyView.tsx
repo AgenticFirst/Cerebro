@@ -15,9 +15,11 @@ export default function HierarchyView() {
   const { t } = useTranslation();
   const {
     experts,
+    // The builtin Cerebro expert is a selectable task assignee, not a managed
+    // persona, so the gallery and its filter-chip counts use the specialists-only
+    // list. The gallery renders a dedicated Cerebro header separately.
+    specialistExperts: manageableExperts,
     isLoading,
-    activeCount,
-    pinnedCount,
     loadExperts,
     createExpert,
     updateExpert,
@@ -46,20 +48,31 @@ export default function HierarchyView() {
     if (pending) setSelectedId(pending);
   }, [consumePendingDetailExpertId]);
 
-  const disabledCount = useMemo(() => experts.filter((e) => !e.isEnabled).length, [experts]);
+  const activeCount = useMemo(
+    () => manageableExperts.filter((e) => e.isEnabled).length,
+    [manageableExperts],
+  );
+  const pinnedCount = useMemo(
+    () => manageableExperts.filter((e) => e.isPinned).length,
+    [manageableExperts],
+  );
+  const disabledCount = useMemo(
+    () => manageableExperts.filter((e) => !e.isEnabled).length,
+    [manageableExperts],
+  );
 
   // Filter pipeline: visibility first, then free-text search.
   const visibleExperts = useMemo(() => {
     const byVisibility = (() => {
       switch (filter) {
         case 'active':
-          return experts.filter((e) => e.isEnabled);
+          return manageableExperts.filter((e) => e.isEnabled);
         case 'disabled':
-          return experts.filter((e) => !e.isEnabled);
+          return manageableExperts.filter((e) => !e.isEnabled);
         case 'pinned':
-          return experts.filter((e) => e.isPinned);
+          return manageableExperts.filter((e) => e.isPinned);
         default:
-          return experts;
+          return manageableExperts;
       }
     })();
     const q = search.trim().toLowerCase();
@@ -70,7 +83,7 @@ export default function HierarchyView() {
         (e.domain ?? '').toLowerCase().includes(q) ||
         (e.description ?? '').toLowerCase().includes(q),
     );
-  }, [experts, filter, search]);
+  }, [manageableExperts, filter, search]);
 
   // Split into departments (teams with members) and solo experts.
   const { departments, soloExperts } = useMemo(() => {
@@ -134,7 +147,7 @@ export default function HierarchyView() {
   const zoomOut = () => setScale((s) => Math.max(0.6, +(s - 0.1).toFixed(2)));
   const resetZoom = () => setScale(1);
 
-  if (isLoading && experts.length === 0) {
+  if (isLoading && manageableExperts.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <Loader2 size={24} className="text-accent animate-spin" />
@@ -142,14 +155,14 @@ export default function HierarchyView() {
     );
   }
 
-  const isEmpty = experts.length === 0;
+  const isEmpty = manageableExperts.length === 0;
 
   return (
     <div className="relative flex-1 flex flex-col overflow-hidden">
       <div className="canvas-toolbar flex items-center justify-between gap-3 px-4 py-3 border-b border-border-subtle bg-bg-base/60">
         <div className="flex items-center gap-1.5 flex-wrap">
           {[
-            { key: 'all' as const, labelKey: 'experts.filterAll', count: experts.length },
+            { key: 'all' as const, labelKey: 'experts.filterAll', count: manageableExperts.length },
             { key: 'active' as const, labelKey: 'experts.filterActive', count: activeCount },
             { key: 'disabled' as const, labelKey: 'experts.filterDisabled', count: disabledCount },
             { key: 'pinned' as const, labelKey: 'experts.filterPinned', count: pinnedCount },

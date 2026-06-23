@@ -202,6 +202,24 @@ describe('AgentRuntime.startRun — chat', () => {
     expect(runnerStarts[0].cwd).toBe(dataDir);
   });
 
+  it('expertId "cerebro" → spawns the orchestrator agent without a persona file', async () => {
+    // Selecting the builtin Cerebro expert as a task/step assignee must run the
+    // main `cerebro` agent (which delegates), NOT try to resolve a materialized
+    // persona slug — the Cerebro expert is intentionally never materialized, so
+    // slug resolution would fail and the run would error. No index/.md is
+    // installed here, proving the runtime short-circuits on the fixed id.
+    const rt = new AgentRuntime(backend.port, dataDir);
+    const { sink } = makeSink();
+    await rt.startRun(sink, {
+      conversationId: 'c-cerebro',
+      content: 'plan the launch',
+      expertId: 'cerebro',
+    } as any);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(runnerStarts).toHaveLength(1);
+    expect(runnerStarts[0].agentName).toBe('cerebro');
+  });
+
   it('exports CEREBRO_CONVERSATION_ID so run-chat-action.sh can stamp the approval', async () => {
     // run-chat-action.sh reads this env var and stamps it onto the action
     // request body; the engine then persists it on the run so the approval can
@@ -721,5 +739,90 @@ describe('AgentRuntime.startRun — chat', () => {
 
     expect(runnerStarts).toHaveLength(1);
     expect(runnerStarts[0].prompt).not.toContain('<conversation_origin');
+  });
+});
+
+// ── getLiveTaskIds — liveness signal consumed by the TaskReconciler ─────────
+//
+// This accessor is the entire foundation of the "task stuck in Por Revisar
+// while still running" fix: the health check keys liveness on TASK id (not the
+// reportedRunId/sessionId stored in task.run_id, which never matches the
+// internal activeRuns key on a resumed run). If this returns the wrong ids the
+// reconciler either mis-orphans live tasks or fails to pull prematurely-reviewed
+// ones back. We test the contract directly against the activeRuns map so the
+// assertions can't be masked by the spawn machinery's timers.
+describe('AgentRuntime.getLiveTaskIds', () => {
+  let dataDir: string;
+
+  beforeEach(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cerebro-livetask-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  function seed(
+    rt: AgentRuntime,
+    runs: Array<{ runId: string; conversationId: string; isTaskRun: boolean }>,
+  ) {
+    const map: Map<string, any> = (rt as any).activeRuns;
+    for (const r of runs) {
+      map.set(r.runId, {
+        runId: r.runId,
+        conversationId: r.conversationId,
+        expertId: null,
+        userContent: '',
+        startedAt: 0,
+        accumulatedText: '',
+        runner: null,
+        ptyRunner: null,
+        isTaskRun: r.isTaskRun,
+      });
+    }
+  }
+
+  it('returns only the conversationId (== task id) of live TASK runs', () => {
+    const rt = new AgentRuntime(0, dataDir);
+    seed(rt, [
+      { runId: 'r1', conversationId: 'task-1', isTaskRun: true },
+      { runId: 'r2', conversationId: 'chat-1', isTaskRun: false },
+      { runId: 'r3', conversationId: 'task-2', isTaskRun: true },
+    ]);
+    expect(rt.getLiveTaskIds().sort()).toEqual(['task-1', 'task-2']);
+  });
+
+  it('excludes chat and engine runs (isTaskRun === false)', () => {
+    const rt = new AgentRuntime(0, dataDir);
+    seed(rt, [
+      { runId: 'r1', conversationId: 'chat-1', isTaskRun: false },
+      { runId: 'r2', conversationId: 'engine-run:abc', isTaskRun: false },
+    ]);
+    expect(rt.getLiveTaskIds()).toEqual([]);
+  });
+
+  it('returns an empty array when nothing is running', () => {
+    const rt = new AgentRuntime(0, dataDir);
+    expect(rt.getLiveTaskIds()).toEqual([]);
+  });
+
+  it('drops a finalized run as soon as it leaves activeRuns', () => {
+    const rt = new AgentRuntime(0, dataDir);
+    seed(rt, [{ runId: 'r1', conversationId: 'task-1', isTaskRun: true }]);
+    expect(rt.getLiveTaskIds()).toEqual(['task-1']);
+    // finalizeRun() deletes the entry; getLiveTaskIds must immediately reflect it
+    // (otherwise a genuinely-completed task would be wrongly pulled back to
+    // in_progress by Invariant B).
+    (rt as any).activeRuns.delete('r1');
+    expect(rt.getLiveTaskIds()).toEqual([]);
+  });
+
+  it('does not emit a task id for a task run with a missing/empty conversationId', () => {
+    const rt = new AgentRuntime(0, dataDir);
+    seed(rt, [
+      { runId: 'r1', conversationId: '', isTaskRun: true },
+      { runId: 'r2', conversationId: 'task-2', isTaskRun: true },
+    ]);
+    expect(rt.getLiveTaskIds()).toEqual(['task-2']);
   });
 });

@@ -35,4 +35,11 @@ export interface SlackChannel {
   /** True when the bridge is paired and reachable — chat-actions catalog uses
    *  this to decide if Slack is invokable from chat right now. */
   isConnected(): boolean;
+
+  /** If an inbound chat run for `conversationId` is currently in flight, return
+   *  the Slack origin its reply is being auto-delivered to. Lets the engine drop
+   *  a chat-triggered send_slack_message aimed at that same channel — otherwise
+   *  the model's send double-posts content the stream sink already delivered.
+   *  Returns null for routine runs / unknown conversations (no exact match). */
+  activeConversationOrigin(conversationId: string): { channel: string } | null;
 }
