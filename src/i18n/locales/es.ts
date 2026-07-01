@@ -1830,7 +1830,8 @@ const es: TranslationKeys = {
     appearance: 'Apariencia',
     beta: 'Funciones beta',
     about: 'Acerca de',
-    aboutComingSoon: 'Acerca de Cerebro pr\u00f3ximamente',
+    aboutVersion: 'Versi\u00f3n {{version}}',
+    aboutVersionLoading: 'Cargando versi\u00f3n\u2026',
     backup: 'Copia de seguridad',
   },
 

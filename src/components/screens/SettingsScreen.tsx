@@ -20,6 +20,7 @@ import SandboxSection from './settings/SandboxSection';
 import BetaFeaturesSection from './settings/BetaFeaturesSection';
 import VoiceSection from './settings/VoiceSection';
 import BackupSection from './settings/BackupSection';
+import AboutSection from './settings/AboutSection';
 import { consumePendingSettingsSection } from './settings/pending-section';
 
 // Lazy so Activity's heavy deps (incl. ChatContext) stay out of the Settings
@@ -192,12 +193,7 @@ export default function SettingsScreen({ initialSection }: { initialSection?: Se
             {activeSection === 'backup' && <BackupSection />}
             {activeSection === 'appearance' && <AppearanceSection />}
             {activeSection === 'beta' && <BetaFeaturesSection />}
-            {activeSection === 'about' && (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <Info size={32} className="text-text-tertiary mb-3" />
-                <p className="text-sm text-text-tertiary">{t('settings.aboutComingSoon')}</p>
-              </div>
-            )}
+            {activeSection === 'about' && <AboutSection />}
           </div>
         </div>
       )}

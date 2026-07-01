@@ -1810,7 +1810,8 @@ const en = {
     appearance: 'Appearance',
     beta: 'Beta Features',
     about: 'About',
-    aboutComingSoon: 'About Cerebro coming soon',
+    aboutVersion: 'Version {{version}}',
+    aboutVersionLoading: 'Loading version…',
   },
 
   // ── Backup & restore section ────────────────────────────────
