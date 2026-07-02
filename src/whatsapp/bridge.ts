@@ -9,7 +9,9 @@
  *  - Per-number sliding-window rate limiter on outbound sends
  *  - Session creds stored under userData/whatsapp-session/ (user-only by OS perms)
  *  - Read receipts disabled
- *  - No media handling in the initial version — text only
+ *  - Inbound media goes through MediaIngestService: voice notes are
+ *    transcribed locally (shared STT path), documents/images are staged and
+ *    parsed — raw bytes never reach the model
  *
  * NB: Baileys is loaded with dynamic `import()` so a missing package or a
  * slow native rebuild never blocks Electron's boot. start() is a no-op in

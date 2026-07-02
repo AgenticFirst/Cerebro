@@ -44,7 +44,10 @@ describe('taskMatchesQuery', () => {
 
   it('tolerates missing description', () => {
     expect(
-      taskMatchesQuery({ title: 'Solo título', description_md: undefined as unknown as string }, 'algo'),
+      taskMatchesQuery(
+        { title: 'Solo título', description_md: undefined as unknown as string },
+        'algo',
+      ),
     ).toBe(false);
   });
 });

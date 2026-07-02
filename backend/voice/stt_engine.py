@@ -57,8 +57,8 @@ class STTEngine:
     async def load_model(self, model_id: str, model_path: str) -> None:
         """Load a faster-whisper model.
 
-        model_path is used as the download/cache directory.  faster-whisper
-        will auto-download the CTranslate2-converted model on first use.
+        model_path is the installed CTranslate2 model directory; the model
+        must already be on disk (the /voice/stt/load route 404s otherwise).
         """
         async with self._lock:
             if self._model is not None and self._model_id == model_id:
@@ -83,21 +83,20 @@ class STTEngine:
     def _load_sync(self, model_path: str) -> "WhisperModel":
         from faster_whisper import WhisperModel
 
-        # Use "base" for speed — transcribes short clips in <200ms on CPU.
-        # Upgrade to "small" or "medium" if quality is insufficient.
-        # model_path serves as the download cache directory.
-        model_size = "base"
-        logger.info("Loading faster-whisper model '%s' (cache: %s)", model_size, model_path)
+        # model_path is the installed CTranslate2 model directory (see
+        # catalog.get_model_path). Passing the dir loads purely from local
+        # disk; passing a size alias like "base" would route through the HF
+        # Hub cache resolver and re-download the model over the network.
+        logger.info("Loading faster-whisper model from %s", model_path)
         t0 = time.monotonic()
 
         model = WhisperModel(
-            model_size,
+            model_path,
             device="cpu",
             compute_type="int8",
-            download_root=model_path,
         )
 
-        logger.info("faster-whisper '%s' loaded in %.1fs", model_size, time.monotonic() - t0)
+        logger.info("faster-whisper loaded in %.1fs", time.monotonic() - t0)
         return model
 
     async def unload(self) -> None:

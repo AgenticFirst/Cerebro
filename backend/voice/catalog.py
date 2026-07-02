@@ -45,7 +45,9 @@ VOICE_CATALOG: list[dict[str, Any]] = [
             ("tokenizer.json", f"{WHISPER_BASE_HF}/tokenizer.json", 2_500_000),
             ("vocabulary.txt", f"{WHISPER_BASE_HF}/vocabulary.txt", 460_000),
         ],
-        "check_files": ["model.bin"],
+        # All four files: loading with tokenizer.json missing makes
+        # faster-whisper silently fall back to a *network* tokenizer fetch.
+        "check_files": ["config.json", "model.bin", "tokenizer.json", "vocabulary.txt"],
     },
     {
         "id": "kokoro-82m",
@@ -96,14 +98,16 @@ def is_model_installed(voice_models_dir: str, model_id: str) -> bool:
 
 
 def get_model_path(voice_models_dir: str, model_id: str) -> str | None:
-    """Return the dir the engine should load from, or None if not installed."""
+    """Return the dir the engine should load from, or None if not installed.
+
+    For STT this is the snapshot dir itself (a complete CTranslate2 model
+    dir: model.bin + config.json + tokenizer.json + vocabulary.txt), which
+    faster-whisper loads directly from disk — never via the HF Hub cache
+    resolver, which does not recognize our snapshots/main layout and would
+    re-download the model over the network at load time.
+    """
     if not is_model_installed(voice_models_dir, model_id):
         return None
-    # STT engine wants the parent voice_models_dir (HF cache layout) so
-    # faster-whisper resolves snapshots/main/ itself.
-    entry = get_catalog_entry(model_id)
-    if entry and entry["type"] == "stt":
-        return voice_models_dir
     return model_dir(voice_models_dir, model_id)
 
 

@@ -241,8 +241,14 @@ describe('resolveObjectAssociations', () => {
       ['/crm/v4/associations/contacts/companies/', assoc({ C1: ['K1'] })],
       ['/crm/v4/associations/contacts/deals/', assoc({ C1: ['D1'] })],
       ['/crm/v4/associations/contacts/tickets/', assoc({ C1: ['T1'] })],
-      ['/crm/v3/objects/companies/batch/read', batchObjects({ K1: { name: 'Keralty', domain: 'keralty.com' } })],
-      ['/crm/v3/objects/deals/batch/read', batchObjects({ D1: { dealname: 'Q3 Renewal', amount: '5000' } })],
+      [
+        '/crm/v3/objects/companies/batch/read',
+        batchObjects({ K1: { name: 'Keralty', domain: 'keralty.com' } }),
+      ],
+      [
+        '/crm/v3/objects/deals/batch/read',
+        batchObjects({ D1: { dealname: 'Q3 Renewal', amount: '5000' } }),
+      ],
       ['/crm/v3/objects/tickets/batch/read', batchObjects({ T1: { subject: 'Login broken' } })],
     ]);
     queue(...Array.from({ length: 6 }, () => router));

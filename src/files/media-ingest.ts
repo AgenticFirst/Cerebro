@@ -321,12 +321,22 @@ function parseFile(port: number, filePath: string, sha256?: string): Promise<Par
 }
 
 function transcribe(port: number, filePath: string): Promise<STTResponse | null> {
-  return backendPost<STTResponse>(port, '/voice/stt/transcribe-file', {
-    file_path: filePath,
-  });
+  // CPU Whisper on a multi-minute audio file legitimately takes minutes —
+  // don't cut it off at the default 30s meant for parse/register calls.
+  return backendPost<STTResponse>(
+    port,
+    '/voice/stt/transcribe-file',
+    { file_path: filePath },
+    5 * 60_000,
+  );
 }
 
-function backendPost<T>(port: number, urlPath: string, body: unknown): Promise<T | null> {
+function backendPost<T>(
+  port: number,
+  urlPath: string,
+  body: unknown,
+  timeoutMs = 30_000,
+): Promise<T | null> {
   return new Promise((resolve) => {
     const bodyStr = JSON.stringify(body);
     const req = http.request(
@@ -339,7 +349,7 @@ function backendPost<T>(port: number, urlPath: string, body: unknown): Promise<T
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(bodyStr).toString(),
         },
-        timeout: 30_000, // STT can take a few seconds for long voice notes
+        timeout: timeoutMs,
       },
       (res) => {
         let data = '';

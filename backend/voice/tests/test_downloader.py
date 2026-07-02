@@ -318,6 +318,55 @@ def test_subscribe_yields_progression_for_in_flight(voice_dir, downloader):
     assert states_seen[-1] == "installed"
 
 
+def test_subscribe_terminates_after_cancel(voice_dir, downloader, monkeypatch):
+    """Cancel emits a terminal ``not_installed`` event — subscribers must
+    return on it, not wait forever for an ``installed``/``failed`` that will
+    never come (regression: the Settings SSE stream hung after Cancel)."""
+    import time
+
+    def slow_fetch(url: str, part_path: str, final_path: str) -> None:
+        time.sleep(0.5)
+        raise AssertionError("fetch should have been cancelled")
+
+    monkeypatch.setattr(VoiceDownloader, "_fetch_one", staticmethod(slow_fetch))
+
+    async def go():
+        await downloader.start("kokoro-82m")
+
+        async def drain() -> list[str]:
+            return [e["state"] async for e in downloader.subscribe("kokoro-82m")]
+
+        drain_task = asyncio.create_task(drain())
+        await asyncio.sleep(0.05)  # let the subscriber register
+        assert await downloader.cancel("kokoro-82m")
+        states = await asyncio.wait_for(drain_task, timeout=2.0)
+        assert states[-1] == "not_installed"
+        await downloader.wait_idle()
+
+    run(go())
+
+
+def test_get_states_reports_live_download(voice_dir, downloader, monkeypatch):
+    """While a download is actively running in this process, reconciliation
+    must not demote its ``downloading`` row to ``not_installed`` (regression:
+    /voice/catalog showed a Download button mid-download)."""
+    import time
+
+    monkeypatch.setattr(
+        VoiceDownloader,
+        "_fetch_one",
+        staticmethod(lambda url, part, final: time.sleep(0.3)),
+    )
+
+    async def go():
+        await downloader.start("kokoro-82m")
+        assert downloader.get_states()["kokoro-82m"]["state"] == "downloading"
+        assert await downloader.cancel("kokoro-82m")
+        await downloader.wait_idle()
+
+    run(go())
+
+
 # ── State.json atomicity ──────────────────────────────────────────
 
 

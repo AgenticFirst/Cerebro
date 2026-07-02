@@ -31,12 +31,17 @@ _tts_engine: TTSEngine | None = None
 _downloader: VoiceDownloader | None = None
 
 
-def init_voice_singletons(voice_models_dir: str) -> None:
-    """Idempotent init: building a downloader twice would lose state."""
+def init_voice_singletons(voice_models_dir: str) -> VoiceDownloader:
+    """Idempotent init: building a downloader twice would lose state.
+
+    Returns the downloader so the lifespan can hand it to the first-launch
+    auto-download task.
+    """
     global _stt_engine, _tts_engine, _downloader
     _stt_engine = STTEngine()
     _tts_engine = TTSEngine()
     _downloader = VoiceDownloader(voice_models_dir)
+    return _downloader
 
 
 def _voice_models_dir(request: Request) -> str:

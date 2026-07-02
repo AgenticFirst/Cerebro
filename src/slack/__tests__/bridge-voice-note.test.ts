@@ -452,6 +452,44 @@ describe('SlackBridge — non-audio file attachments end-to-end', () => {
     expect(notes.some((t) => /demasiado grande/i.test(t))).toBe(true);
   });
 
+  it('recovers a STRIPPED file object (no url_private) via files.info', async () => {
+    // Slack Connect / `file_access: "check_file_info"` events deliver file
+    // entries without url_private — the bridge must fetch the full object
+    // via files.info instead of silently dropping the message.
+    const { bridge, stubs } = makeBridge('the spoken words');
+    const filesInfo = vi.fn(async () => ({
+      ...NATIVE_VOICE_CLIP,
+      url_private_download: 'https://files.slack.com/refetched.mp4',
+    }));
+    ((bridge as unknown as Record<string, unknown>).api as Record<string, unknown>).filesInfo =
+      filesInfo;
+    const stripped: SlackFile = { ...NATIVE_VOICE_CLIP, url_private_download: undefined };
+
+    await (bridge as unknown as Internals).handleInbound(dmVoiceCtx('', [stripped]));
+
+    expect(filesInfo).toHaveBeenCalledWith('F_VOICE');
+    expect(stubs.downloadFile).toHaveBeenCalledTimes(1);
+    expect(stubs.downloadFile.mock.calls[0][0]).toBe('https://files.slack.com/refetched.mp4');
+    expect(stubs.startRun).toHaveBeenCalledTimes(1);
+    expect((stubs.startRun.mock.calls[0][1] as { content: string }).content).toBe(
+      'the spoken words',
+    );
+  });
+
+  it('notifies the user (never a silent drop) when no download URL is recoverable', async () => {
+    const { bridge, stubs } = makeBridge('unused');
+    ((bridge as unknown as Record<string, unknown>).api as Record<string, unknown>).filesInfo =
+      vi.fn(async () => null);
+    const stripped: SlackFile = { ...NATIVE_VOICE_CLIP, url_private_download: undefined };
+
+    await (bridge as unknown as Internals).handleInbound(dmVoiceCtx('', [stripped]));
+
+    expect(stubs.downloadFile).not.toHaveBeenCalled();
+    expect(stubs.startRun).not.toHaveBeenCalled();
+    const notes = stubs.chatPostMessage.mock.calls.map((c) => (c[0] as { text: string }).text);
+    expect(notes.some((t) => /didn't give me access to that voice note/i.test(t))).toBe(true);
+  });
+
   it('localizes the "got files" ack and the download-failure note to Spanish', async () => {
     // ack path
     const ok = makeBridge('');

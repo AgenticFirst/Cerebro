@@ -19,6 +19,8 @@ import {
   type ChatDeleteArguments,
 } from '@slack/web-api';
 
+import type { SlackFile } from './types';
+
 /** Block Kit array shape accepted by chat.postMessage / chat.update. */
 export type SlackBlocks = NonNullable<ChatPostMessageArguments['blocks']>;
 
@@ -143,6 +145,21 @@ export class SlackApi {
       return (res.user ?? null) as SlackUserInfo | null;
     } catch (err) {
       throw this.wrap('users.info', err);
+    }
+  }
+
+  /**
+   * Fetch the full file object for a file id. Events sometimes deliver
+   * stripped file entries without `url_private` (e.g. Slack Connect /
+   * `file_access: "check_file_info"`); files.info returns the complete
+   * object. Same `files:read` scope as the url_private download itself.
+   */
+  async filesInfo(fileId: string): Promise<SlackFile | null> {
+    try {
+      const res = await this.client.files.info({ file: fileId });
+      return (res.file ?? null) as SlackFile | null;
+    } catch (err) {
+      throw this.wrap('files.info', err);
     }
   }
 

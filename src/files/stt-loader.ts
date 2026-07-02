@@ -38,13 +38,16 @@ export class SttLoader {
   async ensureReady(notifyLoading: () => Promise<void>): Promise<boolean> {
     const port = this.port();
 
-    // Fast path: already loaded.
-    const status = await backendJsonRequest<{ stt: { is_loaded: boolean } }>(
+    // Fast path: already loaded. `stt` is the engine state string
+    // ("idle" | "loading" | "ready" | "error"), not an object.
+    const status = await backendJsonRequest<{ stt: string; stt_model_id: string | null }>(
       port,
       'GET',
       '/voice/status',
     );
-    if (status.ok && status.data?.stt?.is_loaded) return true;
+    if (status.ok && status.data?.stt === 'ready' && status.data.stt_model_id === STT_MODEL_ID) {
+      return true;
+    }
 
     // Coalesce a burst of voice notes onto one load attempt.
     if (this.inFlight) return this.inFlight;

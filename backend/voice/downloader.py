@@ -52,6 +52,14 @@ class VoiceDownloader:
 
     # ── State persistence (atomic) ──────────────────────────────
 
+    def _is_live_download(self, model_id: str) -> bool:
+        """True while this process owns an in-flight download of model_id."""
+        return (
+            self._active_model_id == model_id
+            and self._active_task is not None
+            and not self._active_task.done()
+        )
+
     def _load_state(self) -> dict[str, dict[str, Any]]:
         if not os.path.exists(self._state_path):
             return {entry["id"]: {"state": "not_installed"} for entry in VOICE_CATALOG}
@@ -67,10 +75,10 @@ class VoiceDownloader:
             row = data.get(mid, {})
             if is_model_installed(self.voice_models_dir, mid):
                 row = {"state": "installed", "downloaded_bytes": entry["size_bytes"]}
-            elif row.get("state") == "downloading":
-                # A `downloading` state we read from disk is necessarily stale —
-                # the process that owned it died. Reset to not_installed and
-                # let the user retry; partial `.part` files remain for resume.
+            elif row.get("state") == "downloading" and not self._is_live_download(mid):
+                # A `downloading` state with no live owner task is stale — the
+                # process that owned it died. Reset to not_installed and let
+                # the user retry; partial `.part` files remain for resume.
                 row = {"state": "not_installed", "downloaded_bytes": 0}
             data[mid] = row
         return data
@@ -121,7 +129,10 @@ class VoiceDownloader:
             while True:
                 event = await queue.get()
                 yield event
-                if event["state"] in ("installed", "failed"):
+                # Anything that isn't a progress tick is terminal for this run —
+                # including the "not_installed" a cancel emits. Waiting only for
+                # installed/failed left subscribers hanging forever after cancel.
+                if event["state"] != "downloading":
                     return
         finally:
             if model_id in self._subscribers and queue in self._subscribers[model_id]:

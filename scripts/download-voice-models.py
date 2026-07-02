@@ -6,6 +6,11 @@ Run once after cloning the repo:
 
 Models are saved to voice-models/ at the project root (gitignored).
 In production builds, Electron Forge bundles this directory via extraResource.
+
+Note: this is a dev-only prewarm for Kokoro (TTS). The app itself installs
+every voice model automatically on first launch via the backend catalog
+(backend/voice/catalog.py + autodownload.py) — including Whisper STT — so
+running this script is optional.
 """
 
 import os
@@ -42,18 +47,6 @@ def _download(url: str, dest: str, expected_size: int) -> None:
     print()
 
 
-def download_whisper():
-    """Faster-whisper downloads the model automatically on first use;
-    we just create the cache dir so the backend can point at it."""
-    dest = os.path.join(VOICE_MODELS_DIR, "whisper-cache")
-    os.makedirs(dest, exist_ok=True)
-    print(f"\n{'=' * 60}")
-    print("Whisper: cache dir created at")
-    print(f"  {dest}")
-    print("(faster-whisper will auto-download the 'base' model on first use)")
-    print(f"{'=' * 60}")
-
-
 def download_kokoro():
     """Download Kokoro ONNX model + voices binary from the kokoro-onnx release."""
     dest = os.path.join(VOICE_MODELS_DIR, "kokoro")
@@ -76,7 +69,6 @@ def download_kokoro():
 def main():
     os.makedirs(VOICE_MODELS_DIR, exist_ok=True)
 
-    download_whisper()
     download_kokoro()
 
     print(f"\n{'=' * 60}")

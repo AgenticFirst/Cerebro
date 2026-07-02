@@ -1859,8 +1859,22 @@ export class SlackBridge implements SlackChannel {
   ): Promise<string | null> {
     if (!this.api) return null;
     const suffix = kind === 'file' ? 'File' : 'Voice';
-    const url = f.url_private_download ?? f.url_private;
-    if (!url) return null;
+    let url = f.url_private_download ?? f.url_private;
+    if (!url) {
+      // Events sometimes deliver stripped file objects without url_private
+      // (Slack Connect / `file_access: "check_file_info"`) — files.info
+      // returns the complete object under the same files:read scope.
+      try {
+        const refreshed = await this.api.filesInfo(f.id);
+        url = refreshed?.url_private_download ?? refreshed?.url_private;
+      } catch (err) {
+        logError('files.info fallback failed', err instanceof Error ? err.message : String(err));
+      }
+    }
+    if (!url) {
+      await this.postNote(ctx, this.t(`fetchFailedNoUrl${suffix}`));
+      return null;
+    }
 
     // Prefer the caller-supplied extension (audio notes pass an STT-friendly
     // ext mapped from MIME, e.g. m4a for an audio/mp4 clip) so the on-disk file

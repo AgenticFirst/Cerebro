@@ -1687,6 +1687,10 @@ const en = {
       "📎 Couldn't fetch the file — the Slack app may need the `files:read` permission. Ask the Cerebro operator to reinstall the app.",
     fetchFailedVoice: "🎙️ Couldn't fetch that voice note. Try again or type your message.",
     fetchFailedFile: "📎 Couldn't fetch that file. Try again or type your message.",
+    fetchFailedNoUrlVoice:
+      "🎙️ Slack didn't give me access to that voice note (no download link). Try re-sending it, or type your message.",
+    fetchFailedNoUrlFile:
+      "📎 Slack didn't give me access to that file (no download link). Try re-sending it, or type your message.",
   },
 
   // ── Telegram section (within Channels) ──────────────────────

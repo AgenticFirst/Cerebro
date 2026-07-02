@@ -1712,6 +1712,10 @@ const es: TranslationKeys = {
     fetchFailedVoice:
       '🎙️ No pude obtener esa nota de voz. Inténtalo de nuevo o escribe tu mensaje.',
     fetchFailedFile: '📎 No pude obtener ese archivo. Inténtalo de nuevo o escribe tu mensaje.',
+    fetchFailedNoUrlVoice:
+      '🎙️ Slack no me dio acceso a esa nota de voz (sin enlace de descarga). Intenta reenviarla o escribe tu mensaje.',
+    fetchFailedNoUrlFile:
+      '📎 Slack no me dio acceso a ese archivo (sin enlace de descarga). Intenta reenviarlo o escribe tu mensaje.',
   },
 
   telegramSection: {

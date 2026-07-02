@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
@@ -61,10 +62,23 @@ async def lifespan(application: FastAPI):
 
     # Voice models (downloaded on demand into the user-data dir).
     voice_models_dir = getattr(application.state, "voice_models_dir", None)
+    voice_autodownload_task: asyncio.Task | None = None
     if voice_models_dir:
         os.makedirs(voice_models_dir, exist_ok=True)
-        init_voice_singletons(voice_models_dir)
+        voice_downloader = init_voice_singletons(voice_models_dir)
         print(f"[Cerebro] Voice models directory: {voice_models_dir}")
+        # First-launch background install of the default voice models (STT
+        # first) so voice notes transcribe out of the box. Fire-and-forget —
+        # never gates startup. The task reference must be kept (the event
+        # loop only holds weak refs to tasks). The env var lets a dev running
+        # the backend standalone opt out of the ~485MB pull.
+        if not os.environ.get("CEREBRO_SKIP_VOICE_AUTODOWNLOAD"):
+            from voice.autodownload import ensure_default_models
+
+            voice_autodownload_task = asyncio.create_task(
+                ensure_default_models(voice_downloader)
+            )
+            application.state.voice_autodownload_task = voice_autodownload_task
 
     # Seed builtin skills + verified experts (skippable for tests)
     if not getattr(application.state, "skip_seed", False):
@@ -105,6 +119,8 @@ async def lifespan(application: FastAPI):
 
     yield
 
+    if voice_autodownload_task is not None and not voice_autodownload_task.done():
+        voice_autodownload_task.cancel()
     cloud_sync_runtime.stop_sync()
 
 
