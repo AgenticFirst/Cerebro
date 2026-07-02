@@ -164,6 +164,11 @@ export function createHubSpotSearchTicketsAction(deps: {
           description:
             'True when include_associations was requested but companies could not be read because the HubSpot token lacks crm.objects.companies.read. Tell the user to grant the scope.',
         },
+        associations_error: {
+          type: ['string', 'null'],
+          description:
+            'Non-null when include_associations was requested but the lookup failed — contacts/companies are unknown, NOT empty. Relay the error instead of claiming the tickets have no associations.',
+        },
         error: { type: ['string', 'null'] },
       },
       required: ['tickets', 'count'],
@@ -338,6 +343,7 @@ export function createHubSpotSearchTicketsAction(deps: {
         params.include_associations === true ||
         String(params.include_associations ?? '').toLowerCase() === 'true';
       let companiesScopeMissing = false;
+      let associationsError: string | null = null;
       if (includeAssociations && tickets.length > 0) {
         const assoc = await resolveTicketAssociations(
           token,
@@ -345,6 +351,7 @@ export function createHubSpotSearchTicketsAction(deps: {
           input.context.signal,
         );
         if (assoc.error) {
+          associationsError = assoc.error;
           input.context.log(`HubSpot search_tickets: association lookup failed: ${assoc.error}`);
         }
         companiesScopeMissing = assoc.companiesScopeMissing;
@@ -364,12 +371,15 @@ export function createHubSpotSearchTicketsAction(deps: {
       input.context.log(`HubSpot search_tickets: found ${tickets.length} ticket(s)`);
       const scopeNote = companiesScopeMissing
         ? ' (companies not returned — grant crm.objects.companies.read on the HubSpot Private App)'
-        : '';
+        : associationsError
+          ? ` (association lookup failed: ${associationsError})`
+          : '';
       return {
         data: {
           tickets,
           count: tickets.length,
           companies_scope_missing: companiesScopeMissing,
+          associations_error: associationsError,
           error: null,
         },
         summary: `Found ${tickets.length} HubSpot ticket(s)${scopeNote}`,

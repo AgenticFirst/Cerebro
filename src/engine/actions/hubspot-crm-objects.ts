@@ -27,6 +27,7 @@ import {
   updateCrmObject,
   type CrmObjectType,
 } from '../../hubspot/crm-objects';
+import { resolveObjectAssociations, type ObjectAssociations } from '../../hubspot/associations';
 
 /** Named property params surfaced in the input schemas (superset across types). */
 const NAMED_FIELDS = [
@@ -195,6 +196,11 @@ export function createHubSpotListObjectsAction(deps: {
           description: 'Filter deals by pipeline id. Optional. Templated.',
         },
         limit: { type: 'number', description: 'Max records to return. Default 50, capped at 100.' },
+        include_associations: {
+          type: 'boolean',
+          description:
+            "When true, attach each record's associated contacts, companies, deals, and tickets. Default false. Adds a few batched lookups over the result page.",
+        },
       },
       required: ['object_type'],
     },
@@ -211,10 +217,32 @@ export function createHubSpotListObjectsAction(deps: {
               label: { type: ['string', 'null'] },
               properties: { type: 'object' },
               url: { type: ['string', 'null'] },
+              associations: {
+                type: 'object',
+                description:
+                  'Only present when include_associations was true. The associated records by type (the object_type itself is omitted).',
+                properties: {
+                  contacts: { type: 'array', items: { type: 'object' } },
+                  companies: { type: 'array', items: { type: 'object' } },
+                  deals: { type: 'array', items: { type: 'object' } },
+                  tickets: { type: 'array', items: { type: 'object' } },
+                },
+              },
             },
           },
         },
         count: { type: 'number' },
+        associations_error: {
+          type: ['string', 'null'],
+          description:
+            'Non-null when include_associations was requested but the lookup failed — associations are unknown, NOT empty. Relay the error instead of claiming the records have no associations.',
+        },
+        scope_missing_types: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Object types whose associations could not be read because the HubSpot token lacks the read scope for them. Tell the user to grant the scope.',
+        },
         error: { type: ['string', 'null'] },
       },
       required: ['objects', 'count'],
@@ -255,16 +283,67 @@ export function createHubSpotListObjectsAction(deps: {
       }
 
       const portal = channel.getPortalId();
-      const objects = res.results.map((r) => ({
+      const objects: Array<{
+        id: string;
+        label: string;
+        properties: Record<string, string>;
+        url: string | null;
+        associations?: ObjectAssociations;
+      }> = res.results.map((r) => ({
         id: r.id,
         label: CRM_OBJECT_PROPS[type].label(r.properties),
         properties: r.properties,
         url: crmObjectUrl(portal, type, r.id),
       }));
+
+      // Opt-in association enrichment. Best-effort — a failure keeps the
+      // records and surfaces associations_error rather than failing the list.
+      const includeAssociations =
+        params.include_associations === true ||
+        String(params.include_associations ?? '').toLowerCase() === 'true';
+      let associationsError: string | null = null;
+      let scopeMissingTypes: string[] = [];
+      if (includeAssociations && objects.length > 0) {
+        const assoc = await resolveObjectAssociations(
+          token,
+          type,
+          objects.map((o) => o.id),
+          input.context.signal,
+        );
+        associationsError = assoc.error;
+        scopeMissingTypes = assoc.scopeMissingTypes;
+        if (assoc.error) {
+          input.context.log(
+            `HubSpot list_objects (${type}): association lookup failed: ${assoc.error}`,
+          );
+        }
+        if (assoc.scopeMissingTypes.length > 0) {
+          input.context.log(
+            `HubSpot list_objects (${type}): associations unavailable for ${assoc.scopeMissingTypes.join(', ')} — token lacks the read scope`,
+          );
+        }
+        for (const obj of objects) {
+          obj.associations = assoc.byObject.get(obj.id) ?? {};
+        }
+      }
+
       input.context.log(`HubSpot list_objects (${type}): found ${objects.length}`);
+      const assocNote = associationsError
+        ? ` (association lookup failed: ${associationsError})`
+        : scopeMissingTypes.length > 0
+          ? ` (associations not returned for ${scopeMissingTypes.join(', ')} — missing read scope)`
+          : '';
       return {
-        data: { object_type: type, objects, count: objects.length, error: null },
-        summary: `Found ${objects.length} HubSpot ${type}`,
+        data: {
+          object_type: type,
+          objects,
+          count: objects.length,
+          ...(includeAssociations
+            ? { associations_error: associationsError, scope_missing_types: scopeMissingTypes }
+            : {}),
+          error: null,
+        },
+        summary: `Found ${objects.length} HubSpot ${type}${assocNote}`,
       };
     },
   };

@@ -134,6 +134,11 @@ export function createHubSpotGetTicketAction(deps: {
           description:
             'True when companies could not be read because the HubSpot token lacks crm.objects.companies.read. Contacts still resolve; tell the user to grant the scope.',
         },
+        associations_error: {
+          type: ['string', 'null'],
+          description:
+            'Non-null when the association lookup itself failed — contacts/companies are unknown, NOT empty. Relay the error instead of claiming the ticket has no associations.',
+        },
         error: { type: ['string', 'null'] },
       },
       required: ['found'],
@@ -179,7 +184,12 @@ export function createHubSpotGetTicketAction(deps: {
         { method: 'GET', signal: input.context.signal },
       );
 
-      const emptyAssoc = { contacts: [], companies: [], companies_scope_missing: false };
+      const emptyAssoc = {
+        contacts: [],
+        companies: [],
+        companies_scope_missing: false,
+        associations_error: null,
+      };
       if (!res.ok) {
         if (res.status === 404) {
           input.context.log(`HubSpot get_ticket: ticket ${ticketId} not found`);
@@ -233,6 +243,7 @@ export function createHubSpotGetTicketAction(deps: {
           'HubSpot get_ticket: companies unavailable — token lacks crm.objects.companies.read',
         );
       } else if (assoc.error) {
+        scopeNote = ` (association lookup failed: ${assoc.error})`;
         input.context.log(`HubSpot get_ticket: association lookup failed: ${assoc.error}`);
       }
 
@@ -288,6 +299,7 @@ export function createHubSpotGetTicketAction(deps: {
           contacts,
           companies,
           companies_scope_missing: assoc.companiesScopeMissing,
+          associations_error: assoc.error,
           error: null,
         },
         summary: `HubSpot ticket ${ticketId}${companySummary}${scopeNote}`,

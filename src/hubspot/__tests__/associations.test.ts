@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActionContext, ActionInput } from '../../engine/actions/types';
 import type { HubSpotChannel } from '../../engine/actions/hubspot-channel';
-import { resolveTicketAssociations } from '../associations';
+import { resolveObjectAssociations, resolveTicketAssociations } from '../associations';
 import { createHubSpotGetTicketAction } from '../../engine/actions/hubspot-get-ticket';
 import { createHubSpotSearchTicketsAction } from '../../engine/actions/hubspot-search-tickets';
 
@@ -214,8 +214,104 @@ describe('resolveTicketAssociations', () => {
     const ids = Array.from({ length: 150 }, (_, i) => `T${i}`);
     // No queued responders → every call returns the default empty 200.
     await resolveTicketAssociations(TOKEN, ids);
-    expect(urlCount('/tickets/associations/contacts/batch/read')).toBe(2);
-    expect(urlCount('/tickets/associations/companies/batch/read')).toBe(2);
+    expect(urlCount('/crm/v4/associations/tickets/contacts/batch/read')).toBe(2);
+    expect(urlCount('/crm/v4/associations/tickets/companies/batch/read')).toBe(2);
+  });
+});
+
+// ── resolveObjectAssociations ─────────────────────────────────
+
+describe('resolveObjectAssociations', () => {
+  /**
+   * The generic resolver fires its per-type reads concurrently, so FIFO
+   * responders would be order-fragile — route by URL instead and queue one
+   * router per expected call.
+   */
+  const routeBy =
+    (routes: Array<[fragment: string, responder: Responder]>): Responder =>
+    (call) => {
+      for (const [fragment, responder] of routes) {
+        if (call.url.includes(fragment)) return responder(call);
+      }
+      return { status: 200, json: {} };
+    };
+
+  it('resolves a contact’s companies, deals, and tickets with display properties', async () => {
+    const router = routeBy([
+      ['/crm/v4/associations/contacts/companies/', assoc({ C1: ['K1'] })],
+      ['/crm/v4/associations/contacts/deals/', assoc({ C1: ['D1'] })],
+      ['/crm/v4/associations/contacts/tickets/', assoc({ C1: ['T1'] })],
+      ['/crm/v3/objects/companies/batch/read', batchObjects({ K1: { name: 'Keralty', domain: 'keralty.com' } })],
+      ['/crm/v3/objects/deals/batch/read', batchObjects({ D1: { dealname: 'Q3 Renewal', amount: '5000' } })],
+      ['/crm/v3/objects/tickets/batch/read', batchObjects({ T1: { subject: 'Login broken' } })],
+    ]);
+    queue(...Array.from({ length: 6 }, () => router));
+    const res = await resolveObjectAssociations(TOKEN, 'contacts', ['C1']);
+    const c1 = res.byObject.get('C1')!;
+    expect(c1.companies).toEqual([{ company_id: 'K1', name: 'Keralty', domain: 'keralty.com' }]);
+    expect(c1.deals).toEqual([{ deal_id: 'D1', dealname: 'Q3 Renewal', amount: '5000' }]);
+    expect(c1.tickets).toEqual([{ ticket_id: 'T1', subject: 'Login broken' }]);
+    expect(c1.contacts).toBeUndefined(); // the fromType itself is omitted
+    expect(res.error).toBeNull();
+    expect(res.scopeMissingTypes).toEqual([]);
+    expect(calls).toHaveLength(6);
+  });
+
+  it('returns empty arrays (and makes no property reads) when nothing is associated', async () => {
+    // No queued responders → every call returns the default empty 200.
+    const res = await resolveObjectAssociations(TOKEN, 'deals', ['D1']);
+    expect(res.byObject.get('D1')).toEqual({ contacts: [], companies: [], tickets: [] });
+    expect(res.error).toBeNull();
+    expect(calls).toHaveLength(3); // just the three association reads
+  });
+
+  it('marks a 403 type in scopeMissingTypes while the other types still resolve', async () => {
+    const router = routeBy([
+      ['/crm/v4/associations/contacts/companies/', fail(403, 'missing scope')],
+      ['/crm/v4/associations/contacts/deals/', assoc({ C1: ['D1'] })],
+      ['/crm/v4/associations/contacts/tickets/', assoc({})],
+      ['/crm/v3/objects/deals/batch/read', batchObjects({ D1: { dealname: 'Renewal' } })],
+    ]);
+    queue(...Array.from({ length: 4 }, () => router));
+    const res = await resolveObjectAssociations(TOKEN, 'contacts', ['C1']);
+    expect(res.scopeMissingTypes).toEqual(['companies']);
+    expect(res.error).toBeNull();
+    const c1 = res.byObject.get('C1')!;
+    expect(c1.companies).toEqual([]);
+    expect(c1.deals).toEqual([{ deal_id: 'D1', dealname: 'Renewal', amount: null }]);
+    expect(c1.tickets).toEqual([]);
+  });
+
+  it('records a hard failure in error while the other types still resolve', async () => {
+    const router = routeBy([
+      ['/crm/v4/associations/companies/contacts/', assoc({ K1: ['C1'] })],
+      ['/crm/v4/associations/companies/deals/', fail(500, 'boom')],
+      ['/crm/v4/associations/companies/tickets/', assoc({})],
+      ['/crm/v3/objects/contacts/batch/read', batchObjects({ C1: { email: 'c1@x.com' } })],
+    ]);
+    queue(...Array.from({ length: 4 }, () => router));
+    const res = await resolveObjectAssociations(TOKEN, 'companies', ['K1']);
+    expect(res.error).toBe('boom');
+    const k1 = res.byObject.get('K1')!;
+    expect(k1.contacts).toEqual([
+      { contact_id: 'C1', email: 'c1@x.com', firstname: null, lastname: null },
+    ]);
+    expect(k1.deals).toEqual([]);
+  });
+
+  it('returns seeded empty entries without calling the API for no ids', async () => {
+    const res = await resolveObjectAssociations(TOKEN, 'contacts', []);
+    expect(res.byObject.size).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('chunks ids at 100 per target type', async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => `C${i}`);
+    // No queued responders → every call returns the default empty 200.
+    await resolveObjectAssociations(TOKEN, 'contacts', ids);
+    expect(urlCount('/crm/v4/associations/contacts/companies/batch/read')).toBe(2);
+    expect(urlCount('/crm/v4/associations/contacts/deals/batch/read')).toBe(2);
+    expect(urlCount('/crm/v4/associations/contacts/tickets/batch/read')).toBe(2);
   });
 });
 
@@ -269,6 +365,19 @@ describe('hubspot_get_ticket', () => {
     expect(out.data.companies).toEqual([]);
     expect(calls).toHaveLength(1);
   });
+
+  it('surfaces a failed association lookup via associations_error', async () => {
+    queue(
+      () => ({ status: 200, json: { id: 'T1', properties: { subject: 'S' } } }), // GET ticket
+      fail(500, 'boom'), // tickets → contacts fails hard
+    );
+    const out = await action.execute(buildActionInput({ ticket_id: 'T1' }));
+    expect(out.data.found).toBe(true);
+    expect(out.data.associations_error).toBe('boom');
+    expect(out.data.contacts).toEqual([]);
+    expect(out.data.companies).toEqual([]);
+    expect(out.summary).toContain('association lookup failed');
+  });
 });
 
 // ── hubspot_search_tickets — include_associations ─────────────
@@ -306,5 +415,20 @@ describe('hubspot_search_tickets include_associations', () => {
     expect(tickets[0].companies).toEqual([]);
     expect(calls).toHaveLength(1);
     expect(urlCount('/associations/')).toBe(0);
+  });
+
+  it('surfaces a failed association lookup via associations_error', async () => {
+    queue(
+      () => ({
+        status: 200,
+        json: { results: [{ id: 'T1', properties: { subject: 'S' } }], total: 1 },
+      }), // search
+      fail(500, 'boom'), // tickets → contacts fails hard
+    );
+    const out = await action.execute(buildActionInput({ include_associations: true }));
+    expect(out.data.associations_error).toBe('boom');
+    const tickets = (out.data as { tickets: Array<Record<string, unknown>> }).tickets;
+    expect(tickets[0].contacts).toEqual([]);
+    expect(out.summary).toContain('association lookup failed');
   });
 });

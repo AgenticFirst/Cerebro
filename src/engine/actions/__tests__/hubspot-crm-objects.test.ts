@@ -266,6 +266,59 @@ describe('hubspot_list_objects', () => {
     expect(result.data.count).toBe(0);
     expect(result.data.error).toBe('Bad credentials');
   });
+
+  it('attaches each record’s associations when include_associations is true', async () => {
+    // The resolver fires per-type reads concurrently, so route by URL rather
+    // than relying on call order.
+    const routes: Array<[string, unknown]> = [
+      [
+        '/crm/v3/objects/contacts/search',
+        { results: [{ id: 'C1', properties: { email: 'ana@x.com' } }], total: 1 },
+      ],
+      ['/crm/v4/associations/contacts/companies/', { results: [] }],
+      ['/crm/v4/associations/contacts/deals/', { results: [] }],
+      [
+        '/crm/v4/associations/contacts/tickets/',
+        { results: [{ from: { id: 'C1' }, to: [{ toObjectId: 'T1' }] }] },
+      ],
+      [
+        '/crm/v3/objects/tickets/batch/read',
+        { results: [{ id: 'T1', properties: { subject: 'Help me' } }] },
+      ],
+    ];
+    const fetchMock = vi.fn(async (url: string) => {
+      const match = routes.find(([fragment]) => String(url).includes(fragment));
+      return new Response(JSON.stringify(match ? match[1] : {}), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const action = createHubSpotListObjectsAction({ getChannel: () => buildChannel() });
+    const result = await action.execute(
+      buildActionInput({ object_type: 'contacts', include_associations: true }),
+    );
+
+    const obj = (result.data as { objects: Array<Record<string, unknown>> }).objects[0];
+    expect(obj.associations).toEqual({
+      companies: [],
+      deals: [],
+      tickets: [{ ticket_id: 'T1', subject: 'Help me' }],
+    });
+    expect(result.data.associations_error).toBeNull();
+    expect(result.data.scope_missing_types).toEqual([]);
+  });
+
+  it('makes zero association calls when include_associations is omitted', async () => {
+    const fetchMock = mockFetch(200, {
+      results: [{ id: 'C1', properties: { email: 'ana@x.com' } }],
+      total: 1,
+    });
+    const action = createHubSpotListObjectsAction({ getChannel: () => buildChannel() });
+    const result = await action.execute(buildActionInput({ object_type: 'contacts' }));
+    const obj = (result.data as { objects: Array<Record<string, unknown>> }).objects[0];
+    expect(obj.associations).toBeUndefined();
+    expect(result.data.associations_error).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('connection guards', () => {

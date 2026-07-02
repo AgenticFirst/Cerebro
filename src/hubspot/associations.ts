@@ -19,6 +19,7 @@
  */
 
 import { callHubSpotApi } from './api';
+import type { CrmObjectType } from './crm-objects';
 
 /** Max ids HubSpot accepts in a single batch read/association call. */
 const BATCH_LIMIT = 100;
@@ -130,7 +131,7 @@ async function batchReadAssociations(
         from?: { id?: string | number };
         to?: Array<{ toObjectId?: string | number }>;
       }>;
-    }>(token, `/crm/v4/objects/${fromType}/associations/${toType}/batch/read`, {
+    }>(token, `/crm/v4/associations/${fromType}/${toType}/batch/read`, {
       method: 'POST',
       body: { inputs: ch.map((id) => ({ id })) },
       signal,
@@ -332,4 +333,129 @@ export async function resolveTicketAssociations(
   }
 
   return { byTicket, error: null, companiesScopeMissing };
+}
+
+/** Everything a CRM record can be associated with, in chat-output shape. */
+export interface ObjectAssociations {
+  contacts?: ContactOutput[];
+  companies?: Array<{ company_id: string; name: string | null; domain: string | null }>;
+  deals?: Array<{ deal_id: string; dealname: string | null; amount: string | null }>;
+  tickets?: Array<{ ticket_id: string; subject: string | null }>;
+}
+
+export interface ResolveObjectAssociationsResult {
+  /** objectId → its associations. Every requested id gets an entry; only the target types for the given `fromType` are present. */
+  byObject: Map<string, ObjectAssociations>;
+  /** First non-403 failure message, if any target type failed hard. Remaining types still resolve. */
+  error: string | null;
+  /** Target types whose read returned 403 — the token lacks the read scope for them. */
+  scopeMissingTypes: string[];
+}
+
+type AssocTargetType = CrmObjectType | 'tickets';
+
+/** Display properties fetched per associated object type. */
+const TARGET_PROPS: Record<AssocTargetType, string[]> = {
+  contacts: ['email', 'firstname', 'lastname'],
+  companies: ['name', 'domain'],
+  deals: ['dealname', 'amount'],
+  tickets: ['subject'],
+};
+
+/**
+ * Resolve a generic CRM record's associations to the other core object types
+ * (contacts, companies, deals, tickets). Unlike `resolveTicketAssociations`
+ * there is no multi-hop derivation — every association is a direct link.
+ *
+ * Best-effort per target type: a 403 marks the type in `scopeMissingTypes`, any
+ * other failure records `error`; both leave the remaining types resolving.
+ */
+export async function resolveObjectAssociations(
+  token: string,
+  fromType: CrmObjectType,
+  objectIds: string[],
+  signal?: AbortSignal,
+): Promise<ResolveObjectAssociationsResult> {
+  const byObject = new Map<string, ObjectAssociations>();
+  const scopeMissingTypes: string[] = [];
+  let error: string | null = null;
+
+  const toTypes = (Object.keys(TARGET_PROPS) as AssocTargetType[]).filter((t) => t !== fromType);
+  const ids = uniq(objectIds.filter(Boolean));
+  const empty = (): ObjectAssociations => {
+    const out: ObjectAssociations = {};
+    for (const t of toTypes) out[t] = [];
+    return out;
+  };
+  // Seed every requested object so callers always get an entry.
+  for (const id of ids) byObject.set(id, empty());
+  if (ids.length === 0) {
+    return { byObject, error, scopeMissingTypes };
+  }
+
+  const assocByType = new Map<AssocTargetType, Map<string, string[]>>();
+  await Promise.all(
+    toTypes.map(async (toType) => {
+      const res = await batchReadAssociations(token, fromType, toType, ids, signal);
+      if (res.ok) {
+        assocByType.set(toType, res.map);
+      } else if (res.status === 403) {
+        scopeMissingTypes.push(toType);
+      } else {
+        error = error ?? res.error;
+      }
+    }),
+  );
+
+  // Fetch display properties for every associated id, one batch per type.
+  const propsByType = new Map<AssocTargetType, Map<string, BatchObject>>();
+  await Promise.all(
+    Array.from(assocByType.entries()).map(async ([toType, map]) => {
+      const targetIds = uniq(Array.from(map.values()).flat());
+      if (targetIds.length === 0) return;
+      const res = await batchReadObjects(token, toType, targetIds, TARGET_PROPS[toType], signal);
+      if (res.ok) {
+        propsByType.set(toType, res.map);
+      } else if (res.status === 403) {
+        scopeMissingTypes.push(toType);
+      } else {
+        error = error ?? res.error;
+      }
+    }),
+  );
+
+  for (const id of ids) {
+    const assoc = byObject.get(id)!;
+    for (const toType of toTypes) {
+      const targetIds = assocByType.get(toType)?.get(id) ?? [];
+      const props = (tid: string) => propsByType.get(toType)?.get(tid)?.properties ?? {};
+      if (toType === 'contacts') {
+        assoc.contacts = targetIds.map((tid) => ({
+          contact_id: tid,
+          email: props(tid).email ?? null,
+          firstname: props(tid).firstname ?? null,
+          lastname: props(tid).lastname ?? null,
+        }));
+      } else if (toType === 'companies') {
+        assoc.companies = targetIds.map((tid) => ({
+          company_id: tid,
+          name: props(tid).name ?? null,
+          domain: props(tid).domain ?? null,
+        }));
+      } else if (toType === 'deals') {
+        assoc.deals = targetIds.map((tid) => ({
+          deal_id: tid,
+          dealname: props(tid).dealname ?? null,
+          amount: props(tid).amount ?? null,
+        }));
+      } else {
+        assoc.tickets = targetIds.map((tid) => ({
+          ticket_id: tid,
+          subject: props(tid).subject ?? null,
+        }));
+      }
+    }
+  }
+
+  return { byObject, error, scopeMissingTypes };
 }
