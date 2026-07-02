@@ -1118,14 +1118,19 @@ export class SlackBridge implements SlackChannel {
       return;
     }
 
-    // 3. Voice notes / audio attachments: download + transcribe before we read
+    // 3. Channel mentions never carry `files[]` on the event payload — recover
+    //    any attachments from the Web API first. Runs after the gates above so
+    //    unauthorized/flooding users never cost us an API call.
+    await this.hydrateMentionFiles(ctx);
+
+    // 4. Voice notes / audio attachments: download + transcribe before we read
     //    ctx.text below, so the transcript flows through persistence, routine
     //    matching, and the agent run exactly like a typed message. Runs after
     //    the allowlist + rate-limit gates so we never burn STT on unauthorized
     //    or flooding users. No-op for text-only messages.
     await this.buildPromptFromContext(ctx);
 
-    // 4. Inline expert commands ("expert list", "expert <slug>", "expert clear")
+    // 5. Inline expert commands ("expert list", "expert <slug>", "expert clear")
     //    work in DMs and channel threads as plain text too — parity with Telegram.
     const trimmed = (ctx.text ?? '').trim();
     if (/^expert(\s|$)/i.test(trimmed)) {
@@ -1133,7 +1138,7 @@ export class SlackBridge implements SlackChannel {
       return;
     }
 
-    // 4b. Skip content-less messages BEFORE we persist or match routines, so a
+    // 5b. Skip content-less messages BEFORE we persist or match routines, so a
     //     failed media upload (download/transcription failed, no caption) never
     //     leaves an "(empty message)" row behind. A file-only upload is NOT
     //     empty: buildPromptFromContext stashed its injection on
@@ -1148,11 +1153,11 @@ export class SlackBridge implements SlackChannel {
     const { conversationId: resolvedId, reused } = await this.resolveConversation(keyInfo, ctx);
     let conversationId = resolvedId;
 
-    // 5. Persist the inbound user message.
+    // 6. Persist the inbound user message.
     conversationId = await this.postUserMessageWithRecovery(conversationId, ctx);
     this.emitConversationUpdated(conversationId, 'message');
 
-    // 6. Routine trigger dispatch — if any match, fire and skip the AI reply.
+    // 7. Routine trigger dispatch — if any match, fire and skip the AI reply.
     const matchedRoutines = await this.matchSlackTriggers(ctx);
     if (matchedRoutines.length > 0) {
       const displayName = await this.resolveDisplayName(ctx.userId);
@@ -1713,6 +1718,39 @@ export class SlackBridge implements SlackChannel {
   }
 
   // ── Voice notes / attachments ───────────────────────────────────
+
+  /**
+   * Slack's `app_mention` event payload never includes the `files[]` array —
+   * files ride only on `message` events, and we don't subscribe to channel
+   * messages. So a file attached to a channel @mention arrives invisible.
+   * Recover it by re-fetching the mention message via `conversations.replies`
+   * (needs the `*:history` scope for the surface, already in the manifest).
+   * Mutates `ctx.files` in place. Degrades to text-only on any API failure
+   * (e.g. an old install that hasn't been reauthorized with the scope).
+   */
+  private async hydrateMentionFiles(ctx: SlackInboundContext): Promise<void> {
+    if (ctx.surface !== 'app_mention') return;
+    if (ctx.files && ctx.files.length > 0) return; // event carried them after all
+    if (!this.api) return;
+    let messages: Awaited<ReturnType<SlackApi['conversationsReplies']>>;
+    try {
+      messages = await this.api.conversationsReplies({
+        channel: ctx.channel,
+        // Top-level mention: ts is the message itself. Mention inside a
+        // thread: fetch the thread and match on the mention's ts below.
+        ts: ctx.threadTs ?? ctx.ts,
+        limit: 200,
+      });
+    } catch (err) {
+      logError(
+        'file hydration via conversations.replies failed',
+        err instanceof Error ? err.message : String(err),
+      );
+      return;
+    }
+    const mention = messages.find((m) => m.ts === ctx.ts);
+    if (mention?.files?.length) ctx.files = mention.files;
+  }
 
   /**
    * If the inbound message carries an audio attachment (a Slack voice note or

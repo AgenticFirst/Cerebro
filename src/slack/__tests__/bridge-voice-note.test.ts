@@ -48,6 +48,7 @@ interface Stubs {
   ingest: ReturnType<typeof vi.fn>;
   startRun: ReturnType<typeof vi.fn>;
   chatPostMessage: ReturnType<typeof vi.fn>;
+  conversationsReplies: ReturnType<typeof vi.fn>;
 }
 
 function makeBridge(transcript: string | ''): { bridge: SlackBridge; stubs: Stubs } {
@@ -61,6 +62,9 @@ function makeBridge(transcript: string | ''): { bridge: SlackBridge; stubs: Stub
   // mediaIngest.ingest resolves with the STT result. inlineText '' models a
   // silent/garbled clip; a non-empty string models a successful transcription.
   const ingest = vi.fn(async () => ({ inlineText: transcript }));
+  // Empty thread/message fetch by default — hydration finds nothing and
+  // buildThreadContext backfills nothing, matching the pre-fix baseline.
+  const conversationsReplies = vi.fn(async () => [] as unknown[]);
 
   const bridge = new SlackBridge({
     backendPort: 9,
@@ -70,7 +74,13 @@ function makeBridge(transcript: string | ''): { bridge: SlackBridge; stubs: Stub
   });
 
   Object.assign(bridge as unknown as Record<string, unknown>, {
-    api: { downloadFile, chatPostMessage, chatPostEphemeral: vi.fn(async () => undefined) },
+    api: {
+      downloadFile,
+      chatPostMessage,
+      chatPostEphemeral: vi.fn(async () => undefined),
+      conversationsReplies,
+      usersInfo: vi.fn(async () => null),
+    },
     mediaIngest: { ingest },
     running: true,
     settings: {
@@ -102,7 +112,10 @@ function makeBridge(transcript: string | ''): { bridge: SlackBridge; stubs: Stub
   vi.spyOn(bridge as never, 'matchSlackTriggers').mockResolvedValue([] as never);
   vi.spyOn(bridge as never, 'getAccessibleExpertIds').mockReturnValue(null as never);
 
-  return { bridge, stubs: { downloadFile, ingest, startRun, chatPostMessage } };
+  return {
+    bridge,
+    stubs: { downloadFile, ingest, startRun, chatPostMessage, conversationsReplies },
+  };
 }
 
 function dmVoiceCtx(text = '', files: SlackFile[] = [NATIVE_VOICE_CLIP]) {
@@ -395,10 +408,10 @@ describe('SlackBridge — non-audio file attachments end-to-end', () => {
     stubs.ingest.mockResolvedValue({ promptInjection: '@/tmp/spec.md' });
 
     // channel + thread_ts → conversationKey resolves to the "thread" surface,
-    // which runs the thread-context branch. buildThreadContext degrades to ''
-    // here (no conversationsReplies stub), so the run content is the injection
-    // + caption — proving that branch wraps promptContent (with the injection),
-    // not the bare caption as it did before the fix.
+    // which runs the thread-context branch. conversationsReplies returns no
+    // messages here, so the run content is the injection + caption — proving
+    // that branch wraps promptContent (with the injection), not the bare
+    // caption as it did before the fix.
     await (bridge as unknown as Internals).handleInbound(
       fileCtx('check the spec', [pdf({ name: 'spec.pdf' })], {
         channelType: 'channel',
@@ -508,5 +521,149 @@ describe('SlackBridge — non-audio file attachments end-to-end', () => {
       (c) => (c[0] as { text: string }).text,
     );
     expect(failNotes.some((t) => /No pude obtener ese archivo/i.test(t))).toBe(true);
+  });
+});
+
+/**
+ * Channel-mention file hydration — regression for "Cerebro no acepta archivos
+ * adjuntados directos desde Slack" as seen in CHANNELS. Slack's `app_mention`
+ * event payload never includes `files[]` (they ride only on `message` events,
+ * which we don't subscribe to for channels), so the bridge must re-fetch the
+ * mention message via conversations.replies to see its attachments.
+ */
+describe('SlackBridge — app_mention file hydration', () => {
+  const PDF: SlackFile = {
+    id: 'F_PDF',
+    name: 'report.pdf',
+    mimetype: 'application/pdf',
+    filetype: 'pdf',
+    url_private_download: 'https://files.slack.com/report.pdf',
+    size: 4096,
+  };
+
+  /** A channel @mention as Bolt delivers it: files are NEVER on the event. */
+  function mentionCtx(text: string, over: Record<string, unknown> = {}) {
+    return {
+      eventId: 'Ev_mention',
+      teamId: 'T1',
+      channel: 'C1',
+      channelType: 'channel' as const,
+      userId: 'U1',
+      ts: '123.456',
+      threadTs: undefined,
+      text,
+      files: undefined,
+      surface: 'app_mention' as const,
+      ...over,
+    } as unknown as ReturnType<typeof dmVoiceCtx>;
+  }
+
+  it('recovers a file the app_mention event did not carry — the reported bug', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.ingest.mockResolvedValue({ promptInjection: '@/tmp/report.md' });
+    stubs.conversationsReplies.mockResolvedValue([
+      { ts: '123.456', user: 'U1', text: '<@UBOT> summarize this', files: [PDF] },
+    ]);
+
+    await (bridge as unknown as Internals).handleInbound(mentionCtx('summarize this'));
+
+    // Top-level mention → fetched by the message's own ts.
+    expect(stubs.conversationsReplies).toHaveBeenCalledTimes(1);
+    expect(stubs.conversationsReplies.mock.calls[0][0]).toEqual({
+      channel: 'C1',
+      ts: '123.456',
+      limit: 200,
+    });
+    // The hydrated file flowed through the normal ingest path into the run.
+    expect(stubs.downloadFile).toHaveBeenCalledTimes(1);
+    expect(stubs.downloadFile.mock.calls[0][1] as string).toMatch(/\.pdf$/);
+    expect(stubs.startRun).toHaveBeenCalledTimes(1);
+    expect((stubs.startRun.mock.calls[0][1] as { content: string }).content).toBe(
+      '@/tmp/report.md\n\nsummarize this',
+    );
+  });
+
+  it('selects the mention message by ts when the mention is inside a thread', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.ingest.mockResolvedValue({ promptInjection: '@/tmp/spec.md' });
+    stubs.conversationsReplies.mockResolvedValue([
+      // Thread root: no files, blank text so buildThreadContext has nothing to
+      // backfill and the content assertion below stays exact.
+      { ts: '111.000', user: 'U2', text: '' },
+      { ts: '123.456', user: 'U1', text: '<@UBOT> check this', files: [PDF] },
+    ]);
+
+    await (bridge as unknown as Internals).handleInbound(
+      mentionCtx('check this', { threadTs: '111.000' }),
+    );
+
+    // Threaded mention → fetched by the thread root's ts (shared with the
+    // thread-context backfill, which also calls conversations.replies).
+    const hydrationCall = stubs.conversationsReplies.mock.calls[0][0] as { ts: string };
+    expect(hydrationCall.ts).toBe('111.000');
+    expect(stubs.downloadFile).toHaveBeenCalledTimes(1);
+    expect((stubs.startRun.mock.calls[0][1] as { content: string }).content).toBe(
+      '@/tmp/spec.md\n\ncheck this',
+    );
+  });
+
+  it('hydrates a voice note too — the STT branch runs off the recovered file', async () => {
+    const { bridge, stubs } = makeBridge('the spoken words');
+    stubs.conversationsReplies.mockResolvedValue([
+      { ts: '123.456', user: 'U1', text: '', files: [NATIVE_VOICE_CLIP] },
+    ]);
+
+    await (bridge as unknown as Internals).handleInbound(mentionCtx(''));
+
+    expect(stubs.downloadFile.mock.calls[0][1] as string).toMatch(/\.m4a$/);
+    expect(stubs.startRun).toHaveBeenCalledTimes(1);
+    expect((stubs.startRun.mock.calls[0][1] as { content: string }).content).toBe(
+      'the spoken words',
+    );
+  });
+
+  it('degrades to text-only when the fetch fails (old install missing history scopes)', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.conversationsReplies.mockRejectedValue(new Error('missing_scope'));
+
+    await (bridge as unknown as Internals).handleInbound(mentionCtx('hello there'));
+
+    expect(stubs.downloadFile).not.toHaveBeenCalled();
+    expect(stubs.startRun).toHaveBeenCalledTimes(1);
+    expect((stubs.startRun.mock.calls[0][1] as { content: string }).content).toBe('hello there');
+  });
+
+  it('a text-only mention still runs normally after an empty hydration', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.conversationsReplies.mockResolvedValue([
+      { ts: '123.456', user: 'U1', text: '<@UBOT> just a question' },
+    ]);
+
+    await (bridge as unknown as Internals).handleInbound(mentionCtx('just a question'));
+
+    expect(stubs.downloadFile).not.toHaveBeenCalled();
+    expect(stubs.ingest).not.toHaveBeenCalled();
+    expect((stubs.startRun.mock.calls[0][1] as { content: string }).content).toBe(
+      'just a question',
+    );
+  });
+
+  it('never hydrates DMs — message.im events already carry files', async () => {
+    const { bridge, stubs } = makeBridge('the spoken words');
+
+    await (bridge as unknown as Internals).handleInbound(dmVoiceCtx(''));
+
+    expect(stubs.conversationsReplies).not.toHaveBeenCalled();
+    expect(stubs.startRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the fetch when the event somehow carried files already', async () => {
+    const { bridge, stubs } = makeBridge('');
+    stubs.ingest.mockResolvedValue({ promptInjection: '@/tmp/report.md' });
+
+    await (bridge as unknown as Internals).handleInbound(mentionCtx('look', { files: [PDF] }));
+
+    expect(stubs.conversationsReplies).not.toHaveBeenCalled();
+    expect(stubs.downloadFile).toHaveBeenCalledTimes(1);
   });
 });

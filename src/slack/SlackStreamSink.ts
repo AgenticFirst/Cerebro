@@ -66,6 +66,13 @@ export class SlackStreamSink implements AgentEventSink {
   private deps: SinkDeps;
   private accumulated = '';
   private destroyed = false;
+  /**
+   * Set the moment finalize()/finalizeWithError() begins. `destroyed` only
+   * flips at the END of finalization (after several awaited Slack calls), so
+   * a second 'done'/'error' event landing in that window would pass the
+   * destroyed check and post the whole answer again. This flag closes it.
+   */
+  private finalizing = false;
 
   /** ts of the placeholder message that we keep updating. Null until first send. */
   private placeholderTs: string | null = null;
@@ -218,7 +225,8 @@ export class SlackStreamSink implements AgentEventSink {
   }
 
   private async finalize(): Promise<void> {
-    if (this.destroyed) return;
+    if (this.destroyed || this.finalizing) return;
+    this.finalizing = true;
     if (this.editTimer) {
       clearTimeout(this.editTimer);
       this.editTimer = null;
@@ -337,7 +345,8 @@ export class SlackStreamSink implements AgentEventSink {
   }
 
   private async finalizeWithError(error: string, errorClass?: string): Promise<void> {
-    if (this.destroyed) return;
+    if (this.destroyed || this.finalizing) return;
+    this.finalizing = true;
     if (this.editTimer) {
       clearTimeout(this.editTimer);
       this.editTimer = null;

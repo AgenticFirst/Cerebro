@@ -2506,6 +2506,10 @@ const en = {
       titleDownloaded: 'Cerebro {{version}} downloaded',
       detailAppImage:
         'Your chats, tasks, settings, and memory will be preserved. Cerebro will restart to apply the update.',
+      detailMacZip:
+        'Your chats, tasks, settings, and memory will be preserved. Cerebro will install the update and restart.',
+      detailLinuxPackageAuto:
+        'Cerebro will install the update and restart. You may be asked for your administrator password.',
       detailLinuxPackage:
         "Open the installer in your file manager to finish installing, then relaunch Cerebro. Your data is stored separately and won't be touched.",
       detailDefault:
@@ -2519,6 +2523,18 @@ const en = {
       title: 'Restarting Cerebro {{version}}…',
       detail:
         'Verifying the new version can launch. If anything goes wrong the previous version will be restored automatically.',
+      detailMacSwap:
+        'Installing the new version and restarting. If anything goes wrong, the previous version is kept as a backup.',
+      detailPassword:
+        "Installing the update… If a password prompt appears, it's your system asking permission to install.",
+    },
+    manual: {
+      title: 'Finish installing Cerebro {{version}}',
+      detailDismissed:
+        "No problem — the installer is in your file manager whenever you're ready. Your data won't be touched.",
+      detailGeneric:
+        "The installer has been opened. Finish the install, then relaunch Cerebro. Your data won't be touched.",
+      revealAgain: 'Show installer',
     },
     error: {
       titleApply: "Couldn't apply the update",

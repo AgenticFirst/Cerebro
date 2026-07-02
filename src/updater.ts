@@ -228,20 +228,62 @@ function archMatches(filename: string, arch: NodeJS.Architecture): boolean {
 }
 
 /**
- * Picks the right release asset for the current OS + CPU.
+ * How the currently-running Cerebro got onto this machine. Drives which
+ * release asset we download: an AppImage user gets the next AppImage, a
+ * .deb install gets the next .deb, etc. Picking the wrong kind means the
+ * update can never actually replace the running install — the historical
+ * failure mode was a .deb user receiving an AppImage that ran once from
+ * the updates dir while /usr/lib/cerebro stayed on the old version.
+ */
+export type InstallKind = 'appimage' | 'deb' | 'rpm' | 'mac-app' | 'unknown';
+
+export function detectInstallKind(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  execPath: string = process.execPath,
+  fileExists: (p: string) => boolean = fs.existsSync,
+): InstallKind {
+  if (platform === 'darwin') return 'mac-app';
+  if (platform !== 'linux') return 'unknown';
+  if (env.APPIMAGE) return 'appimage';
+  // Package-managed installs land under /usr (deb/rpm) or /opt. Anything
+  // else (home dir, /tmp, mounted drive) we can't safely upgrade in place.
+  if (execPath.startsWith('/usr') || execPath.startsWith('/opt')) {
+    // dpkg before rpm: Debian systems often have the `rpm` tool installed
+    // as a utility, but Fedora-family systems rarely carry dpkg.
+    if (fileExists('/usr/bin/dpkg') || fileExists('/etc/debian_version')) return 'deb';
+    if (
+      fileExists('/usr/bin/rpm') ||
+      fileExists('/etc/redhat-release') ||
+      fileExists('/etc/fedora-release')
+    ) {
+      return 'rpm';
+    }
+  }
+  return 'unknown';
+}
+
+/**
+ * Picks the right release asset for the current OS + CPU + install kind.
  *
- * Order of preference:
+ * Order of preference within an extension tier:
  *   1. Asset with a matching extension AND the current arch in its filename
  *      (e.g. arm64 user → `Cerebro-1.0.0-arm64.dmg`).
  *   2. Asset with a matching extension and no arch token at all
  *      (universal builds, or single-arch releases).
  *   3. Any asset with a matching extension (last-resort fallback so we don't
  *      strand users when the publisher accidentally only shipped one arch).
+ *
+ * The extension tiers themselves follow `installKind`, so an update can
+ * actually replace the running install: .deb users get the .deb, AppImage
+ * users the AppImage, mac users the darwin .zip (auto-swappable) before
+ * the .dmg (manual installer).
  */
 export function pickAssetForPlatform(
   assets: GithubAsset[],
   platform: NodeJS.Platform = process.platform,
   arch: NodeJS.Architecture = process.arch,
+  installKind: InstallKind = detectInstallKind(platform),
 ): UpdateAsset | null {
   const candidatesByExt = (...exts: string[]): GithubAsset[] =>
     assets.filter((a) => {
@@ -265,19 +307,39 @@ export function pickAssetForPlatform(
     return matchingExt[0];
   };
 
+  // Like `choose` but WITHOUT the tier-3 fallback. Used for assets that get
+  // auto-installed with no launch verification (the darwin zip swap): a
+  // wrong-arch bundle swapped into /Applications can't start and the only
+  // recovery is the .bak — better to fall through to the manual .dmg.
+  const chooseStrict = (matchingExt: GithubAsset[]): GithubAsset | undefined => {
+    if (matchingExt.length === 0) return undefined;
+    const exact = matchingExt.find((a) => archMatches(a.name.toLowerCase(), arch));
+    if (exact) return exact;
+    return matchingExt.find((a) => !hasAnyArchToken(a.name.toLowerCase()));
+  };
+
   let chosen: GithubAsset | undefined;
 
   if (platform === 'darwin') {
-    chosen = choose(candidatesByExt('.dmg'));
+    // Forge's MakerZIP names darwin zips `Cerebro-darwin-<arch>-<ver>.zip`.
+    // The name filter keeps a stray non-mac zip (source archive, linux zip)
+    // from being auto-swapped over the app bundle.
+    const darwinZips = candidatesByExt('.zip').filter((a) => /darwin|mac/i.test(a.name));
+    chosen = chooseStrict(darwinZips) ?? choose(candidatesByExt('.dmg'));
   } else if (platform === 'win32') {
     // Squirrel "Setup.exe" is the auto-update-aware installer; bare ".exe"
     // is the fallback for cases where Forge only emits the inner binary.
     chosen = choose(candidatesByExt('setup.exe')) ?? choose(candidatesByExt('.exe'));
   } else if (platform === 'linux') {
-    chosen =
-      choose(candidatesByExt('.appimage')) ??
-      choose(candidatesByExt('.deb')) ??
-      choose(candidatesByExt('.rpm'));
+    const tiers: Record<string, string[]> = {
+      deb: ['.deb', '.appimage', '.rpm'],
+      rpm: ['.rpm', '.appimage', '.deb'],
+    };
+    const order = tiers[installKind] ?? ['.appimage', '.deb', '.rpm'];
+    for (const ext of order) {
+      chosen = choose(candidatesByExt(ext));
+      if (chosen) break;
+    }
   }
 
   if (!chosen) return null;
@@ -435,12 +497,33 @@ async function runCheck(): Promise<void> {
   }
 }
 
+/**
+ * Remove leftovers from the previous update once the new version has
+ * proven it boots (we're running, so it did): the pre-swap `.bak` bundle
+ * / AppImage kept as the rollback story, and any stale mac zip extract
+ * dir. Best-effort — never let cleanup break startup.
+ */
+export function cleanupStaleUpdateArtifacts(): void {
+  try {
+    if (process.platform === 'darwin') {
+      const bundle = resolveRunningAppBundle();
+      if (bundle) fs.rmSync(`${bundle}.bak`, { recursive: true, force: true });
+    } else if (process.platform === 'linux' && process.env.APPIMAGE) {
+      fs.rmSync(`${process.env.APPIMAGE}.bak`, { force: true });
+    }
+    fs.rmSync(path.join(getUpdatesDir(), 'extract'), { recursive: true, force: true });
+  } catch (err) {
+    console.warn('[updater] Stale update artifact cleanup failed:', err);
+  }
+}
+
 export function startUpdateChecker(window: BrowserWindow): void {
   mainWindow = window;
   if (!app.isPackaged) {
     console.log('[updater] Skipping update checks (running from source)');
     return;
   }
+  cleanupStaleUpdateArtifacts();
   if (autoUpdatesDisabled()) {
     console.log('[updater] Auto-updates disabled by CEREBRO_DISABLE_AUTO_UPDATES');
     logUpdaterEvent('check_skipped_disabled');
@@ -761,9 +844,13 @@ export async function verifyDownloadedAsset(filePath: string, asset: UpdateAsset
     return;
   }
 
-  // ── Layer 3: AppImage magic bytes ─────────────────────────────
+  // ── Layer 3: magic bytes ──────────────────────────────────────
   if (process.platform === 'linux' && /\.appimage$/i.test(asset.name)) {
     await verifyAppImageMagic(filePath);
+    return;
+  }
+  if (/\.zip$/i.test(asset.name)) {
+    await verifyZipMagic(filePath);
     return;
   }
 
@@ -880,6 +967,24 @@ async function verifyAppImageMagic(filePath: string): Promise<void> {
   }
 }
 
+async function verifyZipMagic(filePath: string): Promise<void> {
+  // Zip archives start with 'PK'. Catches HTML error pages saved as .zip —
+  // same failure mode the AppImage ELF check guards against.
+  const fh = await fs.promises.open(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(2);
+    await fh.read(buf, 0, 2, 0);
+    if (buf[0] !== 0x50 || buf[1] !== 0x4b) {
+      throw new UpdaterError(
+        'verify',
+        `Downloaded file isn't a valid zip archive. The download likely got an HTML error page in place of the update.`,
+      );
+    }
+  } finally {
+    await fh.close();
+  }
+}
+
 /**
  * Resolve the path of a previously-downloaded artifact. Used by `applyUpdate`
  * so the renderer doesn't have to remember the on-disk path — it just hands
@@ -891,36 +996,57 @@ function downloadedPathFor(asset: UpdateAsset): string {
 }
 
 /**
+ * What `applyUpdate` did with the downloaded artifact. `restarting` means
+ * the install succeeded and the current process is about to quit into the
+ * new version — the renderer just keeps its spinner up. `manual` means we
+ * handed the user an installer to finish themselves (dmg/exe, pkexec
+ * declined, pkexec unavailable, unresolvable bundle path) — the renderer
+ * must leave the "Restarting…" state or it spins forever.
+ */
+export type UpdateApplyMode = 'restarting' | 'manual';
+
+export interface UpdateApplyOutcome {
+  mode: UpdateApplyMode;
+  /** Why we fell back to manual, so the banner can pick specific copy. */
+  reason?: 'pkexec-missing' | 'auth-dismissed' | 'no-bundle' | 'installer-opened';
+}
+
+/**
  * Install the previously-downloaded artifact and restart, with a hard
- * guarantee: we do NOT quit the current process until the new version has
- * been observed running for `LAUNCH_VERIFY_MS`. If verification fails the
- * old install is rolled back from a sibling .bak file. This is the only
+ * guarantee: we do NOT quit the current process until the update is either
+ * verified (Linux: new binary observed running for `LAUNCH_VERIFY_MS`) or
+ * safely reversible (macOS: previous bundle kept as .bak). This is the only
  * place that calls `app.quit()` in the updater.
  *
  * Per-platform behavior:
  *
- *   Linux .AppImage:
+ *   Linux .AppImage — `applyLinuxAppImage`:
  *     1. If $APPIMAGE is set + writable: copy the running file to .bak,
  *        atomically rename the downloaded file over $APPIMAGE.
- *     2. Spawn the AppImage with `--appimage-extract-and-run`. This avoids
- *        the libfuse2 dependency (Ubuntu 22.04+, Fedora 36+ no longer ship
- *        it) and bypasses AppImageLauncher's integration prompt. The trade
- *        is ~500ms slower startup + ~500 MB extra temp disk for the extract.
+ *     2. Spawn the new AppImage plainly first (FUSE is proven working —
+ *        the current process is running from an AppImage). If that launch
+ *        fails with FUSE-looking symptoms, retry once with
+ *        `--appimage-extract-and-run` (covers hosts that lost libfuse2).
  *     3. Watch the child for `LAUNCH_VERIFY_MS`. If it exits before then,
  *        rollback (rename .bak back over $APPIMAGE) and throw — current
  *        process keeps running. If it survives, app.quit().
  *
- *   Linux .deb/.rpm: reveal in the file manager. No quit, no spawn — the
- *     user runs the system package GUI. (Same as before: no portable way to
- *     auto-install without sudo, and dpkg/rpm need the current process to
- *     not be running anyway.)
+ *   Linux .deb/.rpm — `applyLinuxPackage`: install via `pkexec dpkg -i` /
+ *     `pkexec rpm -U` (polkit shows the system password dialog), then
+ *     launch-verify the in-place-upgraded binary and quit. If pkexec is
+ *     missing or the user dismisses the auth dialog, fall back to revealing
+ *     the package in the file manager (`manual`).
+ *
+ *   macOS .zip — `applyDarwinZip`: extract with ditto, verify signature,
+ *     swap the running .app bundle (previous kept as .app.bak), then
+ *     app.relaunch() + quit. Rolls back from .bak if the swap fails.
  *
  *   macOS .dmg / Windows Setup.exe: shell.openPath. These have always-
  *     present, well-defined handlers; the user manually quits + installs.
  */
 const LAUNCH_VERIFY_MS = 2000;
 
-export async function applyUpdate(asset: UpdateAsset): Promise<void> {
+export async function applyUpdate(asset: UpdateAsset): Promise<UpdateApplyOutcome> {
   if (autoUpdatesDisabled()) {
     throw new UpdaterError('disabled', 'Auto-updates disabled by administrator');
   }
@@ -939,21 +1065,15 @@ export async function applyUpdate(asset: UpdateAsset): Promise<void> {
 
   if (process.platform === 'linux') {
     if (/\.appimage$/i.test(asset.name)) {
-      await applyLinuxAppImage(downloadedPath);
-      return;
+      return applyLinuxAppImage(downloadedPath);
     }
     if (/\.(deb|rpm)$/i.test(asset.name)) {
-      // Reveal-only. Do not quit — dpkg/rpm need to run while we're idle,
-      // and we have no way to wait on the user. Update apply succeeds as
-      // soon as the file is in front of them.
-      try {
-        shell.showItemInFolder(downloadedPath);
-      } catch (err) {
-        console.warn('[updater] showItemInFolder failed:', err);
-      }
-      logUpdaterEvent('apply_ok', { asset: asset.name, mode: 'reveal' });
-      return;
+      return applyLinuxPackage(downloadedPath, asset.name);
     }
+  }
+
+  if (process.platform === 'darwin' && /\.zip$/i.test(asset.name)) {
+    return applyDarwinZip(downloadedPath, asset.name);
   }
 
   // macOS .dmg, Windows .exe / Setup.exe.
@@ -962,12 +1082,332 @@ export async function applyUpdate(asset: UpdateAsset): Promise<void> {
     throw new UpdaterError('apply', `Failed to open installer: ${openErr}`);
   }
   logUpdaterEvent('apply_ok', { asset: asset.name, mode: 'open' });
+  return { mode: 'manual', reason: 'installer-opened' };
 }
 
-async function applyLinuxAppImage(downloadedPath: string): Promise<void> {
+/**
+ * Minimal promise wrapper over `spawn` for short-lived helper commands
+ * (ditto, codesign, xattr, pkexec). Captures up to ~4 KB of each stream so
+ * failure messages can carry a useful tail without buffering installer
+ * output unboundedly. Rejects only on spawn failure — a non-zero exit is a
+ * normal result the caller inspects.
+ */
+function runCommand(
+  cmd: string,
+  args: string[],
+  opts: { timeoutMs?: number } = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let killTimer: NodeJS.Timeout | null = null;
+    if (opts.timeoutMs) {
+      killTimer = setTimeout(() => {
+        try {
+          child.kill();
+        } catch {
+          /* already gone */
+        }
+      }, opts.timeoutMs);
+    }
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (stdout.length < 4096) stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (stderr.length < 4096) stderr += chunk.toString();
+    });
+    child.once('error', (err) => {
+      if (settled) return;
+      settled = true;
+      if (killTimer) clearTimeout(killTimer);
+      reject(err);
+    });
+    child.once('close', (code) => {
+      if (settled) return;
+      settled = true;
+      if (killTimer) clearTimeout(killTimer);
+      resolve({ code: code ?? -1, stdout, stderr });
+    });
+  });
+}
+
+function stderrTailOf(text: string): string {
+  return text.trim().split('\n').slice(-3).join(' | ');
+}
+
+/**
+ * Path of the .app bundle the current process runs from, or null when the
+ * executable isn't inside a bundle (dev runs, weird repackaging).
+ * `process.execPath` is `<bundle>.app/Contents/MacOS/<binary>` — three
+ * levels up is the bundle.
+ */
+export function resolveRunningAppBundle(execPath: string = process.execPath): string | null {
+  const candidate = path.resolve(execPath, '..', '..', '..');
+  return /\.app$/i.test(candidate) ? candidate : null;
+}
+
+/**
+ * macOS auto-install: extract the downloaded darwin zip and swap it over
+ * the running bundle, keeping the previous version as `<bundle>.app.bak`.
+ *
+ * There is deliberately NO launch-verify step here (unlike AppImage): the
+ * swapped bundle relaunches as *this same process path*, so we can't watch
+ * a child while also being the thing that restarts. The .bak is the
+ * recovery story instead — it's kept on success and only cleaned up by the
+ * next successful boot (`cleanupStaleUpdateArtifacts`).
+ */
+async function applyDarwinZip(
+  downloadedPath: string,
+  assetName: string,
+): Promise<UpdateApplyOutcome> {
+  const bundlePath = resolveRunningAppBundle();
+
+  // Not in a bundle, or Gatekeeper translocated us to a randomized read-only
+  // mount — the real install location is unknowable, so hand over to manual.
+  if (!bundlePath || bundlePath.includes('/AppTranslocation/')) {
+    try {
+      shell.showItemInFolder(downloadedPath);
+    } catch (err) {
+      console.warn('[updater] showItemInFolder failed:', err);
+    }
+    logUpdaterEvent('apply_ok', { asset: assetName, mode: 'reveal-zip' });
+    return { mode: 'manual', reason: 'no-bundle' };
+  }
+
+  // ── Extract ─────────────────────────────────────────────────────
+  // ditto (not a JS unzip lib): preserves the symlinks, resource forks and
+  // xattrs the code signature depends on. A JS-extracted bundle fails
+  // Gatekeeper.
+  const extractDir = path.join(getUpdatesDir(), 'extract');
+  await fs.promises.rm(extractDir, { recursive: true, force: true });
+  let extract;
+  try {
+    extract = await runCommand('/usr/bin/ditto', ['-x', '-k', downloadedPath, extractDir]);
+  } catch (err) {
+    throw new UpdaterError(
+      'apply',
+      `Could not run the archive extractor: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (extract.code !== 0) {
+    await fs.promises.rm(extractDir, { recursive: true, force: true });
+    throw new UpdaterError(
+      'verify',
+      `The update archive could not be extracted. Please retry the download. (Technical detail: ${stderrTailOf(extract.stderr) || `ditto exit ${extract.code}`})`,
+    );
+  }
+
+  const entries = await fs.promises.readdir(extractDir);
+  const appEntry = entries.find((e) => e.toLowerCase().endsWith('.app'));
+  if (!appEntry) {
+    await fs.promises.rm(extractDir, { recursive: true, force: true });
+    throw new UpdaterError(
+      'verify',
+      'The update archive did not contain an app bundle. Please retry the download.',
+    );
+  }
+  const newAppPath = path.join(extractDir, appEntry);
+
+  // Defensive dequarantine. Node's https downloads don't set the quarantine
+  // xattr, so this is normally a no-op; best-effort by design.
+  try {
+    await runCommand('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', newAppPath]);
+  } catch (err) {
+    console.warn('[updater] xattr dequarantine failed (continuing):', err);
+  }
+
+  // ── Signature gate ──────────────────────────────────────────────
+  // A signed install must never be downgraded to a broken/unsigned bundle.
+  // But a dev/ad-hoc install (current bundle fails verification too) has
+  // nothing to protect — warn and continue so local builds can still update.
+  try {
+    const verifyNew = await runCommand('/usr/bin/codesign', [
+      '--verify',
+      '--deep',
+      '--strict',
+      newAppPath,
+    ]);
+    if (verifyNew.code !== 0) {
+      const verifyCurrent = await runCommand('/usr/bin/codesign', [
+        '--verify',
+        '--deep',
+        '--strict',
+        bundlePath,
+      ]);
+      if (verifyCurrent.code === 0) {
+        await fs.promises.rm(extractDir, { recursive: true, force: true });
+        throw new UpdaterError(
+          'verify',
+          `The downloaded update failed its code-signature check. Your current install is unchanged. (Technical detail: ${stderrTailOf(verifyNew.stderr) || 'codesign verification failed'})`,
+        );
+      }
+      console.warn(
+        '[updater] New bundle unsigned, but so is the current install (dev build) — continuing',
+      );
+    }
+  } catch (err) {
+    if (err instanceof UpdaterError) throw err;
+    console.warn('[updater] codesign unavailable; skipping signature gate:', err);
+  }
+
+  // ── Swap with rollback ──────────────────────────────────────────
+  const backupPath = `${bundlePath}.bak`;
+  await fs.promises.rm(backupPath, { recursive: true, force: true });
+  let backedUp = false;
+  try {
+    await fs.promises.rename(bundlePath, backupPath);
+    backedUp = true;
+    try {
+      await fs.promises.rename(newAppPath, bundlePath);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EXDEV') throw err;
+      // userData on a different volume than the install — ditto again for
+      // xattr/signature fidelity, then drop the source copy.
+      const copy = await runCommand('/usr/bin/ditto', [newAppPath, bundlePath]);
+      if (copy.code !== 0) {
+        throw new Error(`ditto copy failed: ${stderrTailOf(copy.stderr) || copy.code}`);
+      }
+    }
+  } catch (swapErr) {
+    // Restore the previous bundle so the install is never left half-swapped.
+    let rolledBack = false;
+    if (backedUp) {
+      try {
+        await fs.promises.rm(bundlePath, { recursive: true, force: true });
+        await fs.promises.rename(backupPath, bundlePath);
+        rolledBack = true;
+      } catch (rollbackErr) {
+        console.error(
+          '[updater] Rollback failed — user may need to reinstall manually:',
+          rollbackErr,
+        );
+      }
+    }
+    await fs.promises.rm(extractDir, { recursive: true, force: true }).catch(() => undefined);
+    logUpdaterEvent('apply_rollback', {
+      asset: assetName,
+      rolledBack,
+      error: swapErr instanceof Error ? swapErr.message : String(swapErr),
+    });
+    throw new UpdaterError(
+      'apply',
+      `The update couldn't be installed. Your current install is unchanged and still running normally. ` +
+        `(Technical detail: ${swapErr instanceof Error ? swapErr.message : String(swapErr)})`,
+    );
+  }
+
+  // ── Success: clean up + relaunch ────────────────────────────────
+  await fs.promises.rm(extractDir, { recursive: true, force: true }).catch(() => undefined);
+  await safeUnlink(downloadedPath);
+  logUpdaterEvent('apply_ok', { asset: assetName, mode: 'mac-swap' });
+  // relaunch() re-execs process.execPath, which now resolves into the
+  // swapped-in bundle at the same path (the Forge executable name
+  // `cerebro` is stable across versions — renaming it breaks this).
+  app.relaunch();
+  // Same delay as the AppImage path: let the IPC reply land and the
+  // renderer paint "restarting" before teardown.
+  setTimeout(() => app.quit(), 300);
+  return { mode: 'restarting' };
+}
+
+/**
+ * Linux .deb/.rpm auto-install via pkexec. polkit puts up the system
+ * password dialog; dpkg/rpm upgrade the package in place (the running
+ * process keeps its unlinked inode), then we launch-verify the freshly
+ * installed binary and quit into it.
+ */
+async function applyLinuxPackage(
+  downloadedPath: string,
+  assetName: string,
+): Promise<UpdateApplyOutcome> {
+  const isDeb = /\.deb$/i.test(assetName);
+  const installArgs = isDeb ? ['dpkg', '-i', downloadedPath] : ['rpm', '-U', downloadedPath];
+
+  const revealFallback = (reason: 'pkexec-missing' | 'auth-dismissed', extra = {}) => {
+    try {
+      shell.showItemInFolder(downloadedPath);
+    } catch (err) {
+      console.warn('[updater] showItemInFolder failed:', err);
+    }
+    logUpdaterEvent('apply_ok', { asset: assetName, mode: 'reveal', ...extra });
+    return { mode: 'manual' as const, reason };
+  };
+
+  if (!fs.existsSync('/usr/bin/pkexec')) {
+    return revealFallback('pkexec-missing');
+  }
+
+  let result;
+  try {
+    // 5-minute timeout: the polkit dialog waits on the user typing their
+    // password — don't race it.
+    result = await runCommand('/usr/bin/pkexec', installArgs, { timeoutMs: 300_000 });
+  } catch (err) {
+    throw new UpdaterError(
+      'apply',
+      `Could not start the system installer: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  // pkexec's own exit codes: 126 = auth dialog dismissed, 127 = not
+  // authorized / helper missing. The user said no — that's not an error
+  // banner, it's a calm fall-back to the manual path.
+  if (result.code === 126 || result.code === 127) {
+    return revealFallback('auth-dismissed', { pkexec: result.code });
+  }
+  if (result.code !== 0) {
+    // dpkg dependency failure, apt holding the dpkg lock, rpm conflict…
+    // Keep the file on disk so Retry re-runs pkexec once the cause clears.
+    throw new UpdaterError(
+      'apply',
+      `The installer could not complete. Your current install keeps running; you can retry in a moment. ` +
+        `(Technical detail: ${stderrTailOf(result.stderr) || `installer exit ${result.code}`})`,
+    );
+  }
+
+  // Package upgraded in place — process.execPath now points at the NEW
+  // binary. Verify it starts before quitting. No rollback is possible at
+  // this point (the old package version is gone), so a verify failure is
+  // reported without touching the install.
+  try {
+    await launchAndVerify(process.execPath, []);
+  } catch (launchErr) {
+    logUpdaterEvent('apply_rollback', {
+      asset: assetName,
+      rolledBack: false,
+      mode: 'pkg',
+      error: launchErr instanceof Error ? launchErr.message : String(launchErr),
+    });
+    throw new UpdaterError(
+      'apply',
+      `The update installed, but the new version didn't start on its verification run. ` +
+        `Quit Cerebro and launch it again manually — the new version is already installed. ` +
+        `(Technical detail: ${(launchErr as Error).message})`,
+    );
+  }
+
+  await safeUnlink(downloadedPath);
+  logUpdaterEvent('apply_ok', { asset: assetName, mode: 'pkexec' });
+  setTimeout(() => app.quit(), 300);
+  return { mode: 'restarting' };
+}
+
+async function applyLinuxAppImage(downloadedPath: string): Promise<UpdateApplyOutcome> {
   let launchPath = downloadedPath;
   let backupPath: string | null = null;
   const runningAppImage = process.env.APPIMAGE;
+
+  if (!runningAppImage) {
+    // Shouldn't happen with install-kind-aware asset picking, but make it
+    // loud in the audit log: we can only launch the new AppImage from the
+    // updates dir — whatever install the user normally launches stays old.
+    console.warn(
+      '[updater] $APPIMAGE not set — launching downloaded AppImage without replacing an install',
+    );
+  }
 
   // ── Step 1: Try to replace the running AppImage in place ───────
   if (runningAppImage) {
@@ -1024,8 +1464,25 @@ async function applyLinuxAppImage(downloadedPath: string): Promise<void> {
   }
 
   // ── Step 2: Verify the new binary can actually launch ──────────
+  // Plain spawn first: FUSE is proven working on this host (the current
+  // process is running from an AppImage), and `--appimage-extract-and-run`
+  // costs ~500 MB of temp disk, slower startup, AND strips the setuid bit
+  // off chrome-sandbox (the extracted copy is user-owned), which crashes
+  // Electron outright on distros that restrict unprivileged user
+  // namespaces (Ubuntu 23.10+). The flag is kept only as a retry for
+  // hosts whose FUSE setup actually broke since the current version was
+  // installed.
   try {
-    await launchAndVerify(launchPath);
+    try {
+      await launchAndVerify(launchPath, []);
+    } catch (firstErr) {
+      if (!looksLikeFuseFailure(firstErr)) throw firstErr;
+      console.warn(
+        '[updater] Plain AppImage launch failed with FUSE-like error; retrying with --appimage-extract-and-run:',
+        firstErr,
+      );
+      await launchAndVerify(launchPath, ['--appimage-extract-and-run']);
+    }
   } catch (launchErr) {
     // Rollback so the user's install is restored to its prior working state.
     let rolledBack = false;
@@ -1059,12 +1516,16 @@ async function applyLinuxAppImage(downloadedPath: string): Promise<void> {
   if (backupPath) {
     await safeUnlink(backupPath);
   }
-  logUpdaterEvent('apply_ok', { asset: path.basename(launchPath), mode: 'appimage' });
+  logUpdaterEvent('apply_ok', {
+    asset: path.basename(launchPath),
+    mode: runningAppImage ? 'appimage' : 'appimage-orphan',
+  });
   // Tiny delay so the renderer can paint the "restarting" state before we
   // tear down the window. Also gives the IPC reply time to land — critical:
   // if we app.quit() before the handler's `{ ok: true }` reply is sent the
   // renderer sees "reply was never sent" on its way out.
   setTimeout(() => app.quit(), 300);
+  return { mode: 'restarting' };
 }
 
 async function safeUnlink(p: string | null): Promise<void> {
@@ -1076,14 +1537,42 @@ async function safeUnlink(p: string | null): Promise<void> {
   }
 }
 
+/** Launch-verify failure that carries the child's stderr tail so callers
+ *  can pattern-match the cause (e.g. FUSE trouble → retry with
+ *  --appimage-extract-and-run). */
+class LaunchVerifyError extends Error {
+  readonly stderrTail: string;
+  constructor(message: string, stderrTail: string) {
+    super(message);
+    this.name = 'LaunchVerifyError';
+    this.stderrTail = stderrTail;
+  }
+}
+
 /**
- * Spawn the new AppImage and watch it for `LAUNCH_VERIFY_MS`. If the child
- * exits within that window we treat the launch as failed; otherwise we treat
- * it as successful and resolve. Uses `--appimage-extract-and-run` so the new
- * version works even on systems without libfuse2 and without triggering
- * AppImageLauncher integration prompts.
+ * Does this launch failure look like the AppImage runtime couldn't mount
+ * itself (missing/broken libfuse), as opposed to the app itself crashing?
+ * Only FUSE-shaped failures are worth retrying with
+ * `--appimage-extract-and-run` — an app crash would just crash again.
  */
-function launchAndVerify(launchPath: string): Promise<void> {
+function looksLikeFuseFailure(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  if (code === 'ENOENT' || code === 'EACCES') return true;
+  const text =
+    err instanceof LaunchVerifyError
+      ? `${err.message} ${err.stderrTail}`
+      : err instanceof Error
+        ? err.message
+        : String(err);
+  return /fuse|libfuse|dlopen|cannot mount|appimages? require/i.test(text);
+}
+
+/**
+ * Spawn the new binary with the given args and watch it for
+ * `LAUNCH_VERIFY_MS`. If the child exits within that window we treat the
+ * launch as failed; otherwise we treat it as successful and resolve.
+ */
+function launchAndVerify(launchPath: string, args: string[] = []): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     // Strip AppImage runtime variables so the child re-initializes cleanly.
     const childEnv: NodeJS.ProcessEnv = { ...process.env };
@@ -1094,7 +1583,7 @@ function launchAndVerify(launchPath: string): Promise<void> {
 
     let child;
     try {
-      child = spawn(launchPath, ['--appimage-extract-and-run'], {
+      child = spawn(launchPath, args, {
         detached: true,
         // Capture stderr so an early-exit failure tells us *why* (e.g.
         // "FUSE: failed", glibc version mismatch). stdin/stdout ignored so
@@ -1128,7 +1617,7 @@ function launchAndVerify(launchPath: string): Promise<void> {
       settled = true;
       const tail = stderr.trim().split('\n').slice(-3).join(' | ');
       const why = tail || (signal ? `signal=${signal}` : `exit code ${code}`);
-      reject(new Error(`new version exited during launch verification: ${why}`));
+      reject(new LaunchVerifyError(`new version exited during launch verification: ${why}`, tail));
     });
 
     setTimeout(() => {

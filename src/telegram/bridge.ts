@@ -227,6 +227,13 @@ class TelegramStreamSink implements AgentEventSink {
   private typingTimer: NodeJS.Timeout | null = null;
   private lastEditAt = 0;
   private destroyed = false;
+  /**
+   * Set the moment finalize()/finalizeWithError() begins. `destroyed` only
+   * flips at the END of finalization (after awaited Telegram calls), so a
+   * second 'done'/'error' event landing in that window would pass the
+   * destroyed check and send the whole answer again. This flag closes it.
+   */
+  private finalizing = false;
   private onDoneCb: (finalText: string, err?: string) => void;
   private onActivityCb: (() => void) | null;
   private onAuthFailureCb: (() => Promise<boolean>) | null;
@@ -377,7 +384,8 @@ class TelegramStreamSink implements AgentEventSink {
   }
 
   private async finalize(): Promise<void> {
-    if (this.destroyed) return;
+    if (this.destroyed || this.finalizing) return;
+    this.finalizing = true;
     // Cancel scheduled debounce and flush whatever is left.
     if (this.editTimer) {
       clearTimeout(this.editTimer);
@@ -420,7 +428,8 @@ class TelegramStreamSink implements AgentEventSink {
   }
 
   private async finalizeWithError(error: string, errorClass?: string): Promise<void> {
-    if (this.destroyed) return;
+    if (this.destroyed || this.finalizing) return;
+    this.finalizing = true;
     if (this.editTimer) {
       clearTimeout(this.editTimer);
       this.editTimer = null;

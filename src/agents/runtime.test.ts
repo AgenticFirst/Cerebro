@@ -202,6 +202,27 @@ describe('AgentRuntime.startRun — chat', () => {
     expect(runnerStarts[0].cwd).toBe(dataDir);
   });
 
+  it('delivers exactly one done event per successful run', async () => {
+    // The real runner emits the completion on two channels — a generic
+    // 'event' with type 'done' followed by the dedicated 'done' (the fake
+    // above mirrors that). The runtime must forward only ONE done to the
+    // sink: forwarding both made the Slack/Telegram sinks post the final
+    // answer twice.
+    const rt = new AgentRuntime(backend.port, dataDir);
+    const { sink, sent } = makeSink();
+    runnerNextBehaviors.push({ kind: 'done', message: 'final answer' });
+    await rt.startRun(sink, {
+      conversationId: 'c-single-done',
+      content: 'hey',
+    } as any);
+    await new Promise((r) => setTimeout(r, 20));
+    const doneEvents = sent.filter(
+      (s) => s.channel.startsWith('agent:event:') && s.payload?.type === 'done',
+    );
+    expect(doneEvents).toHaveLength(1);
+    expect(doneEvents[0].payload.messageContent).toBe('final answer');
+  });
+
   it('expertId "cerebro" → spawns the orchestrator agent without a persona file', async () => {
     // Selecting the builtin Cerebro expert as a task/step assignee must run the
     // main `cerebro` agent (which delegates), NOT try to resolve a materialized

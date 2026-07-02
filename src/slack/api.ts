@@ -296,20 +296,24 @@ export class SlackApi {
     channel: string;
     ts: string;
     limit?: number;
-  }): Promise<Array<{ ts: string; user?: string; text: string }>> {
+  }): Promise<Array<{ ts: string; user?: string; text: string; files?: SlackFile[] }>> {
     try {
       const res = await this.client.conversations.replies({
         channel: args.channel,
         ts: args.ts,
         limit: args.limit ?? 200,
       });
-      const messages = (res as { messages?: Array<{ ts?: string; user?: string; text?: string }> })
-        .messages;
+      const messages = (
+        res as {
+          messages?: Array<{ ts?: string; user?: string; text?: string; files?: SlackFile[] }>;
+        }
+      ).messages;
       if (!Array.isArray(messages)) return [];
       return messages.map((m) => ({
         ts: String(m.ts ?? ''),
         user: m.user,
         text: m.text ?? '',
+        files: Array.isArray(m.files) && m.files.length > 0 ? m.files : undefined,
       }));
     } catch (err) {
       throw this.wrap('conversations.replies', err);

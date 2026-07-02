@@ -2515,6 +2515,10 @@ const es: TranslationKeys = {
       titleDownloaded: 'Cerebro {{version}} descargado',
       detailAppImage:
         'Tus chats, tareas, ajustes y memoria se conservarán. Cerebro se reiniciará para aplicar la actualización.',
+      detailMacZip:
+        'Tus chats, tareas, ajustes y memoria se conservarán. Cerebro instalará la actualización y se reiniciará.',
+      detailLinuxPackageAuto:
+        'Cerebro instalará la actualización y se reiniciará. Puede que se te pida tu contraseña de administrador.',
       detailLinuxPackage:
         'Abre el instalador en tu gestor de archivos para terminar la instalación y luego vuelve a abrir Cerebro. Tus datos se guardan por separado y no se tocarán.',
       detailDefault:
@@ -2528,6 +2532,18 @@ const es: TranslationKeys = {
       title: 'Reiniciando Cerebro {{version}}…',
       detail:
         'Comprobando que la nueva versión arranca. Si algo falla, se restaurará automáticamente la versión anterior.',
+      detailMacSwap:
+        'Instalando la nueva versión y reiniciando. Si algo falla, la versión anterior se conserva como copia de seguridad.',
+      detailPassword:
+        'Instalando la actualización… Si aparece una solicitud de contraseña, es tu sistema pidiendo permiso para instalar.',
+    },
+    manual: {
+      title: 'Termina de instalar Cerebro {{version}}',
+      detailDismissed:
+        'No pasa nada — el instalador está en tu gestor de archivos para cuando quieras. Tus datos no se tocarán.',
+      detailGeneric:
+        'Se ha abierto el instalador. Termina la instalación y luego vuelve a abrir Cerebro. Tus datos no se tocarán.',
+      revealAgain: 'Mostrar instalador',
     },
     error: {
       titleApply: 'No se pudo aplicar la actualización',

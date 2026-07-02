@@ -722,7 +722,7 @@ const api: CerebroAPI = {
         throw new Error(res?.error ?? 'Update download failed');
       }
     },
-    async apply(asset: UpdateAsset): Promise<void> {
+    async apply(asset: UpdateAsset): Promise<UpdateActionResult> {
       const res = (await ipcRenderer.invoke(
         IPC_CHANNELS.UPDATE_APPLY,
         asset,
@@ -730,6 +730,7 @@ const api: CerebroAPI = {
       if (!res?.ok) {
         throw new Error(res?.error ?? 'Update apply failed');
       }
+      return res;
     },
     dismiss(): Promise<void> {
       return ipcRenderer.invoke(IPC_CHANNELS.UPDATE_DISMISS);

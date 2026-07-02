@@ -79,6 +79,7 @@ mockHttps.get.mockImplementation((url: string, opts: any, cb?: any) => {
 });
 
 const mockAppQuit = vi.hoisted(() => vi.fn());
+const mockAppRelaunch = vi.hoisted(() => vi.fn());
 const mockShell = vi.hoisted(() => ({
   openPath: vi.fn(),
   openExternal: vi.fn(),
@@ -93,6 +94,7 @@ vi.mock('electron', () => ({
     },
     getPath: mockApp.getPath,
     quit: mockAppQuit,
+    relaunch: mockAppRelaunch,
   },
   BrowserWindow: class {},
   dialog: { showMessageBox: vi.fn() },
@@ -109,21 +111,27 @@ type MockChild = ReturnType<typeof makeMockChild>;
 function makeMockChild(): {
   emitter: EventEmitter;
   stderr: EventEmitter;
+  stdout: EventEmitter;
   pid: number;
   unref: ReturnType<typeof vi.fn>;
+  kill: ReturnType<typeof vi.fn>;
   removeAllListeners: ReturnType<typeof vi.fn>;
   once: EventEmitter['once'];
   on: EventEmitter['on'];
 } {
   const emitter = new EventEmitter();
   const stderr = new EventEmitter();
+  const stdout = new EventEmitter();
   // Attach a no-op destroy so launchAndVerify's child.stderr?.destroy() works.
   (stderr as unknown as { destroy: () => void }).destroy = vi.fn();
+  (stdout as unknown as { destroy: () => void }).destroy = vi.fn();
   return {
     emitter,
     stderr,
+    stdout,
     pid: 12345,
     unref: vi.fn(),
+    kill: vi.fn(),
     removeAllListeners: vi.fn(),
     once: emitter.once.bind(emitter),
     on: emitter.on.bind(emitter),
@@ -148,12 +156,16 @@ const mockFsPromises = {
   copyFile: vi.fn().mockResolvedValue(undefined),
   unlink: vi.fn().mockResolvedValue(undefined),
   access: vi.fn().mockResolvedValue(undefined),
+  rm: vi.fn().mockResolvedValue(undefined),
+  readdir: vi.fn().mockResolvedValue([]),
 };
 
 // ── Import the module under test (after mocks are wired) ────────
 
 import {
   pickAssetForPlatform,
+  detectInstallKind,
+  resolveRunningAppBundle,
   checkNow,
   applyUpdate,
   __resetUpdaterStateForTests,
@@ -227,9 +239,33 @@ describe('pickAssetForPlatform', () => {
     makeAsset('Cerebro-1.0.0.AppImage'),
   ];
 
-  it('picks the .dmg on darwin', () => {
+  it('picks the darwin .zip over the .dmg on darwin (auto-swappable)', () => {
     const asset = pickAssetForPlatform(allAssets, 'darwin', 'arm64');
+    expect(asset?.name).toBe('Cerebro-1.0.0-darwin-arm64.zip');
+  });
+
+  it('falls back to the .dmg on darwin when no darwin zip is published', () => {
+    const assets = [makeAsset('Cerebro-1.0.0.dmg'), makeAsset('Cerebro-1.0.0 Setup.exe')];
+    const asset = pickAssetForPlatform(assets, 'darwin', 'arm64');
     expect(asset?.name).toBe('Cerebro-1.0.0.dmg');
+  });
+
+  it('ignores non-mac zips on darwin (no darwin/mac token in the name)', () => {
+    const assets = [makeAsset('Cerebro-1.0.0-source.zip'), makeAsset('Cerebro-1.0.0.dmg')];
+    const asset = pickAssetForPlatform(assets, 'darwin', 'arm64');
+    expect(asset?.name).toBe('Cerebro-1.0.0.dmg');
+  });
+
+  it('does NOT auto-pick a wrong-arch darwin zip — falls through to the dmg', () => {
+    // The zip path auto-installs with no launch verification; a wrong-arch
+    // swap would brick the install. The dmg is opened manually, so a
+    // wrong-arch dmg is recoverable — that's the safe last resort.
+    const assets = [
+      makeAsset('Cerebro-darwin-arm64-1.0.0.zip'),
+      makeAsset('Cerebro-1.0.0-arm64.dmg'),
+    ];
+    const asset = pickAssetForPlatform(assets, 'darwin', 'x64');
+    expect(asset?.name).toBe('Cerebro-1.0.0-arm64.dmg');
   });
 
   it('picks the Setup.exe on win32 (not the bare .exe)', () => {
@@ -246,6 +282,22 @@ describe('pickAssetForPlatform', () => {
 
   it('prefers AppImage over deb/rpm on linux', () => {
     const asset = pickAssetForPlatform(allAssets, 'linux', 'x64');
+    expect(asset?.name).toBe('Cerebro-1.0.0.AppImage');
+  });
+
+  it('prefers the .deb on linux when running from a deb install', () => {
+    const asset = pickAssetForPlatform(allAssets, 'linux', 'x64', 'deb');
+    expect(asset?.name).toBe('cerebro_1.0.0_amd64.deb');
+  });
+
+  it('prefers the .rpm on linux when running from an rpm install', () => {
+    const asset = pickAssetForPlatform(allAssets, 'linux', 'x64', 'rpm');
+    expect(asset?.name).toBe('cerebro-1.0.0.x86_64.rpm');
+  });
+
+  it('deb install falls back to AppImage when no .deb is published', () => {
+    const assets = [makeAsset('Cerebro-1.0.0.AppImage'), makeAsset('cerebro-1.0.0.x86_64.rpm')];
+    const asset = pickAssetForPlatform(assets, 'linux', 'x64', 'deb');
     expect(asset?.name).toBe('Cerebro-1.0.0.AppImage');
   });
 
@@ -356,6 +408,67 @@ describe('pickAssetForPlatform — architecture awareness', () => {
     ];
     const asset = pickAssetForPlatform(assets, 'darwin', 'x64');
     expect(asset?.name).toBe('Cerebro-1.0.0-x64.dmg');
+  });
+});
+
+// ── detectInstallKind ───────────────────────────────────────────
+
+describe('detectInstallKind', () => {
+  const noFiles = () => false;
+
+  it('darwin is always mac-app', () => {
+    expect(
+      detectInstallKind('darwin', {}, '/Applications/Cerebro.app/Contents/MacOS/cerebro', noFiles),
+    ).toBe('mac-app');
+  });
+
+  it('linux with $APPIMAGE set is appimage regardless of execPath', () => {
+    expect(
+      detectInstallKind(
+        'linux',
+        { APPIMAGE: '/home/me/Cerebro.AppImage' },
+        '/tmp/.mount_Cerebro/cerebro',
+        noFiles,
+      ),
+    ).toBe('appimage');
+  });
+
+  it('linux under /usr with dpkg present is deb', () => {
+    const files = (p: string) => p === '/usr/bin/dpkg';
+    expect(detectInstallKind('linux', {}, '/usr/lib/cerebro/cerebro', files)).toBe('deb');
+  });
+
+  it('linux under /usr with only rpm markers is rpm', () => {
+    const files = (p: string) => p === '/usr/bin/rpm' || p === '/etc/fedora-release';
+    expect(detectInstallKind('linux', {}, '/usr/lib/cerebro/cerebro', files)).toBe('rpm');
+  });
+
+  it('prefers deb over rpm when both tools exist (Debian ships rpm as a utility)', () => {
+    const files = (p: string) => p === '/usr/bin/dpkg' || p === '/usr/bin/rpm';
+    expect(detectInstallKind('linux', {}, '/usr/lib/cerebro/cerebro', files)).toBe('deb');
+  });
+
+  it('linux outside package prefixes is unknown', () => {
+    const files = (p: string) => p === '/usr/bin/dpkg';
+    expect(detectInstallKind('linux', {}, '/home/me/apps/cerebro/cerebro', files)).toBe('unknown');
+  });
+
+  it('win32 is unknown (Squirrel handles Windows separately)', () => {
+    expect(detectInstallKind('win32', {}, 'C:\\Users\\me\\cerebro.exe', noFiles)).toBe('unknown');
+  });
+});
+
+// ── resolveRunningAppBundle ─────────────────────────────────────
+
+describe('resolveRunningAppBundle', () => {
+  it('resolves the bundle three levels above the executable', () => {
+    expect(resolveRunningAppBundle('/Applications/Cerebro.app/Contents/MacOS/cerebro')).toBe(
+      '/Applications/Cerebro.app',
+    );
+  });
+
+  it('returns null when the executable is not inside a bundle', () => {
+    expect(resolveRunningAppBundle('/usr/local/bin/cerebro')).toBeNull();
   });
 });
 
@@ -634,6 +747,7 @@ describe('checkNow — concurrency', () => {
 
 describe('applyUpdate', () => {
   const originalPlatform = process.platform;
+  const originalExecPath = process.execPath;
   const originalAppImage = process.env.APPIMAGE;
   const originalAppDir = process.env.APPDIR;
   const originalOwd = process.env.OWD;
@@ -641,6 +755,24 @@ describe('applyUpdate', () => {
 
   function setPlatform(p: NodeJS.Platform): void {
     Object.defineProperty(process, 'platform', { value: p, configurable: true });
+  }
+
+  function setExecPath(p: string): void {
+    Object.defineProperty(process, 'execPath', { value: p, configurable: true });
+  }
+
+  // Pin `fs.existsSync('/usr/bin/pkexec')` so the deb/rpm apply path is
+  // deterministic across dev machines and CI (a real /usr/bin/pkexec on a
+  // Linux host must not flip the reveal-fallback tests). All other paths
+  // fall through to the real implementation — the updater's log rotation
+  // also calls existsSync.
+  let existsSyncSpy: { mockRestore(): void } | null = null;
+  function setPkexecPresent(present: boolean): void {
+    const realExistsSync = realFs.existsSync.bind(realFs);
+    existsSyncSpy?.mockRestore();
+    existsSyncSpy = vi
+      .spyOn(realFs, 'existsSync')
+      .mockImplementation((p) => (p === '/usr/bin/pkexec' ? present : realExistsSync(p)));
   }
 
   function makeUpdateAsset(name: string): UpdateAsset {
@@ -658,6 +790,8 @@ describe('applyUpdate', () => {
     copyFile: fsPromisesRef.promises.copyFile,
     unlink: fsPromisesRef.promises.unlink,
     access: fsPromisesRef.promises.access,
+    rm: fsPromisesRef.promises.rm,
+    readdir: fsPromisesRef.promises.readdir,
   };
 
   // Per-test handle to the most recent mock child returned by spawn(), so
@@ -665,21 +799,58 @@ describe('applyUpdate', () => {
   // mock call args.
   let currentChild: MockChild | null = null;
 
+  function childHandleFor(child: MockChild) {
+    return {
+      pid: child.pid,
+      stderr: child.stderr,
+      stdout: child.stdout,
+      unref: child.unref,
+      kill: child.kill,
+      removeAllListeners: child.removeAllListeners,
+      once: child.once,
+      on: child.on,
+    } as unknown as ReturnType<typeof import('node:child_process').spawn>;
+  }
+
+  /**
+   * Script a sequence of spawned children. Each spec drives the child
+   * spawned at that position:
+   *   - stayAlive: child never exits (launch-verify success once the 2s
+   *     window elapses).
+   *   - otherwise: on the next microtask it emits stderr (if any), then
+   *     'exit' (for launchAndVerify) and 'close' (for runCommand) with the
+   *     given code.
+   * Extra spawns past the end of the script reuse the last spec.
+   */
+  function scriptSpawns(
+    ...specs: Array<{ code?: number; stderr?: string; stayAlive?: boolean }>
+  ): void {
+    let i = 0;
+    mockSpawn.mockImplementation(() => {
+      const spec = specs[Math.min(i, specs.length - 1)];
+      i++;
+      const child = makeMockChild();
+      currentChild = child;
+      if (!spec.stayAlive) {
+        queueMicrotask(() => {
+          if (spec.stderr) child.stderr.emit('data', Buffer.from(spec.stderr));
+          child.emitter.emit('exit', spec.code ?? 0, null);
+          child.emitter.emit('close', spec.code ?? 0);
+        });
+      }
+      return childHandleFor(child);
+    });
+  }
+
   beforeEach(() => {
     vi.useFakeTimers();
     mockSpawn.mockReset();
     mockSpawn.mockImplementation(() => {
       currentChild = makeMockChild();
-      return {
-        pid: currentChild.pid,
-        stderr: currentChild.stderr,
-        unref: currentChild.unref,
-        removeAllListeners: currentChild.removeAllListeners,
-        once: currentChild.once,
-        on: currentChild.on,
-      } as unknown as ReturnType<typeof import('node:child_process').spawn>;
+      return childHandleFor(currentChild);
     });
     mockAppQuit.mockClear();
+    mockAppRelaunch.mockClear();
     mockShell.openPath.mockReset().mockResolvedValue('');
     mockShell.showItemInFolder.mockReset();
     mockFsPromises.chmod.mockReset().mockResolvedValue(undefined);
@@ -687,6 +858,8 @@ describe('applyUpdate', () => {
     mockFsPromises.copyFile.mockReset().mockResolvedValue(undefined);
     mockFsPromises.unlink.mockReset().mockResolvedValue(undefined);
     mockFsPromises.access.mockReset().mockResolvedValue(undefined);
+    mockFsPromises.rm.mockReset().mockResolvedValue(undefined);
+    mockFsPromises.readdir.mockReset().mockResolvedValue([]);
     fsPromisesRef.promises.chmod =
       mockFsPromises.chmod as unknown as typeof fsPromisesRef.promises.chmod;
     fsPromisesRef.promises.rename =
@@ -697,11 +870,15 @@ describe('applyUpdate', () => {
       mockFsPromises.unlink as unknown as typeof fsPromisesRef.promises.unlink;
     fsPromisesRef.promises.access =
       mockFsPromises.access as unknown as typeof fsPromisesRef.promises.access;
+    fsPromisesRef.promises.rm = mockFsPromises.rm as unknown as typeof fsPromisesRef.promises.rm;
+    fsPromisesRef.promises.readdir =
+      mockFsPromises.readdir as unknown as typeof fsPromisesRef.promises.readdir;
   });
 
   afterEach(() => {
     vi.useRealTimers();
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    Object.defineProperty(process, 'execPath', { value: originalExecPath, configurable: true });
     const restore = (key: string, value: string | undefined) => {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -715,6 +892,10 @@ describe('applyUpdate', () => {
     fsPromisesRef.promises.copyFile = realFsPromises.copyFile;
     fsPromisesRef.promises.unlink = realFsPromises.unlink;
     fsPromisesRef.promises.access = realFsPromises.access;
+    fsPromisesRef.promises.rm = realFsPromises.rm;
+    fsPromisesRef.promises.readdir = realFsPromises.readdir;
+    existsSyncSpy?.mockRestore();
+    existsSyncSpy = null;
     currentChild = null;
   });
 
@@ -776,7 +957,8 @@ describe('applyUpdate', () => {
       0o755,
     );
 
-    // Stage-3: spawn with --appimage-extract-and-run + sanitized env.
+    // Stage-3: plain spawn (no --appimage-extract-and-run — FUSE is proven
+    // working since the current process runs from an AppImage) + sanitized env.
     expect(mockSpawn).toHaveBeenCalledTimes(1);
     const [cmd, args, opts] = mockSpawn.mock.calls[0] as [
       string,
@@ -784,7 +966,7 @@ describe('applyUpdate', () => {
       Record<string, unknown>,
     ];
     expect(cmd).toBe('/home/me/Applications/Cerebro.AppImage');
-    expect(args).toEqual(['--appimage-extract-and-run']);
+    expect(args).toEqual([]);
     expect(opts).toMatchObject({ detached: true });
     const childEnv = (opts as { env: NodeJS.ProcessEnv }).env;
     expect(childEnv.APPIMAGE).toBeUndefined();
@@ -800,17 +982,20 @@ describe('applyUpdate', () => {
     expect(mockShell.openPath).not.toHaveBeenCalled();
   });
 
-  it('Linux AppImage early-exit: rolls back .bak → $APPIMAGE, surfaces stderr, does NOT quit', async () => {
+  it('Linux AppImage early-exit (non-FUSE crash): rolls back, surfaces stderr, does NOT quit or retry', async () => {
     setPlatform('linux');
     process.env.APPIMAGE = '/home/me/Applications/Cerebro.AppImage';
     const asset = makeUpdateAsset('Cerebro-0.2.0-x64.AppImage');
 
     const err = (await applyAndExitChildEarly(
       asset,
-      127,
-      'AppImages require FUSE to run.\nPlease install libfuse2.\n',
+      139,
+      'Segmentation fault (core dumped)\n',
     )) as Error;
 
+    // A plain crash is NOT retried with --appimage-extract-and-run — it
+    // would just crash again.
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
     // Rollback happened: .bak renamed back over $APPIMAGE.
     expect(mockFsPromises.rename).toHaveBeenCalledWith(
       '/home/me/Applications/Cerebro.AppImage.bak',
@@ -822,10 +1007,54 @@ describe('applyUpdate', () => {
     // ("Your current install is unchanged and still running normally") and
     // demote the technical detail into a parenthetical. The underlying
     // contract is the same: the message tells the user it didn't start AND
-    // includes the original child stderr (libfuse2 here) for support.
+    // includes the original child stderr for support.
     expect(err.message).toMatch(/new version couldn.t start/i);
     expect(err.message).toMatch(/current install is unchanged/);
-    expect(err.message).toMatch(/libfuse2/);
+    expect(err.message).toMatch(/Segmentation fault/);
+  });
+
+  it('Linux AppImage FUSE-looking failure: retries once with --appimage-extract-and-run and quits when it survives', async () => {
+    setPlatform('linux');
+    process.env.APPIMAGE = '/home/me/Applications/Cerebro.AppImage';
+    const asset = makeUpdateAsset('Cerebro-0.2.0-x64.AppImage');
+    scriptSpawns(
+      { code: 127, stderr: 'AppImages require FUSE to run.\nPlease install libfuse2.\n' },
+      { stayAlive: true },
+    );
+
+    const promise = applyUpdate(asset);
+    await vi.advanceTimersByTimeAsync(0); // first spawn fails, retry fires
+    await vi.advanceTimersByTimeAsync(2_001); // second child survives verify
+    await promise;
+
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    expect(mockSpawn.mock.calls[0][1] as string[]).toEqual([]);
+    expect(mockSpawn.mock.calls[1][1] as string[]).toEqual(['--appimage-extract-and-run']);
+    await vi.advanceTimersByTimeAsync(310);
+    expect(mockAppQuit).toHaveBeenCalledTimes(1);
+  });
+
+  it('Linux AppImage FUSE failure on both attempts: rolls back and throws', async () => {
+    setPlatform('linux');
+    process.env.APPIMAGE = '/home/me/Applications/Cerebro.AppImage';
+    const asset = makeUpdateAsset('Cerebro-0.2.0-x64.AppImage');
+    scriptSpawns(
+      { code: 127, stderr: 'fuse: failed to mount\n' },
+      { code: 1, stderr: 'extraction failed\n' },
+    );
+
+    const promise = applyUpdate(asset).catch((err) => err);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    const err = (await promise) as Error;
+
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    expect(mockFsPromises.rename).toHaveBeenCalledWith(
+      '/home/me/Applications/Cerebro.AppImage.bak',
+      '/home/me/Applications/Cerebro.AppImage',
+    );
+    expect(mockAppQuit).not.toHaveBeenCalled();
+    expect(err.message).toMatch(/current install is unchanged/);
   });
 
   it('Linux AppImage without $APPIMAGE: launches from updates dir, no backup attempted', async () => {
@@ -838,7 +1067,7 @@ describe('applyUpdate', () => {
     expect(mockFsPromises.copyFile).not.toHaveBeenCalled();
     expect(mockFsPromises.rename).not.toHaveBeenCalled();
     expect(mockSpawn.mock.calls[0][0]).toBe(expectedPath);
-    expect(mockSpawn.mock.calls[0][1] as string[]).toEqual(['--appimage-extract-and-run']);
+    expect(mockSpawn.mock.calls[0][1] as string[]).toEqual([]);
     expect(mockAppQuit).toHaveBeenCalledTimes(1);
   });
 
@@ -890,10 +1119,11 @@ describe('applyUpdate', () => {
     expect(mockAppQuit).not.toHaveBeenCalled();
   });
 
-  it('Linux .deb: reveals in file manager, does not spawn, does not quit', async () => {
+  it('Linux .deb without pkexec: reveals in file manager, does not spawn, does not quit', async () => {
     setPlatform('linux');
+    setPkexecPresent(false);
     const asset = makeUpdateAsset('cerebro_0.2.0_amd64.deb');
-    await applyUpdate(asset);
+    const outcome = await applyUpdate(asset);
 
     expect(mockShell.showItemInFolder).toHaveBeenCalledWith(
       '/tmp/userData/updates/cerebro_0.2.0_amd64.deb',
@@ -901,29 +1131,251 @@ describe('applyUpdate', () => {
     expect(mockShell.openPath).not.toHaveBeenCalled();
     expect(mockSpawn).not.toHaveBeenCalled();
     expect(mockAppQuit).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ mode: 'manual', reason: 'pkexec-missing' });
   });
 
-  it('Linux .rpm: reveals in file manager', async () => {
+  it('Linux .rpm without pkexec: reveals in file manager', async () => {
     setPlatform('linux');
+    setPkexecPresent(false);
     const asset = makeUpdateAsset('cerebro-0.2.0-1.x86_64.rpm');
-    await applyUpdate(asset);
+    const outcome = await applyUpdate(asset);
 
     expect(mockShell.showItemInFolder).toHaveBeenCalledWith(
       '/tmp/userData/updates/cerebro-0.2.0-1.x86_64.rpm',
     );
     expect(mockShell.openPath).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ mode: 'manual', reason: 'pkexec-missing' });
   });
 
-  it('macOS .dmg: opens via shell.openPath, no spawn, no quit', async () => {
+  it('Linux .deb with pkexec: installs via pkexec dpkg -i, launch-verifies the upgraded binary, quits', async () => {
+    setPlatform('linux');
+    setPkexecPresent(true);
+    setExecPath('/usr/lib/cerebro/cerebro');
+    const asset = makeUpdateAsset('cerebro_0.2.0_amd64.deb');
+    // Spawn #1: pkexec succeeds. Spawn #2: upgraded binary stays alive.
+    scriptSpawns({ code: 0 }, { stayAlive: true });
+
+    const promise = applyUpdate(asset);
+    await vi.advanceTimersByTimeAsync(0); // pkexec exits 0 → launch-verify spawns
+    await vi.advanceTimersByTimeAsync(2_001); // verify window elapses
+    const outcome = await promise;
+
+    expect(mockSpawn.mock.calls[0][0]).toBe('/usr/bin/pkexec');
+    expect(mockSpawn.mock.calls[0][1] as string[]).toEqual([
+      'dpkg',
+      '-i',
+      '/tmp/userData/updates/cerebro_0.2.0_amd64.deb',
+    ]);
+    expect(mockSpawn.mock.calls[1][0]).toBe('/usr/lib/cerebro/cerebro');
+    expect(mockSpawn.mock.calls[1][1] as string[]).toEqual([]);
+    expect(mockFsPromises.unlink).toHaveBeenCalledWith(
+      '/tmp/userData/updates/cerebro_0.2.0_amd64.deb',
+    );
+    expect(outcome).toEqual({ mode: 'restarting' });
+    await vi.advanceTimersByTimeAsync(310);
+    expect(mockAppQuit).toHaveBeenCalledTimes(1);
+    expect(mockShell.showItemInFolder).not.toHaveBeenCalled();
+  });
+
+  it('Linux .rpm with pkexec: installs via pkexec rpm -U', async () => {
+    setPlatform('linux');
+    setPkexecPresent(true);
+    setExecPath('/usr/lib/cerebro/cerebro');
+    const asset = makeUpdateAsset('cerebro-0.2.0-1.x86_64.rpm');
+    scriptSpawns({ code: 0 }, { stayAlive: true });
+
+    const promise = applyUpdate(asset);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2_001);
+    await promise;
+
+    expect(mockSpawn.mock.calls[0][1] as string[]).toEqual([
+      'rpm',
+      '-U',
+      '/tmp/userData/updates/cerebro-0.2.0-1.x86_64.rpm',
+    ]);
+  });
+
+  it('Linux .deb pkexec dismissed (exit 126): falls back to reveal, no error, no quit', async () => {
+    setPlatform('linux');
+    setPkexecPresent(true);
+    const asset = makeUpdateAsset('cerebro_0.2.0_amd64.deb');
+    scriptSpawns({ code: 126 });
+
+    const promise = applyUpdate(asset);
+    await vi.advanceTimersByTimeAsync(0);
+    const outcome = await promise;
+
+    expect(outcome).toEqual({ mode: 'manual', reason: 'auth-dismissed' });
+    expect(mockShell.showItemInFolder).toHaveBeenCalledWith(
+      '/tmp/userData/updates/cerebro_0.2.0_amd64.deb',
+    );
+    expect(mockSpawn).toHaveBeenCalledTimes(1); // no launch-verify spawn
+    expect(mockAppQuit).not.toHaveBeenCalled();
+  });
+
+  it('Linux .deb dpkg failure: rejects with the stderr tail, keeps the file for retry', async () => {
+    setPlatform('linux');
+    setPkexecPresent(true);
+    const asset = makeUpdateAsset('cerebro_0.2.0_amd64.deb');
+    scriptSpawns({
+      code: 2,
+      stderr: 'dpkg: error: dpkg frontend lock was locked by another process\n',
+    });
+
+    const promise = applyUpdate(asset).catch((err) => err);
+    await vi.advanceTimersByTimeAsync(0);
+    const err = (await promise) as UpdaterError;
+
+    expect(err).toBeInstanceOf(UpdaterError);
+    expect(err.kind).toBe('apply');
+    expect(err.message).toMatch(/dpkg frontend lock/);
+    expect(mockFsPromises.unlink).not.toHaveBeenCalled();
+    expect(mockAppQuit).not.toHaveBeenCalled();
+  });
+
+  it('Linux .deb installed but new binary fails verify: throws, does not quit (no rollback possible)', async () => {
+    setPlatform('linux');
+    setPkexecPresent(true);
+    setExecPath('/usr/lib/cerebro/cerebro');
+    const asset = makeUpdateAsset('cerebro_0.2.0_amd64.deb');
+    scriptSpawns({ code: 0 }, { code: 1, stderr: 'boom\n' });
+
+    const promise = applyUpdate(asset).catch((err) => err);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    const err = (await promise) as UpdaterError;
+
+    expect(err).toBeInstanceOf(UpdaterError);
+    expect(err.message).toMatch(/already installed/i);
+    expect(mockAppQuit).not.toHaveBeenCalled();
+  });
+
+  const macExecPath = '/Applications/Cerebro.app/Contents/MacOS/cerebro';
+
+  it('macOS .zip: extracts with ditto, swaps the bundle keeping a .bak, relaunches and quits', async () => {
+    setPlatform('darwin');
+    setExecPath(macExecPath);
+    const asset = makeUpdateAsset('Cerebro-darwin-arm64-0.2.0.zip');
+    // Spawn #1 ditto extract, #2 xattr dequarantine, #3 codesign verify new.
+    scriptSpawns({ code: 0 });
+    mockFsPromises.readdir.mockResolvedValue(['Cerebro.app']);
+
+    const promise = applyUpdate(asset);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    const outcome = await promise;
+
+    const zipPath = '/tmp/userData/updates/Cerebro-darwin-arm64-0.2.0.zip';
+    const extractDir = '/tmp/userData/updates/extract';
+    expect(mockSpawn.mock.calls[0][0]).toBe('/usr/bin/ditto');
+    expect(mockSpawn.mock.calls[0][1] as string[]).toEqual(['-x', '-k', zipPath, extractDir]);
+    // Swap: current → .bak, new → current.
+    expect(mockFsPromises.rename).toHaveBeenCalledWith(
+      '/Applications/Cerebro.app',
+      '/Applications/Cerebro.app.bak',
+    );
+    expect(mockFsPromises.rename).toHaveBeenCalledWith(
+      `${extractDir}/Cerebro.app`,
+      '/Applications/Cerebro.app',
+    );
+    // The .bak is the recovery path — it must NOT be deleted on success.
+    // (One rm of the .bak path is expected: the pre-swap clear of a stale
+    // backup from a previous crashed apply. There must be no second one.)
+    const bakRms = mockFsPromises.rm.mock.calls.filter(
+      (c) => c[0] === '/Applications/Cerebro.app.bak',
+    );
+    expect(bakRms).toHaveLength(1);
+    // Downloaded zip cleaned up; relaunch scheduled before quit.
+    expect(mockFsPromises.unlink).toHaveBeenCalledWith(zipPath);
+    expect(mockAppRelaunch).toHaveBeenCalledTimes(1);
+    expect(outcome).toEqual({ mode: 'restarting' });
+    await vi.advanceTimersByTimeAsync(310);
+    expect(mockAppQuit).toHaveBeenCalledTimes(1);
+  });
+
+  it('macOS .zip swap failure: restores the .bak, throws apply error, no relaunch/quit', async () => {
+    setPlatform('darwin');
+    setExecPath(macExecPath);
+    const asset = makeUpdateAsset('Cerebro-darwin-arm64-0.2.0.zip');
+    scriptSpawns({ code: 0 });
+    mockFsPromises.readdir.mockResolvedValue(['Cerebro.app']);
+    // First rename (current → .bak) succeeds; second (new → current) fails.
+    const eperm = Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    mockFsPromises.rename.mockResolvedValueOnce(undefined).mockRejectedValueOnce(eperm);
+
+    const promise = applyUpdate(asset).catch((err) => err);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    const err = (await promise) as UpdaterError;
+
+    expect(err).toBeInstanceOf(UpdaterError);
+    expect(err.kind).toBe('apply');
+    expect(err.message).toMatch(/current install is unchanged/);
+    // Rollback: .bak renamed back into place.
+    expect(mockFsPromises.rename).toHaveBeenCalledWith(
+      '/Applications/Cerebro.app.bak',
+      '/Applications/Cerebro.app',
+    );
+    expect(mockAppRelaunch).not.toHaveBeenCalled();
+    expect(mockAppQuit).not.toHaveBeenCalled();
+  });
+
+  it('macOS .zip with no .app in the archive: verify error, extract dir cleaned', async () => {
+    setPlatform('darwin');
+    setExecPath(macExecPath);
+    const asset = makeUpdateAsset('Cerebro-darwin-arm64-0.2.0.zip');
+    scriptSpawns({ code: 0 });
+    mockFsPromises.readdir.mockResolvedValue(['README.txt']);
+
+    const promise = applyUpdate(asset).catch((err) => err);
+    await vi.advanceTimersByTimeAsync(0);
+    const err = (await promise) as UpdaterError;
+
+    expect(err).toBeInstanceOf(UpdaterError);
+    expect(err.kind).toBe('verify');
+    expect(err.message).toMatch(/did not contain an app bundle/);
+    expect(mockAppRelaunch).not.toHaveBeenCalled();
+  });
+
+  it('macOS .zip outside an .app bundle (dev run): reveals the zip, manual outcome', async () => {
+    setPlatform('darwin');
+    setExecPath('/usr/local/bin/cerebro');
+    const asset = makeUpdateAsset('Cerebro-darwin-arm64-0.2.0.zip');
+
+    const outcome = await applyUpdate(asset);
+
+    expect(outcome).toEqual({ mode: 'manual', reason: 'no-bundle' });
+    expect(mockShell.showItemInFolder).toHaveBeenCalledWith(
+      '/tmp/userData/updates/Cerebro-darwin-arm64-0.2.0.zip',
+    );
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it('macOS .zip from a translocated bundle: reveals the zip, manual outcome', async () => {
+    setPlatform('darwin');
+    setExecPath(
+      '/private/var/folders/ab/AppTranslocation/1234/d/Cerebro.app/Contents/MacOS/cerebro',
+    );
+    const asset = makeUpdateAsset('Cerebro-darwin-arm64-0.2.0.zip');
+
+    const outcome = await applyUpdate(asset);
+
+    expect(outcome).toEqual({ mode: 'manual', reason: 'no-bundle' });
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it('macOS .dmg: opens via shell.openPath, no spawn, no quit, manual outcome', async () => {
     setPlatform('darwin');
     const asset = makeUpdateAsset('Cerebro-0.2.0-arm64.dmg');
-    await applyUpdate(asset);
+    const outcome = await applyUpdate(asset);
 
     expect(mockShell.openPath).toHaveBeenCalledWith(
       '/tmp/userData/updates/Cerebro-0.2.0-arm64.dmg',
     );
     expect(mockSpawn).not.toHaveBeenCalled();
     expect(mockAppQuit).not.toHaveBeenCalled();
+    expect(outcome).toEqual({ mode: 'manual', reason: 'installer-opened' });
   });
 
   it('Windows Setup.exe: opens via shell.openPath', async () => {
@@ -1148,6 +1600,32 @@ describe('verifyDownloadedAsset', () => {
       // size is verified. That's the documented behavior.
       await expect(verifyDownloadedAsset(filePath, asset)).resolves.toBeUndefined();
     }
+  });
+
+  it('accepts a .zip with PK magic bytes when no hash is published', async () => {
+    const body = Buffer.concat([Buffer.from('PK\x03\x04'), Buffer.alloc(64)]);
+    const filePath = writeFile('Cerebro-darwin-arm64-0.2.0.zip', body);
+    const asset: UpdateAsset = {
+      name: 'Cerebro-darwin-arm64-0.2.0.zip',
+      url: 'https://example.com/a.zip',
+      size: body.length,
+      contentType: 'application/zip',
+    };
+    await expect(verifyDownloadedAsset(filePath, asset)).resolves.toBeUndefined();
+  });
+
+  it('rejects a .zip without PK magic bytes (HTML error page served instead of archive)', async () => {
+    const html = Buffer.from('<!doctype html><html><head><title>Not Found');
+    const filePath = writeFile('Cerebro-darwin-arm64-0.2.0.zip', html);
+    const asset: UpdateAsset = {
+      name: 'Cerebro-darwin-arm64-0.2.0.zip',
+      url: 'https://example.com/a.zip',
+      size: html.length,
+      contentType: 'application/zip',
+    };
+    await expect(verifyDownloadedAsset(filePath, asset)).rejects.toMatchObject({
+      kind: 'verify',
+    });
   });
 
   it('rejects an AppImage whose ELF magic is missing (HTML error page served instead of binary)', async () => {

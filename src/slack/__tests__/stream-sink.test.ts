@@ -157,6 +157,31 @@ describe('SlackStreamSink', () => {
     void updated;
   });
 
+  it('posts the final answer exactly once when two done events arrive', async () => {
+    // Regression: the runner used to emit the completion on two channels
+    // ('event' with type done + the dedicated 'done'), and finalize() only
+    // set `destroyed` AFTER its awaited Slack calls — so the second done
+    // slipped past the guard and the full answer was posted twice.
+    const { api, posted } = makeStubApi();
+    let doneCalls = 0;
+    const sink = new SlackStreamSink({
+      api,
+      channel: 'C1',
+      threadTs: '1.000',
+      onDone: () => {
+        doneCalls++;
+      },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    sink.send('engine:any-event', { type: 'done', runId: 'r1', messageContent: 'the answer' });
+    sink.send('engine:any-event', { type: 'done', runId: 'r1', messageContent: 'the answer' });
+    await vi.advanceTimersByTimeAsync(100);
+    await Promise.resolve();
+    const finals = posted.filter((m) => m.text === 'the answer');
+    expect(finals.length).toBe(1);
+    expect(doneCalls).toBe(1);
+  });
+
   it('posts an error event as a new notifying message and deletes the placeholder', async () => {
     const { api, posted, deleted } = makeStubApi();
     let errSeen: string | undefined;

@@ -1,4 +1,12 @@
-import { Download, RefreshCw, AlertCircle, X, ExternalLink, CheckCircle2 } from 'lucide-react';
+import {
+  Download,
+  RefreshCw,
+  AlertCircle,
+  X,
+  ExternalLink,
+  CheckCircle2,
+  Info,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useUpdate } from '../../context/UpdateContext';
 
@@ -14,6 +22,7 @@ export default function UpdateBanner() {
     info,
     progress,
     errorKind,
+    manualReason,
     retryCooldownSeconds,
     isDismissed,
     startDownload,
@@ -29,6 +38,7 @@ export default function UpdateBanner() {
   const assetName = info.asset.name.toLowerCase();
   const isAppImage = assetName.endsWith('.appimage');
   const isLinuxPackage = assetName.endsWith('.deb') || assetName.endsWith('.rpm');
+  const isMacZip = assetName.endsWith('.zip');
 
   const renderContent = () => {
     if (status === 'downloading') {
@@ -63,10 +73,10 @@ export default function UpdateBanner() {
     }
 
     if (status === 'ready') {
-      // Asset-aware copy: AppImage gets a "Restart now" button (we control
-      // the restart and can roll back on failure). .deb/.rpm get a "Reveal
-      // installer" button (the user has to run dpkg/rpm themselves). macOS
-      // .dmg / Windows Setup.exe get "Open installer".
+      // Asset-aware copy: AppImage, mac .zip and .deb/.rpm all auto-install
+      // and restart (the package path may show the system password prompt),
+      // so they get a "Restart to update" button. macOS .dmg / Windows
+      // Setup.exe stay manual and get "Open installer".
       let title: string;
       let detail: string;
       let primaryLabel: string;
@@ -74,10 +84,14 @@ export default function UpdateBanner() {
         title = t('updateBanner.ready.titleReady', { version: info.version });
         detail = t('updateBanner.ready.detailAppImage');
         primaryLabel = t('updateBanner.ready.restartToUpdate');
+      } else if (isMacZip) {
+        title = t('updateBanner.ready.titleReady', { version: info.version });
+        detail = t('updateBanner.ready.detailMacZip');
+        primaryLabel = t('updateBanner.ready.restartToUpdate');
       } else if (isLinuxPackage) {
-        title = t('updateBanner.ready.titleDownloaded', { version: info.version });
-        detail = t('updateBanner.ready.detailLinuxPackage');
-        primaryLabel = t('updateBanner.ready.revealInstaller');
+        title = t('updateBanner.ready.titleReady', { version: info.version });
+        detail = t('updateBanner.ready.detailLinuxPackageAuto');
+        primaryLabel = t('updateBanner.ready.restartToUpdate');
       } else {
         title = t('updateBanner.ready.titleDownloaded', { version: info.version });
         detail = t('updateBanner.ready.detailDefault');
@@ -111,6 +125,11 @@ export default function UpdateBanner() {
     }
 
     if (status === 'applying') {
+      const applyingDetail = isLinuxPackage
+        ? t('updateBanner.applying.detailPassword')
+        : isMacZip
+          ? t('updateBanner.applying.detailMacSwap')
+          : t('updateBanner.applying.detail');
       return (
         <>
           <div className="w-8 h-8 rounded-lg bg-accent/20 text-accent flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -121,7 +140,46 @@ export default function UpdateBanner() {
               {t('updateBanner.applying.title', { version: info.version })}
             </div>
             <div className="text-xs text-text-secondary mt-0.5 leading-relaxed">
-              {t('updateBanner.applying.detail')}
+              {applyingDetail}
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    if (status === 'manual') {
+      // Apply ran, but main handed the user an installer instead of
+      // restarting (dmg/exe, pkexec dismissed or missing, unresolvable
+      // bundle path). Calm copy, no red — this is a working path, not a
+      // failure. The primary button re-invokes apply, which safely
+      // re-reveals the installer / re-prompts for the password.
+      const detail =
+        manualReason === 'auth-dismissed'
+          ? t('updateBanner.manual.detailDismissed')
+          : t('updateBanner.manual.detailGeneric');
+      return (
+        <>
+          <div className="w-8 h-8 rounded-lg bg-accent/20 text-accent flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Info size={15} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-text-primary">
+              {t('updateBanner.manual.title', { version: info.version })}
+            </div>
+            <div className="text-xs text-text-secondary mt-0.5 leading-relaxed">{detail}</div>
+            <div className="flex items-center gap-2 mt-2.5">
+              <button
+                onClick={() => void applyUpdate()}
+                className="px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-bg-base hover:bg-accent/90 transition-colors cursor-pointer"
+              >
+                {t('updateBanner.manual.revealAgain')}
+              </button>
+              <button
+                onClick={openReleasePage}
+                className="px-3 py-1.5 rounded-md text-xs text-text-secondary hover:text-text-primary hover:bg-white/[0.04] transition-colors cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <ExternalLink size={12} /> {t('updateBanner.ready.releaseNotes')}
+              </button>
             </div>
           </div>
         </>
@@ -239,11 +297,12 @@ export default function UpdateBanner() {
   };
 
   // Only allow dismiss for states the user can return to later via the next
-  // update-check cycle (`available`, `error`). `ready` stays sticky so the
-  // user doesn't accidentally hide a pending restart and forget about it;
-  // `downloading` and `applying` are in-progress and don't expose dismiss
-  // either.
-  const dismissable = status === 'available' || status === 'error';
+  // update-check cycle (`available`, `error`) or that they've already been
+  // handed off from (`manual` — the installer is on disk, finishing it is
+  // theirs now). `ready` stays sticky so the user doesn't accidentally hide
+  // a pending restart and forget about it; `downloading` and `applying` are
+  // in-progress and don't expose dismiss either.
+  const dismissable = status === 'available' || status === 'error' || status === 'manual';
 
   return (
     <div className="mx-4 mt-3">

@@ -1303,7 +1303,13 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
           // one `friendlySurfaceError()`-rewritten event with the right
           // errorClass (so 'auth' renders the login card). Dropping the raw
           // 'event' error here guarantees no CLI string ever reaches chat.
-          if (event.type === 'error') return;
+          //
+          // Same story for 'done': the runner emits a paired ('event' →
+          // 'done') on success, and the 'done' handler below is the sole
+          // authority — forwarding the 'event' copy would deliver two done
+          // events per run, which made the Slack/Telegram sinks post the
+          // final answer twice.
+          if (event.type === 'error' || event.type === 'done') return;
           this.deliverEvent(runId, webContents, event);
         });
 
@@ -1538,10 +1544,11 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       if (event.type === 'text_delta') {
         activeRun.accumulatedText += event.delta;
       }
-      // The runner emits a paired ('event' → 'error'); the 'error' handler is
-      // the sole authority (mirrors the Claude path), so drop the raw 'event'
-      // copy that carries no errorClass.
-      if (event.type === 'error') return;
+      // The runner emits paired ('event' → 'error') and ('event' → 'done');
+      // the dedicated handlers are the sole authority (mirrors the Claude
+      // path), so drop the raw 'event' copies — forwarding them would
+      // deliver duplicate error/done events to the sink.
+      if (event.type === 'error' || event.type === 'done') return;
       this.deliverEvent(runId, webContents, event);
     });
 
@@ -1623,9 +1630,10 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
     this.assistantRuns.set(runId, runner);
 
     runner.on('event', (event: RendererAgentEvent) => {
-      // Drop the raw 'error' event copy; the 'error' handler delivers the
-      // friendly, classified one (mirrors the chat path).
-      if (event.type === 'error') return;
+      // Drop the raw 'error' and 'done' event copies; the dedicated
+      // handlers deliver the single authoritative one (mirrors the chat
+      // path — forwarding both copies duplicates done/error downstream).
+      if (event.type === 'error' || event.type === 'done') return;
       this.deliverEvent(runId, webContents, event);
     });
     runner.on('done', (messageContent: string) => {

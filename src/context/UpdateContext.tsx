@@ -17,17 +17,27 @@ import type {
 } from '../types/ipc';
 
 // State machine:
-//   idle → available → downloading → ready → applying → (quit) | error
+//   idle → available → downloading → ready → applying → (quit) | manual | error
 //                                       ↑                          │
 //                                       └──────── retry ───────────┘
 //
 // `ready` means: artifact is downloaded + verified intact on disk; we're
 // waiting for the user to click "Restart now". Apply doesn't fire on its
 // own — that's the whole reason this fix is safe. `applying` is the brief
-// window where main is replacing the binary + verifying the new launch.
-// On success the process quits; on failure we surface `error` with the
-// underlying reason and the user can hit "Restart now" again.
-type UpdateStatus = 'idle' | 'available' | 'downloading' | 'ready' | 'applying' | 'error';
+// window where main is installing the update (which on Linux packages can
+// include the system password prompt) + verifying the new launch. On
+// success the process quits; when main instead handed the user an
+// installer to finish themselves (dmg, pkexec dismissed/missing) we land
+// in `manual`; on failure we surface `error` with the underlying reason
+// and the user can hit "Restart now" again.
+type UpdateStatus =
+  | 'idle'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'applying'
+  | 'manual'
+  | 'error';
 
 interface UpdateContextValue {
   status: UpdateStatus;
@@ -38,6 +48,9 @@ interface UpdateContextValue {
   /** Categorised failure kind so the banner picks the right reassuring
    *  copy + secondary action. `null` when there's no error to show. */
   errorKind: UpdateErrorKind | null;
+  /** Why apply landed in `manual` (e.g. 'auth-dismissed',
+   *  'installer-opened') so the banner picks specific copy. */
+  manualReason: string | null;
   /** Seconds remaining before the next Retry click is allowed to fire.
    *  Zero means "go ahead now". Counts down in real time while > 0. The
    *  user can still click Retry — we just defer the actual IPC until the
@@ -82,6 +95,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<UpdateErrorKind | null>(null);
+  const [manualReason, setManualReason] = useState<string | null>(null);
   const [isDismissed, setIsDismissed] = useState(false);
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
@@ -225,12 +239,21 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     setStatus('applying');
     setErrorMessage(null);
     setErrorKind(null);
+    setManualReason(null);
     try {
-      // On success the main process app.quit()s shortly after this resolves,
-      // so the renderer is torn down before we ever see the resolve.
+      // mode 'restarting': the main process app.quit()s shortly after this
+      // resolves, so the renderer is torn down while still showing the
+      // "Restarting…" state — nothing to do.
+      // mode 'manual': main handed the user an installer instead (dmg,
+      // pkexec dismissed/missing) — leave the applying state or the
+      // spinner runs forever.
       // On failure (e.g. new version exits early) main rolls back to the
       // previous install and rejects with a human-readable reason.
-      await window.cerebro.updater.apply(info.asset);
+      const result = await window.cerebro.updater.apply(info.asset);
+      if (result.ok && result.mode === 'manual') {
+        setManualReason(result.reason ?? null);
+        setStatus('manual');
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setErrorMessage(message);
@@ -269,6 +292,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       downloadedPath,
       errorMessage,
       errorKind,
+      manualReason,
       retryCooldownSeconds,
       isDismissed,
       startDownload,
@@ -283,6 +307,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       downloadedPath,
       errorMessage,
       errorKind,
+      manualReason,
       retryCooldownSeconds,
       isDismissed,
       startDownload,

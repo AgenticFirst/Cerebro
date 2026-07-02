@@ -825,18 +825,31 @@ export interface UpdateErrorEvent {
  * references can't leak into the IPC reply and produce
  * "reply was never sent".
  */
-export type UpdateActionResult = { ok: true } | { ok: false; error: string; kind: UpdateErrorKind };
+export type UpdateActionResult =
+  | {
+      ok: true;
+      /** Only set by UPDATE_APPLY: 'restarting' means the process is about
+       *  to quit into the new version; 'manual' means an installer was
+       *  handed to the user and the renderer must leave the applying state. */
+      mode?: 'restarting' | 'manual';
+      /** Why apply fell back to manual (pkexec missing/dismissed, no
+       *  resolvable bundle, plain installer-opened). Drives banner copy. */
+      reason?: string;
+    }
+  | { ok: false; error: string; kind: UpdateErrorKind };
 
 export interface UpdaterAPI {
   checkNow(): Promise<UpdateInfo | null>;
   /** Download the asset to a persistent location (userData/updates/). Does
    *  not install. Rejects if the download fails. */
   download(asset: UpdateAsset): Promise<void>;
-  /** Install the previously-downloaded asset and restart. For Linux AppImage
-   *  this verifies the new version can launch before quitting the current
-   *  process. If the launch verification fails the old install is rolled
-   *  back and this rejects — the current app keeps running. */
-  apply(asset: UpdateAsset): Promise<void>;
+  /** Install the previously-downloaded asset and restart. Linux AppImage /
+   *  .deb/.rpm and macOS .zip install + restart automatically (resolving
+   *  `{mode:'restarting'}` just before the process quits); paths that hand
+   *  an installer to the user resolve `{mode:'manual'}` with a reason. If
+   *  install/verification fails the old install is rolled back where
+   *  possible and this rejects — the current app keeps running. */
+  apply(asset: UpdateAsset): Promise<UpdateActionResult>;
   dismiss(): Promise<void>;
   /** Renderer tells main "the banner is on screen" so the native
    *  dialog fallback doesn't fire. Fire-and-forget. */

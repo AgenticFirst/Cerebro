@@ -2797,12 +2797,15 @@ function registerIpcHandlers(): void {
         event.sender.send(IPC_CHANNELS.UPDATE_ERROR, ev);
         return { ok: false, error: ev.message, kind: ev.kind };
       }
-      // `applyUpdate` either succeeds (and schedules `app.quit()` ~300ms
-      // later, deliberately AFTER this reply is sent — see updater.ts) or
-      // throws. Either way we reply with a structured result, never raw.
+      // `applyUpdate` either succeeds (and, for auto-install paths,
+      // schedules `app.quit()` ~300ms later, deliberately AFTER this reply
+      // is sent — see updater.ts) or throws. Either way we reply with a
+      // structured result, never raw. The outcome's mode/reason let the
+      // renderer distinguish "process is restarting" from "installer handed
+      // to the user".
       try {
-        await applyUpdate(asset);
-        return { ok: true };
+        const outcome = await applyUpdate(asset);
+        return { ok: true, mode: outcome.mode, reason: outcome.reason };
       } catch (err) {
         const ev = toErrorEvent(err);
         event.sender.send(IPC_CHANNELS.UPDATE_ERROR, ev);
