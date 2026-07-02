@@ -329,6 +329,9 @@ const en = {
   tasks: {
     title: 'Tasks',
     newTask: 'New task',
+    searchPlaceholder: 'Search tasks…',
+    clearSearch: 'Clear search',
+    noMatches: 'No matching tasks',
     doneNotificationTitle: 'Task ready',
     doneNotificationBody: '"{{title}}" is finished and ready for review.',
     failedNotificationTitle: 'Task failed',

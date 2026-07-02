@@ -332,6 +332,9 @@ const es: TranslationKeys = {
   tasks: {
     title: 'Tareas',
     newTask: 'Nueva tarea',
+    searchPlaceholder: 'Buscar tareas…',
+    clearSearch: 'Borrar búsqueda',
+    noMatches: 'No hay tareas que coincidan',
     doneNotificationTitle: 'Tarea lista',
     doneNotificationBody: '«{{title}}» ha terminado y está lista para revisar.',
     failedNotificationTitle: 'La tarea falló',

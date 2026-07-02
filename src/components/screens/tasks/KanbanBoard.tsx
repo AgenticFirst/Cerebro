@@ -16,14 +16,16 @@ import { useTasks, type Task, type TaskColumn } from '../../../context/TaskConte
 import { useToast } from '../../../context/ToastContext';
 import KanbanColumn from './KanbanColumn';
 import TaskCard from './TaskCard';
+import { taskMatchesQuery } from './task-search';
 
 const COLUMNS: TaskColumn[] = ['backlog', 'in_progress', 'to_review', 'completed', 'error'];
 
 interface KanbanBoardProps {
   onCardClick: (task: Task) => void;
+  searchQuery?: string;
 }
 
-export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
+export default function KanbanBoard({ onCardClick, searchQuery = '' }: KanbanBoardProps) {
   const { t } = useTranslation();
   const { tasks, moveTask, startTask, deleteTask, liveTaskIds } = useTasks();
   const { addToast } = useToast();
@@ -46,6 +48,8 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
 
   const effectiveTagFilter =
     tagFilter && allTags.some((tag) => tag.name === tagFilter) ? tagFilter : null;
+  const trimmedQuery = searchQuery.trim();
+  const isFiltering = Boolean(effectiveTagFilter) || Boolean(trimmedQuery);
 
   // Drag position math reads from the full (unfiltered) grouping so a tag
   // filter can't collapse positions across hidden neighbors.
@@ -67,7 +71,7 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
   }, [tasks]);
 
   const tasksByColumn = useMemo(() => {
-    if (!effectiveTagFilter) return fullTasksByColumn;
+    if (!effectiveTagFilter && !trimmedQuery) return fullTasksByColumn;
     const filtered: Record<TaskColumn, Task[]> = {
       backlog: [],
       in_progress: [],
@@ -76,12 +80,14 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
       error: [],
     };
     for (const col of COLUMNS) {
-      filtered[col] = fullTasksByColumn[col].filter((task) =>
-        (task.tags ?? []).includes(effectiveTagFilter),
+      filtered[col] = fullTasksByColumn[col].filter(
+        (task) =>
+          (!effectiveTagFilter || (task.tags ?? []).includes(effectiveTagFilter)) &&
+          taskMatchesQuery(task, trimmedQuery),
       );
     }
     return filtered;
-  }, [fullTasksByColumn, effectiveTagFilter]);
+  }, [fullTasksByColumn, effectiveTagFilter, trimmedQuery]);
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
@@ -237,6 +243,7 @@ export default function KanbanBoard({ onCardClick }: KanbanBoardProps) {
               key={column}
               column={column}
               tasks={tasksByColumn[column]}
+              isFiltering={isFiltering}
               onCardClick={onCardClick}
               onMoveTask={handleMoveTask}
               onStartTask={handleStartTask}

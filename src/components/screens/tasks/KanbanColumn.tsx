@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Plus, CheckCircle } from 'lucide-react';
+import { Plus, CheckCircle, Search } from 'lucide-react';
 import clsx from 'clsx';
 import { useTasks, type Task, type TaskColumn } from '../../../context/TaskContext';
 import TaskCard from './TaskCard';
@@ -10,6 +10,7 @@ import TaskCard from './TaskCard';
 interface KanbanColumnProps {
   column: TaskColumn;
   tasks: Task[];
+  isFiltering?: boolean;
   onCardClick: (task: Task) => void;
   onMoveTask: (taskId: string, column: TaskColumn) => void;
   onStartTask: (taskId: string) => void;
@@ -19,6 +20,7 @@ interface KanbanColumnProps {
 export default function KanbanColumn({
   column,
   tasks,
+  isFiltering = false,
   onCardClick,
   onMoveTask,
   onStartTask,
@@ -147,13 +149,21 @@ export default function KanbanColumn({
           ))}
         </SortableContext>
 
-        {/* Blitzit-style "All Clear" empty state */}
-        {tasks.length === 0 && !isAdding && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-2 min-h-[120px]">
-            <CheckCircle size={24} className="text-accent/40" />
-            <span className="text-xs text-text-tertiary">{t('tasks.allClear')}</span>
-          </div>
-        )}
+        {/* Blitzit-style "All Clear" empty state — but when a search/tag filter
+            is hiding the cards, say so instead of celebrating. */}
+        {tasks.length === 0 &&
+          !isAdding &&
+          (isFiltering ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-2 min-h-[120px]">
+              <Search size={24} className="text-text-tertiary/40" />
+              <span className="text-xs text-text-tertiary">{t('tasks.noMatches')}</span>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center gap-2 min-h-[120px]">
+              <CheckCircle size={24} className="text-accent/40" />
+              <span className="text-xs text-text-tertiary">{t('tasks.allClear')}</span>
+            </div>
+          ))}
       </div>
     </div>
   );
