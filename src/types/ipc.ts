@@ -213,6 +213,17 @@ export const IPC_CHANNELS = {
   HUBSPOT_CLEAR_TOKEN: 'hubspot:clear-token',
   HUBSPOT_SET_DEFAULTS: 'hubspot:set-defaults',
 
+  // n8n (Cerebro-managed local instance)
+  N8N_INSTALL: 'n8n:install',
+  N8N_INSTALL_LOG: 'n8n:install-log',
+  N8N_INSTALL_CANCEL: 'n8n:install-cancel',
+  N8N_START: 'n8n:start',
+  N8N_STOP: 'n8n:stop',
+  N8N_STATUS: 'n8n:status',
+  N8N_STATUS_CHANGED: 'n8n:status-changed',
+  N8N_OPEN_EDITOR: 'n8n:open-editor',
+  N8N_WORKFLOW_TOUCHED: 'n8n:workflow-touched',
+
   // GoHighLevel CRM
   GHL_VERIFY: 'ghl:verify',
   GHL_STATUS: 'ghl:status',
@@ -995,6 +1006,7 @@ export interface CerebroAPI {
   slack: SlackAPI;
   whatsapp: WhatsAppAPI;
   hubspot: HubSpotAPI;
+  n8n: N8nAPI;
   ghl: GHLAPI;
   github: GitHubAPI;
   calendar: CalendarAPI;
@@ -1218,6 +1230,48 @@ export interface HubSpotAPI {
     followUpProperty?: string | null;
     dueDateProperty?: string | null;
   }): Promise<{ ok: boolean; error?: string }>;
+}
+
+// --- n8n (Cerebro-managed local instance) ---
+
+export type N8nPhase =
+  | 'not_installed'
+  | 'installing'
+  | 'starting'
+  | 'provisioning'
+  | 'running'
+  | 'crashed'
+  | 'stopped'
+  /** No usable Node.js runtime found on this machine (n8n needs Node >= 22). */
+  | 'node_required';
+
+export interface N8nStatusResponse {
+  phase: N8nPhase;
+  port: number | null;
+  version: string | null;
+  /** http://127.0.0.1:<port> while running, else null. */
+  editorUrl: string | null;
+  hasApiKey: boolean;
+  lastError: string | null;
+  tokenBackend: 'os-keychain' | 'plaintext-fallback';
+}
+
+export interface N8nAPI {
+  /** npm-installs the pinned n8n version; progress arrives via onInstallLog. */
+  install(): Promise<{ ok: boolean; error?: string }>;
+  cancelInstall(): Promise<void>;
+  onInstallLog(callback: (line: string) => void): () => void;
+  start(): Promise<{ ok: boolean; error?: string }>;
+  stop(): Promise<{ ok: boolean }>;
+  status(): Promise<N8nStatusResponse>;
+  onStatusChanged(callback: (status: N8nStatusResponse) => void): () => void;
+  /** Prepares auth for the embedded editor and returns the embeddable URL.
+   *  `workflowId` (one-shot) points at a workflow chat just created/edited
+   *  while the Flows screen wasn't mounted. */
+  openEditor(): Promise<{ ok: boolean; editorUrl?: string; workflowId?: string; error?: string }>;
+  /** Fired when a chat/routine action creates or updates a workflow, so the
+   *  Flows screen can follow along on the canvas. */
+  onWorkflowTouched(callback: (payload: { workflowId: string }) => void): () => void;
 }
 
 // --- Calendar sync (Google + Outlook) ---

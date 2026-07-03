@@ -17,7 +17,7 @@ The document is organized so a contributor (human or AI) can follow it linearly 
 Pin these answers in a paragraph before touching files. Adding an integration without these decisions causes rework.
 
 - **`id`** — short snake_case identifier (`slack`, `gmail`, `notion`). Used everywhere: file paths, IPC channel prefixes, manifest id, the `setup_integration` argument, the routine `requiredConnections` value.
-- **Auth model** — `token` / `api_key` / `qr_pairing` / `oauth`. Drives whether you need a custom modal or can rely on `GenericConnectModal`.
+- **Auth model** — `token` / `api_key` / `qr_pairing` / `oauth` / `managed`. Drives whether you need a custom modal or can rely on `GenericConnectModal`. `managed` means Cerebro installs and provisions the service itself and the user pastes nothing (reference: **n8n**, `src/n8n/` — local npm install, owner + API key auto-provisioned, custom install modal).
 - **What credentials does the user paste?** — name, format, where they get them. This becomes the BotFather-style walkthrough prose.
 - **What nodes/actions does it expose for routines?** — list them up front (e.g. `slack_send_message`, `slack_create_channel`). Every routine-callable action also needs a chat-callable variant unless it's purely inbound.
 - **Inbound trigger?** — does the integration push events into Cerebro (Telegram message arrived, Slack mention)? If yes, you're also adding a webhook/poller on the bridge side and a routine trigger type.

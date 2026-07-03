@@ -12,6 +12,7 @@ const SlackConnectModal = lazy(() => import('../screens/integrations/SlackConnec
 const HubSpotConnectModal = lazy(() => import('../screens/integrations/HubSpotConnectModal'));
 const WhatsAppConnectModal = lazy(() => import('../screens/integrations/WhatsAppConnectModal'));
 const CalendarConnectModal = lazy(() => import('../screens/integrations/CalendarConnectModal'));
+const N8nConnectModal = lazy(() => import('../screens/integrations/N8nConnectModal'));
 const GenericConnectModal = lazy(() => import('../screens/integrations/GenericConnectModal'));
 
 interface IntegrationSetupCardProps {
@@ -246,6 +247,14 @@ export default function IntegrationSetupCard({
           )}
           {manifest.customModalId === 'calendar' && (
             <CalendarConnectModal
+              onClose={closeModal}
+              onPersisted={() => {
+                /* status poll handles it */
+              }}
+            />
+          )}
+          {manifest.customModalId === 'n8n' && (
+            <N8nConnectModal
               onClose={closeModal}
               onPersisted={() => {
                 /* status poll handles it */

@@ -23,6 +23,7 @@ import { whatsappManifest } from './manifests/whatsapp';
 import { ghlManifest } from './manifests/ghl';
 import { githubManifest } from './manifests/github';
 import { calendarManifest } from './manifests/calendar';
+import { n8nManifest } from './manifests/n8n';
 
 export const INTEGRATION_REGISTRY: Record<string, IntegrationManifest> = {
   [telegramManifest.id]: telegramManifest,
@@ -32,6 +33,7 @@ export const INTEGRATION_REGISTRY: Record<string, IntegrationManifest> = {
   [ghlManifest.id]: ghlManifest,
   [githubManifest.id]: githubManifest,
   [calendarManifest.id]: calendarManifest,
+  [n8nManifest.id]: n8nManifest,
 };
 
 export function listIntegrations(): IntegrationManifest[] {

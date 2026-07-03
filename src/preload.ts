@@ -27,6 +27,7 @@ import type {
   HubSpotVerifyResult,
   HubSpotPipelineSummary,
   HubSpotTicketPropertySummary,
+  N8nStatusResponse,
   GHLStatusResponse,
   GHLVerifyResult,
   GitHubStatusResponse,
@@ -553,6 +554,49 @@ const api: CerebroAPI = {
       dueDateProperty?: string | null;
     }): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.HUBSPOT_SET_DEFAULTS, defaults);
+    },
+  },
+
+  n8n: {
+    install(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.N8N_INSTALL);
+    },
+    cancelInstall(): Promise<void> {
+      return ipcRenderer.invoke(IPC_CHANNELS.N8N_INSTALL_CANCEL);
+    },
+    onInstallLog(callback: (line: string) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, line: string) => callback(line);
+      ipcRenderer.on(IPC_CHANNELS.N8N_INSTALL_LOG, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.N8N_INSTALL_LOG, listener);
+    },
+    start(): Promise<{ ok: boolean; error?: string }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.N8N_START);
+    },
+    stop(): Promise<{ ok: boolean }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.N8N_STOP);
+    },
+    status(): Promise<N8nStatusResponse> {
+      return ipcRenderer.invoke(IPC_CHANNELS.N8N_STATUS);
+    },
+    onStatusChanged(callback: (status: N8nStatusResponse) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, data: N8nStatusResponse) =>
+        callback(data);
+      ipcRenderer.on(IPC_CHANNELS.N8N_STATUS_CHANGED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.N8N_STATUS_CHANGED, listener);
+    },
+    openEditor(): Promise<{
+      ok: boolean;
+      editorUrl?: string;
+      workflowId?: string;
+      error?: string;
+    }> {
+      return ipcRenderer.invoke(IPC_CHANNELS.N8N_OPEN_EDITOR);
+    },
+    onWorkflowTouched(callback: (payload: { workflowId: string }) => void): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, data: { workflowId: string }) =>
+        callback(data);
+      ipcRenderer.on(IPC_CHANNELS.N8N_WORKFLOW_TOUCHED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.N8N_WORKFLOW_TOUCHED, listener);
     },
   },
 

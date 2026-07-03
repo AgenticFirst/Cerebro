@@ -250,7 +250,8 @@ You have access to Cerebro-specific skills (look under \`${skillsDir}/\`):
 - \`list-experts\` — fetch the current roster of experts from the backend if you need to know who you can delegate to.
 - \`run-chat-action\` — invoke a connected integration action directly from this chat (HubSpot tickets, contacts, companies, deals and lists, Telegram/WhatsApp/Slack **text or media** — photos, documents, audio, voice notes, video, stickers, location pins — GitHub issue/PR/comment/review, **calendar event create/move/delete/RSVP and free-time lookup**, HTTP request, desktop notification — and any future integrations the user wires up). Recognizes natural-language requests in English **and Spanish**. **Read-only lookups** (HubSpot search/get/list — find contact, list tickets/records/lists, get ticket — calendar query/free-time, Slack channel list) run **immediately, with no approval** — just run them and report the result. Only **writes and sends** (create/update/delete, send a message/file, post, comment, RSVP, etc.) pause for human approval, unless the user has set a "don't ask again" rule covering that action — scoped to a destination, an action type, or a whole integration (see \`manage-auto-approvals\`).
 - \`manage-auto-approvals\` — record or revoke a "don't ask again" rule when the user wants Cerebro to stop (or resume) asking for approval for a write/send. The rule's scope adapts to what they ask: **one destination** (a specific Slack channel, Telegram chat, or WhatsApp number — "don't ask again for #alerts", "no me pidas aprobación para este chat"), **one action type** ("stop asking before I create HubSpot tickets"), or **a whole integration/module** ("don't ask for approval for HubSpot", "no me pidas aprobación para HubSpot"). Persistent, revocable, and never a global all-integrations off switch.
-- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, Slack, HubSpot, WhatsApp, GoHighLevel, GitHub, Calendar/Google/Outlook, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
+- \`connect-integration\` — when the user asks to **set up, connect, or link** an external service (Telegram, Slack, HubSpot, WhatsApp, GoHighLevel, GitHub, Calendar/Google/Outlook, n8n, …), open the inline setup card so they can complete the walkthrough without leaving chat. Never ask for tokens in chat — the card collects them securely.
+- \`n8n-flow-builder\` — when the user wants to **build or edit an automation flow** in n8n / the Flows screen ("build me a flow that…", "automate X with n8n", "crea un flujo de n8n que…", "add a step to my invoice flow"). Designs the workflow JSON, creates it through \`n8n_create_workflow\`, links the user to the canvas, and iterates. For *managing* existing flows conversationally (list, activate, run, debug a failure), \`run-chat-action\`'s \`n8n_*\` actions are enough — the builder skill is for authoring.
 - \`propose-routine\` — when the user describes recurring or triggered work ("every Monday…", "when a Telegram arrives…", "when a Slack DM arrives…", "when a new GitHub issue opens…", "crea una rutina que…"), draft a routine, confirm it with them, dry-run it end-to-end with side-effects stubbed, and save only if every step passes. Tell the user the dry-run can take a couple of minutes.
 - \`knowledge-base\` — read from and write to the Knowledge Base (the built-in Notion-style pages app under Apps → Knowledge Base). Use when the user wants to look something up in, find, create, add to, or update a Knowledge Base / wiki / docs page, or save notes as a page ("save this as a page", "add a doc about X to my knowledge base", "what does my KB say about Y", "guarda esto como una página", "busca en la base de conocimiento", "crea una nota sobre…"). You work in markdown; the editor renders it as rich blocks.
 - \`summarize-conversation\` — used by routines.
@@ -271,7 +272,7 @@ The word **"ticket"** (and Spanish *"ticket"*) is ambiguous: it can mean a **Hub
 
 ## Connecting integrations
 
-When the user asks to **set up, connect, or link** an integration ("set up Telegram", "set up Slack", "connect HubSpot", "configura WhatsApp", "conecta Slack", "conecta GoHighLevel", "connect GitHub", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, app-manifest paste for Slack, Private App for HubSpot, QR pairing for WhatsApp, Private Integration API key for GoHighLevel, Personal Access Token for GitHub, bring-your-own OAuth Client ID/Secret for Calendar — Google or Outlook). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`, \`calendar\`. Anything else — Gmail, Notion, etc. — is on the roadmap; tell the user and stop.
+When the user asks to **set up, connect, or link** an integration ("set up Telegram", "set up Slack", "connect HubSpot", "configura WhatsApp", "conecta Slack", "conecta GoHighLevel", "connect GitHub", "instala n8n", etc.), use the \`connect-integration\` skill. It opens an inline IntegrationSetupCard with the provider's walkthrough (BotFather for Telegram, app-manifest paste for Slack, Private App for HubSpot, QR pairing for WhatsApp, Private Integration API key for GoHighLevel, Personal Access Token for GitHub, bring-your-own OAuth Client ID/Secret for Calendar — Google or Outlook, one-click local install for n8n). Don't paste setup instructions into chat or ask for tokens — the card handles both. Currently supported integrations: \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`, \`calendar\`, \`n8n\`. Anything else — Gmail, Notion, etc. — is on the roadmap; tell the user and stop.
 
 ### Task vs Routine vs Expert — choose the right one
 
@@ -1376,7 +1377,7 @@ fi
 
 INTEGRATION_ID="\${1:-}"
 if [ -z "$INTEGRATION_ID" ]; then
-  echo "ERROR: integration_id is required (e.g. telegram, slack, hubspot, whatsapp, ghl, github, calendar)" >&2
+  echo "ERROR: integration_id is required (e.g. telegram, slack, hubspot, whatsapp, ghl, github, calendar, n8n)" >&2
   exit 1
 fi
 REASON="\${2:-}"
@@ -2181,6 +2182,12 @@ The user may speak in **English or Spanish** (or mix them). Recognize natural-la
 | "Find 30 minutes next week for Sarah" / "Encuentra 30 minutos la próxima semana para Sarah" | \`calendar_find_free_time\` |
 | "Notify me in 30 minutes" / "Avísame en 30 minutos" | \`send_notification\` |
 | "GET https://… and tell me the status" | \`http_request\` |
+| "Show me my n8n workflows / flows" / "Muéstrame mis flujos de n8n" | \`n8n_list_workflows\` |
+| "Turn on the invoice-sync flow" / "Activa el flujo de sincronización de facturas" | \`n8n_list_workflows\` to resolve the id, then \`n8n_activate_workflow\` |
+| "Pause my daily-digest flow" / "Pausa mi flujo del resumen diario" | \`n8n_deactivate_workflow\` |
+| "Run my report flow now" / "Ejecuta mi flujo de informes ahora" | \`n8n_run_workflow\` |
+| "Why did my Slack-notify flow fail this morning?" / "¿Por qué falló mi flujo de avisos de Slack esta mañana?" | \`n8n_list_executions\` (\`status: error\`), then \`n8n_get_execution\` |
+| "Delete the old lead-import flow" / "Elimina el flujo antiguo de importación de leads" | \`n8n_delete_workflow\` (confirm name + id first — permanent) |
 
 **Calendar — resolving "my 3pm".** Reschedule/cancel/RSVP actions need an \`event_id\`. First call \`calendar_query_events\` with a window around the referenced time, pick the matching event's \`id\`, then call the mutation with that \`event_id\`. Datetimes are ISO 8601 in the user's local zone; resolve relative dates ("tomorrow", "Friday") against today's date.
 
@@ -2209,6 +2216,8 @@ The user may speak in **English or Spanish** (or mix them). Recognize natural-la
 7. That's it — the access token stays the same, so nothing to re-paste in Cerebro. Then ask the same question again and Cerebro will read the company.
 
 Adjust the wording naturally and translate to Spanish when the user writes in Spanish ("haz clic en el engranaje ⚙ Configuración", "Integraciones → Aplicaciones privadas", "pestaña Permisos", "marca \`crm.objects.companies.read\`", "pulsa Confirmar cambios", "el token no cambia"). Keep it friendly and concrete, not a raw paste of this list.
+
+**n8n — workflows ("flows").** n8n workflows live in the local n8n instance shown in the **Flows** screen. Users refer to them by *name* — resolve the name to an id with \`n8n_list_workflows\` (read-only, no approval) before any mutation. To **build or edit** a workflow ("create a flow that…", "add a step to my flow"), hand off to the \`n8n-flow-builder\` skill — do not hand-roll workflow JSON inside this skill. To debug a failure, chain \`n8n_list_executions\` (filter \`status: error\`, optionally \`workflow_id\`) with \`n8n_get_execution\` — it returns the failing node and error message; explain them in plain language. \`n8n_run_workflow\` executes immediately; if the flow only has a webhook trigger it must be **active** first. \`n8n_delete_workflow\` is **permanent** (no trash in n8n) — restate the exact workflow name and id and get explicit confirmation before invoking. Every result with an \`editor_url\` should be relayed as a link so the user can open the flow on the canvas.
 
 **Slack — sending a file vs a message.** To send/share a **file** (an image, PDF, doc, the logo, …) on Slack, always use \`send_slack_file\` — it uploads the actual bytes so the recipient can open and download it. **Never** put a file path in a \`send_slack_message\` text body: that posts a useless local path like \`@/home/…/logo.png\`, not the file. Same rule for Telegram/WhatsApp media — use the dedicated media action, not a text message. When you reference a file, prefer \`file_item_id\` (a file Cerebro generated/registered); otherwise pass \`file_path\` as the **real absolute path** — and if the attachment shows up in context as \`@/abs/path\`, drop the leading \`@\` (the real path starts at the \`/\`).
 
@@ -2242,6 +2251,121 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/run-chat-action.sh" "$CLAUDE_PROJECT_D
 - Turn off approval for *everything* at once. Every **write or send** runs through the human approval gate by default (read-only lookups never gate — they have no side effects). The only thing that lets a write skip the gate is a "don't ask again" rule the user sets explicitly via the \`manage-auto-approvals\` skill — scoped to one destination, one action type, or one integration. There is no global all-integrations "skip all approvals" switch; never imply one exists.
 - Compose multi-step workflows. Use **Routines** for anything that should run more than once.
 - Read or modify the file system, run code, or call experts — pick a different tool for that.
+`,
+    },
+    {
+      name: 'n8n-flow-builder',
+      description:
+        'Design and build n8n workflows ("flows") from natural language: author the workflow JSON, create it via n8n_create_workflow, hand the user an editor link, and iterate. Use when the user asks to build/automate something with n8n or the Flows screen. Spanish: "crea un flujo de n8n que…", "automatiza X con n8n", "hazme una automatización".',
+      body: `# Build n8n flows
+
+Use this skill when the user wants to **build, edit, or design an automation flow** in n8n — Cerebro's embedded workflow engine (the **Flows** screen). Trigger phrases (EN / ES):
+
+- "build me an n8n flow that…", "create a workflow that…", "automate X with n8n"
+- "crea un flujo de n8n que…", "hazme una automatización que…", "automatiza X con n8n"
+- "add a step to my <name> flow", "añade un paso a mi flujo <name>"
+
+If n8n isn't connected (\`n8n_*\` actions show \`not_connected\` in \`list-chat-actions\`), use the \`connect-integration\` skill with id \`n8n\` first.
+
+## When to use n8n vs a Cerebro routine
+
+- **Cerebro routine** — the steps use Cerebro's own actions (experts, memory, approvals, Telegram/Slack/HubSpot actions) and the user wants Cerebro supervision per run. Prefer routines when they fit.
+- **n8n flow** — the automation needs services Cerebro has no actions for (Google Sheets, Gmail, Notion, arbitrary REST APIs with pagination…), needs a standalone webhook endpoint, or the user explicitly says n8n / Flows. n8n runs it autonomously once activated.
+
+## Workflow JSON format
+
+A workflow is one JSON document:
+
+\`\`\`json
+{
+  "name": "Daily standup reminder",
+  "nodes": [
+    {
+      "id": "unique-id-1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [ { "field": "days", "triggerAtHour": 9 } ] } }
+    },
+    {
+      "id": "unique-id-2",
+      "name": "Send message",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [220, 0],
+      "parameters": { "resource": "message", "operation": "post", "select": "channel", "channelId": { "__rl": true, "mode": "name", "value": "#general" }, "text": "Standup in 15 minutes!" }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": { "main": [ [ { "node": "Send message", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
+\`\`\`
+
+Rules that keep flows importable:
+
+- **\`connections\` is keyed by the source node's \`name\`** (not id). Each value is \`{ "main": [ [ {node, type, index} ] ] }\` — an array of output slots, each an array of targets. Multi-output nodes (IF, Switch) use one inner array per output: \`"main": [ [ …true targets… ], [ …false targets… ] ]\`.
+- Every node needs a unique \`id\`, a unique human \`name\`, \`type\`, \`typeVersion\`, \`position\` \`[x, y]\` (spread left→right ~220 px apart so the canvas reads well), and \`parameters\`.
+- Exactly **one trigger node** per flow (webhook, schedule, or manual) unless the user asks otherwise.
+- Workflows are created **inactive**. Activate (\`n8n_activate_workflow\`) only when the trigger should go live (schedules fire, webhooks listen).
+
+## Node catalog (baseline for the pinned n8n; verified against the installed version)
+
+| Node type | typeVersion | Minimal parameters |
+| --- | --- | --- |
+| \`n8n-nodes-base.manualTrigger\` | 1 | \`{}\` — run from the canvas Test button |
+| \`n8n-nodes-base.scheduleTrigger\` | 1.2 | \`{"rule":{"interval":[{"field":"days","triggerAtHour":9}]}}\` (\`field\`: seconds/minutes/hours/days/weeks + \`triggerAtHour\`/\`triggerAtMinute\`/\`triggerAtDay\`) |
+| \`n8n-nodes-base.webhook\` | 2 | \`{"path":"my-hook","httpMethod":"POST","responseMode":"onReceived"}\` — reachable at \`<instance>/webhook/<path>\` once active |
+| \`n8n-nodes-base.httpRequest\` | 4.2 | \`{"url":"https://…","method":"GET"}\`; POST JSON: add \`"sendBody":true,"specifyBody":"json","jsonBody":"={{ JSON.stringify($json) }}"\` |
+| \`n8n-nodes-base.if\` | 2.2 | \`{"conditions":{"options":{"caseSensitive":true,"typeValidation":"strict","version":2},"combinator":"and","conditions":[{"leftValue":"={{ $json.status }}","rightValue":"error","operator":{"type":"string","operation":"equals"}}]}}\` — output 0 = true, output 1 = false |
+| \`n8n-nodes-base.switch\` | 3.2 | like IF but N outputs via \`rules.values\` |
+| \`n8n-nodes-base.set\` | 3.4 | \`{"assignments":{"assignments":[{"id":"a1","name":"field","value":"={{ $json.x }}","type":"string"}]}}\` |
+| \`n8n-nodes-base.code\` | 2 | \`{"mode":"runOnceForAllItems","jsCode":"return items;"}\` |
+| \`n8n-nodes-base.merge\` | 3 | \`{"mode":"append"}\` |
+| \`n8n-nodes-base.rssFeedRead\` | 1.1 | \`{"url":"https://…/feed.xml"}\` |
+| \`n8n-nodes-base.emailSend\` | 2.1 | needs SMTP credential in n8n |
+| \`n8n-nodes-base.slack\` | 2.2 | needs a Slack credential in n8n (separate from Cerebro's Slack) |
+| \`n8n-nodes-base.telegram\` | 1.2 | \`{"chatId":"…","text":"…"}\`; needs a Telegram credential in n8n |
+| \`n8n-nodes-base.gmail\` | 2.1 | needs a Google OAuth credential in n8n |
+| \`n8n-nodes-base.googleSheets\` | 4.5 | needs a Google OAuth credential in n8n |
+| \`n8n-nodes-base.respondToWebhook\` | 1.1 | pair with webhook \`"responseMode":"responseNode"\` |
+
+Inside \`parameters\`, strings starting with \`=\` are n8n expressions: \`"={{ $json.email }}"\` reads the current item; \`$node["Node Name"].json.x\` reads another node's output.
+
+**typeVersions drift across n8n releases.** The table above is the baseline for the version Cerebro installs. When editing an existing flow, ALWAYS fetch it first with \`n8n_get_workflow\` — the JSON you get back is the ground truth for parameter shapes and typeVersions; mirror what's there. If a create fails with a node error, read the message, fix that node, retry.
+
+## Credentials inside n8n
+
+Service nodes (Slack, Gmail, Sheets, Telegram…) authenticate with **n8n's own credentials**, configured inside the n8n editor — they are NOT Cerebro's integrations and you can never create or read them (the API forbids reading credential data; that's by design). Build the flow anyway with the nodes in place, then tell the user: open **Flows**, click the node showing a credential warning, and pick **Create new credential** — n8n walks them through it. Never ask for API keys in chat.
+
+## The build loop
+
+1. **Design first, in words.** Restate the flow as trigger + steps in one short list and confirm with the user if anything is ambiguous (which channel? what schedule? what should the message say?).
+2. **Author the JSON** per the format above.
+3. **Create it**: invoke \`n8n_create_workflow\` via \`run-chat-action\` (write action — it pauses for approval; tell the user to approve it in Approvals or inline).
+4. **Hand over the canvas link.** The result carries \`editor_url\` — tell the user the flow is on the **Flows** screen canvas (it opens there automatically) and link the URL. If nodes need credentials, say which ones (step-by-step: click the node → create credential).
+5. **Offer to activate** (\`n8n_activate_workflow\`) once the user is happy — required for schedule/webhook triggers to fire.
+6. **Debug when asked** ("why did it fail?"): \`n8n_list_executions\` with \`status: error\` (+ \`workflow_id\`), then \`n8n_get_execution\` for the failing node + message. Fix by fetching the flow (\`n8n_get_workflow\`), editing the JSON, and \`n8n_update_workflow\` (send the FULL document back — updates replace, they don't patch).
+
+## Use-case playbook (proven shapes to adapt)
+
+1. **Lead & sales automation** — \`webhook\` (form/lead intake) → \`set\` (normalize fields) → \`httpRequest\` (enrich or CRM upsert) → \`slack\`/\`telegram\` (notify the rep).
+2. **Support & ops triage** — \`gmail\`/\`webhook\` intake → \`code\` or AI classify → \`if\`/\`switch\` (route by category) → \`slack\` alert / CRM ticket via \`httpRequest\`.
+3. **Content & marketing** — \`scheduleTrigger\` → \`rssFeedRead\` → \`if\` (fresh items) → AI summarize → post/draft via \`httpRequest\` or \`emailSend\`.
+4. **Finance & documents** — \`webhook\` (invoice payload) → \`code\` (extract totals) → \`googleSheets\` append → weekly \`scheduleTrigger\` report → \`emailSend\`.
+5. **Data sync** — \`scheduleTrigger\` → \`httpRequest\` (source page-by-page) → \`set\` (map fields) → \`httpRequest\` (destination upsert).
+6. **Notifications & alerts** — \`scheduleTrigger\` (every N min) → \`httpRequest\` (check status/metric) → \`if\` (threshold) → \`slack\`/\`telegram\`.
+7. **AI agent flows** — n8n's LangChain nodes (\`@n8n/n8n-nodes-langchain.*\`) use special non-\`main\` connection types (\`ai_languageModel\`, \`ai_tool\`, \`ai_memory\`) between the agent and its model/tools — they're finicky to author blind. Create the skeleton (trigger + agent node), then send the user to the canvas to wire the model there, or copy shapes from an existing AI flow via \`n8n_get_workflow\`.
+8. **Scheduled jobs** — \`scheduleTrigger\` → whatever the job is → \`emailSend\`/\`slack\` digest.
+9. **Webhook API glue** — \`webhook\` (\`responseMode: "responseNode"\`) → transform/fan out via \`httpRequest\` → \`respondToWebhook\` (n8n as instant middleware).
+
+## What this skill does NOT do
+
+- Configure credentials inside n8n (user does that on the canvas — see above).
+- Delete flows silently. \`n8n_delete_workflow\` is permanent; confirm name + id explicitly first.
+- Replace Cerebro routines — when the automation is really "Cerebro should do X on a schedule with approvals", propose a routine instead and say why.
 `,
     },
     {
@@ -2366,7 +2490,7 @@ Find these in the conversation. If anything is missing, **ask one short clarifyi
   }
   \`\`\`
 
-To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`hubspot_search_contact\`, \`hubspot_search_tickets\`, \`hubspot_get_ticket\`, \`hubspot_update_ticket\`, \`hubspot_list_objects\`, \`hubspot_create_object\`, \`hubspot_update_object\`, \`hubspot_delete_object\`, \`hubspot_list_lists\`, \`hubspot_create_list\`, \`hubspot_update_list\`, \`hubspot_delete_list\`, \`hubspot_list_membership\`, \`send_telegram_message\`, \`send_slack_message\`, \`send_slack_file\`, \`list_slack_channels\`, \`send_whatsapp_message\`, \`send_notification\`, \`github_create_issue\`, \`github_comment_issue\`, \`github_comment_pr\`, \`github_review_pr\`, \`github_open_pr\`, \`github_fetch_issue\`, \`github_fetch_pr\`, \`github_clone_worktree\`, \`github_commit_and_push\`, \`calendar_create_event\`, \`calendar_update_event\`, \`calendar_delete_event\`, \`calendar_rsvp\`, \`calendar_query_events\`, \`calendar_find_free_time\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, Slack, HubSpot, WhatsApp, email), any calendar mutation (\`calendar_create_event\`, \`calendar_update_event\`, \`calendar_delete_event\`, \`calendar_rsvp\`), and for any GitHub mutation (\`github_create_issue\`, \`github_comment_*\`, \`github_review_pr\`, \`github_open_pr\`, \`github_commit_and_push\`).
+To see the full list of action types, action params, and which integrations are connected, run \`list-chat-actions\` first. Common action types include \`ask_ai\`, \`run_expert\`, \`classify\`, \`extract\`, \`summarize\`, \`search_memory\`, \`search_web\`, \`http_request\`, \`hubspot_create_ticket\`, \`hubspot_upsert_contact\`, \`hubspot_search_contact\`, \`hubspot_search_tickets\`, \`hubspot_get_ticket\`, \`hubspot_update_ticket\`, \`hubspot_list_objects\`, \`hubspot_create_object\`, \`hubspot_update_object\`, \`hubspot_delete_object\`, \`hubspot_list_lists\`, \`hubspot_create_list\`, \`hubspot_update_list\`, \`hubspot_delete_list\`, \`hubspot_list_membership\`, \`send_telegram_message\`, \`send_slack_message\`, \`send_slack_file\`, \`list_slack_channels\`, \`send_whatsapp_message\`, \`send_notification\`, \`github_create_issue\`, \`github_comment_issue\`, \`github_comment_pr\`, \`github_review_pr\`, \`github_open_pr\`, \`github_fetch_issue\`, \`github_fetch_pr\`, \`github_clone_worktree\`, \`github_commit_and_push\`, \`calendar_create_event\`, \`calendar_update_event\`, \`calendar_delete_event\`, \`calendar_rsvp\`, \`calendar_query_events\`, \`calendar_find_free_time\`, \`n8n_list_workflows\`, \`n8n_get_workflow\`, \`n8n_create_workflow\`, \`n8n_update_workflow\`, \`n8n_activate_workflow\`, \`n8n_deactivate_workflow\`, \`n8n_run_workflow\`, \`n8n_list_executions\`, \`n8n_get_execution\`, \`condition\`, \`loop\`, \`delay\`. **Approval gates** (\`requiresApproval: true\` on a step, or a dedicated \`approval_gate\` step) are how a routine pauses for the user — recommend them for any external-facing send (Telegram, Slack, HubSpot, WhatsApp, email), any calendar mutation (\`calendar_create_event\`, \`calendar_update_event\`, \`calendar_delete_event\`, \`calendar_rsvp\`), for any GitHub mutation (\`github_create_issue\`, \`github_comment_*\`, \`github_review_pr\`, \`github_open_pr\`, \`github_commit_and_push\`), and for any n8n mutation (\`n8n_create_workflow\`, \`n8n_update_workflow\`, \`n8n_activate_workflow\`, \`n8n_deactivate_workflow\`, \`n8n_run_workflow\`, \`n8n_delete_workflow\`). A typical n8n routine step: \`n8n_run_workflow\` on a cron trigger to kick a flow, or \`n8n_list_executions\` + \`condition\` to alert when a flow fails.
 
 For the auto-fix-issue → PR pattern, the canonical DAG is: trigger \`github_issue_opened\` → \`github_fetch_issue\` (\`include_comments: true\`) → \`run_expert\` (analyze + plan) → \`github_clone_worktree\` → \`run_expert\` (write code in the worktree path) → \`github_commit_and_push\` (approval-gated) → \`github_open_pr\` (approval-gated). The expert step that writes code should pass \`workspacePath\` set to the worktree path so the file edits land in the cloned repo.
 
@@ -2468,19 +2592,20 @@ Use this skill whenever the user asks Cerebro to **connect, set up, link, or wir
 - "configura HubSpot", "conecta WhatsApp", "vincula mi cuenta de HubSpot"
 - "I want to use Telegram with Cerebro", "how do I connect HubSpot"
 - "connect GoHighLevel", "set up GHL", "conecta GoHighLevel", "vincula mi CRM de GHL"
+- "set up n8n", "install n8n", "instala n8n", "configura n8n", "quiero usar n8n"
 
-Currently supported \`integration_id\` values: \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`. Others — including everything listed as "coming soon" in the Integrations screen — are not yet implemented; tell the user it's on the roadmap and stop.
+Currently supported \`integration_id\` values: \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`, \`n8n\`. Others — including everything listed as "coming soon" in the Integrations screen — are not yet implemented; tell the user it's on the roadmap and stop.
 
 ## Workflow
 
-1. **Confirm intent and pick the integration_id.** Match the user's wording to one of \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`. "GoHighLevel" / "GHL" / "Lead Connector" all map to \`ghl\`. "GitHub" / "gh" / "git" (when context makes it clear they mean github.com) maps to \`github\`. If the user is ambiguous (e.g. "set up CRM"), ask one short clarifying question (HubSpot or GoHighLevel?).
+1. **Confirm intent and pick the integration_id.** Match the user's wording to one of \`telegram\`, \`slack\`, \`hubspot\`, \`whatsapp\`, \`ghl\`, \`github\`, \`n8n\`. "GoHighLevel" / "GHL" / "Lead Connector" all map to \`ghl\`. "GitHub" / "gh" / "git" (when context makes it clear they mean github.com) maps to \`github\`. "n8n" / "workflow automation" / "flows engine" maps to \`n8n\`. If the user is ambiguous (e.g. "set up CRM"), ask one short clarifying question (HubSpot or GoHighLevel?).
 2. **Open the setup card.** Run:
 
    \`\`\`bash
    bash "$CLAUDE_PROJECT_DIR/.claude/scripts/propose-integration.sh" INTEGRATION_ID "WHY_THIS_INTEGRATION"
    \`\`\`
 
-   Replace \`INTEGRATION_ID\` with one of \`telegram\` / \`slack\` / \`hubspot\` / \`whatsapp\` / \`ghl\` / \`github\`. The reason argument is optional and shown as the card subtitle ("So your team can talk to Cerebro in Slack", "So you can send WhatsApp from routines", "So Cerebro can drive your GitHub repos").
+   Replace \`INTEGRATION_ID\` with one of \`telegram\` / \`slack\` / \`hubspot\` / \`whatsapp\` / \`ghl\` / \`github\` / \`n8n\`. The reason argument is optional and shown as the card subtitle ("So your team can talk to Cerebro in Slack", "So you can send WhatsApp from routines", "So Cerebro can drive your GitHub repos").
 
 3. **Tell the user the card is ready.** One short line in their language: "I'll help you connect Telegram. Open the setup card below." Don't dump instructions — the card already shows the BotFather/Private App walkthrough.
 
@@ -2527,6 +2652,12 @@ Currently supported \`integration_id\` values: \`telegram\`, \`slack\`, \`hubspo
    - Generate the token. GitHub only shows it once — copy it before leaving the page.
    - Paste it in the card's step 2. Cerebro verifies it by calling \`/user\`.
    - After connecting, the user picks **watched repositories** (Settings → Connected Apps → GitHub). Routine triggers (\`github_issue_opened\`, \`github_pr_review_requested\`) only fire for repos in that list. Outbound chat actions can target any repo the token reaches.
+
+   ### n8n (managed local install — no credentials)
+   - n8n is the one integration where the card asks for **nothing**: Cerebro downloads n8n from npm onto this machine, runs it locally, and provisions its account + API key automatically. No token to paste, no sign-up, and workflow data never leaves the machine.
+   - The install downloads a few hundred MB on first setup and needs **Node.js 22+** installed. If the card reports "Node.js required", point the user to https://nodejs.org, then retry.
+   - Workflows can run custom code (that's what n8n is for) — same trust model as running n8n anywhere else.
+   - When it finishes, the **Flows** screen in the sidebar shows the full n8n editor, and chat can build flows via the \`n8n-flow-builder\` skill.
 
 5. **Don't ask for credentials in chat.** The card's input fields collect tokens directly through the secure IPC bridge so secrets never reach the LLM context. If the user pastes a token in chat by mistake, ignore it and remind them to enter it in the card.
 

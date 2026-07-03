@@ -242,6 +242,145 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
       summary: `[dry-run] Would ${mode} HubSpot list members`,
     };
   },
+  n8n_list_workflows: () => ({
+    data: {
+      count: 1,
+      workflows: [
+        {
+          workflow_id: syntheticId('dryrun-wf-'),
+          name: '[dry-run] workflow',
+          active: false,
+          updated_at: null,
+          editor_url: 'http://127.0.0.1:0/workflow/dry-run',
+        },
+      ],
+      error: null,
+    },
+    summary: '[dry-run] Would list n8n workflows',
+  }),
+  n8n_get_workflow: (input) => {
+    const id =
+      String((input.params as Record<string, unknown>).workflow_id ?? '') ||
+      syntheticId('dryrun-wf-');
+    return {
+      data: {
+        found: true,
+        workflow_id: id,
+        name: '[dry-run] workflow',
+        active: false,
+        workflow_json: { name: '[dry-run] workflow', nodes: [], connections: {}, settings: {} },
+        editor_url: `http://127.0.0.1:0/workflow/${id}`,
+        error: null,
+      },
+      summary: '[dry-run] Would fetch n8n workflow',
+    };
+  },
+  n8n_create_workflow: () => {
+    const id = syntheticId('dryrun-wf-');
+    return {
+      data: {
+        created: true,
+        workflow_id: id,
+        name: '[dry-run] workflow',
+        editor_url: `http://127.0.0.1:0/workflow/${id}`,
+        error: null,
+      },
+      summary: '[dry-run] Would create n8n workflow',
+    };
+  },
+  n8n_update_workflow: (input) => {
+    const id =
+      String((input.params as Record<string, unknown>).workflow_id ?? '') ||
+      syntheticId('dryrun-wf-');
+    return {
+      data: {
+        updated: true,
+        workflow_id: id,
+        name: '[dry-run] workflow',
+        editor_url: `http://127.0.0.1:0/workflow/${id}`,
+        error: null,
+      },
+      summary: '[dry-run] Would update n8n workflow',
+    };
+  },
+  n8n_activate_workflow: (input) => ({
+    data: {
+      success: true,
+      workflow_id:
+        String((input.params as Record<string, unknown>).workflow_id ?? '') ||
+        syntheticId('dryrun-wf-'),
+      active: true,
+      error: null,
+    },
+    summary: '[dry-run] Would activate n8n workflow',
+  }),
+  n8n_deactivate_workflow: (input) => ({
+    data: {
+      success: true,
+      workflow_id:
+        String((input.params as Record<string, unknown>).workflow_id ?? '') ||
+        syntheticId('dryrun-wf-'),
+      active: false,
+      error: null,
+    },
+    summary: '[dry-run] Would deactivate n8n workflow',
+  }),
+  n8n_delete_workflow: (input) => ({
+    data: {
+      deleted: true,
+      workflow_id:
+        String((input.params as Record<string, unknown>).workflow_id ?? '') ||
+        syntheticId('dryrun-wf-'),
+      error: null,
+    },
+    summary: '[dry-run] Would delete n8n workflow (permanent in a real run)',
+  }),
+  n8n_run_workflow: (input) => ({
+    data: {
+      started: true,
+      workflow_id:
+        String((input.params as Record<string, unknown>).workflow_id ?? '') ||
+        syntheticId('dryrun-wf-'),
+      execution_id: syntheticId('dryrun-exec-'),
+      status: 'success',
+      error: null,
+    },
+    summary: '[dry-run] Would run n8n workflow',
+  }),
+  n8n_list_executions: () => ({
+    data: {
+      count: 1,
+      executions: [
+        {
+          execution_id: syntheticId('dryrun-exec-'),
+          workflow_id: syntheticId('dryrun-wf-'),
+          status: 'success',
+          started_at: null,
+          stopped_at: null,
+        },
+      ],
+      error: null,
+    },
+    summary: '[dry-run] Would list n8n executions',
+  }),
+  n8n_get_execution: (input) => ({
+    data: {
+      found: true,
+      execution_id:
+        String((input.params as Record<string, unknown>).execution_id ?? '') ||
+        syntheticId('dryrun-exec-'),
+      workflow_id: syntheticId('dryrun-wf-'),
+      workflow_name: '[dry-run] workflow',
+      status: 'success',
+      started_at: null,
+      stopped_at: null,
+      failed_node: null,
+      error_message: null,
+      last_node_executed: null,
+      error: null,
+    },
+    summary: '[dry-run] Would fetch n8n execution',
+  }),
   send_telegram_message: (input) => ({
     data: {
       sent: true,

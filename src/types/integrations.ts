@@ -9,7 +9,13 @@
  * touching the card itself.
  */
 
-export type AuthMode = 'token' | 'api_key' | 'qr_pairing' | 'oauth';
+/**
+ * `managed` = Cerebro owns the whole credential lifecycle (installs the
+ * service locally and provisions its credentials itself); the user pastes
+ * nothing. Like `qr_pairing` it has no fields, but the connect affordance
+ * is "Install" rather than "Verify".
+ */
+export type AuthMode = 'token' | 'api_key' | 'qr_pairing' | 'oauth' | 'managed';
 
 export interface IntegrationFieldSchema {
   /** Object key used in {@link IntegrationManifest.verify} payloads (e.g. 'botToken'). */
@@ -72,7 +78,7 @@ export interface IntegrationIPC {
  * which renders fields directly from the manifest. New integrations get
  * the generic modal for free.
  */
-export type CustomModalId = 'telegram' | 'slack' | 'hubspot' | 'whatsapp' | 'calendar';
+export type CustomModalId = 'telegram' | 'slack' | 'hubspot' | 'whatsapp' | 'calendar' | 'n8n';
 
 export interface IntegrationManifest {
   /** Stable identifier used in chat-action params and message metadata. */

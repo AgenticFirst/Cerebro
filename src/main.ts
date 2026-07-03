@@ -62,6 +62,7 @@ import { TelegramBridge } from './telegram/bridge';
 import { SlackBridge } from './slack/bridge';
 import { WhatsAppBridge } from './whatsapp/bridge';
 import { HubSpotHolder } from './hubspot/holder';
+import { N8nManager } from './n8n/manager';
 import { CalendarBridge } from './calendar/bridge';
 import { GHLHolder } from './ghl/holder';
 import { GitHubBridge } from './github/bridge';
@@ -328,6 +329,8 @@ let slackBridge: SlackBridge | null = null;
 let whatsAppBridge: WhatsAppBridge | null = null;
 // HubSpot credential holder
 let hubSpotHolder: HubSpotHolder | null = null;
+// n8n managed local instance (installed on demand, spawned as a child process)
+let n8nManager: N8nManager | null = null;
 let calendarBridge: CalendarBridge | null = null;
 // Supabase backend-sync holder (multi-device)
 let supabaseHolder: SupabaseHolder | null = null;
@@ -590,6 +593,19 @@ async function startPythonBackend(): Promise<void> {
     console.error('[Cerebro] HubSpot holder init failed:', err);
   });
 
+  // n8n managed instance — loads stored credentials, then auto-starts only if
+  // the user completed setup in a previous session (mirrors the bridges'
+  // "starts only if configured + enabled" contract). Install/first-start is
+  // always user-triggered from the Flows screen or the Integrations card.
+  n8nManager = new N8nManager({ backendPort: port, dataDir });
+  executionEngine.setN8nChannel(n8nManager);
+  n8nManager
+    .init()
+    .then(() => n8nManager?.startIfEnabled())
+    .catch((err) => {
+      console.error('[Cerebro] n8n manager init failed:', err);
+    });
+
   // Supabase backend-sync holder. The backend auto-starts sync from env vars
   // (see top of startPythonBackend); the holder drives connect/disconnect/status
   // from the Settings UI against the live backend port.
@@ -684,6 +700,7 @@ async function startPythonBackend(): Promise<void> {
     telegramBridge?.setWebContents(windows[0].webContents);
     whatsAppBridge?.setWebContents(windows[0].webContents);
     gitHubBridge?.setWebContents(windows[0].webContents);
+    n8nManager?.setWebContents(windows[0].webContents);
   }
 
   // Initial scheduler sync + start periodic re-sync
@@ -2598,6 +2615,48 @@ function registerIpcHandlers(): void {
     },
   );
 
+  // --- n8n (Cerebro-managed local instance) ---
+
+  ipcMain.handle(IPC_CHANNELS.N8N_INSTALL, async (event) => {
+    if (!n8nManager) return { ok: false, error: 'n8n manager not initialized' };
+    return n8nManager.install(event.sender);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.N8N_INSTALL_CANCEL, async () => {
+    n8nManager?.cancelInstall();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.N8N_START, async () => {
+    if (!n8nManager) return { ok: false, error: 'n8n manager not initialized' };
+    return n8nManager.start();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.N8N_STOP, async () => {
+    if (!n8nManager) return { ok: true };
+    await n8nManager.stop();
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.N8N_STATUS, async () => {
+    if (!n8nManager) {
+      return {
+        phase: 'not_installed' as const,
+        port: null,
+        version: null,
+        editorUrl: null,
+        hasApiKey: false,
+        lastError: null,
+        tokenBackend: 'plaintext-fallback' as const,
+      };
+    }
+    return n8nManager.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.N8N_OPEN_EDITOR, async () => {
+    if (!n8nManager) return { ok: false, error: 'n8n manager not initialized' };
+    return n8nManager.prepareEmbeddedEditor();
+  });
+
   // --- Calendar (Google + Outlook) ---
 
   ipcMain.handle(IPC_CHANNELS.CALENDAR_START_OAUTH, async (_event, input) => {
@@ -2891,6 +2950,9 @@ const createWindow = () => {
   if (whatsAppBridge) {
     whatsAppBridge.setWebContents(mainWindow.webContents);
   }
+  if (n8nManager) {
+    n8nManager.setWebContents(mainWindow.webContents);
+  }
   if (calendarBridge) {
     calendarBridge.setWebContents(mainWindow.webContents);
     // Faster sync cadence while the app is focused; back off when it isn't.
@@ -3177,6 +3239,13 @@ app.on('before-quit', async () => {
       /* ignore */
     }
   }
+  if (n8nManager) {
+    try {
+      await n8nManager.stop();
+    } catch {
+      /* ignore */
+    }
+  }
   if (chatActionServer) {
     try {
       await chatActionServer.stop();
@@ -3187,9 +3256,10 @@ app.on('before-quit', async () => {
   await stopPythonBackend();
 });
 
-// Safety net: ensure Python process is killed when the Node process exits
+// Safety net: ensure child processes are killed when the Node process exits
 process.on('exit', () => {
   if (pythonProcess && !pythonProcess.killed) {
     pythonProcess.kill('SIGKILL');
   }
+  n8nManager?.killNow();
 });

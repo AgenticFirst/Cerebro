@@ -172,3 +172,12 @@ export function SupabaseIcon({ size = 24, className }: IconProps) {
     </svg>
   );
 }
+
+export function N8nIcon({ size = 24, className }: IconProps) {
+  // Node-mesh mark: three linked workflow nodes, echoing n8n's canvas.
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M4.5 9.75a2.75 2.75 0 0 1 2.6 1.85h3.55a2.75 2.75 0 0 1 2.19-1.81l.51-2.55a2.75 2.75 0 1 1 1.77.35l-.51 2.56a2.76 2.76 0 0 1 1.28 1.45h1.26a2.75 2.75 0 1 1 0 1.8h-1.26a2.75 2.75 0 0 1-5.24-.1H7.1a2.75 2.75 0 1 1-2.6-3.55zm0 1.8a.95.95 0 1 0 0 1.9.95.95 0 0 0 0-1.9zm8.9 0a.95.95 0 1 0 0 1.9.95.95 0 0 0 0-1.9zm6.1 0a.95.95 0 1 0 0 1.9.95.95 0 0 0 0-1.9zM16.9 4.1a.95.95 0 1 0 0 1.9.95.95 0 0 0 0-1.9z" />
+    </svg>
+  );
+}

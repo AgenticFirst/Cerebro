@@ -18,6 +18,7 @@ import {
   CalendarDays,
   LayoutGrid,
   ChevronRight,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -59,6 +60,7 @@ const NAV_OVERSIGHT_BASE: NavItemDef[] = [{ id: 'approvals', icon: ShieldCheck }
 
 // Apps — embedded mini-apps (Knowledge Base, …)
 const NAV_APPS: NavItemDef[] = [
+  { id: 'flows', icon: Workflow },
   { id: 'calendar', icon: CalendarDays },
   { id: 'knowledge-base', icon: BookOpen },
   { id: 'news', icon: Newspaper },
@@ -214,6 +216,7 @@ const NAV_LABEL_KEYS: Record<string, string> = {
   'knowledge-base': 'nav.knowledgeBase',
   news: 'nav.news',
   calendar: 'nav.calendar',
+  flows: 'nav.flows',
   settings: 'nav.settings',
 };
 

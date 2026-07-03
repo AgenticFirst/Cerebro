@@ -10,8 +10,7 @@ import { IS_MAC } from '../../lib/platform';
 import { showOsNotification } from '../../lib/os-notification';
 import Sidebar from './Sidebar';
 import UpdateBanner from '../update/UpdateBanner';
-import ChatView from '../chat/ChatView';
-import WelcomeView from '../chat/WelcomeView';
+import ChatPanel from '../chat/ChatPanel';
 import ExpertsScreen from '../screens/ExpertsScreen';
 import RoutinesScreen from '../screens/RoutinesScreen';
 import ActivityScreen from '../screens/ActivityScreen';
@@ -23,22 +22,14 @@ import FilesScreen from '../screens/FilesScreen';
 import KnowledgeBaseScreen from '../screens/knowledge-base/KnowledgeBaseScreen';
 import NewsScreen from '../screens/news/NewsScreen';
 import CalendarScreen from '../screens/calendar/CalendarScreen';
+import FlowsScreen from '../screens/FlowsScreen';
 import CommandPalette from '../command-palette/CommandPalette';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
 
 export default function AppLayout() {
   const { t } = useTranslation();
-  const {
-    activeConversation,
-    isStreaming,
-    isThinking,
-    activeScreen,
-    sendMessage,
-    chatError,
-    dismissChatError,
-    setActiveScreen,
-  } = useChat();
+  const { activeScreen, chatError, dismissChatError, setActiveScreen } = useChat();
   const {
     pendingFailurePrompts,
     confirmFailurePrompt,
@@ -125,16 +116,7 @@ export default function AppLayout() {
 
   const renderContent = () => {
     if (activeScreen === 'chat') {
-      return activeConversation ? (
-        <ChatView
-          conversation={activeConversation}
-          onSend={sendMessage}
-          isStreaming={isStreaming}
-          isThinking={isThinking}
-        />
-      ) : (
-        <WelcomeView onSend={sendMessage} />
-      );
+      return <ChatPanel />;
     }
     if (activeScreen === 'tasks') {
       return <TasksScreen />;
@@ -174,6 +156,9 @@ export default function AppLayout() {
     }
     if (activeScreen === 'calendar') {
       return <CalendarScreen />;
+    }
+    if (activeScreen === 'flows') {
+      return <FlowsScreen />;
     }
     if (activeScreen === 'call' && flags['voice-calls']) {
       return <CallScreen />;

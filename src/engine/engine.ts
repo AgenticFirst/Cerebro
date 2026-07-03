@@ -58,6 +58,8 @@ import { createHubSpotUpsertContactAction } from './actions/hubspot-upsert-conta
 import { createHubSpotSearchContactAction } from './actions/hubspot-search-contact';
 import { createHubSpotSearchTicketsAction } from './actions/hubspot-search-tickets';
 import { createHubSpotGetTicketAction } from './actions/hubspot-get-ticket';
+import { createN8nWorkflowActions } from './actions/n8n-workflows';
+import { createN8nExecutionActions } from './actions/n8n-executions';
 import { createHubSpotUpdateTicketAction } from './actions/hubspot-update-ticket';
 import {
   createHubSpotListObjectsAction,
@@ -73,6 +75,7 @@ import {
   createHubSpotListMembershipAction,
 } from './actions/hubspot-lists';
 import type { HubSpotChannel } from './actions/hubspot-channel';
+import type { N8nChannel } from './actions/n8n-channel';
 import type { CalendarChannel } from './actions/calendar-channel';
 import { createCalendarCreateEventAction } from './actions/calendar-create-event';
 import { createCalendarUpdateEventAction } from './actions/calendar-update-event';
@@ -165,6 +168,7 @@ export class ExecutionEngine {
   private slackChannel: SlackChannel | null = null;
   private whatsAppChannel: WhatsAppChannel | null = null;
   private hubSpotChannel: HubSpotChannel | null = null;
+  private n8nChannel: N8nChannel | null = null;
   private gitHubChannel: GitHubChannel | null = null;
   private calendarChannel: CalendarChannel | null = null;
   private activeRuns = new Map<string, ActiveEngineRun>();
@@ -198,6 +202,11 @@ export class ExecutionEngine {
   /** Late-bind the HubSpot credential holder so hubspot_* actions can use it. */
   setHubSpotChannel(channel: HubSpotChannel): void {
     this.hubSpotChannel = channel;
+  }
+
+  /** Late-bind the n8n manager so n8n_* actions can use it. */
+  setN8nChannel(channel: N8nChannel): void {
+    this.n8nChannel = channel;
   }
 
   /** Late-bind the GitHub bridge so github_* actions can use it. */
@@ -617,6 +626,14 @@ export class ExecutionEngine {
    * singleton. Single source of truth so the chat-exposable list and the
    * dry-run registry can't silently drift apart.
    */
+  private n8nActionDefs(): ActionDefinition[] {
+    const getChannel = () => this.n8nChannel;
+    return [
+      ...createN8nWorkflowActions({ getChannel }),
+      ...createN8nExecutionActions({ getChannel }),
+    ];
+  }
+
   private hubSpotActionDefs(): ActionDefinition[] {
     const getChannel = () => this.hubSpotChannel;
     return [
@@ -667,6 +684,7 @@ export class ExecutionEngine {
       }),
       createSendWhatsAppLocationAction({ getChannel: () => this.whatsAppChannel }),
       ...this.hubSpotActionDefs(),
+      ...this.n8nActionDefs(),
       createGitHubCreateIssueAction({ getChannel: () => this.gitHubChannel }),
       createGitHubCommentIssueAction({ getChannel: () => this.gitHubChannel }),
       createGitHubCommentPrAction({ getChannel: () => this.gitHubChannel }),
@@ -1130,6 +1148,9 @@ export class ExecutionEngine {
 
     // HubSpot (outbound only)
     for (const action of this.hubSpotActionDefs()) registry.register(action);
+
+    // n8n (managed local instance)
+    for (const action of this.n8nActionDefs()) registry.register(action);
 
     // GitHub
     registry.register(createGitHubCreateIssueAction({ getChannel: () => this.gitHubChannel }));

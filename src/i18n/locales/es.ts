@@ -40,6 +40,7 @@ const es: TranslationKeys = {
     knowledgeBase: 'Base de Conocimiento',
     news: 'Noticias',
     calendar: 'Calendario',
+    flows: 'Flujos (n8n)',
     settings: 'Ajustes',
     newChat: 'Nuevo chat',
     expandSidebar: 'Expandir barra lateral',
@@ -1331,6 +1332,19 @@ const es: TranslationKeys = {
         pasteHere: 'P\u00e9galo en el siguiente paso. Cerebro lo verifica llamando a /user.',
       },
     },
+    n8n: {
+      name: 'n8n',
+      description:
+        'Crea y ejecuta flujos de automatizaci\u00f3n en una instancia local de n8n gestionada por Cerebro.',
+      steps: {
+        install:
+          'Cerebro descarga n8n desde npm en este equipo \u2014 sin registros ni credenciales que pegar.',
+        provision:
+          'Cerebro inicia n8n localmente y aprovisiona su cuenta y clave de API autom\u00e1ticamente. Todo se queda en este equipo.',
+        ready:
+          'Abre la pantalla Flujos para usar el editor completo de n8n, o p\u00eddele a Cerebro en el chat que cree un flujo.',
+      },
+    },
   },
 
   // ── Secci\u00f3n del motor ───────────────────────────────────────
@@ -1381,6 +1395,72 @@ const es: TranslationKeys = {
     supabase: 'Supabase',
     supabaseDesc:
       'Sincroniza tus chats, base de conocimiento, expertos y tareas entre dispositivos con tu propio proyecto de Supabase.',
+    n8n: 'n8n',
+    n8nDesc:
+      'Motor local de automatización de flujos detrás de la pantalla Flujos. Gestionado por Cerebro.',
+  },
+
+  // ── Modal de conexión de n8n + sección ───────────────────────
+  n8nSetup: {
+    stepLabel: 'Paso {{current}} de {{total}}',
+    cancel: 'Cancelar',
+    close: 'Cerrar',
+    step1Title: 'Ejecuta n8n dentro de Cerebro',
+    step1Body:
+      'n8n es un motor de automatización de flujos. Cerebro lo instala en este equipo y lo gestiona por ti — tus flujos y sus datos nunca salen de esta máquina.',
+    step1Point1: 'Instalación local con un clic (varios cientos de MB, descargados de npm).',
+    step1Point2: 'Sin cuenta ni credenciales — Cerebro lo aprovisiona todo automáticamente.',
+    step1Point3:
+      'Los flujos pueden ejecutar código propio — el mismo modelo de confianza que n8n en cualquier otro sitio.',
+    step1Install: 'Instalar n8n',
+    step2Title: 'Instalando n8n',
+    step2Body: 'Descargando e instalando n8n. La primera vez puede tardar unos minutos.',
+    step2CancelInstall: 'Cancelar instalación',
+    step3Title: 'Iniciando n8n',
+    step3Body: 'Iniciando la instancia local y aprovisionando su cuenta y clave de API…',
+    step4Title: 'n8n está listo',
+    step4Body:
+      'El editor completo de n8n ya vive en la pantalla Flujos, y el chat de Cerebro puede crear y ejecutar flujos por ti.',
+    step4OpenFlows: 'Abrir Flujos',
+    nodeRequiredTitle: 'Se necesita Node.js',
+    nodeRequiredBody:
+      'n8n necesita Node.js {{version}}+ en este equipo y Cerebro no lo encontró. Instálalo desde nodejs.org y vuelve a intentarlo.',
+    nodeRequiredLink: 'Descargar Node.js',
+    errorTitle: 'Algo salió mal',
+    status: 'Estado',
+    statusRunning: 'En ejecución',
+    statusStopped: 'Detenido',
+    statusInstalling: 'Instalando…',
+    statusStarting: 'Iniciando…',
+    statusProvisioning: 'Aprovisionando…',
+    statusCrashed: 'Falló',
+    statusNotInstalled: 'No instalado',
+    statusNodeRequired: 'Se necesita Node.js',
+    version: 'Versión',
+    start: 'Iniciar',
+    stop: 'Detener',
+    install: 'Instalar n8n',
+    openFlows: 'Abrir Flujos',
+    sectionDescription:
+      'Una instancia local de n8n gestionada por Cerebro impulsa la pantalla Flujos. Instálala una vez; después Cerebro la inicia con la app.',
+  },
+
+  // ── Pantalla Flujos (editor de n8n embebido) ─────────────────
+  flows: {
+    title: 'Flujos (n8n)',
+    subtitle: 'Flujos de automatización con tu instancia local de n8n',
+    notInstalledTitle: 'Configura Flujos',
+    notInstalledBody:
+      'Flujos funciona con n8n, un motor de automatización que Cerebro instala y ejecuta localmente en este equipo. Pídele flujos a Cerebro en el chat o diséñalos tú en el lienzo completo de n8n.',
+    installCta: 'Instalar n8n',
+    startingTitle: 'Iniciando tu motor de flujos…',
+    startingBody: 'La instancia local de n8n está arrancando. Tarda unos segundos.',
+    installingTitle: 'Instalando n8n…',
+    installingBody: 'Descargando n8n en este equipo. Puede tardar unos minutos.',
+    crashedTitle: 'El motor de flujos se detuvo',
+    crashedBody: 'La instancia local de n8n falló o no pudo iniciarse.',
+    retryCta: 'Reiniciar n8n',
+    editorLoadError: 'No se pudo cargar el editor de n8n.',
   },
 
   // ── Sincronización con Supabase (multidispositivo) ──────────

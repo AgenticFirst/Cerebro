@@ -38,6 +38,11 @@ const EXPECTED_READONLY = new Set([
   'list_slack_channels',
   'calendar_query_events',
   'calendar_find_free_time',
+  // n8n reads — pure GETs against the local instance's /api/v1.
+  'n8n_list_workflows',
+  'n8n_get_workflow',
+  'n8n_list_executions',
+  'n8n_get_execution',
 ]);
 
 /**
@@ -65,6 +70,12 @@ const MUST_GATE = [
   'github_open_pr',
   'calendar_create_event',
   'calendar_delete_event',
+  'n8n_create_workflow',
+  'n8n_update_workflow',
+  'n8n_activate_workflow',
+  'n8n_deactivate_workflow',
+  'n8n_run_workflow',
+  'n8n_delete_workflow',
 ];
 
 describe('read-only chat-action surface (approval-bypass lockdown)', () => {

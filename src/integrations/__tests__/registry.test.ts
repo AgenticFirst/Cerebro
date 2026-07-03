@@ -27,8 +27,11 @@ describe('integration registry', () => {
           `${manifest.id}: ${manifest.authMode} auth needs at least one field`,
         ).toBeGreaterThan(0);
       }
-      if (manifest.authMode === 'qr_pairing') {
-        expect(manifest.fields.length, `${manifest.id}: qr_pairing should have no fields`).toBe(0);
+      if (manifest.authMode === 'qr_pairing' || manifest.authMode === 'managed') {
+        expect(
+          manifest.fields.length,
+          `${manifest.id}: ${manifest.authMode} should have no fields`,
+        ).toBe(0);
       }
     }
   });
@@ -41,7 +44,9 @@ describe('integration registry', () => {
 
   it('declares verify + saveCredentials whenever credentials are entered manually', () => {
     for (const manifest of listIntegrations()) {
-      if (manifest.authMode === 'qr_pairing') continue;
+      // qr_pairing modals own the handshake; managed integrations provision
+      // their own credentials — neither takes pasted credentials to verify.
+      if (manifest.authMode === 'qr_pairing' || manifest.authMode === 'managed') continue;
       expect(typeof manifest.ipc.verify, `${manifest.id}: ipc.verify missing`).toBe('function');
       expect(
         typeof manifest.ipc.saveCredentials,
@@ -51,7 +56,7 @@ describe('integration registry', () => {
   });
 
   it('uses customModalId values that match the IntegrationSetupCard switch', () => {
-    const allowed = new Set(['telegram', 'slack', 'hubspot', 'whatsapp', 'calendar']);
+    const allowed = new Set(['telegram', 'slack', 'hubspot', 'whatsapp', 'calendar', 'n8n']);
     for (const manifest of listIntegrations()) {
       if (manifest.customModalId) {
         expect(allowed.has(manifest.customModalId), `${manifest.id}: unknown customModalId`).toBe(

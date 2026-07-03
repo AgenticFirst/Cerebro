@@ -8,6 +8,7 @@ import {
   GoogleCalendarIcon,
   GmailIcon,
   HubSpotIcon,
+  N8nIcon,
   NotionIcon,
 } from '../../icons/BrandIcons';
 import IntegrationCard from './IntegrationCard';
@@ -16,6 +17,7 @@ import HubSpotConnectModal from './HubSpotConnectModal';
 import CalendarSection from './CalendarSection';
 import GHLSection from './GHLSection';
 import GitHubSection from './GitHubSection';
+import N8nSection from './N8nSection';
 import SupabaseSyncSection from './SupabaseSyncSection';
 import type { HubSpotStatusResponse } from '../../../types/ipc';
 
@@ -166,6 +168,17 @@ export default function ConnectedAppsSection() {
           defaultExpanded={false}
         >
           <GHLSection />
+        </IntegrationCard>
+
+        <IntegrationCard
+          icon={N8nIcon}
+          iconBg="bg-pink-500/15"
+          iconColor="text-pink-400"
+          name="n8n"
+          description={t('connectedApps.n8nDesc')}
+          defaultExpanded={false}
+        >
+          <N8nSection />
         </IntegrationCard>
 
         <IntegrationCard

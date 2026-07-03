@@ -39,6 +39,7 @@ const en = {
     knowledgeBase: 'Knowledge Base',
     news: 'News',
     calendar: 'Calendar',
+    flows: 'Flows (n8n)',
     settings: 'Settings',
     newChat: 'New Chat',
     expandSidebar: 'Expand sidebar',
@@ -1309,6 +1310,18 @@ const en = {
         pasteHere: 'Paste it in the next step. Cerebro verifies it by calling /user.',
       },
     },
+    n8n: {
+      name: 'n8n',
+      description: 'Build and run automation flows on a local n8n instance managed by Cerebro.',
+      steps: {
+        install:
+          'Cerebro downloads n8n from npm onto this machine — nothing to sign up for, no credentials to paste.',
+        provision:
+          'Cerebro starts n8n locally and provisions its account and API key automatically. Everything stays on this computer.',
+        ready:
+          'Open the Flows screen to use the full n8n editor, or just ask Cerebro to build a flow in chat.',
+      },
+    },
   },
 
   // ── Engine section ──────────────────────────────────────────
@@ -1358,6 +1371,70 @@ const en = {
     supabase: 'Supabase',
     supabaseDesc:
       'Sync your chats, knowledge base, experts, and tasks across devices with your own Supabase project.',
+    n8n: 'n8n',
+    n8nDesc: 'Local workflow automation engine behind the Flows screen. Managed by Cerebro.',
+  },
+
+  // ── n8n connect modal + section ─────────────────────────────
+  n8nSetup: {
+    stepLabel: 'Step {{current}} of {{total}}',
+    cancel: 'Cancel',
+    close: 'Close',
+    step1Title: 'Run n8n inside Cerebro',
+    step1Body:
+      'n8n is a workflow automation engine. Cerebro installs it on this computer and manages it for you — your flows and their data never leave this machine.',
+    step1Point1: 'One-click local install (a few hundred MB, downloaded from npm).',
+    step1Point2: 'No account, no credentials — Cerebro provisions everything automatically.',
+    step1Point3: 'Flows can run custom code — the same trust model as running n8n anywhere else.',
+    step1Install: 'Install n8n',
+    step2Title: 'Installing n8n',
+    step2Body: 'Downloading and installing n8n. This can take a few minutes on the first run.',
+    step2CancelInstall: 'Cancel install',
+    step3Title: 'Starting n8n',
+    step3Body: 'Starting the local instance and provisioning its account and API key…',
+    step4Title: 'n8n is ready',
+    step4Body:
+      'The full n8n editor now lives in the Flows screen, and Cerebro chat can build and run flows for you.',
+    step4OpenFlows: 'Open Flows',
+    nodeRequiredTitle: 'Node.js required',
+    nodeRequiredBody:
+      'n8n needs Node.js {{version}}+ on this computer and Cerebro could not find it. Install it from nodejs.org, then try again.',
+    nodeRequiredLink: 'Get Node.js',
+    errorTitle: 'Something went wrong',
+    status: 'Status',
+    statusRunning: 'Running',
+    statusStopped: 'Stopped',
+    statusInstalling: 'Installing…',
+    statusStarting: 'Starting…',
+    statusProvisioning: 'Provisioning…',
+    statusCrashed: 'Crashed',
+    statusNotInstalled: 'Not installed',
+    statusNodeRequired: 'Node.js required',
+    version: 'Version',
+    start: 'Start',
+    stop: 'Stop',
+    install: 'Install n8n',
+    openFlows: 'Open Flows',
+    sectionDescription:
+      'A local n8n instance managed by Cerebro powers the Flows screen. Install it once; Cerebro starts it with the app from then on.',
+  },
+
+  // ── Flows screen (embedded n8n editor) ──────────────────────
+  flows: {
+    title: 'Flows (n8n)',
+    subtitle: 'Automation flows powered by your local n8n instance',
+    notInstalledTitle: 'Set up Flows',
+    notInstalledBody:
+      'Flows are powered by n8n, a workflow automation engine that Cerebro installs and runs locally on this computer. Ask Cerebro in chat to build flows for you, or design them yourself on the full n8n canvas.',
+    installCta: 'Install n8n',
+    startingTitle: 'Starting your flows engine…',
+    startingBody: 'The local n8n instance is starting. This takes a few seconds.',
+    installingTitle: 'Installing n8n…',
+    installingBody: 'Downloading n8n onto this computer. This can take a few minutes.',
+    crashedTitle: 'The flows engine stopped',
+    crashedBody: 'The local n8n instance crashed or could not start.',
+    retryCta: 'Restart n8n',
+    editorLoadError: 'The n8n editor could not be loaded.',
   },
 
   // ── Supabase backend sync (multi-device) ────────────────────

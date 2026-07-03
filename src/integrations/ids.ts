@@ -11,6 +11,7 @@ export const KNOWN_INTEGRATION_IDS = [
   'ghl',
   'github',
   'calendar',
+  'n8n',
 ] as const;
 
 export type KnownIntegrationId = (typeof KNOWN_INTEGRATION_IDS)[number];
