@@ -10,6 +10,14 @@ import type {
   CalendarParsedCommand,
   RsvpResponse,
 } from './calendar';
+import type {
+  GmailAccountInfo,
+  GmailMessageSummary,
+  GmailSendInput,
+  GmailSendResult,
+  GmailStatus,
+  GmailThreadDTO,
+} from '../gmail/types';
 
 // --- IPC Channel Constants ---
 
@@ -255,6 +263,24 @@ export const IPC_CHANNELS = {
   CALENDAR_PARSE_COMMAND: 'calendar:parse-command',
   CALENDAR_AI_SUMMARY: 'calendar:ai-summary',
   CALENDAR_EVENTS_CHANGED: 'calendar:events-changed',
+
+  // Gmail (OAuth bring-your-own client creds, single account v1)
+  GMAIL_START_OAUTH: 'gmail:start-oauth',
+  GMAIL_RECONNECT: 'gmail:reconnect',
+  GMAIL_STATUS: 'gmail:status',
+  GMAIL_LIST_ACCOUNTS: 'gmail:list-accounts',
+  GMAIL_DISCONNECT: 'gmail:disconnect',
+  GMAIL_SYNC_NOW: 'gmail:sync-now',
+  GMAIL_SEARCH: 'gmail:search',
+  GMAIL_GET_THREAD: 'gmail:get-thread',
+  GMAIL_LIST_LABELS: 'gmail:list-labels',
+  GMAIL_SEND: 'gmail:send',
+  GMAIL_CREATE_DRAFT: 'gmail:create-draft',
+  GMAIL_MODIFY_LABELS: 'gmail:modify-labels',
+  GMAIL_SUMMARIZE_THREAD: 'gmail:summarize-thread',
+  GMAIL_AI_DRAFT: 'gmail:ai-draft',
+  /** Main → renderer: accounts or the local mail store changed; refetch. */
+  GMAIL_CHANGED: 'gmail:changed',
 
   // Supabase backend sync (multi-device)
   SUPABASE_TEST: 'supabase:test',
@@ -1010,6 +1036,7 @@ export interface CerebroAPI {
   ghl: GHLAPI;
   github: GitHubAPI;
   calendar: CalendarAPI;
+  gmail: GmailAPI;
   supabase: SupabaseAPI;
   chatActions: ChatActionsAPI;
   files: FilesAPI;
@@ -1286,6 +1313,49 @@ export interface CalendarMutationResult {
   ok: boolean;
   event?: CalendarEventDTO;
   error?: string;
+}
+
+export interface GmailAPI {
+  /** Run the bring-your-own OAuth flow (PKCE + loopback) for the account. */
+  startOAuth(input: {
+    clientId: string;
+    clientSecret: string;
+  }): Promise<{ ok: boolean; account?: GmailAccountInfo; error?: string }>;
+  /** Re-authorize using the stored client id/secret (after token_expired). */
+  reconnect(
+    accountId: string,
+  ): Promise<{ ok: boolean; account?: GmailAccountInfo; error?: string }>;
+  status(): Promise<GmailStatus>;
+  listAccounts(): Promise<GmailAccountInfo[]>;
+  disconnect(accountId: string): Promise<{ ok: boolean; error?: string }>;
+  syncNow(): Promise<{ ok: boolean; error?: string }>;
+  /** Search mail — local FTS first, live Gmail `q` syntax fall-through. */
+  search(
+    query: string,
+    opts?: { maxResults?: number },
+  ): Promise<{ ok: boolean; messages?: GmailMessageSummary[]; error?: string }>;
+  getThread(threadId: string): Promise<{ ok: boolean; thread?: GmailThreadDTO; error?: string }>;
+  listLabels(): Promise<{
+    ok: boolean;
+    labels?: Array<{ id: string; name: string; type?: string }>;
+    error?: string;
+  }>;
+  send(input: GmailSendInput): Promise<GmailSendResult>;
+  createDraft(input: GmailSendInput): Promise<{ ok: boolean; draftId?: string; error?: string }>;
+  modifyLabels(
+    messageIds: string[],
+    addLabelIds: string[],
+    removeLabelIds: string[],
+  ): Promise<{ ok: boolean; error?: string }>;
+  /** Compute + cache the one-line AI summary for a locally-synced thread. */
+  summarizeThread(threadId: string): Promise<{ ok: boolean; summary?: string; error?: string }>;
+  /** Draft an email body in the user's voice (grounded in their sent mail). */
+  aiDraft(input: {
+    to: string;
+    instruction: string;
+    replyToThreadId?: string;
+  }): Promise<{ ok: boolean; body?: string; error?: string }>;
+  onChanged(callback: () => void): () => void;
 }
 
 export interface CalendarAPI {

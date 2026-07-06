@@ -59,6 +59,7 @@ import type {
   CalendarEventInput,
   RsvpResponse,
 } from './types/calendar';
+import type { GmailSendInput } from './gmail/types';
 import type { ExecutionEvent } from './engine/events/types';
 import type { ClaudeCodeInfo } from './types/providers';
 import type { VoiceSessionEvent } from './voice/types';
@@ -693,6 +694,61 @@ const api: CerebroAPI = {
       const listener = () => callback();
       ipcRenderer.on(IPC_CHANNELS.CALENDAR_EVENTS_CHANGED, listener);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.CALENDAR_EVENTS_CHANGED, listener);
+    },
+  },
+
+  gmail: {
+    startOAuth(input: { clientId: string; clientSecret: string }) {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_START_OAUTH, input);
+    },
+    reconnect(accountId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_RECONNECT, accountId);
+    },
+    status() {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_STATUS);
+    },
+    listAccounts() {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_LIST_ACCOUNTS);
+    },
+    disconnect(accountId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_DISCONNECT, accountId);
+    },
+    syncNow() {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_SYNC_NOW);
+    },
+    search(query: string, opts?: { maxResults?: number }) {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_SEARCH, query, opts);
+    },
+    getThread(threadId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_GET_THREAD, threadId);
+    },
+    listLabels() {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_LIST_LABELS);
+    },
+    send(input: GmailSendInput) {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_SEND, input);
+    },
+    createDraft(input: GmailSendInput) {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_CREATE_DRAFT, input);
+    },
+    modifyLabels(messageIds: string[], addLabelIds: string[], removeLabelIds: string[]) {
+      return ipcRenderer.invoke(
+        IPC_CHANNELS.GMAIL_MODIFY_LABELS,
+        messageIds,
+        addLabelIds,
+        removeLabelIds,
+      );
+    },
+    summarizeThread(threadId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_SUMMARIZE_THREAD, threadId);
+    },
+    aiDraft(input: { to: string; instruction: string; replyToThreadId?: string }) {
+      return ipcRenderer.invoke(IPC_CHANNELS.GMAIL_AI_DRAFT, input);
+    },
+    onChanged(callback: () => void): () => void {
+      const listener = () => callback();
+      ipcRenderer.on(IPC_CHANNELS.GMAIL_CHANGED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.GMAIL_CHANGED, listener);
     },
   },
 

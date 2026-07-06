@@ -15,6 +15,7 @@ export type Screen =
   | 'knowledge-base'
   | 'news'
   | 'calendar'
+  | 'email'
   | 'flows'
   | 'settings'
   | 'call';

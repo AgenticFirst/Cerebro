@@ -82,6 +82,16 @@ import { createCalendarUpdateEventAction } from './actions/calendar-update-event
 import { createCalendarDeleteEventAction } from './actions/calendar-delete-event';
 import { createCalendarRsvpAction } from './actions/calendar-rsvp';
 import { createCalendarQueryEventsAction } from './actions/calendar-query-events';
+import type { GmailChannel } from './actions/gmail-channel';
+import { createGmailSearchMessagesAction } from './actions/gmail-search-messages';
+import { createGmailGetThreadAction } from './actions/gmail-get-thread';
+import { createGmailListLabelsAction } from './actions/gmail-list-labels';
+import { createGmailGetContactHistoryAction } from './actions/gmail-get-contact-history';
+import { createGmailSendMessageAction } from './actions/gmail-send-message';
+import { createGmailCreateDraftAction } from './actions/gmail-create-draft';
+import { createGmailModifyLabelsAction } from './actions/gmail-modify-labels';
+import { createGmailListAwaitingReplyAction } from './actions/gmail-list-awaiting-reply';
+import { createGmailLogToHubSpotAction } from './actions/gmail-log-to-hubspot';
 import { createCalendarFindFreeTimeAction } from './actions/calendar-find-free-time';
 import { createGitHubCreateIssueAction } from './actions/github-create-issue';
 import { createGitHubCommentIssueAction } from './actions/github-comment-issue';
@@ -150,6 +160,8 @@ export const AUTO_APPROVAL_TARGET_PARAM: Record<string, string> = {
   send_whatsapp_video: 'phone_number',
   send_whatsapp_sticker: 'phone_number',
   send_whatsapp_location: 'phone_number',
+  // Gmail — recipient address(es)
+  gmail_send_message: 'to',
 };
 
 /** Sentinel `target_key` meaning "any destination" — used by per-action and
@@ -171,6 +183,7 @@ export class ExecutionEngine {
   private n8nChannel: N8nChannel | null = null;
   private gitHubChannel: GitHubChannel | null = null;
   private calendarChannel: CalendarChannel | null = null;
+  private gmailChannel: GmailChannel | null = null;
   private activeRuns = new Map<string, ActiveEngineRun>();
   /** Pending approval promises keyed by approvalId. */
   private pendingApprovals = new Map<string, PendingApproval>();
@@ -212,6 +225,11 @@ export class ExecutionEngine {
   /** Late-bind the GitHub bridge so github_* actions can use it. */
   setGitHubChannel(channel: GitHubChannel): void {
     this.gitHubChannel = channel;
+  }
+
+  /** Late-bind the Gmail bridge so gmail_* actions can use it. */
+  setGmailChannel(channel: GmailChannel): void {
+    this.gmailChannel = channel;
   }
 
   /** Late-bind the Calendar bridge so calendar_* actions can use it. */
@@ -696,8 +714,29 @@ export class ExecutionEngine {
       createCalendarRsvpAction({ getChannel: () => this.calendarChannel }),
       createCalendarQueryEventsAction({ getChannel: () => this.calendarChannel }),
       createCalendarFindFreeTimeAction({ getChannel: () => this.calendarChannel }),
+      ...this.gmailActionDefs(),
     ];
     return defs.filter((d) => d.chatExposable === true);
+  }
+
+  private gmailActionDefs(): ActionDefinition[] {
+    return [
+      createGmailSearchMessagesAction({ getChannel: () => this.gmailChannel }),
+      createGmailGetThreadAction({ getChannel: () => this.gmailChannel }),
+      createGmailListLabelsAction({ getChannel: () => this.gmailChannel }),
+      createGmailGetContactHistoryAction({ getChannel: () => this.gmailChannel }),
+      createGmailSendMessageAction({
+        getChannel: () => this.gmailChannel,
+        backendPort: () => this.backendPort,
+      }),
+      createGmailCreateDraftAction({ getChannel: () => this.gmailChannel }),
+      createGmailModifyLabelsAction({ getChannel: () => this.gmailChannel }),
+      createGmailListAwaitingReplyAction({ getChannel: () => this.gmailChannel }),
+      createGmailLogToHubSpotAction({
+        getChannel: () => this.gmailChannel,
+        getHubSpot: () => this.hubSpotChannel,
+      }),
+    ];
   }
 
   /**
@@ -1170,6 +1209,9 @@ export class ExecutionEngine {
     registry.register(createCalendarRsvpAction({ getChannel: () => this.calendarChannel }));
     registry.register(createCalendarQueryEventsAction({ getChannel: () => this.calendarChannel }));
     registry.register(createCalendarFindFreeTimeAction({ getChannel: () => this.calendarChannel }));
+
+    // Gmail
+    for (const def of this.gmailActionDefs()) registry.register(def);
 
     // Complex (depend on backend infrastructure)
     registry.register(waitForWebhookAction);

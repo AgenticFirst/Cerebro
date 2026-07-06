@@ -39,6 +39,7 @@ const en = {
     knowledgeBase: 'Knowledge Base',
     news: 'News',
     calendar: 'Calendar',
+    email: 'Email',
     flows: 'Flows (n8n)',
     settings: 'Settings',
     newChat: 'New Chat',
@@ -1255,6 +1256,28 @@ const en = {
         chooseProvider: 'Choose a provider — Google Calendar or Microsoft Outlook.',
         createOAuthApp: 'Create an OAuth app in Google Cloud Console or the Azure portal.',
         addRedirect: 'Add http://127.0.0.1 as an allowed redirect URI (loopback).',
+        pasteCredentials: 'Paste the Client ID and Client Secret here.',
+        authorize: 'Click Authorize and approve access in your browser.',
+      },
+    },
+    gmail: {
+      name: 'Gmail',
+      description: 'Read, search, and send email from chat, routines, and the Email screen.',
+      fields: {
+        clientId: 'OAuth Client ID',
+        clientSecret: 'OAuth Client Secret',
+      },
+      hints: {
+        clientId: 'From your Google Cloud OAuth client (Desktop app)',
+        clientSecret: 'Kept encrypted on this device only',
+      },
+      steps: {
+        createProject: 'Create (or reuse) a project in Google Cloud Console.',
+        enableApi: 'Enable the Gmail API under APIs & Services → Library.',
+        createOAuthClient:
+          'Create an OAuth client of type "Desktop app" under APIs & Services → Credentials.',
+        publishConsent:
+          'On the OAuth consent screen, add yourself as a user and publish the app to Production — apps left in Testing sign you out every 7 days.',
         pasteCredentials: 'Paste the Client ID and Client Secret here.',
         authorize: 'Click Authorize and approve access in your browser.',
       },
@@ -2730,6 +2753,105 @@ const en = {
       whyMatters: 'Why does this matter?',
       background: "What's the background?",
       people: "Who's involved?",
+    },
+  },
+  gmail: {
+    connectModal: {
+      title: 'Connect Gmail',
+      guideIntro:
+        'Cerebro connects to Gmail with your own Google OAuth client, so your mail never touches third-party servers:',
+      openConsole: 'Open Google Cloud Console',
+      credentialsHelp:
+        'Copy both values from your Desktop-app OAuth client in Google Cloud Console → Credentials.',
+      redirectHint:
+        'Desktop-app clients allow the http://127.0.0.1 loopback redirect automatically — no redirect URI setup needed.',
+      authorizeHelp:
+        'Your browser will open so you can sign in to Google and approve access. If Google shows an "unverified app" warning, click Advanced → Continue — it is your own app.',
+      authorize: 'Authorize with Google',
+      authorizing: 'Waiting for authorization in your browser…',
+      success: 'Connected {{email}}',
+      error: 'Authorization failed: {{error}}',
+      done: 'Done',
+      next: 'Next',
+      back: 'Back',
+      cancel: 'Cancel',
+    },
+    section: {
+      description:
+        'Connect a Gmail account to read, search, and send email from chat, routines, and the Email screen.',
+      cardDescription: 'Smart email — search, AI drafts, and outreach from your own Gmail.',
+      connect: 'Connect Gmail',
+      reconnect: 'Reconnect',
+      disconnect: 'Disconnect',
+      disconnectConfirm:
+        'Disconnect {{email}}? Cerebro forgets its tokens and the local mail cache; nothing changes in your Gmail account.',
+      cancel: 'Cancel',
+      sentToday: '{{count}} sent today via Cerebro',
+      noAccountHint:
+        'You will need a Google Cloud OAuth client — the setup guide walks you through it.',
+    },
+    status: {
+      connected: 'Connected',
+      tokenExpired: 'Reconnect needed',
+      error: 'Error',
+    },
+    screen: {
+      title: 'Email',
+      searchPlaceholder: 'Search mail — try from:alice@acme.com or free text',
+      searching: 'Searching…',
+      noResults: 'No emails found',
+      refresh: 'Sync now',
+      composeButton: 'Compose',
+      selectThread: 'Select a conversation',
+      emptyTab: 'Nothing here — inbox zero!',
+      noSubject: '(no subject)',
+      threadNotSynced: 'This conversation is not in the local cache yet — sync and retry.',
+      you: 'You',
+      toLine: 'to',
+      notConnectedTitle: 'Connect Gmail to get started',
+      notConnectedBody:
+        'Cerebro mirrors your recent mail locally for instant search, AI triage, and email from chat and routines. Connect your Gmail account to light this screen up.',
+      tabs: {
+        inbox: 'Inbox',
+        important: 'Important',
+        awaitingReply: 'Awaiting reply',
+        team: 'Team',
+        marketing: 'Marketing',
+        notifications: 'Notifications',
+        snoozed: 'Snoozed',
+      },
+      actions: {
+        reply: 'Reply',
+        archive: 'Archive',
+        snooze: 'Snooze',
+      },
+      snooze: {
+        laterToday: 'Later today',
+        tomorrow: 'Tomorrow 9am',
+        nextWeek: 'Next week',
+      },
+      compose: {
+        title: 'New email',
+        replyTitle: 'Reply',
+        to: 'To',
+        subject: 'Subject',
+        bodyPlaceholder: 'Write your email…',
+        send: 'Send',
+        saveDraft: 'Save draft',
+        aiDraft: 'Write with AI',
+        aiDraftHint: 'Type what to say (or leave empty on a reply) and AI writes it in your voice',
+        templates: 'Templates',
+        noTemplates: 'No templates yet',
+        saveAsTemplate: 'Save current as template',
+        savingTemplate: 'Saving…',
+        sendLater: 'Send later',
+        fillTokens: 'Fill these template values before sending:',
+      },
+      schedule: {
+        inTwoHours: 'In 2 hours',
+        tomorrowMorning: 'Tomorrow 9am',
+        mondayMorning: 'Monday 9am',
+      },
     },
   },
   calendar: {

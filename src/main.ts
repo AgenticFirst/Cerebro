@@ -64,6 +64,7 @@ import { WhatsAppBridge } from './whatsapp/bridge';
 import { HubSpotHolder } from './hubspot/holder';
 import { N8nManager } from './n8n/manager';
 import { CalendarBridge } from './calendar/bridge';
+import { GmailBridge } from './gmail/bridge';
 import { GHLHolder } from './ghl/holder';
 import { GitHubBridge } from './github/bridge';
 import { getConnection as getSupabaseConnection } from './supabase/backend-mode';
@@ -332,6 +333,8 @@ let hubSpotHolder: HubSpotHolder | null = null;
 // n8n managed local instance (installed on demand, spawned as a child process)
 let n8nManager: N8nManager | null = null;
 let calendarBridge: CalendarBridge | null = null;
+// Gmail bridge (OAuth account + mail sync + send)
+let gmailBridge: GmailBridge | null = null;
 // Supabase backend-sync holder (multi-device)
 let supabaseHolder: SupabaseHolder | null = null;
 // GoHighLevel credential holder
@@ -647,6 +650,19 @@ async function startPythonBackend(): Promise<void> {
       console.error('[Cerebro] Calendar bridge init failed:', err);
     });
 
+  // Gmail bridge — owns the BYO-client OAuth account, encrypted tokens, and
+  // (once connected) the local mail-store sync loop.
+  gmailBridge = new GmailBridge({ backendPort: port, executionEngine });
+  executionEngine.setGmailChannel(gmailBridge);
+  gmailBridge
+    .init()
+    .then(() => {
+      gmailBridge?.start();
+    })
+    .catch((err) => {
+      console.error('[Cerebro] Gmail bridge init failed:', err);
+    });
+
   // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
   // Cerebro's project-scoped subagents and skills.
   setClaudeCodeCwd(dataDir);
@@ -701,6 +717,7 @@ async function startPythonBackend(): Promise<void> {
     whatsAppBridge?.setWebContents(windows[0].webContents);
     gitHubBridge?.setWebContents(windows[0].webContents);
     n8nManager?.setWebContents(windows[0].webContents);
+    gmailBridge?.setWebContents(windows[0].webContents);
   }
 
   // Initial scheduler sync + start periodic re-sync
@@ -2727,6 +2744,105 @@ function registerIpcHandlers(): void {
     return calendarBridge.aiSummary(input);
   });
 
+  // --- Gmail ---
+
+  ipcMain.handle(
+    IPC_CHANNELS.GMAIL_START_OAUTH,
+    async (_event, input: { clientId: string; clientSecret: string }) => {
+      if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+      return gmailBridge.startOAuth(input);
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_RECONNECT, async (_event, accountId: string) => {
+    if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+    return gmailBridge.reconnect(accountId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_STATUS, async () => {
+    if (!gmailBridge) {
+      return { connected: false, accounts: [], sentToday: 0, tokenBackend: 'plaintext-fallback' };
+    }
+    return gmailBridge.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_LIST_ACCOUNTS, async () => {
+    if (!gmailBridge) return [];
+    return gmailBridge.listAccounts();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_DISCONNECT, async (_event, accountId: string) => {
+    if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+    return gmailBridge.disconnect(accountId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_SYNC_NOW, async () => {
+    if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+    return gmailBridge.syncAll();
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.GMAIL_SEARCH,
+    async (_event, query: string, opts?: { maxResults?: number }) => {
+      if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+      try {
+        const messages = await gmailBridge.search(query, opts?.maxResults);
+        return { ok: true, messages };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_GET_THREAD, async (_event, threadId: string) => {
+    if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+    try {
+      return { ok: true, thread: await gmailBridge.getThread(threadId) };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_LIST_LABELS, async () => {
+    if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+    try {
+      return { ok: true, labels: await gmailBridge.listLabels() };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_SEND, async (_event, input) => {
+    if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+    return gmailBridge.sendMessage(input);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_CREATE_DRAFT, async (_event, input) => {
+    if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+    return gmailBridge.createDraft(input);
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.GMAIL_MODIFY_LABELS,
+    async (_event, messageIds: string[], addLabelIds: string[], removeLabelIds: string[]) => {
+      if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+      return gmailBridge.modifyLabels(messageIds, addLabelIds, removeLabelIds);
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.GMAIL_SUMMARIZE_THREAD, async (_event, threadId: string) => {
+    if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+    return gmailBridge.summarizeThreadCached(threadId);
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.GMAIL_AI_DRAFT,
+    async (_event, input: { to: string; instruction: string; replyToThreadId?: string }) => {
+      if (!gmailBridge) return { ok: false, error: 'Gmail bridge not initialized' };
+      return gmailBridge.aiDraft(input);
+    },
+  );
+
   // --- GoHighLevel ---
 
   ipcMain.handle(IPC_CHANNELS.GHL_VERIFY, async (_event, apiKey: string, locationId: string) => {
@@ -2958,6 +3074,11 @@ const createWindow = () => {
     // Faster sync cadence while the app is focused; back off when it isn't.
     mainWindow.on('focus', () => calendarBridge?.setForeground(true));
     mainWindow.on('blur', () => calendarBridge?.setForeground(false));
+  }
+  if (gmailBridge) {
+    gmailBridge.setWebContents(mainWindow.webContents);
+    mainWindow.on('focus', () => gmailBridge?.setForeground(true));
+    mainWindow.on('blur', () => gmailBridge?.setForeground(false));
   }
 
   // Open DevTools only in local dev — never in packaged builds (end users
@@ -3205,6 +3326,9 @@ app.on('before-quit', async () => {
   isIntentionalShutdown = true;
   if (routineScheduler) {
     routineScheduler.stopAll();
+  }
+  if (gmailBridge) {
+    gmailBridge.stop();
   }
   if (taskReconciler) {
     taskReconciler.stop();

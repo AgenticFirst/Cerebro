@@ -19,6 +19,7 @@ import {
   LayoutGrid,
   ChevronRight,
   Workflow,
+  Mail,
   type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -58,8 +59,9 @@ const NAV_PRIMARY: NavItemDef[] = [
 // Activity moved into Settings → Activity.
 const NAV_OVERSIGHT_BASE: NavItemDef[] = [{ id: 'approvals', icon: ShieldCheck }];
 
-// Apps — embedded mini-apps (Knowledge Base, …)
+// Apps — embedded mini-apps (Email, Knowledge Base, …)
 const NAV_APPS: NavItemDef[] = [
+  { id: 'email', icon: Mail },
   { id: 'flows', icon: Workflow },
   { id: 'calendar', icon: CalendarDays },
   { id: 'knowledge-base', icon: BookOpen },
@@ -216,6 +218,7 @@ const NAV_LABEL_KEYS: Record<string, string> = {
   'knowledge-base': 'nav.knowledgeBase',
   news: 'nav.news',
   calendar: 'nav.calendar',
+  email: 'nav.email',
   flows: 'nav.flows',
   settings: 'nav.settings',
 };

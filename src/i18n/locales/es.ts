@@ -40,6 +40,7 @@ const es: TranslationKeys = {
     knowledgeBase: 'Base de Conocimiento',
     news: 'Noticias',
     calendar: 'Calendario',
+    email: 'Correo',
     flows: 'Flujos (n8n)',
     settings: 'Ajustes',
     newChat: 'Nuevo chat',
@@ -1272,6 +1273,29 @@ const es: TranslationKeys = {
         chooseProvider: 'Elige un proveedor: Google Calendar o Microsoft Outlook.',
         createOAuthApp: 'Crea una app OAuth en Google Cloud Console o en el portal de Azure.',
         addRedirect: 'Agrega http://127.0.0.1 como URI de redirecci\u00f3n permitida (loopback).',
+        pasteCredentials: 'Pega aqu\u00ed el ID de cliente y el secreto.',
+        authorize: 'Pulsa Autorizar y aprueba el acceso en tu navegador.',
+      },
+    },
+    gmail: {
+      name: 'Gmail',
+      description:
+        'Lee, busca y env\u00eda correos desde el chat, las rutinas y la pantalla de Email.',
+      fields: {
+        clientId: 'ID de cliente OAuth',
+        clientSecret: 'Secreto de cliente OAuth',
+      },
+      hints: {
+        clientId: 'De tu cliente OAuth de Google Cloud (aplicaci\u00f3n de escritorio)',
+        clientSecret: 'Se guarda cifrado solo en este dispositivo',
+      },
+      steps: {
+        createProject: 'Crea (o reutiliza) un proyecto en Google Cloud Console.',
+        enableApi: 'Activa la API de Gmail en APIs y servicios \u2192 Biblioteca.',
+        createOAuthClient:
+          'Crea un cliente OAuth de tipo "Aplicaci\u00f3n de escritorio" en APIs y servicios \u2192 Credenciales.',
+        publishConsent:
+          'En la pantalla de consentimiento OAuth, a\u00f1\u00e1dete como usuario y publica la app en Producci\u00f3n \u2014 las apps en modo Prueba cierran la sesi\u00f3n cada 7 d\u00edas.',
         pasteCredentials: 'Pega aqu\u00ed el ID de cliente y el secreto.',
         authorize: 'Pulsa Autorizar y aprueba el acceso en tu navegador.',
       },
@@ -2740,6 +2764,107 @@ const es: TranslationKeys = {
       whyMatters: '¿Por qué es importante?',
       background: '¿Cuál es el contexto?',
       people: '¿Quiénes están involucrados?',
+    },
+  },
+  gmail: {
+    connectModal: {
+      title: 'Conectar Gmail',
+      guideIntro:
+        'Cerebro se conecta a Gmail con tu propio cliente OAuth de Google, así tu correo nunca pasa por servidores de terceros:',
+      openConsole: 'Abrir Google Cloud Console',
+      credentialsHelp:
+        'Copia ambos valores de tu cliente OAuth de escritorio en Google Cloud Console → Credenciales.',
+      redirectHint:
+        'Los clientes de escritorio permiten la redirección loopback http://127.0.0.1 automáticamente — no hay que configurar URIs.',
+      authorizeHelp:
+        'Se abrirá tu navegador para iniciar sesión en Google y aprobar el acceso. Si Google muestra un aviso de "app no verificada", pulsa Avanzado → Continuar — es tu propia app.',
+      authorize: 'Autorizar con Google',
+      authorizing: 'Esperando la autorización en tu navegador…',
+      success: 'Se conectó {{email}}',
+      error: 'Falló la autorización: {{error}}',
+      done: 'Listo',
+      next: 'Siguiente',
+      back: 'Atrás',
+      cancel: 'Cancelar',
+    },
+    section: {
+      description:
+        'Conecta una cuenta de Gmail para leer, buscar y enviar correos desde el chat, las rutinas y la pantalla de Email.',
+      cardDescription:
+        'Email inteligente — búsqueda, borradores con IA y outreach desde tu propio Gmail.',
+      connect: 'Conectar Gmail',
+      reconnect: 'Reconectar',
+      disconnect: 'Desconectar',
+      disconnectConfirm:
+        '¿Desconectar {{email}}? Cerebro olvida sus tokens y la caché local de correo; tu cuenta de Gmail no cambia.',
+      cancel: 'Cancelar',
+      sentToday: '{{count}} enviados hoy vía Cerebro',
+      noAccountHint:
+        'Necesitarás un cliente OAuth de Google Cloud — la guía de configuración te acompaña paso a paso.',
+    },
+    status: {
+      connected: 'Conectado',
+      tokenExpired: 'Necesita reconexión',
+      error: 'Error',
+    },
+    screen: {
+      title: 'Correo',
+      searchPlaceholder: 'Busca en tu correo — prueba from:alice@acme.com o texto libre',
+      searching: 'Buscando…',
+      noResults: 'No se encontraron correos',
+      refresh: 'Sincronizar ahora',
+      composeButton: 'Redactar',
+      selectThread: 'Selecciona una conversación',
+      emptyTab: 'Nada por aquí — ¡bandeja en cero!',
+      noSubject: '(sin asunto)',
+      threadNotSynced: 'Esta conversación aún no está en la caché local — sincroniza y reintenta.',
+      you: 'Tú',
+      toLine: 'para',
+      notConnectedTitle: 'Conecta Gmail para empezar',
+      notConnectedBody:
+        'Cerebro replica tu correo reciente localmente para búsqueda instantánea, triaje con IA y correo desde el chat y las rutinas. Conecta tu cuenta de Gmail para activar esta pantalla.',
+      tabs: {
+        inbox: 'Bandeja',
+        important: 'Importante',
+        awaitingReply: 'Esperando respuesta',
+        team: 'Equipo',
+        marketing: 'Marketing',
+        notifications: 'Notificaciones',
+        snoozed: 'Pospuestos',
+      },
+      actions: {
+        reply: 'Responder',
+        archive: 'Archivar',
+        snooze: 'Posponer',
+      },
+      snooze: {
+        laterToday: 'Más tarde hoy',
+        tomorrow: 'Mañana 9am',
+        nextWeek: 'La próxima semana',
+      },
+      compose: {
+        title: 'Nuevo correo',
+        replyTitle: 'Responder',
+        to: 'Para',
+        subject: 'Asunto',
+        bodyPlaceholder: 'Escribe tu correo…',
+        send: 'Enviar',
+        saveDraft: 'Guardar borrador',
+        aiDraft: 'Escribir con IA',
+        aiDraftHint:
+          'Escribe qué decir (o déjalo vacío en una respuesta) y la IA lo redacta con tu estilo',
+        templates: 'Plantillas',
+        noTemplates: 'Aún no hay plantillas',
+        saveAsTemplate: 'Guardar como plantilla',
+        savingTemplate: 'Guardando…',
+        sendLater: 'Enviar más tarde',
+        fillTokens: 'Completa estos valores de la plantilla antes de enviar:',
+      },
+      schedule: {
+        inTwoHours: 'En 2 horas',
+        tomorrowMorning: 'Mañana 9am',
+        mondayMorning: 'Lunes 9am',
+      },
     },
   },
   calendar: {

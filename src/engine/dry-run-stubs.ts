@@ -672,6 +672,59 @@ const STUBS: Record<string, (input: ActionInput) => ActionOutput | Promise<Actio
     summary: '[dry-run] Would find free time',
   }),
 
+  // Gmail — reads return empty results; writes echo the would-be effect.
+  gmail_search_messages: (input) => {
+    const params = input.params as Record<string, unknown>;
+    return {
+      data: { count: 0, messages: [] },
+      summary: `[dry-run] Would search email for "${String(params.query ?? '')}"`,
+    };
+  },
+  gmail_get_thread: () => ({
+    data: { thread_id: 'dry-run-thread', subject: '', message_count: 0, messages: [] },
+    summary: '[dry-run] Would read an email thread',
+  }),
+  gmail_list_labels: () => ({
+    data: { count: 0, labels: [] },
+    summary: '[dry-run] Would list Gmail labels',
+  }),
+  gmail_get_contact_history: (input) => {
+    const params = input.params as Record<string, unknown>;
+    return {
+      data: { count: 0, threads: [] },
+      summary: `[dry-run] Would look up email history with ${String(params.email ?? '?')}`,
+    };
+  },
+  gmail_send_message: (input) => {
+    const params = input.params as Record<string, unknown>;
+    return {
+      data: { sent: true, message_id: 'dry-run-message', thread_id: null, error: null },
+      summary: `[dry-run] Would send "${String(params.subject ?? '')}" to ${String(params.to ?? '?')}`,
+    };
+  },
+  gmail_create_draft: (input) => {
+    const params = input.params as Record<string, unknown>;
+    return {
+      data: { created: true, draft_id: 'dry-run-draft', error: null },
+      summary: `[dry-run] Would save a draft for ${String(params.to ?? '?')}`,
+    };
+  },
+  gmail_modify_labels: () => ({
+    data: { modified: 0, error: null },
+    summary: '[dry-run] Would modify Gmail labels',
+  }),
+  gmail_list_awaiting_reply: () => ({
+    data: { count: 0, threads: [] },
+    summary: '[dry-run] Would list threads awaiting a reply',
+  }),
+  gmail_log_to_hubspot: (input) => {
+    const params = input.params as Record<string, unknown>;
+    return {
+      data: { logged: true, contact_id: 'dry-run-contact', note_id: 'dry-run-note', warnings: [] },
+      summary: `[dry-run] Would log thread ${String(params.thread_id ?? '?')} to HubSpot`,
+    };
+  },
+
   // Delay — short-circuit so a routine with a 1-hour wait doesn't make the
   // dry-run sit for an hour. The real delay action would also reject
   // duration <= 0, so we accept any duration here.

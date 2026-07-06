@@ -41,6 +41,7 @@ from backup.router import router as backup_router
 from knowledge.router import router as knowledge_router
 from news.router import router as news_router
 from calendar_sync.router import router as calendar_router
+from gmail_sync.router import router as gmail_router
 
 
 @asynccontextmanager
@@ -147,6 +148,7 @@ app.include_router(backup_router, prefix="/backup")
 app.include_router(knowledge_router, prefix="/knowledge")
 app.include_router(news_router, prefix="/news")
 app.include_router(calendar_router, prefix="/calendar")
+app.include_router(gmail_router, prefix="/gmail")
 app.include_router(cloud_sync_router)
 
 

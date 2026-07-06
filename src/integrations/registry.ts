@@ -24,6 +24,7 @@ import { ghlManifest } from './manifests/ghl';
 import { githubManifest } from './manifests/github';
 import { calendarManifest } from './manifests/calendar';
 import { n8nManifest } from './manifests/n8n';
+import { gmailManifest } from './manifests/gmail';
 
 export const INTEGRATION_REGISTRY: Record<string, IntegrationManifest> = {
   [telegramManifest.id]: telegramManifest,
@@ -34,6 +35,7 @@ export const INTEGRATION_REGISTRY: Record<string, IntegrationManifest> = {
   [githubManifest.id]: githubManifest,
   [calendarManifest.id]: calendarManifest,
   [n8nManifest.id]: n8nManifest,
+  [gmailManifest.id]: gmailManifest,
 };
 
 export function listIntegrations(): IntegrationManifest[] {

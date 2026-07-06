@@ -10,11 +10,13 @@ import type { RoutineTemplate } from '../types/routine-templates';
 import { customerSupportWhatsAppHubSpotTemplate } from './customer-support-whatsapp-hubspot';
 import { githubIssueToFixPrTemplate } from './github-issue-to-fix-pr';
 import { githubPrReviewTemplate } from './github-pr-review';
+import { gmailFollowupDigestTemplate } from './gmail-followup-digest';
 
 export const ROUTINE_TEMPLATES: RoutineTemplate[] = [
   customerSupportWhatsAppHubSpotTemplate,
   githubIssueToFixPrTemplate,
   githubPrReviewTemplate,
+  gmailFollowupDigestTemplate,
 ];
 
 export function getTemplateById(id: string): RoutineTemplate | null {

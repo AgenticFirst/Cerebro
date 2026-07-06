@@ -274,7 +274,14 @@ export class CalendarBridge implements CalendarChannel {
   }> {
     try {
       const provider = this.getProvider(input.provider);
-      const tokens = await runOAuthFlow(provider, input.clientId.trim(), input.clientSecret.trim());
+      const tokens = await runOAuthFlow(
+        provider,
+        input.clientId.trim(),
+        input.clientSecret.trim(),
+        {
+          successTitle: 'Calendar connected',
+        },
+      );
       const userInfo = await provider.getUserInfo(tokens.accessToken);
       const calendars = await provider.listCalendars(tokens.accessToken);
       const primary = calendars.find((c) => c.id === 'primary') ?? calendars[0] ?? null;

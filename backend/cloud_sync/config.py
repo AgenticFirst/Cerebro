@@ -41,7 +41,18 @@ SYNCED_TABLE_SET: frozenset[str] = frozenset(SYNCED_TABLES)
 #   execution_events — high-volume per-run event log, tied to where it ran
 #   sync_outbox      — the outbox itself
 LOCAL_ONLY_TABLES: frozenset[str] = frozenset(
-    {"parsed_files", "execution_events", "sync_outbox", "calendar_sync_state"}
+    {
+        "parsed_files",
+        "execution_events",
+        "sync_outbox",
+        "calendar_sync_state",
+        # Mail is per-device by design: message content never replicates.
+        "gmail_accounts",
+        "gmail_threads",
+        "gmail_messages",
+        "gmail_templates",
+        "gmail_scheduled_sends",
+    }
 )
 
 # Per-table "modified at" column used for last-write-wins comparison on pull.
@@ -102,6 +113,7 @@ LOCAL_ONLY_SETTING_PREFIXES: tuple[str, ...] = (
     "ghl_",
     "github_",
     "calendar_",  # OAuth client id/secret + access/refresh tokens — never leave device
+    "gmail_",  # OAuth client id/secret + tokens + mail sync cursors — never leave device
     "sandbox:",
     "sync:",  # sync bookkeeping (cursors, etc.) is per-device
 )

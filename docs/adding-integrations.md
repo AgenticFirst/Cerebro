@@ -270,8 +270,13 @@ If your integration carries anything beyond text — voice notes, photos, docume
 
 ## 12b · OAuth integrations (Auth Code + PKCE)
 
-Reference: **`src/calendar/`** (Google Calendar + Outlook). The first OAuth
-integration. Pattern for the next one:
+References: **`src/calendar/`** (Google Calendar + Outlook — first OAuth
+integration) and **`src/gmail/`** (second). The shared flow now lives in
+**`src/shared/oauth.ts`** (`runOAuthFlow`, PKCE helpers, `oauthTokenRequest`,
+`providerFetch`, `TokenExpiredError`); `src/calendar/oauth.ts` and
+`src/calendar/providers/http.ts` are re-export shims. A new OAuth integration
+implements the tiny `OAuthFlowProvider` seam (`buildAuthUrl` + `exchangeCode`)
+and reuses everything else. Pattern:
 
 - **Bring-your-own credentials.** The user registers their own OAuth app and
   pastes Client ID + Secret in the connect modal. No shared secret ships in the
@@ -301,6 +306,29 @@ integration. Pattern for the next one:
   multi-account. Keep a per-account id (own it from the backend account row) and
   key settings + sync state by it; the manifest-level status just reports whether
   any account is connected.
+
+## 12c · Local-only data stores (Gmail pattern)
+
+Gmail introduced the first integration with a **local backend mirror** of
+provider data (mail is too private and too bulky to replicate). If your
+integration caches provider content in backend tables:
+
+- Add the tables to `LOCAL_ONLY_TABLES` in `backend/cloud_sync/config.py`
+  (`SYNCED_TABLES` is an allowlist, so new tables don't sync by accident — the
+  explicit entry documents intent).
+- Follow `backend/gmail_sync/`: accounts + rollup rows + item rows, one
+  `POST /<id>/sync` batch endpoint the bridge pushes normalized upserts into,
+  and per-tab list endpoints for the UI.
+- For instant search over the cache, copy `backend/gmail_sync/fts.py` — an
+  external-content SQLite FTS5 table kept in lockstep by triggers, with a
+  LIKE fallback when the Python build lacks FTS5.
+- Inbound events (new mail → routine trigger) fire from the bridge's sync
+  diff, mirroring `src/slack/bridge.ts`'s `cachedTriggerRoutines()` +
+  `dispatchRoutine()` — see `GmailBridge.dispatchTriggers`.
+- Background jobs that must survive restarts (Gmail's send-later queue) are
+  rows in a local-only table processed on the bridge's sync tick; the first
+  tick runs at boot, which doubles as catch-up for anything missed while the
+  app was closed.
 
 ## 13 · Update this document
 

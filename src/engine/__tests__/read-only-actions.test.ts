@@ -43,6 +43,13 @@ const EXPECTED_READONLY = new Set([
   'n8n_get_workflow',
   'n8n_list_executions',
   'n8n_get_execution',
+  // Gmail reads — local-store/Gmail GET lookups only; sends, drafts, and
+  // label changes are separate always-gated actions.
+  'gmail_search_messages',
+  'gmail_get_thread',
+  'gmail_list_labels',
+  'gmail_get_contact_history',
+  'gmail_list_awaiting_reply',
 ]);
 
 /**
@@ -70,6 +77,11 @@ const MUST_GATE = [
   'github_open_pr',
   'calendar_create_event',
   'calendar_delete_event',
+  // Real email leaves the account; drafts/labels mutate mailbox state.
+  'gmail_send_message',
+  'gmail_create_draft',
+  'gmail_modify_labels',
+  'gmail_log_to_hubspot',
   'n8n_create_workflow',
   'n8n_update_workflow',
   'n8n_activate_workflow',

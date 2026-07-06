@@ -7,20 +7,10 @@
 
 import type { CalendarProviderId, CalendarAttendee, RemoteCalendar } from '../../types/calendar';
 
-export interface TokenSet {
-  accessToken: string;
-  /** Null when the provider doesn't return a refresh token (re-consent needed). */
-  refreshToken: string | null;
-  /** Epoch milliseconds at which accessToken expires. */
-  expiresAt: number;
-}
-
-export interface OAuthClient {
-  clientId: string;
-  clientSecret: string;
-  /** Loopback redirect captured for this flow (http://127.0.0.1:<port>/callback). */
-  redirectUri: string;
-}
+// Canonical definitions live in src/shared/oauth.ts (shared with Gmail);
+// re-exported here so calendar adapters keep their imports.
+export { TokenExpiredError, type TokenSet, type OAuthClient } from '../../shared/oauth';
+import type { TokenSet, OAuthClient } from '../../shared/oauth';
 
 /** A normalized event produced by a provider adapter from a raw payload. */
 export interface NormalizedEvent {
@@ -134,12 +124,4 @@ export interface CalendarProvider {
     response: string;
     selfEmail: string;
   }): Promise<void>;
-}
-
-/** Thrown when a refresh fails because the grant was revoked/expired. */
-export class TokenExpiredError extends Error {
-  constructor(message = 'OAuth token expired or revoked') {
-    super(message);
-    this.name = 'TokenExpiredError';
-  }
 }

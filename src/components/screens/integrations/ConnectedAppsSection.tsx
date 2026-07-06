@@ -15,6 +15,7 @@ import IntegrationCard from './IntegrationCard';
 import HubSpotSection from './HubSpotSection';
 import HubSpotConnectModal from './HubSpotConnectModal';
 import CalendarSection from './CalendarSection';
+import GmailSection from './GmailSection';
 import GHLSection from './GHLSection';
 import GitHubSection from './GitHubSection';
 import N8nSection from './N8nSection';
@@ -31,14 +32,6 @@ interface Service {
 }
 
 const COMING_SOON_SERVICES: Service[] = [
-  {
-    id: 'gmail',
-    nameKey: 'connectedApps.gmail',
-    descKey: 'connectedApps.gmailDesc',
-    icon: GmailIcon,
-    color: 'bg-red-500/15',
-    textColor: 'text-red-400',
-  },
   {
     id: 'notion',
     nameKey: 'connectedApps.notion',
@@ -157,6 +150,17 @@ export default function ConnectedAppsSection() {
           defaultExpanded={false}
         >
           <CalendarSection />
+        </IntegrationCard>
+
+        <IntegrationCard
+          icon={GmailIcon}
+          iconBg="bg-red-500/15"
+          iconColor="text-red-400"
+          name="Gmail"
+          description={t('gmail.section.cardDescription')}
+          defaultExpanded={false}
+        >
+          <GmailSection />
         </IntegrationCard>
 
         <IntegrationCard

@@ -6,6 +6,7 @@ export type TriggerType =
   | 'webhook'
   | 'telegram_message'
   | 'whatsapp_message'
+  | 'gmail_message'
   | 'github_issue_opened'
   | 'github_pr_review_requested';
 export type RoutineSource = 'user' | 'chat' | 'marketplace';

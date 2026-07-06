@@ -727,3 +727,146 @@ class CalendarSyncState(Base):
     __table_args__ = (
         UniqueConstraint("account_id", "calendar_id", name="uq_calendar_sync_state"),
     )
+
+
+class GmailAccount(Base):
+    """A connected Gmail account.
+
+    LOCAL-ONLY — mail is per-device by design (privacy: message content never
+    replicates to Supabase). OAuth client id/secret and tokens live ONLY in
+    device-local ``gmail_*`` settings (encrypted via Electron safeStorage); this
+    table holds identity + sync bookkeeping. Registered in cloud_sync
+    LOCAL_ONLY_TABLES together with gmail_threads / gmail_messages.
+    """
+
+    __tablename__ = "gmail_accounts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    email: Mapped[str] = mapped_column(String(320))
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # connected | token_expired | error
+    status: Mapped[str] = mapped_column(String(20), default="connected")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # users.history.list cursor; stale (~1 week) → windowed re-sync.
+    last_history_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_full_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class GmailThread(Base):
+    """Per-thread rollup for the Email screen (one row per Gmail thread).
+
+    Aggregates (subject, last activity, unread) are recomputed from messages on
+    each sync upsert. AI fields are computed lazily and cached here. LOCAL-ONLY.
+    """
+
+    __tablename__ = "gmail_threads"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    account_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("gmail_accounts.id", ondelete="CASCADE"), index=True
+    )
+    # Gmail's thread id (provider id).
+    thread_id: Mapped[str] = mapped_column(String(32), index=True)
+    subject: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    message_count: Mapped[int] = mapped_column(Integer, default=0)
+    unread_count: Mapped[int] = mapped_column(Integer, default=0)
+    has_attachments: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Union of Gmail label ids across the thread's messages (JSON list).
+    label_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Cached one-line AI summary (Superhuman-style), refreshed when the thread changes.
+    ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_summary_message_count: Mapped[int] = mapped_column(Integer, default=0)
+    # important | awaiting_reply | team | marketing | notifications (AI taxonomy)
+    ai_label: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # Snooze: hidden from the inbox until this instant.
+    snoozed_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Set when the last message is outbound (follow-up detection reads this).
+    last_outbound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    awaiting_reply: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (UniqueConstraint("account_id", "thread_id", name="uq_gmail_thread"),)
+
+
+class GmailMessage(Base):
+    """A synced Gmail message (headers + bodies, windowed ~90 days). LOCAL-ONLY."""
+
+    __tablename__ = "gmail_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    account_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("gmail_accounts.id", ondelete="CASCADE"), index=True
+    )
+    # Gmail's message / thread ids (provider ids).
+    message_id: Mapped[str] = mapped_column(String(32), index=True)
+    thread_id: Mapped[str] = mapped_column(String(32), index=True)
+    from_addr: Mapped[str | None] = mapped_column(Text, nullable=True)
+    to_addrs: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cc_addrs: Mapped[str | None] = mapped_column(Text, nullable=True)
+    subject: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    label_ids_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    internal_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    is_unread: Mapped[bool] = mapped_column(Boolean, default=False)
+    # True when this device's user sent it (SENT label) — follow-up detection.
+    is_outbound: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_attachments: Mapped[bool] = mapped_column(Boolean, default=False)
+    # JSON: [{attachmentId, filename, mimeType, sizeBytes}]
+    attachments_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (UniqueConstraint("account_id", "message_id", name="uq_gmail_message"),)
+
+
+class GmailTemplate(Base):
+    """Reusable email template with {{variable}} placeholders. LOCAL-ONLY."""
+
+    __tablename__ = "gmail_templates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    name: Mapped[str] = mapped_column(String(255))
+    subject_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body_template: Mapped[str] = mapped_column(Text)
+    # JSON list of variable names referenced by the templates (derived on save).
+    variables_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class GmailScheduledSend(Base):
+    """A send-later email awaiting its send_at instant. LOCAL-ONLY.
+
+    The Electron bridge polls for due rows on its sync tick and on boot (catch-up
+    after the app was closed past send_at), sends via the Gmail API, and flips
+    status. Approval (when routed through chat) happens at scheduling time.
+    """
+
+    __tablename__ = "gmail_scheduled_sends"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    account_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("gmail_accounts.id", ondelete="CASCADE"), index=True
+    )
+    to_addrs: Mapped[str] = mapped_column(Text)  # comma-separated
+    cc_addrs: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bcc_addrs: Mapped[str | None] = mapped_column(Text, nullable=True)
+    subject: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body_text: Mapped[str] = mapped_column(Text)
+    reply_to_thread_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    send_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    # pending | sent | failed | cancelled
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_message_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)

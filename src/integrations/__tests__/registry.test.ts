@@ -56,7 +56,15 @@ describe('integration registry', () => {
   });
 
   it('uses customModalId values that match the IntegrationSetupCard switch', () => {
-    const allowed = new Set(['telegram', 'slack', 'hubspot', 'whatsapp', 'calendar', 'n8n']);
+    const allowed = new Set([
+      'telegram',
+      'slack',
+      'hubspot',
+      'whatsapp',
+      'calendar',
+      'n8n',
+      'gmail',
+    ]);
     for (const manifest of listIntegrations()) {
       if (manifest.customModalId) {
         expect(allowed.has(manifest.customModalId), `${manifest.id}: unknown customModalId`).toBe(

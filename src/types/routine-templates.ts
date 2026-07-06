@@ -28,6 +28,7 @@ export type RequiredConnection =
   | 'google'
   | 'github'
   | 'calendar'
+  | 'gmail'
   | string;
 
 export type TemplateVariableType =

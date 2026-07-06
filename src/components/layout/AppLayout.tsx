@@ -22,6 +22,7 @@ import FilesScreen from '../screens/FilesScreen';
 import KnowledgeBaseScreen from '../screens/knowledge-base/KnowledgeBaseScreen';
 import NewsScreen from '../screens/news/NewsScreen';
 import CalendarScreen from '../screens/calendar/CalendarScreen';
+import EmailScreen from '../screens/email/EmailScreen';
 import FlowsScreen from '../screens/FlowsScreen';
 import CommandPalette from '../command-palette/CommandPalette';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
@@ -156,6 +157,9 @@ export default function AppLayout() {
     }
     if (activeScreen === 'calendar') {
       return <CalendarScreen />;
+    }
+    if (activeScreen === 'email') {
+      return <EmailScreen />;
     }
     if (activeScreen === 'flows') {
       return <FlowsScreen />;
