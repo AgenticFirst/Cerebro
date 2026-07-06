@@ -545,6 +545,8 @@ export interface CerebroAPI {
 
 ## MCP Bridge: Memory & Search Tools
 
+> **⚠️ Superseded / historical.** This generated-server bridge was removed; the current runtime spawns `claude -p` with no self-tool bridge (memory and chat actions flow through skills + the loopback server instead). The `--mcp-config` flag is used today for a different purpose: **user-connected MCP servers** (Google Drive, custom stdio/http) managed by `src/mcp/` — connections in Settings → Integrations → MCP Servers, per-expert grants in the Expert panel, per-run config assembly in `src/mcp/bridge.ts` + `src/agents/runtime.ts`. Do not build on the design below.
+
 Knowledge injection gives Claude Code expert knowledge in the system prompt, but Claude Code also needs to *write back* to Cerebro — save facts the user shares, record structured events, and search the web through Cerebro's Tavily integration. The MCP bridge provides this via an MCP (Model Context Protocol) server that Claude Code discovers through `--mcp-config`.
 
 ### Architecture

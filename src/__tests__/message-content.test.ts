@@ -40,6 +40,66 @@ describe('parseTrailingFileRefs', () => {
     expect(attachments).toEqual([]);
     expect(text).toBe('All done.');
   });
+
+  it('strips trailing sentence punctuation from the path and extension', () => {
+    const input = 'Here you go.\n\n@/out/report.docx.\n@/out/chart.png!';
+    const { attachments, text } = parseTrailingFileRefs(input);
+    expect(attachments.map((a) => a.filePath)).toEqual(['/out/report.docx', '/out/chart.png']);
+    expect(attachments.map((a) => a.extension)).toEqual(['docx', 'png']);
+    expect(text).toBe('Here you go.');
+  });
+
+  it('unwraps markdown around refs (backticks, bold, parens)', () => {
+    const input = 'Done.\n\n`@/tmp/output.docx`\n**@/home/user/file.txt**\n(@/path/doc.pdf)';
+    const { attachments } = parseTrailingFileRefs(input);
+    expect(attachments.map((a) => a.filePath)).toEqual([
+      '/tmp/output.docx',
+      '/home/user/file.txt',
+      '/path/doc.pdf',
+    ]);
+    expect(attachments.map((a) => a.extension)).toEqual(['docx', 'txt', 'pdf']);
+  });
+
+  it('captures mid-message standalone refs and strips them from the text', () => {
+    const input = 'Here is the file:\n\n@/out/report.docx\n\nLet me know if it opens this time.';
+    const { attachments, text } = parseTrailingFileRefs(input);
+    expect(attachments.map((a) => a.filePath)).toEqual(['/out/report.docx']);
+    expect(text).toBe('Here is the file:\n\nLet me know if it opens this time.');
+  });
+
+  it('dedupes the same path referenced twice in one message', () => {
+    const input = '@/out/report.docx\n\nResending:\n\n@/out/report.docx';
+    const { attachments } = parseTrailingFileRefs(input);
+    expect(attachments).toHaveLength(1);
+  });
+
+  it('does not treat inline prose mentions as refs', () => {
+    const input = 'Check @/path/file.txt in the middle of this text';
+    const { attachments, text } = parseTrailingFileRefs(input);
+    expect(attachments).toEqual([]);
+    expect(text).toBe(input);
+  });
+
+  it('never treats lines inside code fences as refs', () => {
+    const input = ['Example ending:', '', '```', '@/Users/jane/Desktop/report.docx', '```'].join(
+      '\n',
+    );
+    const { attachments, text } = parseTrailingFileRefs(input);
+    expect(attachments).toEqual([]);
+    expect(text).toBe(input);
+  });
+
+  it('keeps @~ home-relative refs', () => {
+    const { attachments } = parseTrailingFileRefs('Saved.\n\n@~/Documents/notes.md');
+    expect(attachments[0].filePath).toBe('~/Documents/notes.md');
+    expect(attachments[0].extension).toBe('md');
+  });
+
+  it('yields an empty extension for files without one', () => {
+    const { attachments } = parseTrailingFileRefs('Done.\n\n@/path/README');
+    expect(attachments[0].fileName).toBe('README');
+    expect(attachments[0].extension).toBe('');
+  });
 });
 
 describe('stripModelTags', () => {
@@ -99,6 +159,14 @@ describe('getCopyableContent', () => {
     const frozen = Object.freeze({ role: 'assistant' as const, content });
     expect(() => getCopyableContent(frozen)).not.toThrow();
     expect(frozen.content).toBe(content);
+  });
+
+  it('excludes mid-message attachment refs from copied markdown', () => {
+    const content = ['# Analysis', '', '@/out/section1.md', '', 'Here are the findings.'].join(
+      '\n',
+    );
+    const result = getCopyableContent({ role: 'assistant', content });
+    expect(result).toBe('# Analysis\n\nHere are the findings.');
   });
 
   it('preserves code fences, tables, and list nesting in assistant output', () => {

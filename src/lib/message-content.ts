@@ -7,6 +7,30 @@ export interface ParseResult {
 }
 
 /**
+ * Extract the file path from a single attachment-ref line, tolerating the
+ * formatting the model sometimes adds around it: markdown wrapping
+ * (`` `@/path` ``, `**@/path**`, `(@/path)`) and sentence punctuation stuck
+ * to the path (`@/home/user/report.docx.` — which would otherwise break both
+ * the extension badge and the on-disk stat). Returns null when the line
+ * isn't a ref.
+ */
+function refPathFromLine(rawLine: string): string | null {
+  let line = rawLine.trim();
+  // Peel markdown wrappers so the `@` is the first character.
+  line = line.replace(/^[`*_~("'«[]+/, '').replace(/[`*~)"'»\]]+$/, '');
+  if (!line.startsWith('@/') && !line.startsWith('@~')) return null;
+  const filePath = line.slice(1).replace(/[.,;:!?…'"»)\]]+$/, '');
+  if (!filePath.startsWith('/') && !filePath.startsWith('~/')) return null;
+  return filePath;
+}
+
+function toAttachment(filePath: string): AttachmentInfo {
+  const fileName = filePath.split('/').pop() || filePath;
+  const ext = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
+  return { id: filePath, filePath, fileName, fileSize: 0, extension: ext };
+}
+
+/**
  * User-message convention: zero or more leading lines starting with `@/` or
  * `@~` are file-path attachment refs. Strip them from the displayed text; the
  * UI renders them as attachment chips instead.
@@ -18,47 +42,59 @@ export function parseFileRefs(content: string): ParseResult {
 
   for (; i < lines.length; i++) {
     const line = lines[i].trim();
-    if (line.startsWith('@/') || line.startsWith('@~')) {
-      const filePath = line.slice(1);
-      const fileName = filePath.split('/').pop() || filePath;
-      const ext = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
-      attachments.push({ id: filePath, filePath, fileName, fileSize: 0, extension: ext });
-    } else if (line === '') {
-      continue;
-    } else {
-      break;
-    }
+    if (line === '') continue;
+    const filePath = refPathFromLine(line);
+    if (!filePath) break;
+    attachments.push(toAttachment(filePath));
   }
 
   return { attachments, text: lines.slice(i).join('\n').trim() };
 }
 
 /**
- * Assistant-message convention: attachment refs live at the *end* of the
- * message (an expert finishes its reply, then emits `@/path` lines for any
- * files it produced).
+ * Assistant-message convention: any *standalone* line starting with `@/` or
+ * `@~` is a file the expert produced — stripped from the displayed text and
+ * rendered as an attachment chip. The prompt asks for these as the trailing
+ * lines of the reply, but models sometimes drop the ref mid-message ("here
+ * you go: @/path … let me know"), so every standalone ref line counts, not
+ * just the trailing block. Lines inside fenced code blocks are never refs —
+ * they're example content.
  */
 export function parseTrailingFileRefs(content: string): ParseResult {
   const lines = content.split('\n');
   const attachments: AttachmentInfo[] = [];
-  let cut = lines.length;
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  let inFence = false;
 
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (line.startsWith('@/') || line.startsWith('@~')) {
-      const filePath = line.slice(1);
-      const fileName = filePath.split('/').pop() || filePath;
-      const ext = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
-      attachments.unshift({ id: filePath, filePath, fileName, fileSize: 0, extension: ext });
-      cut = i;
-    } else if (line === '') {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^(```|~~~)/.test(line.trim())) {
+      inFence = !inFence;
+      kept.push(line);
       continue;
-    } else {
-      break;
+    }
+    const filePath = inFence ? null : refPathFromLine(line);
+    if (!filePath) {
+      kept.push(line);
+      continue;
+    }
+    if (!seen.has(filePath)) {
+      seen.add(filePath);
+      attachments.push(toAttachment(filePath));
+    }
+    // Removing a mid-message ref line can leave two adjacent blank lines;
+    // drop one so the remaining markdown keeps its original rhythm.
+    if (
+      kept.length > 0 &&
+      kept[kept.length - 1].trim() === '' &&
+      (lines[i + 1] ?? '').trim() === ''
+    ) {
+      i++;
     }
   }
 
-  return { attachments, text: lines.slice(0, cut).join('\n').trimEnd() };
+  return { attachments, text: kept.join('\n').trimEnd() };
 }
 
 /**

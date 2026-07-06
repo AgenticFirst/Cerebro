@@ -40,6 +40,36 @@ export function backendGetSetting<T>(port: number, key: string): Promise<T | nul
   });
 }
 
+/** Thrown by `backendGetSettingStrict` when the backend could not be reached
+ *  (transport error, timeout, restart) — as opposed to the key being unset. */
+export class SettingsUnavailableError extends Error {
+  constructor(key: string, status: number) {
+    super(`settings/${key}: backend unavailable (status ${status})`);
+    this.name = 'SettingsUnavailableError';
+  }
+}
+
+/**
+ * Like `backendGetSetting`, but distinguishes "key not set" (404 → null) from
+ * "backend unreachable" (throws `SettingsUnavailableError`). Use for values
+ * where a false "not set" is destructive — e.g. credential keys, where a
+ * transient backend hiccup must not read as "token not configured".
+ */
+export async function backendGetSettingStrict<T>(port: number, key: string): Promise<T | null> {
+  const res = await backendJsonRequest<{ value: string }>(
+    port,
+    'GET',
+    `/settings/${encodeURIComponent(key)}`,
+  );
+  if (res.status === 404) return null;
+  if (!res.ok || res.data === null) throw new SettingsUnavailableError(key, res.status);
+  try {
+    return JSON.parse(res.data.value) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function backendPutSetting(port: number, key: string, value: unknown): Promise<void> {
   await backendJsonRequest(port, 'PUT', `/settings/${encodeURIComponent(key)}`, {
     value: JSON.stringify(value),

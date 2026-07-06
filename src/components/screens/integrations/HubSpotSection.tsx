@@ -185,6 +185,11 @@ export default function HubSpotSection({ showHeader = false }: HubSpotSectionPro
             }}
           />
         </p>
+        {status?.credentialsUnreadable && (
+          <div className="mt-2 text-[11px] text-amber-400 break-words">
+            {t('integrations.credentialUnreadable')}
+          </div>
+        )}
 
         {showTokenInput ? (
           <>

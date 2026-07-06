@@ -51,6 +51,14 @@ export function GmailIcon({ size = 24, className }: IconProps) {
   );
 }
 
+export function GoogleDriveIcon({ size = 24, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M4.433 22.396l4-6.929H24l-4 6.93zm3.566-6.929l-3.998 6.929L0 15.467 7.785 1.98l3.999 6.931zm15.784-.999h-7.999L7.999 1.605h8z" />
+    </svg>
+  );
+}
+
 export function NotionIcon({ size = 24, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>

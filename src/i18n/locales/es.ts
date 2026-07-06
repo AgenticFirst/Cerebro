@@ -713,6 +713,19 @@ const es: TranslationKeys = {
     referenceTruncated: 'Truncado para entrar en el presupuesto de contexto',
     removeReferenceFile: 'Eliminar',
     addingReferenceFile: 'Subiendo…',
+    mcpTools: 'HERRAMIENTAS MCP',
+    mcpToolsHelp:
+      'Dale a este experto herramientas en vivo de tus servidores MCP conectados (Google Drive y otros). Asigna un servidor y elige todas sus herramientas o un conjunto específico.',
+    mcpNoServers: 'Aún no hay servidores MCP conectados.',
+    mcpOpenIntegrations: 'Conecta uno en Integraciones',
+    mcpNotAttached: 'Sin asignar',
+    mcpGrantedCount: '{{granted}} de {{total}} herramientas otorgadas',
+    mcpAllTools: 'Todas las herramientas',
+    mcpChooseTools: 'Elegir herramientas',
+    mcpAuthExpired: 'Este servidor necesita reconectarse.',
+    mcpServerError: 'Este servidor tiene un problema de conexión.',
+    mcpFixInIntegrations: 'Arreglar en Integraciones',
+    mcpWriteTool: 'escribe',
     settingsSection: 'AJUSTES',
     enabled: 'Habilitado',
     pinnedLabel: 'Fijado',
@@ -1187,6 +1200,8 @@ const es: TranslationKeys = {
     engine: 'Motor',
     connectedApps: 'Apps conectadas',
     channels: 'Canales',
+    credentialUnreadable:
+      'No se pudo descifrar la credencial guardada (cambió el llavero del sistema). Vuelve a introducirla.',
     remoteAccess: 'Acceso remoto',
     remoteAccessDescription:
       'Habilita eventos entrantes y disparadores remotos para que Cerebro te atienda cuando no est\u00e9s.',
@@ -2880,6 +2895,102 @@ const es: TranslationKeys = {
         tomorrowMorning: 'Mañana 9am',
         mondayMorning: 'Lunes 9am',
       },
+    },
+  },
+  mcp: {
+    section: {
+      title: 'Servidores MCP',
+      cardDescription:
+        'Dale herramientas en vivo a tus expertos — Google Drive y cualquier servidor compatible con MCP.',
+      description:
+        'Conecta servidores de herramientas una sola vez y luego asígnalos a expertos desde el panel de cada experto, o actívalos para el chat.',
+      driveHint: 'Busca y lee tus archivos de Drive desde el chat, expertos y rutinas.',
+      driveSummary: 'Google Drive (solo lectura)',
+      toolCount: '{{count}} herramientas',
+      availableInChat: 'Disponible en el chat',
+      testConnection: 'Probar conexión',
+      remove: 'Eliminar',
+      removeConfirm:
+        '¿Eliminar {{name}}? Los expertos pierden acceso a sus herramientas; nada cambia en el servidor.',
+      cancel: 'Cancelar',
+      connect: 'Conectar',
+      addCustom: 'Agregar servidor MCP',
+      attachHint:
+        'Para darle estas herramientas a un experto específico, abre el experto y usa su sección "Herramientas MCP".',
+    },
+    status: {
+      connected: 'Conectado',
+      discovering: 'Comprobando…',
+      authExpired: 'Reconexión necesaria',
+      error: 'Error',
+    },
+    drive: {
+      title: 'Conectar Google Drive',
+      guideIntro:
+        'Cerebro se conecta a las herramientas oficiales de Drive de Google con tu propio cliente OAuth — tus archivos nunca pasan por servidores de terceros:',
+      steps: {
+        enrollPreview:
+          'Inscribe tu cuenta de Google en el Workspace Developer Preview Program (Google lo exige mientras las herramientas de Drive están en vista previa).',
+        enableApis:
+          'En tu proyecto de Google Cloud, habilita AMBAS: la "Google Drive API" y la "Google Drive MCP API".',
+        createOAuthClient:
+          'Crea un cliente OAuth de tipo Escritorio en APIs y servicios → Credenciales (omite este paso si reutilizarás tu cliente de Gmail).',
+        publishConsent:
+          'Publica la pantalla de consentimiento en Producción — el modo Prueba expira el acceso a los 7 días.',
+      },
+      previewWarning:
+        'Google limita estas herramientas de Drive a su Developer Preview Program. Si tu proyecto no está inscrito o la Drive MCP API no está habilitada, la prueba de conexión fallará con un error claro.',
+      openPreview: 'Abrir inscripción al Developer Preview',
+      openConsole: 'Abrir Google Cloud Console',
+      reuseGmail: 'Reutilizar mi cliente OAuth de Gmail',
+      reuseGmailHelp:
+        'Ya conectaste Gmail con un cliente OAuth de Google — el mismo cliente sirve para Drive. Igual aprobarás el acceso a Drive en tu navegador.',
+      credentialsHelp:
+        'Copia ambos valores de tu cliente OAuth de Escritorio en Google Cloud Console → Credenciales.',
+      fields: {
+        clientId: 'ID de cliente',
+        clientSecret: 'Secreto de cliente',
+      },
+      scopeHint:
+        'Cerebro solicita acceso de solo lectura a Drive (drive.readonly). Nunca se escribe nada en tu Drive.',
+      authorizeHelp:
+        'Se abrirá tu navegador para iniciar sesión en Google y aprobar el acceso de solo lectura a Drive. Si Google muestra una advertencia de "app no verificada", haz clic en Avanzado → Continuar — es tu propia app.',
+      authorize: 'Autorizar con Google',
+      authorizing: 'Esperando la autorización en tu navegador…',
+      success: 'Conectado {{account}}',
+      error: 'La conexión falló: {{error}}',
+      done: 'Listo',
+      next: 'Siguiente',
+      back: 'Atrás',
+      cancel: 'Cancelar',
+    },
+    custom: {
+      title: 'Agregar servidor MCP',
+      fields: {
+        name: 'Nombre',
+        transport: 'Tipo de conexión',
+        command: 'Comando',
+        args: 'Argumentos',
+        env: 'Variables de entorno',
+        url: 'URL del servidor',
+        headers: 'Encabezados',
+      },
+      hints: {
+        name: 'p. ej. Base de conocimiento de la empresa',
+        secretValue: 'valor (se guarda cifrado)',
+      },
+      transportStdio: 'Comando local (stdio)',
+      transportHttp: 'URL remota (HTTP)',
+      addEnv: 'Agregar variable',
+      addHeader: 'Agregar encabezado',
+      secretsHint:
+        'Los valores se cifran en este dispositivo y no se vuelven a mostrar. Cerebro prueba la conexión y lista las herramientas del servidor antes de guardar.',
+      addAndTest: 'Agregar y probar conexión',
+      testing: 'Probando conexión…',
+      success: 'Servidor conectado — {{count}} herramientas descubiertas.',
+      error: 'No se pudo conectar: {{error}}',
+      cancel: 'Cancelar',
+      done: 'Listo',
     },
   },
   calendar: {

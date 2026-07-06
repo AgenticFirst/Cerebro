@@ -702,6 +702,19 @@ const en = {
     referenceTruncated: 'Truncated to fit context budget',
     removeReferenceFile: 'Remove',
     addingReferenceFile: 'Uploading…',
+    mcpTools: 'MCP TOOLS',
+    mcpToolsHelp:
+      'Grant this expert live tools from your connected MCP servers (Google Drive and others). Attach a server, then choose all of its tools or a specific set.',
+    mcpNoServers: 'No MCP servers connected yet.',
+    mcpOpenIntegrations: 'Connect one in Integrations',
+    mcpNotAttached: 'Not attached',
+    mcpGrantedCount: '{{granted}} of {{total}} tools granted',
+    mcpAllTools: 'All tools',
+    mcpChooseTools: 'Choose tools',
+    mcpAuthExpired: 'This server needs to be reconnected.',
+    mcpServerError: 'This server has a connection problem.',
+    mcpFixInIntegrations: 'Fix in Integrations',
+    mcpWriteTool: 'writes',
     settingsSection: 'SETTINGS',
     enabled: 'Enabled',
     pinnedLabel: 'Pinned',
@@ -1173,6 +1186,8 @@ const en = {
     engine: 'Engine',
     connectedApps: 'Connected Apps',
     channels: 'Channels',
+    credentialUnreadable:
+      'Stored credential could not be decrypted (the OS keychain changed). Please re-enter it.',
     remoteAccess: 'Remote Access',
     remoteAccessDescription:
       "Enable inbound events and remote triggers to reach Cerebro when you're away.",
@@ -2867,6 +2882,101 @@ const en = {
         tomorrowMorning: 'Tomorrow 9am',
         mondayMorning: 'Monday 9am',
       },
+    },
+  },
+  mcp: {
+    section: {
+      title: 'MCP Servers',
+      cardDescription: 'Give your experts live tools — Google Drive and any MCP-compatible server.',
+      description:
+        "Connect tool servers once, then grant them to experts from each expert's panel, or make them available in chat.",
+      driveHint: 'Search and read your Drive files from chat, experts, and routines.',
+      driveSummary: 'Google Drive (read-only)',
+      toolCount: '{{count}} tools',
+      availableInChat: 'Available in chat',
+      testConnection: 'Test connection',
+      remove: 'Remove',
+      removeConfirm:
+        'Remove {{name}}? Experts lose access to its tools; nothing changes on the server itself.',
+      cancel: 'Cancel',
+      connect: 'Connect',
+      addCustom: 'Add MCP server',
+      attachHint:
+        'To give a specific expert these tools, open the expert and use its "MCP tools" section.',
+    },
+    status: {
+      connected: 'Connected',
+      discovering: 'Checking…',
+      authExpired: 'Reconnect needed',
+      error: 'Error',
+    },
+    drive: {
+      title: 'Connect Google Drive',
+      guideIntro:
+        "Cerebro connects to Google's official Drive tools with your own Google OAuth client — your files never touch third-party servers:",
+      steps: {
+        enrollPreview:
+          'Enroll your Google account in the Workspace Developer Preview Program (required by Google while Drive tools are in preview).',
+        enableApis:
+          'In your Google Cloud project, enable BOTH the "Google Drive API" and the "Google Drive MCP API".',
+        createOAuthClient:
+          "Create a Desktop-app OAuth client under APIs & Services → Credentials (skip if you'll reuse your Gmail client).",
+        publishConsent:
+          'Publish the consent screen to Production — Testing mode expires access after 7 days.',
+      },
+      previewWarning:
+        "Google gates these Drive tools behind its Developer Preview Program. If your project isn't enrolled or the Drive MCP API isn't enabled, the connection test below will fail with a clear error.",
+      openPreview: 'Open Developer Preview signup',
+      openConsole: 'Open Google Cloud Console',
+      reuseGmail: 'Reuse my Gmail OAuth client',
+      reuseGmailHelp:
+        "You already connected Gmail with a Google OAuth client — the same client works for Drive. You'll still approve Drive access in your browser.",
+      credentialsHelp:
+        'Copy both values from your Desktop-app OAuth client in Google Cloud Console → Credentials.',
+      fields: {
+        clientId: 'Client ID',
+        clientSecret: 'Client secret',
+      },
+      scopeHint:
+        'Cerebro requests read-only Drive access (drive.readonly). Nothing is ever written to your Drive.',
+      authorizeHelp:
+        'Your browser will open so you can sign in to Google and approve read-only Drive access. If Google shows an "unverified app" warning, click Advanced → Continue — it is your own app.',
+      authorize: 'Authorize with Google',
+      authorizing: 'Waiting for authorization in your browser…',
+      success: 'Connected {{account}}',
+      error: 'Connection failed: {{error}}',
+      done: 'Done',
+      next: 'Next',
+      back: 'Back',
+      cancel: 'Cancel',
+    },
+    custom: {
+      title: 'Add MCP server',
+      fields: {
+        name: 'Name',
+        transport: 'Connection type',
+        command: 'Command',
+        args: 'Arguments',
+        env: 'Environment variables',
+        url: 'Server URL',
+        headers: 'Headers',
+      },
+      hints: {
+        name: 'e.g. Company knowledge base',
+        secretValue: 'value (stored encrypted)',
+      },
+      transportStdio: 'Local command (stdio)',
+      transportHttp: 'Remote URL (HTTP)',
+      addEnv: 'Add variable',
+      addHeader: 'Add header',
+      secretsHint:
+        "Values are encrypted on this device and never shown again. Cerebro tests the connection and lists the server's tools before saving.",
+      addAndTest: 'Add & test connection',
+      testing: 'Testing connection…',
+      success: 'Server connected — {{count}} tools discovered.',
+      error: 'Could not connect: {{error}}',
+      cancel: 'Cancel',
+      done: 'Done',
     },
   },
   calendar: {

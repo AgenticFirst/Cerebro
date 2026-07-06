@@ -65,6 +65,8 @@ import { HubSpotHolder } from './hubspot/holder';
 import { N8nManager } from './n8n/manager';
 import { CalendarBridge } from './calendar/bridge';
 import { GmailBridge } from './gmail/bridge';
+import { McpBridge } from './mcp/bridge';
+import { setMcpBridge } from './mcp/instance';
 import { GHLHolder } from './ghl/holder';
 import { GitHubBridge } from './github/bridge';
 import { getConnection as getSupabaseConnection } from './supabase/backend-mode';
@@ -258,6 +260,15 @@ function isInsideSafeRoot(absPath: string): boolean {
   );
 }
 
+// Attachment refs may arrive as `~/...` (the chat convention accepts `@~`
+// lines) but fs never expands the tilde, so every shell handler that takes a
+// user-visible path resolves it first.
+function expandHome(inputPath: string): string {
+  if (inputPath === '~') return os.homedir();
+  if (inputPath.startsWith('~/')) return path.join(os.homedir(), inputPath.slice(2));
+  return inputPath;
+}
+
 // Minimal MIME-type map for files served via cerebro-workspace://
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -335,6 +346,8 @@ let n8nManager: N8nManager | null = null;
 let calendarBridge: CalendarBridge | null = null;
 // Gmail bridge (OAuth account + mail sync + send)
 let gmailBridge: GmailBridge | null = null;
+// MCP server connections (Google Drive + custom stdio/http)
+let mcpBridge: McpBridge | null = null;
 // Supabase backend-sync holder (multi-device)
 let supabaseHolder: SupabaseHolder | null = null;
 // GoHighLevel credential holder
@@ -663,6 +676,14 @@ async function startPythonBackend(): Promise<void> {
       console.error('[Cerebro] Gmail bridge init failed:', err);
     });
 
+  // MCP bridge — owns MCP server connections (Google Drive OAuth + custom
+  // stdio/http servers) and resolves per-run --mcp-config for agent spawns.
+  mcpBridge = new McpBridge({ backendPort: port });
+  setMcpBridge(mcpBridge);
+  mcpBridge.init().catch((err) => {
+    console.error('[Cerebro] MCP bridge init failed:', err);
+  });
+
   // Tell singleShotClaudeCode where to spawn `claude` from so it picks up
   // Cerebro's project-scoped subagents and skills.
   setClaudeCodeCwd(dataDir);
@@ -718,6 +739,7 @@ async function startPythonBackend(): Promise<void> {
     gitHubBridge?.setWebContents(windows[0].webContents);
     n8nManager?.setWebContents(windows[0].webContents);
     gmailBridge?.setWebContents(windows[0].webContents);
+    mcpBridge?.setWebContents(windows[0].webContents);
   }
 
   // Initial scheduler sync + start periodic re-sync
@@ -1799,7 +1821,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_PATH, async (_event, filePath: string) => {
-    await shell.openPath(filePath);
+    await shell.openPath(expandHome(filePath));
   });
 
   ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, async (_event, url: string) => {
@@ -1812,12 +1834,12 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.SHELL_REVEAL_PATH, async (_event, filePath: string) => {
-    shell.showItemInFolder(filePath);
+    shell.showItemInFolder(expandHome(filePath));
   });
 
   ipcMain.handle(IPC_CHANNELS.SHELL_STAT_PATH, async (_event, filePath: string) => {
     try {
-      const stat = await fs.promises.stat(filePath);
+      const stat = await fs.promises.stat(expandHome(filePath));
       return {
         exists: true,
         isDirectory: stat.isDirectory(),
@@ -1831,7 +1853,7 @@ function registerIpcHandlers(): void {
   // 2 MB limit keeps the renderer responsive — anything bigger should be
   // opened externally via SHELL_OPEN_PATH instead.
   ipcMain.handle(IPC_CHANNELS.SHELL_READ_TEXT_FILE, async (_event, filePath: string) => {
-    const content = await fs.promises.readFile(filePath, 'utf8');
+    const content = await fs.promises.readFile(expandHome(filePath), 'utf8');
     if (content.length > 2 * 1024 * 1024) {
       throw new Error('File too large to preview (>2 MB)');
     }
@@ -1840,8 +1862,10 @@ function registerIpcHandlers(): void {
 
   // Cheap pre-check the chat preview hook uses to decide between the binary
   // body and the "outside previewable area" fallback.
-  ipcMain.handle(IPC_CHANNELS.SHELL_IS_PATH_PREVIEWABLE, async (_event, absolutePath: string) => {
-    if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
+  ipcMain.handle(IPC_CHANNELS.SHELL_IS_PATH_PREVIEWABLE, async (_event, rawPath: string) => {
+    if (typeof rawPath !== 'string') return false;
+    const absolutePath = expandHome(rawPath);
+    if (!path.isAbsolute(absolutePath)) {
       return false;
     }
     return isInsideSafeRoot(path.normalize(absolutePath));
@@ -1850,7 +1874,8 @@ function registerIpcHandlers(): void {
   // Build a cerebro-chat:// URL for an arbitrary absolute path. The protocol
   // handler re-validates the path against the same safe-root list, so even a
   // forged URL can't escape the allowlist.
-  ipcMain.handle(IPC_CHANNELS.SHELL_PREVIEW_URL_FOR_PATH, async (_event, absolutePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.SHELL_PREVIEW_URL_FOR_PATH, async (_event, rawPath: string) => {
+    const absolutePath = typeof rawPath === 'string' ? expandHome(rawPath) : rawPath;
     if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
       throw new Error('not-absolute');
     }
@@ -1864,30 +1889,34 @@ function registerIpcHandlers(): void {
 
   // Copy a file emitted by an expert into the user's OS Downloads folder,
   // auto-deduping the destination name on collision. Returns the final path.
-  ipcMain.handle(IPC_CHANNELS.SHELL_DOWNLOAD_TO_DOWNLOADS, async (_event, sourcePath: string) => {
-    const src = await fs.promises.stat(sourcePath).catch(() => null);
-    if (!src || src.isDirectory()) {
-      throw new Error('Source is not a regular file');
-    }
-    const downloads = app.getPath('downloads');
-    await fs.promises.mkdir(downloads, { recursive: true });
-    const base = path.basename(sourcePath);
-    const ext = path.extname(base);
-    const stem = path.basename(base, ext);
-    let dest = path.join(downloads, base);
-    let counter = 1;
-    while (true) {
-      try {
-        await fs.promises.access(dest);
-        dest = path.join(downloads, `${stem}-${counter}${ext}`);
-        counter++;
-      } catch {
-        break;
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL_DOWNLOAD_TO_DOWNLOADS,
+    async (_event, rawSourcePath: string) => {
+      const sourcePath = expandHome(rawSourcePath);
+      const src = await fs.promises.stat(sourcePath).catch(() => null);
+      if (!src || src.isDirectory()) {
+        throw new Error('Source is not a regular file');
       }
-    }
-    await fs.promises.copyFile(sourcePath, dest);
-    return dest;
-  });
+      const downloads = app.getPath('downloads');
+      await fs.promises.mkdir(downloads, { recursive: true });
+      const base = path.basename(sourcePath);
+      const ext = path.extname(base);
+      const stem = path.basename(base, ext);
+      let dest = path.join(downloads, base);
+      let counter = 1;
+      while (true) {
+        try {
+          await fs.promises.access(dest);
+          dest = path.join(downloads, `${stem}-${counter}${ext}`);
+          counter++;
+        } catch {
+          break;
+        }
+      }
+      await fs.promises.copyFile(sourcePath, dest);
+      return dest;
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.SANDBOX_GET_PROFILE, async () => {
     const config = getCachedSandboxConfig();
@@ -2843,6 +2872,67 @@ function registerIpcHandlers(): void {
     },
   );
 
+  // --- MCP servers ---
+
+  // Server-level mutations change which tools the main agent (and granted
+  // experts) may load — re-materialize agent files so frontmatter never
+  // drifts from the connection state. Best-effort: a failed resync must not
+  // fail the mutation the user just performed.
+  const resyncAgentsAfterMcpChange = () => {
+    if (backendPort === null) return;
+    installAll({ dataDir: app.getPath('userData'), backendPort }).catch((err) => {
+      console.error('[Cerebro] agent resync after MCP change failed:', err);
+    });
+  };
+
+  ipcMain.handle(IPC_CHANNELS.MCP_ADD_CUSTOM_SERVER, async (_event, input) => {
+    if (!mcpBridge) return { ok: false, error: 'MCP bridge not initialized' };
+    const result = await mcpBridge.addCustomServer(input);
+    if (result.ok) resyncAgentsAfterMcpChange();
+    return result;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MCP_START_GDRIVE_OAUTH, async (_event, input) => {
+    if (!mcpBridge) return { ok: false, error: 'MCP bridge not initialized' };
+    const result = await mcpBridge.startGoogleDriveOAuth(input ?? {});
+    if (result.server) resyncAgentsAfterMcpChange();
+    return result;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MCP_GDRIVE_HAS_GMAIL_CLIENT, async () => {
+    if (!mcpBridge) return false;
+    return mcpBridge.gdriveHasGmailClient();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MCP_LIST_SERVERS, async () => {
+    if (!mcpBridge) return [];
+    return mcpBridge.listServers();
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.MCP_SET_CHAT_ENABLED,
+    async (_event, serverId: string, enabled: boolean) => {
+      if (!mcpBridge) return { ok: false, error: 'MCP bridge not initialized' };
+      const result = await mcpBridge.setChatEnabled(serverId, Boolean(enabled));
+      if (result.ok) resyncAgentsAfterMcpChange();
+      return result;
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.MCP_REDISCOVER, async (_event, serverId: string) => {
+    if (!mcpBridge) return { ok: false, error: 'MCP bridge not initialized' };
+    const result = await mcpBridge.rediscover(serverId);
+    if (result.ok) resyncAgentsAfterMcpChange();
+    return result;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.MCP_REMOVE_SERVER, async (_event, serverId: string) => {
+    if (!mcpBridge) return { ok: false, error: 'MCP bridge not initialized' };
+    const result = await mcpBridge.removeServer(serverId);
+    if (result.ok) resyncAgentsAfterMcpChange();
+    return result;
+  });
+
   // --- GoHighLevel ---
 
   ipcMain.handle(IPC_CHANNELS.GHL_VERIFY, async (_event, apiKey: string, locationId: string) => {
@@ -3079,6 +3169,9 @@ const createWindow = () => {
     gmailBridge.setWebContents(mainWindow.webContents);
     mainWindow.on('focus', () => gmailBridge?.setForeground(true));
     mainWindow.on('blur', () => gmailBridge?.setForeground(false));
+  }
+  if (mcpBridge) {
+    mcpBridge.setWebContents(mainWindow.webContents);
   }
 
   // Open DevTools only in local dev — never in packaged builds (end users

@@ -74,8 +74,11 @@ const ORPHAN_SWEEP_AGE_MS = 24 * 60 * 60 * 1000; // delete temp files older than
 const ROUTINE_CACHE_TTL_MS = 30_000;
 // If an agent run produces no events for this long, assume the underlying
 // Claude Code subprocess hung or died silently and reclaim the slot so the
-// user isn't permanently blocked behind a "still working" message.
-const RUN_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
+// user isn't permanently blocked behind a "still working" message. The stream
+// adapters emit an agent_idle_warning heartbeat every 2 minutes during healthy
+// silences (long generations, compaction, approval-gated tool waits), so 5
+// minutes of NO events means dead wiring — never a slow-but-healthy run.
+const RUN_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const RUN_WATCHDOG_INTERVAL_MS = 30_000;
 // Dedupe inbound updates by Telegram message_id. Telegram can redeliver a
 // long-polled update if persistLastUpdateId hasn't landed before the next
@@ -525,6 +528,10 @@ export class TelegramBridge implements TelegramChannel {
   private lastPollAt: number | null = null;
   private lastError: string | null = null;
   private botUsername: string | null = null;
+  /** A stored token envelope exists but could not be decrypted (OS keychain
+   *  changed) — surfaced in status() so the UI can say so instead of the
+   *  misleading "not configured". */
+  private credentialsUnreadable = false;
 
   private unknownUserLastReply = new Map<string, number>();
   private authorizedRateLimiter = new SlidingWindowLimiter(AUTHORIZED_RATE_LIMIT_PER_MIN, 60_000);
@@ -731,6 +738,7 @@ export class TelegramBridge implements TelegramChannel {
       unknownLastAttempt: Object.fromEntries(this.unknownUserLastReply),
       botUsername: this.botUsername,
       hasToken: this.hasToken(),
+      credentialsUnreadable: this.credentialsUnreadable,
       tokenBackend: secureTokenBackend(),
     };
   }
@@ -1281,6 +1289,7 @@ export class TelegramBridge implements TelegramChannel {
     ]);
 
     const token = decryptFromStorage(storedToken);
+    this.credentialsUnreadable = Boolean(storedToken && !token);
     // Transparent migration: if the value on disk wasn't encrypted (legacy plaintext
     // from before the secure-token module existed) and we have a working keychain,
     // re-save it under encryption so the next read decrypts cleanly.

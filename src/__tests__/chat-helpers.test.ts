@@ -9,6 +9,7 @@ import {
   resolveNewChatTarget,
   isSameLocalDay,
   isUntitledConversationTitle,
+  dayDividerLabel,
 } from '../context/chat-helpers';
 import type { ApiConversation, ApiMessage } from '../context/chat-helpers';
 import type { Conversation, Message } from '../types/chat';
@@ -290,6 +291,45 @@ describe('isSameLocalDay', () => {
     expect(isSameLocalDay(new Date('2026-04-20T23:59:00'), new Date('2026-04-21T00:01:00'))).toBe(
       false,
     );
+  });
+});
+
+describe('dayDividerLabel', () => {
+  const now = new Date('2026-07-05T15:00:00');
+
+  it('returns the today key for any time on the current local day', () => {
+    expect(dayDividerLabel(new Date('2026-07-05T00:10:00'), now, 'en')).toEqual({ key: 'today' });
+  });
+
+  it('returns the yesterday key for the previous local day', () => {
+    expect(dayDividerLabel(new Date('2026-07-04T23:59:00'), now, 'en')).toEqual({
+      key: 'yesterday',
+    });
+  });
+
+  it('handles yesterday across a month boundary', () => {
+    const firstOfMonth = new Date('2026-07-01T09:00:00');
+    expect(dayDividerLabel(new Date('2026-06-30T12:00:00'), firstOfMonth, 'en')).toEqual({
+      key: 'yesterday',
+    });
+  });
+
+  it('formats same-year dates without the year', () => {
+    expect(dayDividerLabel(new Date('2026-03-11T12:00:00'), now, 'en')).toEqual({
+      text: 'March 11',
+    });
+  });
+
+  it('formats other-year dates with the year', () => {
+    expect(dayDividerLabel(new Date('2025-12-30T12:00:00'), now, 'en')).toEqual({
+      text: 'December 30, 2025',
+    });
+  });
+
+  it('formats dates in Spanish when the locale is es', () => {
+    expect(dayDividerLabel(new Date('2026-03-11T12:00:00'), now, 'es')).toEqual({
+      text: '11 de marzo',
+    });
   });
 });
 

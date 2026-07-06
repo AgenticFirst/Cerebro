@@ -22,7 +22,13 @@ import database
 import models as _models
 from database import Base, build_engine
 
-from .config import MTIME_COLUMN, PK_COLUMN, SYNCED_TABLES, blob_path_from_payload
+from .config import (
+    MTIME_COLUMN,
+    PK_COLUMN,
+    SYNCED_TABLES,
+    blob_path_from_payload,
+    is_local_only_setting,
+)
 from .outbox import set_sync_enabled
 from .schema import _build_remote_metadata, ensure_remote_schema, remote_metadata
 
@@ -117,6 +123,10 @@ class SyncWorker:
         self.status = "idle"  # idle | syncing | offline | error
         self.last_synced_at: str | None = None
         self.last_error: str | None = None
+        # One successful purge of leaked local-only settings per worker
+        # lifetime (the worker is rebuilt on every start_sync, so each app
+        # launch re-purges).
+        self._purged_local_only = False
 
     # ----- lifecycle -----
     def start(self) -> None:
@@ -172,11 +182,90 @@ class SyncWorker:
             self.remote_engine = build_engine(self.remote_url)
             ensure_remote_schema(self.remote_engine)
         self.status = "syncing"
+        if not self._purged_local_only:
+            self._purge_local_only_leftovers()
+            self._purged_local_only = True
         self._push()
         self._pull()
         self.status = "idle"
         self.last_error = None
         self.last_synced_at = datetime.now(timezone.utc).isoformat()
+
+    # ----- repair -----
+    def _purge_local_only_leftovers(self) -> None:
+        """Remove local-only settings that ever leaked into the sync plane.
+
+        Older builds pushed credential settings (keychain ciphertext that is
+        useless on any other machine) before their prefixes were added to
+        LOCAL_ONLY_SETTING_PREFIXES. Those rows keep clobbering every device's
+        working tokens on pull, so delete them at the source: the remote
+        `settings` mirror, remote `sync_tombstones`, and any still-pending
+        local outbox rows queued before the prefix existed. Plain remote
+        DELETEs never surface in other devices' pulls (pulls filter on
+        server_updated_at / deleted_at > cursor), and every device keeps its
+        own local copy — nothing local is lost.
+        """
+        settings_tbl = remote_metadata.tables["settings"]
+        tomb_tbl = remote_metadata.tables["sync_tombstones"]
+        purged_settings = purged_tombstones = 0
+        with self.remote_engine.begin() as conn:
+            keys = [
+                row[0]
+                for row in conn.execute(select(settings_tbl.c.key))
+                if is_local_only_setting(str(row[0]))
+            ]
+            for i in range(0, len(keys), 500):
+                chunk = keys[i : i + 500]
+                conn.execute(settings_tbl.delete().where(settings_tbl.c.key.in_(chunk)))
+            purged_settings = len(keys)
+
+            tomb_pks = [
+                row[0]
+                for row in conn.execute(
+                    select(tomb_tbl.c.row_pk).where(tomb_tbl.c.table_name == "settings")
+                )
+                if is_local_only_setting(str(row[0]))
+            ]
+            for i in range(0, len(tomb_pks), 500):
+                chunk = tomb_pks[i : i + 500]
+                conn.execute(
+                    tomb_tbl.delete().where(
+                        (tomb_tbl.c.table_name == "settings")
+                        & (tomb_tbl.c.row_pk.in_(chunk))
+                    )
+                )
+            purged_tombstones = len(tomb_pks)
+
+        purged_outbox = 0
+        session_local = _session_local()
+        if session_local is not None:
+            s = session_local()
+            s.info["cloud_sync_apply"] = True
+            try:
+                pending = (
+                    s.query(_models.SyncOutbox)
+                    .filter(
+                        _models.SyncOutbox.status == "pending",
+                        _models.SyncOutbox.table_name == "settings",
+                    )
+                    .all()
+                )
+                for ob in pending:
+                    if is_local_only_setting(str(ob.row_pk)):
+                        s.delete(ob)
+                        purged_outbox += 1
+                s.commit()
+            finally:
+                s.close()
+
+        if purged_settings or purged_tombstones or purged_outbox:
+            log.info(
+                "Cloud sync: purged leaked local-only settings — "
+                "%d remote rows, %d tombstones, %d pending outbox rows",
+                purged_settings,
+                purged_tombstones,
+                purged_outbox,
+            )
 
     # ----- push -----
     def _pending_count(self) -> int:
@@ -312,6 +401,13 @@ class SyncWorker:
                 server_ts = _parse_dt(rrow["server_updated_at"])
                 if server_ts is not None and (high is None or server_ts > high):
                     high = server_ts
+                # Local-only settings must never be applied from the remote:
+                # credential envelopes are OS-keychain ciphertext from another
+                # machine and would clobber this device's working token. The
+                # cursor still advances (above) so a batch of skipped rows
+                # can't stall the pull.
+                if table == "settings" and is_local_only_setting(str(rrow[pk])):
+                    continue
                 data = {k: v for k, v in rrow.items() if k != "server_updated_at"}
                 self._apply_local(s, model, pk, mtime, data)
                 sp = blob_path_from_payload(table, data)
@@ -369,6 +465,10 @@ class SyncWorker:
                 table = rrow["table_name"]
                 model = MODEL_BY_TABLE.get(table)
                 if model is None:
+                    continue
+                # A remote tombstone must not delete this device's local-only
+                # settings (e.g. a credential another device cleared).
+                if table == "settings" and is_local_only_setting(str(rrow["row_pk"])):
                     continue
                 existing = s.get(model, rrow["row_pk"])
                 if existing is not None:

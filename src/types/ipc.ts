@@ -282,6 +282,18 @@ export const IPC_CHANNELS = {
   /** Main → renderer: accounts or the local mail store changed; refetch. */
   GMAIL_CHANGED: 'gmail:changed',
 
+  // MCP servers (Google Drive + custom stdio/http connections)
+  MCP_ADD_CUSTOM_SERVER: 'mcp:add-custom-server',
+  MCP_START_GDRIVE_OAUTH: 'mcp:start-gdrive-oauth',
+  /** Whether a Gmail BYO OAuth client exists to reuse for the Drive consent. */
+  MCP_GDRIVE_HAS_GMAIL_CLIENT: 'mcp:gdrive-has-gmail-client',
+  MCP_LIST_SERVERS: 'mcp:list-servers',
+  MCP_SET_CHAT_ENABLED: 'mcp:set-chat-enabled',
+  MCP_REDISCOVER: 'mcp:rediscover',
+  MCP_REMOVE_SERVER: 'mcp:remove-server',
+  /** Main → renderer: server list / status / tools changed; refetch. */
+  MCP_CHANGED: 'mcp:changed',
+
   // Supabase backend sync (multi-device)
   SUPABASE_TEST: 'supabase:test',
   SUPABASE_CONNECT: 'supabase:connect',
@@ -708,6 +720,9 @@ export interface TelegramStatusResponse {
   botUsername: string | null;
   /** True when a bot token is configured (without revealing the value). */
   hasToken: boolean;
+  /** A stored token exists but could not be decrypted (the OS keychain
+   *  changed) — the user must re-enter it. Distinct from "not configured". */
+  credentialsUnreadable?: boolean;
   /** How the token is encrypted at rest. 'os-keychain' on macOS/Windows and
    *  Linux with libsecret; 'plaintext-fallback' otherwise. */
   tokenBackend: 'os-keychain' | 'plaintext-fallback';
@@ -1037,6 +1052,7 @@ export interface CerebroAPI {
   github: GitHubAPI;
   calendar: CalendarAPI;
   gmail: GmailAPI;
+  mcp: McpAPI;
   supabase: SupabaseAPI;
   chatActions: ChatActionsAPI;
   files: FilesAPI;
@@ -1104,6 +1120,9 @@ export interface SlackStatusResponse {
   botUserId: string | null;
   hasBotToken: boolean;
   hasAppToken: boolean;
+  /** A stored token exists but could not be decrypted (the OS keychain
+   *  changed) — the user must re-enter it. Distinct from "not configured". */
+  credentialsUnreadable?: boolean;
   /** Configured-on flag. Independent of `running`. */
   enabled: boolean;
   allowlistChannels: string[];
@@ -1231,6 +1250,9 @@ export interface HubSpotStatusResponse {
   defaultStage: string | null;
   followUpProperty: string | null;
   dueDateProperty: string | null;
+  /** A stored token exists but could not be decrypted (the OS keychain
+   *  changed) — the user must re-enter it. Distinct from "not configured". */
+  credentialsUnreadable?: boolean;
   tokenBackend: 'os-keychain' | 'plaintext-fallback';
 }
 
@@ -1355,6 +1377,31 @@ export interface GmailAPI {
     instruction: string;
     replyToThreadId?: string;
   }): Promise<{ ok: boolean; body?: string; error?: string }>;
+  onChanged(callback: () => void): () => void;
+}
+
+export interface McpAPI {
+  /** Register + verify a custom MCP server (stdio command or http URL). */
+  addCustomServer(
+    input: import('../mcp/types').AddCustomMcpInput,
+  ): Promise<{ ok: boolean; server?: import('../mcp/types').McpServerInfo; error?: string }>;
+  /** Run the bring-your-own Google OAuth flow for the official Drive MCP. */
+  startGoogleDriveOAuth(input: {
+    clientId?: string;
+    clientSecret?: string;
+    reuseGmail?: boolean;
+  }): Promise<{ ok: boolean; server?: import('../mcp/types').McpServerInfo; error?: string }>;
+  gdriveHasGmailClient(): Promise<boolean>;
+  listServers(): Promise<import('../mcp/types').McpServerInfo[]>;
+  /** Toggle whether the main Cerebro chat agent loads this server. */
+  setChatEnabled(serverId: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
+  /** Re-run the connection test + tool discovery ("Test connection"). */
+  rediscover(serverId: string): Promise<{
+    ok: boolean;
+    tools?: import('../mcp/types').DiscoveredTool[];
+    error?: string;
+  }>;
+  removeServer(serverId: string): Promise<{ ok: boolean; error?: string }>;
   onChanged(callback: () => void): () => void;
 }
 

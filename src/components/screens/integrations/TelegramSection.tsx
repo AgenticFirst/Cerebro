@@ -494,6 +494,11 @@ export default function TelegramSection({ showHeader = false }: TelegramSectionP
                 </span>
               </div>
             )}
+            {status?.credentialsUnreadable && (
+              <div className="mt-2 text-[11px] text-amber-400 break-words">
+                {t('integrations.credentialUnreadable')}
+              </div>
+            )}
             {status?.lastError && (
               <div className="mt-2 text-[11px] text-red-400 break-all">
                 {t('telegramSection.lastError')}: {status.lastError}

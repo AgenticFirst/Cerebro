@@ -11,11 +11,13 @@ import {
   N8nIcon,
   NotionIcon,
 } from '../../icons/BrandIcons';
+import { Plug } from 'lucide-react';
 import IntegrationCard from './IntegrationCard';
 import HubSpotSection from './HubSpotSection';
 import HubSpotConnectModal from './HubSpotConnectModal';
 import CalendarSection from './CalendarSection';
 import GmailSection from './GmailSection';
+import MCPServersSection from './MCPServersSection';
 import GHLSection from './GHLSection';
 import GitHubSection from './GitHubSection';
 import N8nSection from './N8nSection';
@@ -161,6 +163,17 @@ export default function ConnectedAppsSection() {
           defaultExpanded={false}
         >
           <GmailSection />
+        </IntegrationCard>
+
+        <IntegrationCard
+          icon={Plug}
+          iconBg="bg-cyan-500/15"
+          iconColor="text-cyan-400"
+          name={t('mcp.section.title')}
+          description={t('mcp.section.cardDescription')}
+          defaultExpanded={false}
+        >
+          <MCPServersSection />
         </IntegrationCard>
 
         <IntegrationCard

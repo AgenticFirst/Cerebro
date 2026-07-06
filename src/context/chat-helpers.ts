@@ -69,6 +69,30 @@ export function isSameLocalDay(a: Date, b: Date): boolean {
   );
 }
 
+export type DayDividerLabel = { key: 'today' | 'yesterday' } | { text: string };
+
+/**
+ * Label for the day divider shown in the message stream when the local day
+ * changes. Today/yesterday come back as i18n keys (the caller translates);
+ * anything older is a locale-formatted date, with the year included only
+ * when it differs from the current one.
+ */
+export function dayDividerLabel(date: Date, now: Date, locale: string): DayDividerLabel {
+  if (isSameLocalDay(date, now)) return { key: 'today' };
+
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  if (isSameLocalDay(date, yesterday)) return { key: 'yesterday' };
+
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return {
+    text: date.toLocaleDateString(locale, {
+      month: 'long',
+      day: 'numeric',
+      ...(sameYear ? {} : { year: 'numeric' }),
+    }),
+  };
+}
+
 export interface NewChatPlan {
   /** Conversation ID to activate if an eligible empty chat from today exists. */
   reuseId: string | null;

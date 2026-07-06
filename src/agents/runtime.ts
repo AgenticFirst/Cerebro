@@ -37,6 +37,7 @@ import { toUuidFormat } from '../claude-code/session-id';
 import type { InferenceEngine, StreamingRunner } from '../engines/types';
 import { tryGetEngine, resolveActiveEngineId } from '../engines/registry';
 import { getStoredCodexSession, setStoredCodexSession } from '../engines/codex/session-store';
+import { clearCodexProbeCache } from '../engines/codex/auth-probe';
 import { clearProbeCache } from '../claude-code/auth-probe';
 import { TaskPtyRunner } from '../pty/TaskPtyRunner';
 import { TerminalBufferStore } from '../pty/TerminalBufferStore';
@@ -48,6 +49,8 @@ import {
   expertAgentName,
 } from '../claude-code/installer';
 import { CEREBRO_EXPERT_ID } from '../shared/agent-name';
+import { getMcpBridge } from '../mcp/instance';
+import { writeMcpConfigFile } from '../mcp/config-builder';
 import { MediaIngestService } from '../files/media-ingest';
 import type { ResolvedAttachment } from '../files/types';
 import fsSync from 'node:fs';
@@ -77,6 +80,51 @@ function buildExtraEnv(request: AgentRunRequest): Record<string, string> | undef
     out.CEREBRO_CONVERSATION_ID = request.conversationId;
   }
   return Object.keys(out).length === 0 ? undefined : out;
+}
+
+interface McpRunOverlay {
+  /** Per-run --mcp-config file (only set when at least one server applies). */
+  mcpConfigPath?: string;
+  /** Env vars backing the `${VAR}` secret placeholders inside that file. */
+  env?: Record<string, string>;
+}
+
+/**
+ * Resolve which MCP servers this run loads and materialize the per-run
+ * --mcp-config file: experts get the servers granted to them in the Expert
+ * panel; cerebro/main-chat runs get servers marked "available in chat".
+ * Fail-open by design — a broken server, an expired token, or a missing
+ * bridge downgrades to "no MCP" and never blocks the run.
+ */
+async function buildMcpOverlay(
+  runId: string,
+  expertId: string | null | undefined,
+  dataDir: string,
+): Promise<McpRunOverlay> {
+  try {
+    const bridge = getMcpBridge();
+    if (!bridge) return {};
+    const serverIds =
+      expertId && expertId !== CEREBRO_EXPERT_ID
+        ? await bridge.serverIdsGrantedToExpert(expertId)
+        : bridge.chatEnabledServerIds();
+    if (serverIds.length === 0) return {};
+    const config = await bridge.getConfigForRun(serverIds);
+    if (Object.keys(config.mcpServers).length === 0) return {};
+    return { mcpConfigPath: writeMcpConfigFile(dataDir, runId, config), env: config.env };
+  } catch (err) {
+    console.warn('[MCP] resolving run config failed; continuing without MCP:', err);
+    return {};
+  }
+}
+
+/** Merge the policy env with the MCP secret env; undefined when both empty. */
+function mergeExtraEnv(
+  a: Record<string, string> | undefined,
+  b: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!a && !b) return undefined;
+  return { ...(a ?? {}), ...(b ?? {}) };
 }
 
 /**
@@ -473,6 +521,10 @@ export class AgentRuntime {
         return '';
       });
     }
+
+    // Resolve MCP servers once per run (escalation retries reuse the same
+    // config file; the token inside was refreshed at run start).
+    const mcpOverlay = await buildMcpOverlay(runId, expertId, this.dataDir);
 
     const isExternalWorkspace =
       isTaskRun && !!request.workspacePath && !request.workspacePath.startsWith(this.dataDir);
@@ -1459,7 +1511,8 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
           qualityTier: tier,
           sessionId,
           resume,
-          extraEnv: buildExtraEnv(request),
+          extraEnv: mergeExtraEnv(buildExtraEnv(request), mcpOverlay.env),
+          mcpConfigPath: mcpOverlay.mcpConfigPath,
         });
       };
 
@@ -1532,68 +1585,89 @@ Replace \`kind\` with one of \`markdown\`, \`code_app\`, or \`mixed\` (pick ONE 
       accessibleExpertIds: request.accessibleExpertIds ?? null,
     });
 
-    const runner = engine.createRunner();
-    activeRun.runner = runner;
+    // A backstop idle kill (idle_hang) is retried once, mirroring the Claude
+    // chat path — a one-off stall never surfaces the friendly timeout copy.
+    let idleRetryAttempted = false;
 
-    const persistThreadId = (): void => {
-      const sid = runner.getSessionId?.();
-      if (sid) void setStoredCodexSession(conversationId, sid);
+    const spawnCodexAttempt = (): void => {
+      const runner = engine.createRunner();
+      activeRun.runner = runner;
+
+      const persistThreadId = (): void => {
+        const sid = runner.getSessionId?.();
+        if (sid) void setStoredCodexSession(conversationId, sid);
+      };
+
+      runner.on('event', (event: RendererAgentEvent) => {
+        if (event.type === 'text_delta') {
+          activeRun.accumulatedText += event.delta;
+        }
+        // The runner emits paired ('event' → 'error') and ('event' → 'done');
+        // the dedicated handlers are the sole authority (mirrors the Claude
+        // path), so drop the raw 'event' copies — forwarding them would
+        // deliver duplicate error/done events to the sink.
+        if (event.type === 'error' || event.type === 'done') return;
+        this.deliverEvent(runId, webContents, event);
+      });
+
+      runner.on('done', (messageContent: string) => {
+        persistThreadId();
+        activeRun.accumulatedText = messageContent;
+        this.deliverEvent(runId, webContents, {
+          type: 'done',
+          runId,
+          messageContent,
+        } as RendererAgentEvent);
+        this.finalizeRun(runId, 'completed', messageContent);
+        this.postRunSync(webContents);
+      });
+
+      runner.on('error', (error: string) => {
+        const cls = runner.getLastErrorClass();
+        // Capture the thread id even on error — codex may have created the
+        // session before failing, so the next turn can still resume.
+        persistThreadId();
+
+        // Backstop idle kill: retry once, busting the probe cache so the
+        // retry's pre-flight does a real credential check (a genuine auth
+        // expiry then routes to 'auth' → login card; a transient stall just
+        // re-runs). Mirrors the Claude path's idle_hang recovery.
+        if (cls === 'idle_hang' && !idleRetryAttempted) {
+          idleRetryAttempted = true;
+          clearCodexProbeCache();
+          activeRun.accumulatedText = '';
+          spawnCodexAttempt();
+          return;
+        }
+
+        const surfacedError = friendlySurfaceError(cls, request.language, error);
+        this.deliverEvent(runId, webContents, {
+          type: 'error',
+          runId,
+          error: surfacedError,
+          errorClass: cls === 'none' ? 'unknown' : cls,
+        } as RendererAgentEvent);
+        this.finalizeRun(runId, 'error', activeRun.accumulatedText, surfacedError);
+        this.postRunSync(webContents);
+      });
+
+      runner.start({
+        runId,
+        prompt,
+        agentName,
+        cwd,
+        maxTurns,
+        model: resolved.model,
+        reasoningEffort: resolved.reasoningEffort,
+        language: request.language,
+        qualityTier: request.qualityTier as QualityTier | undefined,
+        sessionId: storedThread ?? '',
+        resume,
+        extraEnv: buildExtraEnv(request),
+      });
     };
 
-    runner.on('event', (event: RendererAgentEvent) => {
-      if (event.type === 'text_delta') {
-        activeRun.accumulatedText += event.delta;
-      }
-      // The runner emits paired ('event' → 'error') and ('event' → 'done');
-      // the dedicated handlers are the sole authority (mirrors the Claude
-      // path), so drop the raw 'event' copies — forwarding them would
-      // deliver duplicate error/done events to the sink.
-      if (event.type === 'error' || event.type === 'done') return;
-      this.deliverEvent(runId, webContents, event);
-    });
-
-    runner.on('done', (messageContent: string) => {
-      persistThreadId();
-      activeRun.accumulatedText = messageContent;
-      this.deliverEvent(runId, webContents, {
-        type: 'done',
-        runId,
-        messageContent,
-      } as RendererAgentEvent);
-      this.finalizeRun(runId, 'completed', messageContent);
-      this.postRunSync(webContents);
-    });
-
-    runner.on('error', (error: string) => {
-      const cls = runner.getLastErrorClass();
-      // Capture the thread id even on error — codex may have created the
-      // session before failing, so the next turn can still resume.
-      persistThreadId();
-      const surfacedError = friendlySurfaceError(cls, request.language, error);
-      this.deliverEvent(runId, webContents, {
-        type: 'error',
-        runId,
-        error: surfacedError,
-        errorClass: cls === 'none' ? 'unknown' : cls,
-      } as RendererAgentEvent);
-      this.finalizeRun(runId, 'error', activeRun.accumulatedText, surfacedError);
-      this.postRunSync(webContents);
-    });
-
-    runner.start({
-      runId,
-      prompt,
-      agentName,
-      cwd,
-      maxTurns,
-      model: resolved.model,
-      reasoningEffort: resolved.reasoningEffort,
-      language: request.language,
-      qualityTier: request.qualityTier as QualityTier | undefined,
-      sessionId: storedThread ?? '',
-      resume,
-      extraEnv: buildExtraEnv(request),
-    });
+    spawnCodexAttempt();
   }
 
   cancelRun(runId: string): boolean {

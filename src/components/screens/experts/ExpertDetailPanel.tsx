@@ -5,9 +5,11 @@ import clsx from 'clsx';
 import { useVoice } from '../../../context/VoiceContext';
 import { useFeatureFlags } from '../../../context/FeatureFlagsContext';
 import type { Expert } from '../../../context/ExpertContext';
+import { useChat } from '../../../context/ChatContext';
 import ExpertMemoryTab from '../../experts/ExpertMemoryTab';
 import ExpertSkillsSection from './ExpertSkillsSection';
 import ExpertContextFilesSection from './ExpertContextFilesSection';
+import ExpertMcpSection from './ExpertMcpSection';
 import AvatarPicker from './AvatarPicker';
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -89,6 +91,7 @@ export default function ExpertDetailPanel({
   const { t } = useTranslation();
   const { startCall } = useVoice();
   const { flags } = useFeatureFlags();
+  const { setActiveScreen } = useChat();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [domain, setDomain] = useState('');
@@ -408,6 +411,15 @@ export default function ExpertDetailPanel({
             {/* Reference documents (per-expert context files) */}
             <Section label={t('experts.referenceDocs')}>
               <ExpertContextFilesSection expertId={expert.id} isLocked={isLocked} />
+            </Section>
+
+            {/* MCP tools (per-expert grants on connected MCP servers) */}
+            <Section label={t('experts.mcpTools')}>
+              <ExpertMcpSection
+                expertId={expert.id}
+                isLocked={isLocked}
+                onOpenIntegrations={() => setActiveScreen('integrations')}
+              />
             </Section>
 
             {/* Settings */}

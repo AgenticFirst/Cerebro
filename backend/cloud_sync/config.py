@@ -52,6 +52,10 @@ LOCAL_ONLY_TABLES: frozenset[str] = frozenset(
         "gmail_messages",
         "gmail_templates",
         "gmail_scheduled_sends",
+        # MCP connections are device-bound (credentials live in the OS
+        # keychain); grants reference them by FK so neither table syncs.
+        "mcp_servers",
+        "expert_mcp_grants",
     }
 )
 
@@ -114,6 +118,10 @@ LOCAL_ONLY_SETTING_PREFIXES: tuple[str, ...] = (
     "github_",
     "calendar_",  # OAuth client id/secret + access/refresh tokens — never leave device
     "gmail_",  # OAuth client id/secret + tokens + mail sync cursors — never leave device
+    "mcp_",  # MCP server credentials (OAuth tokens, custom env/header values)
+    "slack_",  # bot/app tokens are keychain ciphertext; thread/expert maps are session-local
+    "whatsapp_",  # session creds are a per-device WhatsApp Web session
+    "n8n_",  # API key, encryption key, owner password — the n8n install is per-device
     "sandbox:",
     "sync:",  # sync bookkeeping (cursors, etc.) is per-device
 )

@@ -443,7 +443,9 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     // /no-output wedge as `errorClass: 'auth'` so consumers render their
     // own recovery affordance (login card, operator DM, etc.).
     const { runner, events } = await startRunner();
-    vi.advanceTimersByTime(90_001); // past IDLE_NO_TOOL_KILL_MS
+    vi.advanceTimersByTime(89_999); // just under IDLE_BOOT_WEDGE_KILL_MS
+    expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+    vi.advanceTimersByTime(2); // past the boundary
     const errorEvents = events.filter((e) => e.type === 'error');
     expect(errorEvents).toHaveLength(1);
     expect(errorEvents[0].payload.error).toMatch(/Cerebro lost its Claude Code session/);
@@ -451,7 +453,10 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     expect(runner.getLastErrorClass()).toBe('auth');
   });
 
-  it('does not kill at 60s while a tool_use is in flight', async () => {
+  it('never kills while a tool_use is in flight, no matter how long the silence', async () => {
+    // Claude Code itself waits indefinitely on tool calls — approval-gated
+    // chat actions can legitimately block for hours on a human. The old
+    // 30-minute tool ceiling is gone entirely.
     const { events } = await startRunner();
     const toolUse = {
       type: 'assistant',
@@ -461,12 +466,16 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     // Drain the 'data' microtask so handleJsonLine runs.
     vi.advanceTimersByTime(0);
 
-    vi.advanceTimersByTime(120_000); // 2 minutes — well past the 60s idle ceiling
+    vi.advanceTimersByTime(6 * 60 * 60_000); // 6 hours of total silence
     const errorEvents = events.filter((e) => e.type === 'error');
     expect(errorEvents).toHaveLength(0);
   });
 
-  it('kills at the tool ceiling (1800s) with a tool-aware error message', async () => {
+  it('keeps emitting the agent_idle_warning heartbeat every 2 minutes while a tool waits', async () => {
+    // The Slack/Telegram bridges reap a run whose event stream goes silent
+    // for RUN_IDLE_TIMEOUT_MS (5 min). The heartbeat is the contract that
+    // keeps them fed during a long healthy wait — no gap between consecutive
+    // warnings may exceed the 2-minute repeat cadence.
     const { events } = await startRunner();
     const toolUse = {
       type: 'assistant',
@@ -475,15 +484,23 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     currentChild!.stdout.write(JSON.stringify(toolUse) + '\n');
     vi.advanceTimersByTime(0);
 
-    vi.advanceTimersByTime(1_800_001);
-    const errorEvents = events.filter((e) => e.type === 'error');
-    expect(errorEvents).toHaveLength(1);
-    expect(errorEvents[0].payload.error).toMatch(/waiting on tool 'Bash'/);
-    expect(errorEvents[0].payload.error).toMatch(/approval-gated/);
-    expect(errorEvents[0].payload.error).not.toMatch(/isn't authenticated/);
+    vi.advanceTimersByTime(2 * 60 * 60_000); // 2 hours of silence, tool open
+    const warnings = events.filter((e) => e.type === 'agent_idle_warning');
+    // 45s/2m/5m fixed thresholds, then one heartbeat every 2 min from 6m out
+    // to 120m — the exact count matters less than the cadence never breaking.
+    expect(warnings.length).toBeGreaterThanOrEqual(55);
+    // No gap may approach the bridges' 5-minute run reaper. The widest gap in
+    // the schedule is the 2m→5m fixed-threshold stretch (3 minutes).
+    const elapsed = warnings.map((w) => w.payload.elapsedMs as number);
+    for (let i = 1; i < elapsed.length; i++) {
+      expect(elapsed[i] - elapsed[i - 1]).toBeLessThanOrEqual(180_000);
+    }
+    // The last heartbeat covers the tail of the window.
+    expect(elapsed[elapsed.length - 1]).toBeGreaterThanOrEqual(2 * 60 * 60_000 - 120_000);
+    expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
   });
 
-  it('reverts to the no-tool idle ceiling (90s) after tool_result returns', async () => {
+  it('after tool_result, survives well past 90s and only fires the 30-minute backstop on true silence', async () => {
     const { runner, events } = await startRunner();
     const toolUse = {
       type: 'assistant',
@@ -492,7 +509,7 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     currentChild!.stdout.write(JSON.stringify(toolUse) + '\n');
     vi.advanceTimersByTime(0);
 
-    // Tool returned — drop back to the no-tool ceiling.
+    // Tool returned — drop back to the no-tool (mid-run backstop) ceiling.
     const toolResult = {
       type: 'user',
       message: { content: [{ type: 'tool_result', tool_use_id: 'tool-1', content: 'ok' }] },
@@ -500,13 +517,81 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     currentChild!.stdout.write(JSON.stringify(toolResult) + '\n');
     vi.advanceTimersByTime(0);
 
+    // The old 90s kill must NOT fire — output was seen, so silence here is
+    // normal (compaction, long generation ramp-up, upstream backpressure).
     vi.advanceTimersByTime(90_001);
+    expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+
+    // 30 minutes of TOTAL silence = genuinely dead subprocess → retryable
+    // idle_hang (never the no-output-ever auth wedge).
+    vi.advanceTimersByTime(30 * 60_000);
     const errorEvents = events.filter((e) => e.type === 'error');
     expect(errorEvents).toHaveLength(1);
-    // Output was seen (the tool round-trip), so this is a retryable idle_hang,
-    // not the no-output-ever auth wedge.
-    expect(errorEvents[0].payload.error).toMatch(/produced no output for 90 seconds/);
+    expect(errorEvents[0].payload.error).toMatch(/produced no output for 30 minutes/);
     expect(runner.getLastErrorClass()).toBe('idle_hang');
+  });
+
+  it('arms the mid-run backstop (not the 90s boot-wedge kill) from the very first output chunk', async () => {
+    // Regression guard for the ordering bug: sawAnyOutput must flip BEFORE
+    // resetIdleTimers() in the stdout handler. If it flips after (the old
+    // handleJsonLine placement), the first chunk arms a 90s timer and a stall
+    // right after the init event — exactly the auto-compaction-on-resume case
+    // from production — still dies at 90s despite the generous backstop.
+    const { runner, events } = await startRunner();
+    currentChild!.stdout.write(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'abc' }) + '\n',
+    );
+    vi.advanceTimersByTime(0);
+
+    // Long silence right after init (compaction). Must survive far past 90s.
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+
+    // But the backstop still exists for a truly dead subprocess.
+    vi.advanceTimersByTime(20 * 60_000 + 1);
+    const errorEvents = events.filter((e) => e.type === 'error');
+    expect(errorEvents).toHaveLength(1);
+    expect(runner.getLastErrorClass()).toBe('idle_hang');
+  });
+
+  it('heartbeat cadence during a no-tool silence never leaves a gap over 2 minutes', async () => {
+    const { events } = await startRunner();
+    currentChild!.stdout.write(
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Working on it.' }] },
+      }) + '\n',
+    );
+    vi.advanceTimersByTime(0);
+
+    vi.advanceTimersByTime(29 * 60_000); // just under the 30-minute backstop
+    expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+    const warnings = events.filter((e) => e.type === 'agent_idle_warning');
+    expect(warnings.length).toBeGreaterThanOrEqual(14);
+    // Max gap stays under the bridges' 5-minute run reaper (widest is the
+    // 2m→5m fixed-threshold stretch).
+    const elapsed = warnings.map((w) => w.payload.elapsedMs as number);
+    for (let i = 1; i < elapsed.length; i++) {
+      expect(elapsed[i] - elapsed[i - 1]).toBeLessThanOrEqual(180_000);
+    }
+  });
+
+  it('stops the heartbeat once the process closes', async () => {
+    const { events } = await startRunner();
+    currentChild!.stdout.write(
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Done.' }] },
+      }) + '\n',
+    );
+    vi.advanceTimersByTime(0);
+    currentChild!.emit('close', 0, null);
+    await Promise.resolve();
+
+    const before = events.filter((e) => e.type === 'agent_idle_warning').length;
+    vi.advanceTimersByTime(60 * 60_000);
+    const after = events.filter((e) => e.type === 'agent_idle_warning').length;
+    expect(after).toBe(before);
   });
 
   it('survives a >90s generation while partial stream_event chunks flow, then still kills on true silence', async () => {
@@ -531,7 +616,7 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     vi.advanceTimersByTime(0);
 
     // The long generation: a partial chunk lands every 80s for ~6.5 minutes.
-    // Each gap is under the 90s ceiling, so the run must survive far past it.
+    // Each chunk resets the idle timer, so the run survives indefinitely.
     for (let i = 0; i < 5; i++) {
       vi.advanceTimersByTime(80_000);
       expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
@@ -550,12 +635,13 @@ describe('ClaudeCodeRunner idle watchdog', () => {
     // ~400s elapsed without a kill — pre-fix this would have died at 90s.
     expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
 
-    // Generation ends and the CLI goes truly silent. The watchdog must still
-    // fire — the fix widens the window for real work, it does not disable it.
-    vi.advanceTimersByTime(90_001);
+    // Generation ends and the CLI goes truly silent. The 30-minute backstop
+    // must still fire — the fix widens the window for real work, it does not
+    // disable the last-resort dead-subprocess detection.
+    vi.advanceTimersByTime(30 * 60_000 + 1);
     const errorEvents = events.filter((e) => e.type === 'error');
     expect(errorEvents).toHaveLength(1);
-    expect(errorEvents[0].payload.error).toMatch(/produced no output for 90 seconds/);
+    expect(errorEvents[0].payload.error).toMatch(/produced no output for 30 minutes/);
     expect(runner.getLastErrorClass()).toBe('idle_hang');
   });
 });

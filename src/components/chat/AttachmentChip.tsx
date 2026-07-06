@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent } from 'react';
-import { X, Download, FolderOpen, Folder, Check, Loader2, Save } from 'lucide-react';
+import { X, Download, FolderOpen, Folder, Check, Loader2, Save, FileWarning } from 'lucide-react';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { AttachmentInfo } from '../../types/attachments';
@@ -156,14 +156,20 @@ export default function AttachmentChip({
       <span
         className={clsx(
           'w-5 h-5 rounded flex items-center justify-center flex-shrink-0',
-          'bg-accent/10 text-accent text-[9px] font-bold',
+          missing
+            ? 'bg-amber-500/10 text-amber-500'
+            : 'bg-accent/10 text-accent text-[9px] font-bold',
         )}
       >
-        {extLabel}
+        {missing ? <FileWarning size={12} strokeWidth={2.25} /> : extLabel}
       </span>
       <span className="max-w-[140px] truncate">{attachment.fileName}</span>
-      {fileSize > 0 && (
-        <span className="text-text-tertiary text-[10px]">{formatFileSize(fileSize)}</span>
+      {missing ? (
+        <span className="text-text-tertiary text-[10px]">{t('experts.attachmentMissing')}</span>
+      ) : (
+        fileSize > 0 && (
+          <span className="text-text-tertiary text-[10px]">{formatFileSize(fileSize)}</span>
+        )
       )}
     </>
   );
@@ -175,7 +181,6 @@ export default function AttachmentChip({
         'bg-bg-elevated border border-border-subtle text-xs text-text-secondary',
         'group transition-colors',
         (onRemove || isAssistant) && !missing && 'hover:border-border-default',
-        missing && 'opacity-60',
       )}
       title={missing ? t('experts.attachmentMissing') : undefined}
     >

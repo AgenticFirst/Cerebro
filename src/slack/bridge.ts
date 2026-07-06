@@ -77,6 +77,7 @@ import {
   type SlackInboundContext,
   type SlackFile,
 } from './types';
+import { backendGetSettingStrict, SettingsUnavailableError } from '../shared/backend-settings';
 import { MediaIngestService } from '../files/media-ingest';
 import { IntegrationStaging } from '../files/staging';
 import type { ResolvedAttachment } from '../files/types';
@@ -94,12 +95,22 @@ const ROUTINE_CACHE_TTL_MS = 30_000;
 // chat (gaps stay short), but the next morning starts clean. Operator-tunable
 // via the `slack_session_idle_hours` setting.
 const SESSION_IDLE_MS = 6 * 60 * 60_000;
-const RUN_IDLE_TIMEOUT_MS = 3 * 60 * 1000;
+// Reap a run only when its event stream has gone silent for this long. The
+// stream adapters emit an agent_idle_warning heartbeat every 2 minutes during
+// healthy silences (long generations, compaction, approval-gated tool waits),
+// so 5 minutes of NO events at all means the main-process wiring is dead —
+// never a slow-but-healthy run.
+const RUN_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const RUN_WATCHDOG_INTERVAL_MS = 30_000;
 // If no events arrive for IDLE_WATCHDOG_MS while we expect activity, bounce
 // the Bolt app. Production fallback for the rare Socket Mode silent-stall.
 const IDLE_WATCHDOG_MS = 5 * 60_000;
 const IDLE_WATCHDOG_INTERVAL_MS = 60_000;
+// A start() that fails transiently (backend hiccup mid-bounce, network still
+// down right after laptop wake) must not leave the bridge dead until a human
+// reconnects — retry with doubling backoff instead.
+const RECONNECT_MIN_MS = 5_000;
+const RECONNECT_MAX_MS = 5 * 60_000;
 
 // Voice-note / attachment handling (mirrors Telegram bridge). The audio MIME
 // set + MIME→ext map live in ./helpers (shared with pickAudioAttachment).
@@ -303,6 +314,13 @@ export class SlackBridge implements SlackChannel {
   private activeRuns = new Map<string, ActiveSlackRun>(); // threadKey → run
   private runWatchdogTimer: NodeJS.Timeout | null = null;
   private idleWatchdogTimer: NodeJS.Timeout | null = null;
+  /** One-shot retry after a transiently failed start(); null when idle. */
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectDelayMs = RECONNECT_MIN_MS;
+  /** A stored token envelope exists but could not be decrypted (OS keychain
+   *  changed) — surfaced in status() so the UI can say so instead of the
+   *  misleading "not configured". */
+  private credentialsUnreadable = false;
 
   /**
    * In-flight Claude Code re-authentication. When the bundled CLI's session
@@ -377,7 +395,18 @@ export class SlackBridge implements SlackChannel {
     if (this.running || this.starting) return;
     this.starting = true;
     try {
-      await this.loadSettings();
+      try {
+        await this.loadSettings();
+      } catch (err) {
+        if (err instanceof SettingsUnavailableError) {
+          // The backend couldn't be reached — the tokens are still in the DB.
+          // Treating this as "not configured" is what used to kill the bridge
+          // permanently after a watchdog bounce; retry instead.
+          this.scheduleReconnect(err.message);
+          return;
+        }
+        throw err;
+      }
 
       if (!this.settings.enabled || !this.settings.botToken || !this.settings.appToken) {
         const reason =
@@ -402,6 +431,13 @@ export class SlackBridge implements SlackChannel {
         this.lastError = err instanceof Error ? err.message : String(err);
         logError('auth.test failed —', this.lastError);
         this.api = null;
+        // SlackApiError.code is the API-level error code (invalid_auth,
+        // account_inactive, …) — a real verdict on the token, so stay
+        // stopped. code === null means the request never got an answer
+        // (network down, DNS, timeout): retry.
+        if (err instanceof SlackApiError && err.code === null) {
+          this.scheduleReconnect(this.lastError);
+        }
         return;
       }
 
@@ -425,6 +461,7 @@ export class SlackBridge implements SlackChannel {
         this.running = true;
         this.lastError = null;
         this.lastEventAt = Date.now();
+        this.reconnectDelayMs = RECONNECT_MIN_MS;
         this.subscribeToEngineEvents();
         this.startRunWatchdog();
         this.startIdleWatchdog();
@@ -434,10 +471,32 @@ export class SlackBridge implements SlackChannel {
         logError('app.start() failed —', this.lastError);
         this.app = null;
         this.api = null;
+        // The Socket Mode handshake failing right after wake/bounce is
+        // transient by nature; the auth.test above already vetted the tokens.
+        this.scheduleReconnect(this.lastError);
       }
     } finally {
       this.starting = false;
     }
+  }
+
+  /**
+   * Arm a one-shot start() retry with doubling backoff. Only called for
+   * transient failures (backend unreachable, network down) — never when the
+   * tokens are genuinely absent, invalid, or the bridge is disabled, so a
+   * user-initiated stop stays stopped.
+   */
+  private scheduleReconnect(reason: string): void {
+    this.lastError = reason;
+    if (this.reconnectTimer || this.running) return;
+    const delay = this.reconnectDelayMs;
+    this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, RECONNECT_MAX_MS);
+    log(`transient start failure, retrying in ${Math.round(delay / 1000)}s — ${reason}`);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.start();
+    }, delay);
+    if (typeof this.reconnectTimer.unref === 'function') this.reconnectTimer.unref();
   }
 
   async stop(): Promise<void> {
@@ -455,6 +514,11 @@ export class SlackBridge implements SlackChannel {
       clearInterval(this.idleWatchdogTimer);
       this.idleWatchdogTimer = null;
     }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectDelayMs = RECONNECT_MIN_MS;
 
     // Cancel in-flight runs.
     for (const [, run] of this.activeRuns) {
@@ -534,6 +598,7 @@ export class SlackBridge implements SlackChannel {
       botUserId: this.settings.botUserId,
       hasBotToken: Boolean(this.settings.botToken),
       hasAppToken: Boolean(this.settings.appToken),
+      credentialsUnreadable: this.credentialsUnreadable,
       tokenBackend: secureTokenBackend(),
       enabled: this.settings.enabled,
       allowlistChannels: [...this.settings.allowlistChannels],
@@ -2316,8 +2381,11 @@ export class SlackBridge implements SlackChannel {
       sessionIdleHours,
       uiLanguage,
     ] = await Promise.all([
-      backendGetSetting<string>(port, SLACK_SETTING_KEYS.botToken),
-      backendGetSetting<string>(port, SLACK_SETTING_KEYS.appToken),
+      // Strict getters for the token pair: "backend unreachable" must throw
+      // (caller retries) rather than read as "token not configured" — a false
+      // negative here is what makes users re-enter perfectly good keys.
+      backendGetSettingStrict<string>(port, SLACK_SETTING_KEYS.botToken),
+      backendGetSettingStrict<string>(port, SLACK_SETTING_KEYS.appToken),
       backendGetSetting<boolean>(port, SLACK_SETTING_KEYS.enabled),
       backendGetSetting<string[]>(port, SLACK_SETTING_KEYS.allowlistChannels),
       backendGetSetting<string[]>(port, SLACK_SETTING_KEYS.allowlistUsers),
@@ -2338,6 +2406,9 @@ export class SlackBridge implements SlackChannel {
 
     const botToken = decryptFromStorage(storedBotToken);
     const appToken = decryptFromStorage(storedAppToken);
+    this.credentialsUnreadable = Boolean(
+      (storedBotToken && !botToken) || (storedAppToken && !appToken),
+    );
 
     if (botToken && isStoredPlaintext(storedBotToken) && secureTokenBackend() === 'os-keychain') {
       const re = encryptForStorage(botToken);

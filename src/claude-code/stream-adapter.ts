@@ -75,6 +75,14 @@ export interface ClaudeCodeRunOptions {
    * other concurrent runs.
    */
   extraEnv?: Record<string, string>;
+  /**
+   * Absolute path to a per-run MCP config JSON (built by the caller from the
+   * servers granted to this agent). Passed as `--mcp-config` together with
+   * `--strict-mcp-config` so only Cerebro-managed servers ever load. Unlike
+   * `--agent`, this is per-invocation — it is passed on resume too. Secrets
+   * in the file are `${VAR}` placeholders resolved from `extraEnv`.
+   */
+  mcpConfigPath?: string;
 }
 
 /**
@@ -86,23 +94,36 @@ export interface ClaudeCodeRunOptions {
  *  - 'error'  (error: string)
  */
 /**
- * Idle-watchdog timing. Two-tier ceiling so we kill obvious wedges fast
- * without cutting off legitimate long-running tool calls:
- *   - No tool in flight: 90s. Total silence with nothing running usually
- *     means the CLI is wedged before producing any output (an auth failure
- *     that didn't trip AUTH_STDERR_PATTERNS, or a hung connection) — but a
- *     loaded headless box with a large system prompt + MCP boot can take a
- *     while to first token, so we give it real headroom. The runtime then
- *     auto-retries a no-tool kill once on a fresh session, so the only cost
- *     of a generous ceiling is latency, never a user-visible error.
- *   - Tool in flight: 30 minutes. Bash, Edit, etc. can legitimately sit
- *     waiting on approval gates or long-running commands; we don't want
- *     to kill those just because they haven't yielded streaming text.
- * Progressive warnings drive a "still thinking…" indicator in the UI.
+ * Idle-watchdog timing. Cerebro mirrors Claude Code itself here: the CLI
+ * has no output-based timeout — it waits on the API stream indefinitely
+ * (its own retry logic handles transient failures) and the subprocess
+ * exits on its own when done or on terminal error. Long silences are
+ * NORMAL on healthy runs: auto-compaction of a big session, a slow
+ * --resume load, upstream backpressure. So once the subprocess has proven
+ * alive, silence is never treated as death:
+ *   - No output EVER: 90s boot-wedge kill. Total silence from spawn
+ *     usually means the CLI is wedged before producing any output (an
+ *     auth failure that didn't trip AUTH_STDERR_PATTERNS, or a hung
+ *     connection). Classified 'auth' → login card.
+ *   - Tool in flight: never killed. Bash, Edit, approval-gated chat
+ *     actions can legitimately sit for hours.
+ *   - Output seen, no tool open: 30-minute last-resort backstop. With
+ *     --include-partial-messages, any healthy activity (generation,
+ *     thinking, compaction chatter, the CLI's own retry logs on stderr)
+ *     resets the timer — 30 minutes of TOTAL silence means a genuinely
+ *     dead subprocess that would otherwise wedge the conversation's
+ *     single-flight lock forever on unattended surfaces (Slack/Telegram
+ *     have no Stop button). Classified 'idle_hang' → retried once.
+ * Progressive warnings drive a "still thinking…" indicator in the UI and,
+ * past the last fixed threshold, repeat every IDLE_WARNING_REPEAT_MS as a
+ * heartbeat. The Slack/Telegram bridges count ANY forwarded event as run
+ * activity, so this heartbeat is what keeps their own run reapers
+ * (RUN_IDLE_TIMEOUT_MS, 5 min) from cancelling a healthy quiet run.
  */
 const IDLE_WARNING_THRESHOLDS_MS = [45_000, 120_000, 300_000] as const;
-const IDLE_NO_TOOL_KILL_MS = 90_000;
-const IDLE_TOOL_KILL_MS = 1_800_000;
+const IDLE_WARNING_REPEAT_MS = 120_000;
+const IDLE_BOOT_WEDGE_KILL_MS = 90_000;
+const IDLE_NO_TOOL_KILL_MS = 30 * 60_000;
 // Stderr substrings that indicate the Claude CLI cannot proceed because
 // it is not authenticated. Matching one of these short-circuits the run
 // with a clean "sign in" error instead of waiting for the backstop.
@@ -145,6 +166,7 @@ export class ClaudeCodeRunner extends EventEmitter {
   private closeHandled = false;
   private idleStartedAt = 0;
   private idleWarningTimers: ReturnType<typeof setTimeout>[] = [];
+  private idleWarningInterval: ReturnType<typeof setInterval> | null = null;
   private idleKillTimer: ReturnType<typeof setTimeout> | null = null;
   private openToolCount = 0;
   private lastOpenToolName = '';
@@ -231,13 +253,21 @@ export class ClaudeCodeRunner extends EventEmitter {
     // stdout at whole-assistant-message boundaries, so a single large turn —
     // a big Write/Edit whose tool input is the entire new file, or a long
     // thinking block — produces NO stdout and opens no tool for the duration
-    // of generation. The idle-watchdog's no-tool ceiling (90s) then fires
-    // mid-generation and kills a perfectly healthy run. Partial chunks keep
-    // stdout flowing so resetIdleTimers() fires throughout, leaving the 90s
-    // ceiling to catch only true silence (a real wedge). Valid only with
+    // of generation. Partial chunks keep stdout flowing so resetIdleTimers()
+    // fires throughout, leaving the no-tool backstop to catch only true
+    // silence (a genuinely dead subprocess). Valid only with
     // --output-format=stream-json (already set above).
     args.push('--include-partial-messages');
     args.push('--dangerously-skip-permissions');
+
+    // MCP servers granted to this agent (Google Drive, custom). Strict mode
+    // keeps a user's machine-wide ~/.claude.json servers out of Cerebro runs —
+    // agent `tools:` allowlists already block their tools, this blocks the
+    // boot cost too. Per-invocation (unlike --agent): passed on resume as well.
+    if (options.mcpConfigPath) {
+      args.push('--mcp-config', options.mcpConfigPath);
+      args.push('--strict-mcp-config');
+    }
 
     if (typeof options.maxTurns === 'number') {
       args.push('--max-turns', String(options.maxTurns));
@@ -293,6 +323,12 @@ export class ClaudeCodeRunner extends EventEmitter {
     let buffer = '';
 
     this.process.stdout?.on('data', (chunk: Buffer) => {
+      // Flip sawAnyOutput BEFORE re-arming the idle timers: armIdleTimers
+      // branches the kill delay on it, and the first chunk (the init event)
+      // must already arm the generous mid-run backstop, not the 90s
+      // boot-wedge kill — otherwise a stall right after init (auto-compaction
+      // on --resume of a big session) still dies at 90s.
+      this.sawAnyOutput = true;
       this.resetIdleTimers(runId);
       buffer += chunk.toString();
       const lines = buffer.split('\n');
@@ -660,27 +696,46 @@ export class ClaudeCodeRunner extends EventEmitter {
     }
   }
 
-  /** Arm progressive idle warnings (45s/2m/5m) and a kill backstop. The
-   *  kill ceiling depends on whether a tool is in flight (see the
-   *  IDLE_*_KILL_MS constants). Warnings past the active kill threshold
-   *  are suppressed since they'd never fire. */
+  /** Arm progressive idle warnings (45s/2m/5m, then a repeating heartbeat
+   *  every IDLE_WARNING_REPEAT_MS) and — only when no tool is in flight — a
+   *  kill backstop: 90s before any output ever (boot wedge → 'auth'), 30
+   *  minutes after output has been seen ('idle_hang'). A tool in flight is
+   *  never killed on silence. Warnings past the active kill threshold are
+   *  suppressed since they'd never fire. */
   private armIdleTimers(runId: string): void {
     this.clearIdleTimers();
     this.idleStartedAt = Date.now();
     const hasOpenTool = this.openToolCount > 0;
-    const killMs = hasOpenTool ? IDLE_TOOL_KILL_MS : IDLE_NO_TOOL_KILL_MS;
+    const killMs = hasOpenTool
+      ? null
+      : this.sawAnyOutput
+        ? IDLE_NO_TOOL_KILL_MS
+        : IDLE_BOOT_WEDGE_KILL_MS;
+    const emitWarning = (): void => {
+      if (this.killed || this.closeHandled) return;
+      this.emit('event', {
+        type: 'agent_idle_warning',
+        runId,
+        elapsedMs: Date.now() - this.idleStartedAt,
+      } as RendererAgentEvent);
+    };
+    const lastThreshold = IDLE_WARNING_THRESHOLDS_MS[IDLE_WARNING_THRESHOLDS_MS.length - 1];
     for (const threshold of IDLE_WARNING_THRESHOLDS_MS) {
-      if (threshold >= killMs) continue;
-      const t = setTimeout(() => {
-        if (this.killed || this.closeHandled) return;
-        this.emit('event', {
-          type: 'agent_idle_warning',
-          runId,
-          elapsedMs: Date.now() - this.idleStartedAt,
-        } as RendererAgentEvent);
-      }, threshold);
-      this.idleWarningTimers.push(t);
+      if (killMs != null && threshold >= killMs) continue;
+      this.idleWarningTimers.push(setTimeout(emitWarning, threshold));
     }
+    // Heartbeat: past the last fixed threshold, keep emitting a warning every
+    // IDLE_WARNING_REPEAT_MS for as long as the silence lasts. Besides keeping
+    // the "still thinking…" indicator honest, this keeps events flowing to the
+    // Slack/Telegram bridges, whose run reapers cancel any run with no events
+    // for RUN_IDLE_TIMEOUT_MS — without the heartbeat they'd reap a healthy
+    // quiet run (long compaction, approval-gated tool wait) after the 5m
+    // warning went silent.
+    this.idleWarningInterval = setInterval(() => {
+      if (Date.now() - this.idleStartedAt <= lastThreshold) return;
+      emitWarning();
+    }, IDLE_WARNING_REPEAT_MS);
+    if (killMs == null) return;
     this.idleKillTimer = setTimeout(() => {
       if (this.killed || this.closeHandled) return;
       this.killed = true;
@@ -688,34 +743,26 @@ export class ClaudeCodeRunner extends EventEmitter {
       const ctx = this.agentNameUsed ? ` (agent='${this.agentNameUsed}')` : '';
       const stderrHint = this.stderrTail ? `\n\nLast stderr:\n${this.stderrTail.slice(-300)}` : '';
       let detail: string;
-      if (hasOpenTool) {
-        const toolHint = this.lastOpenToolName ? ` waiting on tool '${this.lastOpenToolName}'` : '';
-        const minutes = Math.round(IDLE_TOOL_KILL_MS / 60_000);
-        detail =
-          `Claude Code subprocess was idle for ${minutes} minutes${toolHint}${ctx} and was killed. ` +
-          `This is a backstop for approval-gated or hung tool calls — if the request was reasonable, try again.` +
-          stderrHint;
-        this.lastErrorClass = 'unknown';
-      } else if (!this.sawAnyOutput) {
-        // No tool in flight AND nothing has ever come back from the CLI —
-        // this is the classic unauthenticated-CLI wedge: the subprocess
-        // silently waits on stdin for OAuth credentials that will never
-        // arrive. Classify as 'auth' so the chat surfaces the login card
-        // instead of a terminal instruction the user can't act on
-        // (especially over Slack/Telegram). The message is intentionally
-        // short and surface-agnostic; the consumer renders the recovery
-        // affordance.
+      if (!this.sawAnyOutput) {
+        // Nothing has ever come back from the CLI — this is the classic
+        // unauthenticated-CLI wedge: the subprocess silently waits on stdin
+        // for OAuth credentials that will never arrive. Classify as 'auth'
+        // so the chat surfaces the login card instead of a terminal
+        // instruction the user can't act on (especially over
+        // Slack/Telegram). The message is intentionally short and
+        // surface-agnostic; the consumer renders the recovery affordance.
         detail = 'Cerebro lost its Claude Code session.';
         this.lastErrorClass = 'auth';
       } else {
-        // The CLI produced output, then went silent with no tool open. Almost
-        // always a transient mid-turn stall (a flaky upstream hop, a GC pause
-        // on a loaded box). Classify as a retryable idle_hang: the runtime
-        // re-spawns once on a fresh session rather than surfacing the raw
-        // "produced no output" string, so the user never sees a CLI error.
-        const seconds = Math.round(IDLE_NO_TOOL_KILL_MS / 1000);
+        // The CLI produced output, then fell TOTALLY silent for the full
+        // backstop window with no tool open. Healthy runs can't do this —
+        // partial-message deltas, compaction chatter, and the CLI's own
+        // retry logs all reset the timer — so the subprocess is genuinely
+        // dead. Classify as a retryable idle_hang: the runtime re-spawns
+        // once rather than surfacing the raw "produced no output" string.
+        const minutes = Math.round(IDLE_NO_TOOL_KILL_MS / 60_000);
         detail =
-          `Claude Code produced no output for ${seconds} seconds${ctx} and was killed.` +
+          `Claude Code produced no output for ${minutes} minutes${ctx} and was killed.` +
           stderrHint;
         this.lastErrorClass = 'idle_hang';
       }
@@ -743,6 +790,10 @@ export class ClaudeCodeRunner extends EventEmitter {
   private clearIdleTimers(): void {
     for (const t of this.idleWarningTimers) clearTimeout(t);
     this.idleWarningTimers = [];
+    if (this.idleWarningInterval) {
+      clearInterval(this.idleWarningInterval);
+      this.idleWarningInterval = null;
+    }
     if (this.idleKillTimer) {
       clearTimeout(this.idleKillTimer);
       this.idleKillTimer = null;
@@ -803,7 +854,6 @@ export class ClaudeCodeRunner extends EventEmitter {
   }
 
   private handleJsonLine(line: string, runId: string): void {
-    this.sawAnyOutput = true;
     let parsed: any;
     try {
       parsed = JSON.parse(line);

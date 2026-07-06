@@ -31,9 +31,16 @@ import { probeCodexAuth } from './auth-probe';
 import { CodexEventParser } from './event-parser';
 import { resolveBackendPythonBinDir, resolveBackendVirtualEnvRoot } from '../../python/venv';
 
+// Idle-watchdog timing — mirrors ClaudeCodeRunner (see the design comment in
+// src/claude-code/stream-adapter.ts): 90s boot-wedge kill only when NO output
+// has ever arrived ('auth'), never kill while a tool is in flight, and a
+// 30-minute total-silence backstop once output has been seen ('idle_hang').
+// Warnings repeat as a heartbeat so the Slack/Telegram bridges' run reapers
+// never starve on a healthy quiet run.
 const IDLE_WARNING_THRESHOLDS_MS = [45_000, 120_000, 300_000] as const;
-const IDLE_NO_TOOL_KILL_MS = 90_000;
-const IDLE_TOOL_KILL_MS = 1_800_000;
+const IDLE_WARNING_REPEAT_MS = 120_000;
+const IDLE_BOOT_WEDGE_KILL_MS = 90_000;
+const IDLE_NO_TOOL_KILL_MS = 30 * 60_000;
 const AUTH_STDERR_PATTERNS = [
   'not logged in',
   'not authenticated',
@@ -54,6 +61,7 @@ export class CodexRunner extends EventEmitter implements StreamingRunner {
   private closeHandled = false;
   private idleStartedAt = 0;
   private idleWarningTimers: ReturnType<typeof setTimeout>[] = [];
+  private idleWarningInterval: ReturnType<typeof setInterval> | null = null;
   private idleKillTimer: ReturnType<typeof setTimeout> | null = null;
   private openToolCount = 0;
   private lastErrorClass: RunnerErrorClass = 'unknown';
@@ -160,8 +168,11 @@ export class CodexRunner extends EventEmitter implements StreamingRunner {
 
     let buffer = '';
     this.process.stdout?.on('data', (chunk: Buffer) => {
-      this.resetIdleTimers(runId);
+      // Flip sawAnyOutput BEFORE re-arming: armIdleTimers branches the kill
+      // delay on it, and the first chunk must already arm the generous
+      // mid-run backstop, not the 90s boot-wedge kill.
       this.sawAnyOutput = true;
+      this.resetIdleTimers(runId);
       buffer += chunk.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
@@ -304,34 +315,42 @@ export class CodexRunner extends EventEmitter implements StreamingRunner {
     this.clearIdleTimers();
     this.idleStartedAt = Date.now();
     const hasOpenTool = this.openToolCount > 0;
-    const killMs = hasOpenTool ? IDLE_TOOL_KILL_MS : IDLE_NO_TOOL_KILL_MS;
+    const killMs = hasOpenTool
+      ? null
+      : this.sawAnyOutput
+        ? IDLE_NO_TOOL_KILL_MS
+        : IDLE_BOOT_WEDGE_KILL_MS;
+    const emitWarning = (): void => {
+      if (this.killed || this.closeHandled) return;
+      this.emit('event', {
+        type: 'agent_idle_warning',
+        runId,
+        elapsedMs: Date.now() - this.idleStartedAt,
+      } as RendererAgentEvent);
+    };
+    const lastThreshold = IDLE_WARNING_THRESHOLDS_MS[IDLE_WARNING_THRESHOLDS_MS.length - 1];
     for (const threshold of IDLE_WARNING_THRESHOLDS_MS) {
-      if (threshold >= killMs) continue;
-      const t = setTimeout(() => {
-        if (this.killed || this.closeHandled) return;
-        this.emit('event', {
-          type: 'agent_idle_warning',
-          runId,
-          elapsedMs: Date.now() - this.idleStartedAt,
-        } as RendererAgentEvent);
-      }, threshold);
-      this.idleWarningTimers.push(t);
+      if (killMs != null && threshold >= killMs) continue;
+      this.idleWarningTimers.push(setTimeout(emitWarning, threshold));
     }
+    // Heartbeat past the last fixed threshold — keeps the bridges' run
+    // reapers fed during long healthy silences (see ClaudeCodeRunner).
+    this.idleWarningInterval = setInterval(() => {
+      if (Date.now() - this.idleStartedAt <= lastThreshold) return;
+      emitWarning();
+    }, IDLE_WARNING_REPEAT_MS);
+    if (killMs == null) return;
     this.idleKillTimer = setTimeout(() => {
       if (this.killed || this.closeHandled) return;
       this.killed = true;
       this.clearIdleTimers();
       let detail: string;
-      if (hasOpenTool) {
-        const minutes = Math.round(IDLE_TOOL_KILL_MS / 60_000);
-        detail = `Codex subprocess was idle for ${minutes} minutes and was killed.`;
-        this.lastErrorClass = 'unknown';
-      } else if (!this.sawAnyOutput) {
+      if (!this.sawAnyOutput) {
         detail = 'Cerebro lost its Codex session.';
         this.lastErrorClass = 'auth';
       } else {
-        const seconds = Math.round(IDLE_NO_TOOL_KILL_MS / 1000);
-        detail = `Codex produced no output for ${seconds} seconds and was killed.`;
+        const minutes = Math.round(IDLE_NO_TOOL_KILL_MS / 60_000);
+        detail = `Codex produced no output for ${minutes} minutes and was killed.`;
         this.lastErrorClass = 'idle_hang';
       }
       if (this.process && !this.process.killed) {
@@ -353,6 +372,10 @@ export class CodexRunner extends EventEmitter implements StreamingRunner {
   private clearIdleTimers(): void {
     for (const t of this.idleWarningTimers) clearTimeout(t);
     this.idleWarningTimers = [];
+    if (this.idleWarningInterval) {
+      clearInterval(this.idleWarningInterval);
+      this.idleWarningInterval = null;
+    }
     if (this.idleKillTimer) {
       clearTimeout(this.idleKillTimer);
       this.idleKillTimer = null;

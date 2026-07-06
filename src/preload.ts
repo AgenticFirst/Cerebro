@@ -752,6 +752,39 @@ const api: CerebroAPI = {
     },
   },
 
+  mcp: {
+    addCustomServer(input: unknown) {
+      return ipcRenderer.invoke(IPC_CHANNELS.MCP_ADD_CUSTOM_SERVER, input);
+    },
+    startGoogleDriveOAuth(input: {
+      clientId?: string;
+      clientSecret?: string;
+      reuseGmail?: boolean;
+    }) {
+      return ipcRenderer.invoke(IPC_CHANNELS.MCP_START_GDRIVE_OAUTH, input);
+    },
+    gdriveHasGmailClient() {
+      return ipcRenderer.invoke(IPC_CHANNELS.MCP_GDRIVE_HAS_GMAIL_CLIENT);
+    },
+    listServers() {
+      return ipcRenderer.invoke(IPC_CHANNELS.MCP_LIST_SERVERS);
+    },
+    setChatEnabled(serverId: string, enabled: boolean) {
+      return ipcRenderer.invoke(IPC_CHANNELS.MCP_SET_CHAT_ENABLED, serverId, enabled);
+    },
+    rediscover(serverId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.MCP_REDISCOVER, serverId);
+    },
+    removeServer(serverId: string) {
+      return ipcRenderer.invoke(IPC_CHANNELS.MCP_REMOVE_SERVER, serverId);
+    },
+    onChanged(callback: () => void): () => void {
+      const listener = () => callback();
+      ipcRenderer.on(IPC_CHANNELS.MCP_CHANGED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.MCP_CHANGED, listener);
+    },
+  },
+
   supabase: {
     test(dbUrl: string): Promise<{ ok: boolean; error?: string }> {
       return ipcRenderer.invoke(IPC_CHANNELS.SUPABASE_TEST, dbUrl);

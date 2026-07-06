@@ -27,12 +27,12 @@ interface ChatMessageProps {
   nodeRef?: (el: HTMLDivElement | null) => void;
 }
 
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+function formatTime(date: Date, locale: string): string {
+  return date.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' });
 }
 
 export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isUser = message.role === 'user';
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
   const { isStreaming: chatIsStreaming, regenerateFromUserMessage } = useChat();
@@ -113,7 +113,15 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
         >
           {isUser ? t('chat.you') : t('chat.cerebro')}
         </span>
-        <span className="text-xs text-text-tertiary">{formatTime(message.createdAt)}</span>
+        <span
+          className="text-xs text-text-tertiary"
+          title={message.createdAt.toLocaleString(i18n.language, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })}
+        >
+          {formatTime(message.createdAt, i18n.language)}
+        </span>
         {isLong && !isEditing && (
           <div className="ml-auto flex items-center gap-0.5">
             {canCopy && (

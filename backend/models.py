@@ -500,6 +500,66 @@ class ExpertContextFile(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
+class McpServer(Base):
+    """A user-connected MCP server (Google Drive or custom stdio/http).
+
+    Holds only non-secret metadata plus the discovered-tools cache. Secrets
+    (OAuth client/tokens, custom env/header values) live encrypted in the
+    settings table under the `mcp_<id>_` prefix, owned by the Electron-side
+    McpBridge. Device-local: connections are meaningless without those
+    device-bound credentials, so this table never syncs.
+    """
+
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    # Stable, human-friendly prefix for tool names (`mcp__<slug>__<tool>`).
+    slug: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(String(20), default="custom")  # 'gdrive' | 'custom'
+    transport: Mapped[str] = mapped_column(String(10))  # 'stdio' | 'http'
+    command: Mapped[str | None] = mapped_column(String(500), nullable=True)  # stdio
+    args_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # stdio, JSON list[str]
+    url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # http
+    # Names only, for display — values are encrypted settings entries.
+    env_names_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # stdio, JSON list[str]
+    header_names_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # http, JSON list[str]
+    chat_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(20), default="discovering")
+    # 'discovering' | 'connected' | 'error' | 'auth_expired'
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_discovered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    tools_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON [{name, description, read_only}]
+    account_label: Mapped[str | None] = mapped_column(String(255), nullable=True)  # e.g. Drive email
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class ExpertMcpGrant(Base):
+    """Grants an expert access to a connected MCP server's tools.
+
+    Mirrors ExpertContextFile's attach pattern. `all_tools` follows the
+    server's discovered tool list as it changes; when False, only
+    `selected_tools_json` names are exposed in the expert's agent file.
+    """
+
+    __tablename__ = "expert_mcp_grants"
+    __table_args__ = (
+        UniqueConstraint("expert_id", "mcp_server_id", name="uq_expert_mcp_grant"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    expert_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("experts.id", ondelete="CASCADE"), index=True
+    )
+    mcp_server_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("mcp_servers.id", ondelete="CASCADE"), index=True
+    )
+    all_tools: Mapped[bool] = mapped_column(Boolean, default=True)
+    selected_tools_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list[str]
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class KnowledgePage(Base):
     """A single page in the Knowledge Base (Notion-style notes app).
 

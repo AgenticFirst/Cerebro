@@ -476,6 +476,11 @@ export default function SlackSection({ showHeader = false }: SlackSectionProps =
                 <span className="font-mono text-text-secondary">{status.botUserId}</span>
               </div>
             )}
+            {status?.credentialsUnreadable && (
+              <div className="mt-2 text-[11px] text-amber-400 break-words">
+                {t('integrations.credentialUnreadable')}
+              </div>
+            )}
             {status?.lastError && (
               <div className="mt-2 text-[11px] text-red-400 break-all">
                 {t('slackSection.statusError', { message: status.lastError })}

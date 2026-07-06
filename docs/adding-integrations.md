@@ -10,6 +10,8 @@ The document is organized so a contributor (human or AI) can follow it linearly 
 | QR pairing / device link | `src/whatsapp/` | No token field; modal owns the live handshake. |
 | OAuth (Auth Code + PKCE) | `src/calendar/` | Bring-your-own client id/secret; loopback redirect in main. See "OAuth integrations" below. |
 
+> **MCP servers are NOT registry integrations.** Google Drive and custom MCP connections live in their own system (`src/mcp/`, Settings → Integrations → MCP Servers, per-expert grants in the Expert panel). Their tools are native Claude Code tools loaded via a per-run `--mcp-config` — they never become engine `ActionDefinition`s, chat actions, routine nodes, or `requiredConnections`, and they stay outside `INTEGRATION_REGISTRY` (no manifest, no `connect-integration` chat card, no dry-run stubs). If the service you're wiring speaks MCP, extend `src/mcp/` instead of this playbook.
+
 ---
 
 ## 0 · Decide before coding

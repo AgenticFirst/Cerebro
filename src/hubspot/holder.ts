@@ -19,7 +19,11 @@ import {
   decryptFromStorage,
   backend as secureTokenBackend,
 } from '../secure-token';
-import { backendGetSetting, backendPutSetting } from '../shared/backend-settings';
+import {
+  backendGetSettingStrict,
+  backendPutSetting,
+  SettingsUnavailableError,
+} from '../shared/backend-settings';
 import { callHubSpotApi } from './api';
 import { listTicketProperties, type ListTicketPropertiesResult } from './properties';
 
@@ -35,6 +39,12 @@ export const HUBSPOT_SETTING_KEYS = {
 
 const PIPELINES_CACHE_TTL_MS = 5 * 60 * 1_000;
 
+// init() runs once at app startup; if the backend hiccups at that exact
+// moment the holder used to stay token-less (→ "HubSpot disconnected" in chat
+// and UI) for the whole session. Retry with doubling backoff instead.
+const INIT_RETRY_MIN_MS = 5_000;
+const INIT_RETRY_MAX_MS = 5 * 60_000;
+
 interface HolderDeps {
   backendPort: number;
 }
@@ -47,6 +57,13 @@ export class HubSpotHolder implements HubSpotChannel {
   private followUpProperty: string | null = null;
   private dueDateProperty: string | null = null;
   private pipelinesCache: { pipelines: HubSpotPipelineSummary[]; at: number } | null = null;
+
+  /** True once a settings load completed without the backend being unreachable. */
+  private loadedOk = false;
+  private initRetryTimer: NodeJS.Timeout | null = null;
+  private initRetryDelayMs = INIT_RETRY_MIN_MS;
+  /** Stored token envelope exists but could not be decrypted (keychain changed). */
+  private credentialsUnreadable = false;
 
   constructor(private deps: HolderDeps) {}
 
@@ -72,24 +89,67 @@ export class HubSpotHolder implements HubSpotChannel {
     return Boolean(this.accessToken && this.defaultPipeline && this.defaultStage);
   }
 
-  /** Load from backend settings on startup. */
+  /** Load from backend settings on startup. Retries with backoff when the
+   *  backend is unreachable — a transient hiccup must not read as "no token"
+   *  for the rest of the session. */
   async init(): Promise<void> {
-    const [encToken, portal, pipeline, stage, followUp, dueDate] = await Promise.all([
-      backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.accessToken),
-      backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.portalId),
-      backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultPipeline),
-      backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultStage),
-      backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.followUpProperty),
-      backendGetSetting<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.dueDateProperty),
-    ]);
+    let encToken, portal, pipeline, stage, followUp, dueDate;
+    try {
+      // Strict getters: 404 means "unset" (null), transport failure throws.
+      // All six gate isConnected() directly or indirectly, so all six matter.
+      [encToken, portal, pipeline, stage, followUp, dueDate] = await Promise.all([
+        backendGetSettingStrict<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.accessToken),
+        backendGetSettingStrict<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.portalId),
+        backendGetSettingStrict<string>(
+          this.deps.backendPort,
+          HUBSPOT_SETTING_KEYS.defaultPipeline,
+        ),
+        backendGetSettingStrict<string>(this.deps.backendPort, HUBSPOT_SETTING_KEYS.defaultStage),
+        backendGetSettingStrict<string>(
+          this.deps.backendPort,
+          HUBSPOT_SETTING_KEYS.followUpProperty,
+        ),
+        backendGetSettingStrict<string>(
+          this.deps.backendPort,
+          HUBSPOT_SETTING_KEYS.dueDateProperty,
+        ),
+      ]);
+    } catch (err) {
+      if (err instanceof SettingsUnavailableError) {
+        this.scheduleInitRetry(err.message);
+        return;
+      }
+      throw err;
+    }
     if (typeof encToken === 'string' && encToken) {
       this.accessToken = decryptFromStorage(encToken);
+      this.credentialsUnreadable = !this.accessToken;
+    } else {
+      this.credentialsUnreadable = false;
     }
     this.portalId = typeof portal === 'string' ? portal : null;
     this.defaultPipeline = typeof pipeline === 'string' ? pipeline : null;
     this.defaultStage = typeof stage === 'string' ? stage : null;
     this.followUpProperty = typeof followUp === 'string' && followUp ? followUp : null;
     this.dueDateProperty = typeof dueDate === 'string' && dueDate ? dueDate : null;
+    this.loadedOk = true;
+    this.initRetryDelayMs = INIT_RETRY_MIN_MS;
+  }
+
+  private scheduleInitRetry(reason: string): void {
+    if (this.initRetryTimer || this.loadedOk) return;
+    const delay = this.initRetryDelayMs;
+    this.initRetryDelayMs = Math.min(this.initRetryDelayMs * 2, INIT_RETRY_MAX_MS);
+    console.warn(
+      `[HubSpot] settings load failed, retrying in ${Math.round(delay / 1000)}s — ${reason}`,
+    );
+    this.initRetryTimer = setTimeout(() => {
+      this.initRetryTimer = null;
+      void this.init().catch((err) => {
+        console.error('[HubSpot] settings load retry failed:', err);
+      });
+    }, delay);
+    if (typeof this.initRetryTimer.unref === 'function') this.initRetryTimer.unref();
   }
 
   /** Verify a token by calling the HubSpot account-info endpoint. Returns the
@@ -157,6 +217,8 @@ export class HubSpotHolder implements HubSpotChannel {
     if (!verify.ok) return { ok: false, error: verify.error ?? 'Verification failed' };
     this.accessToken = trimmed;
     this.portalId = verify.portalId ?? null;
+    this.credentialsUnreadable = false;
+    this.loadedOk = true;
     const enc = encryptForStorage(trimmed);
     await Promise.all([
       backendPutSetting(this.deps.backendPort, HUBSPOT_SETTING_KEYS.accessToken, enc),
@@ -168,6 +230,7 @@ export class HubSpotHolder implements HubSpotChannel {
 
   async clearToken(): Promise<void> {
     this.accessToken = null;
+    this.credentialsUnreadable = false;
     this.portalId = null;
     this.defaultPipeline = null;
     this.defaultStage = null;
@@ -231,8 +294,16 @@ export class HubSpotHolder implements HubSpotChannel {
   }
 
   status(): HubSpotStatusResponse {
+    // Safety net: the UI polls status every 10s, so if the startup load never
+    // completed (backend was unreachable) and no retry is pending, kick one.
+    if (!this.loadedOk && !this.initRetryTimer) {
+      void this.init().catch(() => {
+        /* scheduleInitRetry already handles transient failures */
+      });
+    }
     return {
       hasToken: Boolean(this.accessToken),
+      credentialsUnreadable: this.credentialsUnreadable,
       portalId: this.portalId,
       defaultPipeline: this.defaultPipeline,
       defaultStage: this.defaultStage,

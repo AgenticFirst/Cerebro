@@ -376,3 +376,163 @@ describe('installer — builtin Cerebro is never materialized as a persona', () 
     });
   });
 });
+
+describe('installer — MCP grants in agent files', () => {
+  let dataDir: string;
+  let backend: { port: number; close: () => void };
+
+  const expertFixture: ExpertFixture = {
+    id: 'e-mcp',
+    name: 'Drive Reader',
+    slug: null,
+    description: 'Reads the drive',
+    system_prompt: 'You read drive files.',
+    domain: 'productivity',
+    policies: null,
+    is_enabled: true,
+  };
+
+  const gdriveTools = [
+    { name: 'search_files', description: 'Search Drive', read_only: true },
+    { name: 'read_file_content', description: 'Read a file', read_only: true },
+  ];
+
+  /** Fake backend serving experts + MCP grants/servers fixtures. */
+  function startMcpBackend(opts: {
+    grants: unknown[];
+    servers: unknown[];
+  }): Promise<{ port: number; close: () => void }> {
+    return new Promise((resolve) => {
+      const server = http.createServer((req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        const url = req.url || '';
+        if (url.startsWith('/experts?')) {
+          res.end(JSON.stringify({ experts: [expertFixture] }));
+          return;
+        }
+        if (/^\/experts\/[^/]+\/skills$/.test(url)) {
+          res.end(JSON.stringify({ skills: [] }));
+          return;
+        }
+        if (/^\/experts\/[^/]+\/context-files$/.test(url)) {
+          res.end('[]');
+          return;
+        }
+        if (/^\/experts\/[^/]+\/mcp-grants$/.test(url)) {
+          res.end(JSON.stringify(opts.grants));
+          return;
+        }
+        if (url === '/mcp-servers') {
+          res.end(JSON.stringify(opts.servers));
+          return;
+        }
+        if (/^\/experts\/[^/?]+(\?|$)/.test(url)) {
+          res.end(JSON.stringify(expertFixture));
+          return;
+        }
+        res.statusCode = 404;
+        res.end('{}');
+      });
+      server.listen(0, '127.0.0.1', () => {
+        const addr = server.address() as { port: number };
+        resolve({ port: addr.port, close: () => server.close() });
+      });
+    });
+  }
+
+  beforeEach(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cerebro-installer-mcp-'));
+  });
+
+  afterEach(() => {
+    backend?.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  function grant(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'g1',
+      expert_id: 'e-mcp',
+      mcp_server_id: 'srv1',
+      all_tools: true,
+      selected_tools: [],
+      server_slug: 'gdrive',
+      server_name: 'Google Drive',
+      server_kind: 'gdrive',
+      server_status: 'connected',
+      server_account_label: 'carlos@example.com',
+      server_tools: gdriveTools,
+      ...overrides,
+    };
+  }
+
+  it('expert frontmatter gains mcp__<slug>__<tool> names for an all-tools grant', async () => {
+    backend = await startMcpBackend({ grants: [grant()], servers: [] });
+    await installExpert({ dataDir, backendPort: backend.port }, expertFixture);
+    const slug = expertAgentName('e-mcp', 'Drive Reader');
+    const md = fs.readFileSync(path.join(resolvePaths(dataDir).agentsDir, `${slug}.md`), 'utf-8');
+    const toolsLine = md.split('\n').find((l) => l.startsWith('tools:')) ?? '';
+    expect(toolsLine).toContain('mcp__gdrive__search_files');
+    expect(toolsLine).toContain('mcp__gdrive__read_file_content');
+    // Persona narrates the capability in plain language.
+    expect(md).toContain('## Connected tools');
+    expect(md).toContain('Google Drive');
+    expect(md).toContain('carlos@example.com');
+  });
+
+  it('a selected-tools grant only exposes the chosen (and existing) tools', async () => {
+    backend = await startMcpBackend({
+      grants: [grant({ all_tools: false, selected_tools: ['search_files', 'ghost_tool'] })],
+      servers: [],
+    });
+    await installExpert({ dataDir, backendPort: backend.port }, expertFixture);
+    const slug = expertAgentName('e-mcp', 'Drive Reader');
+    const md = fs.readFileSync(path.join(resolvePaths(dataDir).agentsDir, `${slug}.md`), 'utf-8');
+    const toolsLine = md.split('\n').find((l) => l.startsWith('tools:')) ?? '';
+    expect(toolsLine).toContain('mcp__gdrive__search_files');
+    expect(toolsLine).not.toContain('mcp__gdrive__read_file_content');
+    // A selected tool that no longer exists on the server is dropped.
+    expect(toolsLine).not.toContain('ghost_tool');
+  });
+
+  it('an expert without grants gets no MCP tools or section', async () => {
+    backend = await startMcpBackend({ grants: [], servers: [] });
+    await installExpert({ dataDir, backendPort: backend.port }, expertFixture);
+    const slug = expertAgentName('e-mcp', 'Drive Reader');
+    const md = fs.readFileSync(path.join(resolvePaths(dataDir).agentsDir, `${slug}.md`), 'utf-8');
+    expect(md).not.toContain('mcp__');
+    expect(md).not.toContain('## Connected tools');
+  });
+
+  it('cerebro.md loads chat-enabled servers only', async () => {
+    backend = await startMcpBackend({
+      grants: [],
+      servers: [
+        {
+          id: 'srv1',
+          slug: 'gdrive',
+          name: 'Google Drive',
+          chat_enabled: true,
+          status: 'connected',
+          account_label: 'carlos@example.com',
+          tools: gdriveTools,
+        },
+        {
+          id: 'srv2',
+          slug: 'private-tool',
+          name: 'Private Tool',
+          chat_enabled: false,
+          status: 'connected',
+          account_label: null,
+          tools: [{ name: 'do_thing', description: '', read_only: false }],
+        },
+      ],
+    });
+    await installAll({ dataDir, backendPort: backend.port });
+    const md = fs.readFileSync(path.join(resolvePaths(dataDir).agentsDir, 'cerebro.md'), 'utf-8');
+    const toolsLine = md.split('\n').find((l) => l.startsWith('tools:')) ?? '';
+    expect(toolsLine).toContain('mcp__gdrive__search_files');
+    expect(toolsLine).not.toContain('mcp__private-tool__do_thing');
+    expect(md).toContain('## Connected tools');
+  });
+});

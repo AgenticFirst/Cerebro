@@ -1,6 +1,31 @@
-import { lazy, Suspense, useRef, useLayoutEffect, useCallback, type ReactNode } from 'react';
+import {
+  Fragment,
+  lazy,
+  Suspense,
+  useRef,
+  useLayoutEffect,
+  useCallback,
+  type ReactNode,
+} from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Message } from '../../types/chat';
 import ChatMessage from './ChatMessage';
+import { dayDividerLabel, isSameLocalDay } from '../../context/chat-helpers';
+
+function MessageDayDivider({ date }: { date: Date }) {
+  const { t, i18n } = useTranslation();
+  const label = dayDividerLabel(date, new Date(), i18n.language);
+  const text = 'key' in label ? t(`timeGroups.${label.key}`) : label.text;
+  return (
+    <div className="flex items-center gap-3 select-none" role="separator" aria-label={text}>
+      <div className="h-px flex-1 bg-border-subtle" />
+      <span className="text-[10px] font-semibold text-text-tertiary/70 uppercase tracking-[0.1em]">
+        {text}
+      </span>
+      <div className="h-px flex-1 bg-border-subtle" />
+    </div>
+  );
+}
 
 const ChatEmptyState = lazy(() => import('./ChatEmptyState'));
 
@@ -71,9 +96,16 @@ export default function MessageList({ messages, conversationId, footer }: Messag
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto scrollbar-thin px-4 py-6">
       <div className="mx-auto max-w-3xl flex flex-col gap-6">
-        {messages.map((msg) => (
-          <ChatMessage key={msg.id} message={msg} nodeRef={setMessageNode(msg.id)} />
-        ))}
+        {messages.map((msg, i) => {
+          const prev = messages[i - 1];
+          const newDay = !prev || !isSameLocalDay(prev.createdAt, msg.createdAt);
+          return (
+            <Fragment key={msg.id}>
+              {newDay && <MessageDayDivider date={msg.createdAt} />}
+              <ChatMessage message={msg} nodeRef={setMessageNode(msg.id)} />
+            </Fragment>
+          );
+        })}
         {footer}
       </div>
     </div>
