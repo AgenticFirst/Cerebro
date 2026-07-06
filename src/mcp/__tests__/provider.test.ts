@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// provider.ts pulls in shared/oauth, which imports `electron` for
+// shell.openExternal; stub it for the node env.
+vi.mock('electron', () => ({ shell: { openExternal: vi.fn() } }));
+
 import { GoogleDriveOAuthProvider, DRIVE_SCOPES } from '../provider';
 
 const CLIENT = {

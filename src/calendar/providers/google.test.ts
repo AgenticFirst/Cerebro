@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+
+// google.ts pulls in shared/oauth, which imports `electron` for
+// shell.openExternal; stub it for the node env.
+vi.mock('electron', () => ({ shell: { openExternal: vi.fn() } }));
+
 import { GoogleCalendarProvider } from './google';
 
 function jsonResponse(body: unknown, status = 200): Response {

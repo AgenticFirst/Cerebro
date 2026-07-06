@@ -281,7 +281,10 @@ describe('pickAssetForPlatform', () => {
   });
 
   it('prefers AppImage over deb/rpm on linux', () => {
-    const asset = pickAssetForPlatform(allAssets, 'linux', 'x64');
+    // Pass 'unknown' explicitly: the default install-kind detection probes
+    // the real host (dpkg/rpm presence, execPath), so a bare call flips
+    // between AppImage and .deb depending on the machine running the tests.
+    const asset = pickAssetForPlatform(allAssets, 'linux', 'x64', 'unknown');
     expect(asset?.name).toBe('Cerebro-1.0.0.AppImage');
   });
 
@@ -303,7 +306,7 @@ describe('pickAssetForPlatform', () => {
 
   it('falls back to .deb when AppImage is missing on linux', () => {
     const assets = [makeAsset('cerebro_1.0.0_amd64.deb'), makeAsset('cerebro-1.0.0.x86_64.rpm')];
-    const asset = pickAssetForPlatform(assets, 'linux', 'x64');
+    const asset = pickAssetForPlatform(assets, 'linux', 'x64', 'unknown');
     expect(asset?.name).toBe('cerebro_1.0.0_amd64.deb');
   });
 
@@ -373,7 +376,9 @@ describe('pickAssetForPlatform — architecture awareness', () => {
       makeAsset('cerebro-1.0.0.x86_64.rpm'),
       makeAsset('cerebro_1.0.0_amd64.deb'),
     ];
-    expect(pickAssetForPlatform(assets, 'linux', 'x64')?.name).toBe('cerebro_1.0.0_amd64.deb');
+    expect(pickAssetForPlatform(assets, 'linux', 'x64', 'unknown')?.name).toBe(
+      'cerebro_1.0.0_amd64.deb',
+    );
   });
 
   it('treats aarch64 as an alias for arm64', () => {
