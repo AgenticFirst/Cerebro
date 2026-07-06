@@ -41,6 +41,7 @@ import {
   apiDeleteMessagesAfter,
   type ApiConversationList,
 } from './chat-helpers';
+import { importDeliveredFiles } from '../lib/delivered-files';
 
 export interface ChatError {
   title: string;
@@ -875,7 +876,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     agent_run_id: runId,
                     metadata: Object.keys(doneMetadata).length > 0 ? doneMetadata : undefined,
                   }),
-                ).catch(console.error);
+                )
+                  .then(async () => {
+                    // Durable delivery: copy any `@/path` files the agent
+                    // delivered into managed Files storage (blob-synced across
+                    // devices) and remember the mapping so chips survive the
+                    // original file being moved/deleted. Best-effort — chips
+                    // fall back to the original path if this fails. Must run
+                    // after the message insert (file_items FKs the message).
+                    const delivered = await importDeliveredFiles(convId, assistantId, finalContent);
+                    if (delivered) {
+                      updateMessage(convId, assistantId, { deliveredFiles: delivered });
+                    }
+                  })
+                  .catch(console.error);
                 // Phase 2 auto-title refine: if the conversation is still
                 // auto-titled (no manual rename happened during the response),
                 // generate a richer title using both the user's first message

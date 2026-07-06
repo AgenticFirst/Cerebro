@@ -58,6 +58,7 @@ VALID_SOURCES = {
     "chat-save",
     "workspace-save",
     "manual",
+    "chat-delivery",
     "chat-upload",
     "telegram-inbound",
     "whatsapp-inbound",

@@ -127,6 +127,13 @@ export type MessageErrorClass =
   | 'session_missing'
   | 'unknown';
 
+export interface DeliveredFileRef {
+  /** file_items row id of the managed copy. */
+  fileItemId: string;
+  /** Managed storage path, relative to each device's <userData>/files root. */
+  storagePath: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -149,6 +156,11 @@ export interface Message {
    *  was retried on a stronger model/tier. Surfaced inline in the
    *  assistant bubble so the user sees why and what changed. */
   escalations?: EscalationNotice[];
+  /** Managed-storage copies of the files this assistant message delivered,
+   *  keyed by the original `@/path` the agent emitted. Attachment chips fall
+   *  back to the managed copy when the original path no longer exists (file
+   *  deleted/moved, or the message is viewed on another synced device). */
+  deliveredFiles?: Record<string, DeliveredFileRef>;
   /** Set when the run ended in error. Drives class-specific recovery
    *  UI (e.g. the auth-recovery card for `auth`). Transient — not
    *  persisted; absent on reload, which is fine because the original

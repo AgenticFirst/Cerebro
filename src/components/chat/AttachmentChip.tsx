@@ -3,6 +3,7 @@ import { X, Download, FolderOpen, Folder, Check, Loader2, Save, FileWarning } fr
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import type { AttachmentInfo } from '../../types/attachments';
+import type { DeliveredFileRef } from '../../types/chat';
 import { useToast } from '../../context/ToastContext';
 import { useFiles } from '../../context/FilesContext';
 import { useChatFilePreviewModal } from '../../context/ChatFilePreviewContext';
@@ -18,6 +19,10 @@ interface AttachmentChipProps {
    *  traced back to its origin. */
   conversationId?: string;
   messageId?: string;
+  /** Managed-storage copy of this delivery (from message metadata). When the
+   *  original path no longer exists — deleted, moved, or viewed on another
+   *  synced device — the chip resolves this copy instead of going missing. */
+  deliveredFile?: DeliveredFileRef;
 }
 
 export default function AttachmentChip({
@@ -26,6 +31,7 @@ export default function AttachmentChip({
   source = 'user',
   conversationId,
   messageId,
+  deliveredFile,
 }: AttachmentChipProps) {
   const { t } = useTranslation();
   const { addToast } = useToast();
@@ -41,44 +47,63 @@ export default function AttachmentChip({
   const [fileSize, setFileSize] = useState<number>(attachment.fileSize);
   const [missing, setMissing] = useState(false);
   const [downloadState, setDownloadState] = useState<'idle' | 'running' | 'done'>('idle');
+  // The path every chip action actually operates on. Starts as the original
+  // delivery path; swaps to the managed copy when the original is gone.
+  const [resolvedPath, setResolvedPath] = useState(attachment.filePath);
 
   useEffect(() => {
     if (!isAssistant) return;
     if (attachment.isDirectory !== undefined) return;
     let cancelled = false;
-    window.cerebro.shell
-      .statPath(attachment.filePath)
-      .then((stat) => {
+    (async () => {
+      try {
+        const stat = await window.cerebro.shell.statPath(attachment.filePath);
         if (cancelled) return;
-        if (!stat.exists) {
-          setMissing(true);
+        if (stat.exists) {
+          setResolvedPath(attachment.filePath);
+          setIsDirectory(stat.isDirectory);
+          if (!stat.isDirectory && stat.size > 0) setFileSize(stat.size);
+          setMissing(false);
           return;
         }
-        setIsDirectory(stat.isDirectory);
-        if (!stat.isDirectory && stat.size > 0) setFileSize(stat.size);
-      })
-      .catch(() => {
+        // Original path is gone — fall back to the managed copy, which the
+        // sync engine materializes locally on every device.
+        if (deliveredFile) {
+          const abs = await window.cerebro.files.managedAbsPath(deliveredFile.storagePath);
+          const managedStat = await window.cerebro.shell.statPath(abs);
+          if (cancelled) return;
+          if (managedStat.exists && !managedStat.isDirectory) {
+            setResolvedPath(abs);
+            setIsDirectory(false);
+            if (managedStat.size > 0) setFileSize(managedStat.size);
+            setMissing(false);
+            return;
+          }
+        }
+        setMissing(true);
+      } catch {
         if (!cancelled) setMissing(true);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [attachment.filePath, attachment.isDirectory, isAssistant]);
+  }, [attachment.filePath, attachment.isDirectory, isAssistant, deliveredFile]);
 
   const extLabel = labelForExt(attachment.extension);
 
   const handleReveal = () => {
-    window.cerebro.shell.revealPath(attachment.filePath).catch(() => undefined);
+    window.cerebro.shell.revealPath(resolvedPath).catch(() => undefined);
   };
   const handleOpenFolder = () => {
     // Opens the directory itself in Finder/Explorer.
-    window.cerebro.shell.openPath(attachment.filePath).catch(() => undefined);
+    window.cerebro.shell.openPath(resolvedPath).catch(() => undefined);
   };
 
   const isPreviewable = isDirectory === false && !missing;
   const handleOpenPreview = () => {
     if (!isPreviewable) return;
-    openPreview(attachment, { conversationId, messageId, source });
+    openPreview({ ...attachment, filePath: resolvedPath }, { conversationId, messageId, source });
   };
   const stopAndRun = (fn: () => void) => (e: MouseEvent) => {
     e.stopPropagation();
@@ -90,7 +115,7 @@ export default function AttachmentChip({
     setSaveState('running');
     try {
       const item = await saveExternalToFiles({
-        sourcePath: attachment.filePath,
+        sourcePath: resolvedPath,
         source: isAssistant ? 'workspace-save' : 'chat-save',
         sourceConversationId: conversationId ?? null,
         sourceMessageId: messageId ?? null,
@@ -112,7 +137,7 @@ export default function AttachmentChip({
     if (downloadState === 'running') return;
     setDownloadState('running');
     try {
-      const dest = await window.cerebro.shell.downloadToDownloads(attachment.filePath);
+      const dest = await window.cerebro.shell.downloadToDownloads(resolvedPath);
       setDownloadState('done');
       addToast(t('experts.downloadedToDownloads', { name: attachment.fileName }), 'success');
       // Snap back to the default icon after a moment so the chip is usable again.
@@ -196,7 +221,7 @@ export default function AttachmentChip({
       ) : (
         bodyContent
       )}
-      {isAssistant && !missing && isDirectory === false && (
+      {isAssistant && !missing && isDirectory === false && !deliveredFile && (
         <button
           onClick={stopAndRun(handleSaveToFiles)}
           disabled={saveState === 'running'}

@@ -1,4 +1,4 @@
-export type FileSource = 'upload' | 'chat-save' | 'workspace-save' | 'manual';
+export type FileSource = 'upload' | 'chat-save' | 'workspace-save' | 'manual' | 'chat-delivery';
 export type StorageKind = 'managed' | 'workspace';
 export type FilesViewMode = 'grid' | 'list';
 export type FilesSortKey = 'created' | 'updated' | 'name' | 'opened';

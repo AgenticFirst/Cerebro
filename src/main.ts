@@ -2232,6 +2232,13 @@ function registerIpcHandlers(): void {
     return content;
   });
 
+  ipcMain.handle(IPC_CHANNELS.FILES_MANAGED_ABS_PATH, async (_event, relPath: string) => {
+    if (typeof relPath !== 'string' || relPath.length === 0) {
+      throw new Error('relPath required');
+    }
+    return resolveManagedPath(relPath);
+  });
+
   // --- Backup & restore ---
 
   ipcMain.handle(IPC_CHANNELS.BACKUP_PICK_EXPORT_PATH, async (_event, defaultName: string) => {

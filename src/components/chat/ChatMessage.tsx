@@ -395,6 +395,7 @@ export default function ChatMessage({ message, nodeRef }: ChatMessageProps) {
               source="assistant"
               conversationId={message.conversationId}
               messageId={message.id}
+              deliveredFile={message.deliveredFiles?.[att.filePath]}
             />
           ))}
         </div>

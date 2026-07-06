@@ -971,6 +971,9 @@ const api: CerebroAPI = {
     readManagedText(relPath) {
       return ipcRenderer.invoke(IPC_CHANNELS.FILES_READ_MANAGED_TEXT, relPath);
     },
+    managedAbsPath(relPath) {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILES_MANAGED_ABS_PATH, relPath);
+    },
   },
 };
 

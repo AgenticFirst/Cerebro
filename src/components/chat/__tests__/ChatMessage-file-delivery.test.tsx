@@ -33,11 +33,14 @@ vi.mock('../../../context/ChatFilePreviewContext', () => ({
 }));
 
 const statPath = vi.fn();
+const managedAbsPath = vi.fn();
 
 beforeEach(() => {
   statPath.mockReset();
+  managedAbsPath.mockReset();
   (window as unknown as { cerebro: unknown }).cerebro = {
     shell: { statPath },
+    files: { managedAbsPath },
   };
 });
 
@@ -97,5 +100,30 @@ describe('ChatMessage file delivery', () => {
 
     expect(await screen.findByText('File no longer exists at this path')).toBeInTheDocument();
     expect(screen.getByText('deleted-file.docx')).toBeInTheDocument();
+  });
+
+  it('falls back to the managed copy when the original path is gone but a delivered file exists', async () => {
+    // Original path missing; managed copy present.
+    statPath.mockImplementation(async (p: string) => ({
+      exists: p === '/managed/files/bucket1/item1.docx',
+      isDirectory: false,
+      size: p === '/managed/files/bucket1/item1.docx' ? 512 : 0,
+    }));
+    managedAbsPath.mockResolvedValue('/managed/files/bucket1/item1.docx');
+
+    const message = assistantMessage('Aquí está.\n\n@/tmp/original-gone.docx');
+    message.deliveredFiles = {
+      '/tmp/original-gone.docx': { fileItemId: 'item1', storagePath: 'bucket1/item1.docx' },
+    };
+    render(
+      <ToastProvider>
+        <ChatMessage message={message} />
+      </ToastProvider>,
+    );
+
+    // The chip resolves via the managed copy: size appears, no missing state.
+    expect(await screen.findByText('512 B')).toBeInTheDocument();
+    expect(screen.queryByText('File no longer exists at this path')).not.toBeInTheDocument();
+    expect(managedAbsPath).toHaveBeenCalledWith('bucket1/item1.docx');
   });
 });

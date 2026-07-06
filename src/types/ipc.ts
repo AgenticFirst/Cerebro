@@ -342,6 +342,7 @@ export const IPC_CHANNELS = {
   FILES_OPEN: 'files:open',
   FILES_DOWNLOAD: 'files:download',
   FILES_READ_MANAGED_TEXT: 'files:read-managed-text',
+  FILES_MANAGED_ABS_PATH: 'files:managed-abs-path',
 
   // Backup & restore (one-file export of all userData; one-click restore)
   BACKUP_PICK_EXPORT_PATH: 'backup:pick-export-path',
@@ -820,6 +821,10 @@ export interface FilesAPI {
   }): Promise<string>;
   /** Read a managed file as text (2 MB cap), used by the markdown/text preview. */
   readManagedText(relPath: string): Promise<string>;
+  /** Resolve a managed rel path to its absolute path on this device. Used by
+   *  chat attachment chips to fall back to the synced managed copy when the
+   *  original delivery path no longer exists. */
+  managedAbsPath(relPath: string): Promise<string>;
 }
 
 // --- App auto-updater ---

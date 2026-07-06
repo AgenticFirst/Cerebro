@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  DeliveredFileRef,
   Message,
   MessageErrorClass,
   RoutineProposal,
@@ -280,6 +281,17 @@ export function fromApiMessage(m: ApiMessage): Message {
           reason: String(e.reason ?? ''),
         }))
         .filter((e) => e.model);
+    }
+    if (m.metadata.delivered_files && typeof m.metadata.delivered_files === 'object') {
+      const delivered: Record<string, DeliveredFileRef> = {};
+      for (const [path, raw] of Object.entries(
+        m.metadata.delivered_files as Record<string, Record<string, unknown>>,
+      )) {
+        if (raw && typeof raw.file_item_id === 'string' && typeof raw.storage_path === 'string') {
+          delivered[path] = { fileItemId: raw.file_item_id, storagePath: raw.storage_path };
+        }
+      }
+      if (Object.keys(delivered).length > 0) msg.deliveredFiles = delivered;
     }
   }
 
