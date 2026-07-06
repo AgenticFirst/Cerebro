@@ -15,6 +15,11 @@ SessionLocal: sessionmaker[Session] | None = None
 # (don't `from database import` it — that would bind a stale value).
 KNOWLEDGE_FTS_AVAILABLE = False
 
+# Set by _setup_chat_fts(): True when the conversation/message full-text index
+# is live. When False, /conversations/search falls back to an escaped ilike
+# query. Read via `database.CHAT_FTS_AVAILABLE` (same caveat as above).
+CHAT_FTS_AVAILABLE = False
+
 log = logging.getLogger(__name__)
 
 
@@ -148,6 +153,91 @@ def _setup_knowledge_fts(eng) -> None:
             log.warning("Knowledge Base FTS5 unavailable; search will use ilike fallback: %s", e)
 
 
+def _setup_chat_fts(eng) -> None:
+    """Create + sync the FTS5 full-text indexes over conversations and messages.
+
+    Two standalone FTS5 tables (string PKs make external-content rowid mapping
+    awkward, same as knowledge_pages_fts): one over messages.content, one over
+    conversations.title — titles and messages change independently, and split
+    tables let title matches carry their own weight at query time. Kept in sync
+    by AFTER INSERT/DELETE/UPDATE triggers (they fire inside SQLite regardless
+    of who writes — API, telegram bridge, or cloud sync) and backfilled once on
+    first creation. `remove_diacritics 2` folds accents on both the indexed
+    text and query terms, so "medicion" matches "medición" and vice versa.
+    If the SQLite build lacks FTS5, CHAT_FTS_AVAILABLE stays False and
+    /conversations/search falls back to ilike — search never breaks.
+    """
+    global CHAT_FTS_AVAILABLE
+    with eng.connect() as conn:
+        try:
+            conn.execute(text(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts "
+                "USING fts5(id UNINDEXED, conversation_id UNINDEXED, content, "
+                "tokenize='unicode61 remove_diacritics 2')"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS messages_fts_ai "
+                "AFTER INSERT ON messages BEGIN "
+                "INSERT INTO messages_fts(id, conversation_id, content) "
+                "VALUES (new.id, new.conversation_id, COALESCE(new.content, '')); END"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS messages_fts_ad "
+                "AFTER DELETE ON messages BEGIN "
+                "DELETE FROM messages_fts WHERE id = old.id; END"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS messages_fts_au "
+                "AFTER UPDATE ON messages BEGIN "
+                "DELETE FROM messages_fts WHERE id = old.id; "
+                "INSERT INTO messages_fts(id, conversation_id, content) "
+                "VALUES (new.id, new.conversation_id, COALESCE(new.content, '')); END"
+            ))
+            conn.execute(text(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS conversations_fts "
+                "USING fts5(id UNINDEXED, title, "
+                "tokenize='unicode61 remove_diacritics 2')"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS conversations_fts_ai "
+                "AFTER INSERT ON conversations BEGIN "
+                "INSERT INTO conversations_fts(id, title) "
+                "VALUES (new.id, COALESCE(new.title, '')); END"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS conversations_fts_ad "
+                "AFTER DELETE ON conversations BEGIN "
+                "DELETE FROM conversations_fts WHERE id = old.id; END"
+            ))
+            conn.execute(text(
+                "CREATE TRIGGER IF NOT EXISTS conversations_fts_au "
+                "AFTER UPDATE ON conversations BEGIN "
+                "DELETE FROM conversations_fts WHERE id = old.id; "
+                "INSERT INTO conversations_fts(id, title) "
+                "VALUES (new.id, COALESCE(new.title, '')); END"
+            ))
+            # Backfill existing rows the first time each index is created (or if
+            # it was cleared). Triggers keep them in sync thereafter.
+            count = conn.execute(text("SELECT COUNT(*) FROM messages_fts")).scalar() or 0
+            if count == 0:
+                conn.execute(text(
+                    "INSERT INTO messages_fts(id, conversation_id, content) "
+                    "SELECT id, conversation_id, COALESCE(content, '') FROM messages"
+                ))
+            count = conn.execute(text("SELECT COUNT(*) FROM conversations_fts")).scalar() or 0
+            if count == 0:
+                conn.execute(text(
+                    "INSERT INTO conversations_fts(id, title) "
+                    "SELECT id, COALESCE(title, '') FROM conversations"
+                ))
+            conn.commit()
+            CHAT_FTS_AVAILABLE = True
+        except Exception as e:  # noqa: BLE001 — FTS5 missing is non-fatal
+            conn.rollback()
+            CHAT_FTS_AVAILABLE = False
+            log.warning("Chat FTS5 unavailable; conversation search will use ilike fallback: %s", e)
+
+
 def _seed_default_bucket(eng) -> None:
     """Ensure exactly one row exists with is_default=True (the 'Default' bucket)."""
     from models import Bucket  # local import to avoid circular at module load
@@ -219,6 +309,7 @@ def init_db(db_path: str) -> None:
         # FTS5 is SQLite-only; on other dialects KNOWLEDGE_FTS_AVAILABLE stays
         # False and /knowledge/search uses its ilike fallback (search never breaks).
         _setup_knowledge_fts(engine)
+        _setup_chat_fts(engine)
 
     _seed_default_bucket(engine)
 

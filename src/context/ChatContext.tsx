@@ -62,6 +62,8 @@ interface ChatState {
   activeExpertId: string | null;
   chatError: ChatError | null;
   pendingActivityRunId: string | null;
+  /** Set by global chat search to open a specific expert thread; consumed by MessagesTab. */
+  pendingExpertNav: { expertId: string; conversationId: string } | null;
   /** Unsent input text keyed by draft scope (conversation id, NEW_CHAT_DRAFT_KEY, expert key). */
   drafts: Record<string, string>;
 }
@@ -92,6 +94,8 @@ interface ChatActions {
   getConversationsForExpert: (expertId: string) => Conversation[];
   generalConversations: Conversation[];
   consumePendingActivityRunId: () => void;
+  requestExpertConversation: (expertId: string, conversationId: string) => void;
+  consumePendingExpertNav: () => void;
   /** Persist (or clear, when value is '') the unsent draft for a scope key. */
   setDraft: (key: string, value: string) => void;
 }
@@ -192,6 +196,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [activeExpertId, setActiveExpertId] = useState<string | null>(null);
   const [chatError, setChatError] = useState<ChatError | null>(null);
   const [pendingActivityRunId, setPendingActivityRunId] = useState<string | null>(null);
+  const [pendingExpertNav, setPendingExpertNav] = useState<{
+    expertId: string;
+    conversationId: string;
+  } | null>(null);
   // Unsent input drafts keyed by scope. Lives here (above the screen router) so
   // a half-typed message survives leaving and returning to the chat screen.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -1218,6 +1226,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setPendingActivityRunId(null);
   }, []);
 
+  const requestExpertConversation = useCallback((expertId: string, conversationId: string) => {
+    setPendingExpertNav({ expertId, conversationId });
+  }, []);
+
+  const consumePendingExpertNav = useCallback(() => {
+    setPendingExpertNav(null);
+  }, []);
+
   // Register with RoutineContext so "Run Now" buttons navigate to Activity
   useEffect(() => {
     registerRunCallback(runRoutineFromUi);
@@ -1378,6 +1394,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         activeExpertId,
         chatError,
         pendingActivityRunId,
+        pendingExpertNav,
         drafts,
         activeConversation,
         createConversation,
@@ -1396,6 +1413,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         getConversationsForExpert,
         generalConversations,
         consumePendingActivityRunId,
+        requestExpertConversation,
+        consumePendingExpertNav,
         setDraft,
       }}
     >

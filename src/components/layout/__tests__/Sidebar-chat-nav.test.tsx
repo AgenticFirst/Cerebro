@@ -45,6 +45,10 @@ vi.mock('../../../context/OnboardingContext', () => ({
   useOnboarding: () => ({ spotlightedNavId: null }),
 }));
 
+vi.mock('../../../context/ChatSearchContext', () => ({
+  useChatSearch: () => ({ isOpen: false, open: vi.fn(), close: vi.fn() }),
+}));
+
 import Sidebar from '../Sidebar';
 
 describe('Sidebar — Chat nav clears the active conversation', () => {

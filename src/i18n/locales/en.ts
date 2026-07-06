@@ -60,6 +60,21 @@ const en = {
     older: 'Older',
   },
 
+  // ── Global conversation search ──────────────────────────────
+  search: {
+    openSearch: 'Search chats',
+    commandLabel: 'Search conversations',
+    placeholder: 'Search all conversations…',
+    hint: 'Type to search across every conversation',
+    noResults: 'No conversations match "{{query}}"',
+    moreMatches_one: '+{{count}} more match',
+    moreMatches_other: '+{{count}} more matches',
+    untitled: 'New Chat',
+    expertBadge: 'Expert',
+    roleUser: 'You:',
+    roleAssistant: 'Cerebro:',
+  },
+
   // ── Chat ────────────────────────────────────────────────────
   chat: {
     welcomeTitle: 'Welcome to your studio',

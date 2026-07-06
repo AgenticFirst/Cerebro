@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   Settings,
   Plus,
+  Search,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -25,6 +26,7 @@ import {
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useChat } from '../../context/ChatContext';
+import { useChatSearch } from '../../context/ChatSearchContext';
 import { useApprovals } from '../../context/ApprovalContext';
 import { useTasks } from '../../context/TaskContext';
 import { useOnboarding } from '../../context/OnboardingContext';
@@ -236,6 +238,7 @@ export default function Sidebar() {
     deleteConversation,
     renameConversation,
   } = useChat();
+  const { open: openChatSearch } = useChatSearch();
   const { pendingCount } = useApprovals();
   const { stats } = useTasks();
   const { spotlightedNavId } = useOnboarding();
@@ -354,6 +357,24 @@ export default function Sidebar() {
         >
           <Plus size={15} className="text-accent flex-shrink-0" strokeWidth={2} />
           {!collapsed && t('nav.newChat')}
+        </button>
+      </div>
+
+      {/* ── Search chats (global conversation search) ──────────── */}
+      <div className="px-2.5 mt-1">
+        <button
+          onClick={openChatSearch}
+          className={clsx(
+            'flex items-center rounded-md',
+            'text-[13px] text-text-secondary hover:text-text-primary',
+            'hover:bg-white/[0.04]',
+            'transition-all duration-150 cursor-pointer',
+            collapsed ? 'justify-center p-2 w-full' : 'gap-2 px-2.5 py-2 w-full',
+          )}
+          title={t('search.openSearch')}
+        >
+          <Search size={15} className="text-text-tertiary flex-shrink-0" strokeWidth={1.5} />
+          {!collapsed && t('search.openSearch')}
         </button>
       </div>
 

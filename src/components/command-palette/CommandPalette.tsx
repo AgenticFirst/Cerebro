@@ -14,6 +14,7 @@ import {
   CornerDownLeft,
   Loader2,
   CalendarDays,
+  MessagesSquare,
   RefreshCw,
   Plus,
   Plug,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useChat } from '../../context/ChatContext';
+import { useChatSearch } from '../../context/ChatSearchContext';
 import { useCalendar } from '../../context/CalendarContext';
 import type { CalendarEventInput, CalendarParsedCommand, RsvpResponse } from '../../types/calendar';
 
@@ -41,6 +43,7 @@ type ParseState =
 export default function CommandPalette() {
   const { t } = useTranslation();
   const { setActiveScreen } = useChat();
+  const { open: openChatSearch } = useChatSearch();
   const cal = useCalendar();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -73,6 +76,14 @@ export default function CommandPalette() {
 
   const staticCommands: StaticCommand[] = useMemo(
     () => [
+      {
+        id: 'search-chats',
+        labelKey: 'search.commandLabel',
+        icon: MessagesSquare,
+        // close() runs right after via runStatic, so the palette gives way to
+        // the search overlay.
+        run: () => openChatSearch(),
+      },
       {
         id: 'today',
         labelKey: 'calendar.palette.goToday',
@@ -122,7 +133,7 @@ export default function CommandPalette() {
         run: () => setActiveScreen('calendar'),
       },
     ],
-    [cal, setActiveScreen],
+    [cal, setActiveScreen, openChatSearch],
   );
 
   const filtered = useMemo(() => {

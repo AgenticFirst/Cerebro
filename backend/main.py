@@ -42,6 +42,7 @@ from knowledge.router import router as knowledge_router
 from news.router import router as news_router
 from calendar_sync.router import router as calendar_router
 from gmail_sync.router import router as gmail_router
+from conversation_search import router as conversation_search_router
 
 
 @asynccontextmanager
@@ -150,6 +151,9 @@ app.include_router(news_router, prefix="/news")
 app.include_router(calendar_router, prefix="/calendar")
 app.include_router(gmail_router, prefix="/gmail")
 app.include_router(cloud_sync_router)
+# Registered before the /conversations CRUD routes below so /conversations/search
+# can never be shadowed by a future GET /conversations/{conv_id}.
+app.include_router(conversation_search_router)
 
 
 @app.get("/health")

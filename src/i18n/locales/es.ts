@@ -61,6 +61,21 @@ const es: TranslationKeys = {
     older: 'Anteriores',
   },
 
+  // \u2500\u2500 B\u00fasqueda global de conversaciones \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  search: {
+    openSearch: 'Buscar chats',
+    commandLabel: 'Buscar conversaciones',
+    placeholder: 'Buscar en todas las conversaciones\u2026',
+    hint: 'Escribe para buscar en todas las conversaciones',
+    noResults: 'Ninguna conversaci\u00f3n coincide con \u00ab{{query}}\u00bb',
+    moreMatches_one: '+{{count}} coincidencia m\u00e1s',
+    moreMatches_other: '+{{count}} coincidencias m\u00e1s',
+    untitled: 'Nuevo chat',
+    expertBadge: 'Experto',
+    roleUser: 'T\u00fa:',
+    roleAssistant: 'Cerebro:',
+  },
+
   // ── Chat ────────────────────────────────────────────────────
   chat: {
     welcomeTitle: 'Bienvenido a tu estudio',

@@ -29,6 +29,8 @@ export interface HubSpotList {
   processingType: string | null;
   objectTypeId: string | null;
   size: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 interface RawList {
@@ -36,6 +38,8 @@ interface RawList {
   name?: string;
   processingType?: string;
   objectTypeId?: string;
+  createdAt?: string;
+  updatedAt?: string;
   additionalProperties?: { hs_list_size?: string };
 }
 
@@ -52,38 +56,158 @@ function normalizeList(raw: RawList | undefined | null): HubSpotList | null {
     processingType: raw.processingType ?? null,
     objectTypeId: raw.objectTypeId ?? null,
     size,
+    createdAt: raw.createdAt ?? null,
+    updatedAt: raw.updatedAt ?? null,
   };
 }
+
+export const LIST_SORT_FIELDS = ['created_at', 'updated_at', 'name', 'size'] as const;
+export type ListSortBy = (typeof LIST_SORT_FIELDS)[number];
+export type ListSortDirection = 'asc' | 'desc';
 
 export interface ListListsResult {
   lists: HubSpotList[];
   total: number;
+  hasMore: boolean;
+  nextOffset: number;
   error: string | null;
 }
 
-/** Search lists by name (or return the first page when no query is given). */
-export async function listLists(
-  token: string,
-  opts: { query?: string; limit?: number; signal?: AbortSignal } = {},
-): Promise<ListListsResult> {
-  const count = Math.min(Math.max(opts.limit ?? 50, 1), 100);
-  const body: Record<string, unknown> = { count, offset: 0 };
-  if (opts.query) body.query = opts.query;
+/** Max lists per search request — HubSpot's documented cap for `count`. */
+const SEARCH_PAGE_MAX = 500;
+/** Safety cap on how many lists a sorted search will scan across pages. */
+const SORT_SCAN_MAX = 5000;
 
-  const res = await callHubSpotApi<{ lists?: RawList[]; total?: number }>(
+interface SearchPage {
+  lists: HubSpotList[];
+  total: number;
+  hasMore: boolean;
+}
+
+async function searchListsPage(
+  token: string,
+  params: { query?: string; count: number; offset: number; signal?: AbortSignal },
+): Promise<{ ok: true; data: SearchPage } | { ok: false; error: string }> {
+  const body: Record<string, unknown> = {
+    count: params.count,
+    offset: params.offset,
+    additionalProperties: ['hs_list_size'],
+  };
+  if (params.query) body.query = params.query;
+  const res = await callHubSpotApi<{ lists?: RawList[]; total?: number; hasMore?: boolean }>(
     token,
     '/crm/v3/lists/search',
-    {
-      method: 'POST',
-      body,
-      signal: opts.signal,
-    },
+    { method: 'POST', body, signal: params.signal },
   );
-  if (!res.ok) return { lists: [], total: 0, error: res.error };
+  if (!res.ok) return { ok: false, error: res.error };
   const lists = (res.data?.lists ?? [])
     .map(normalizeList)
     .filter((l): l is HubSpotList => l !== null);
-  return { lists, total: res.data?.total ?? lists.length, error: null };
+  return {
+    ok: true,
+    data: {
+      lists,
+      total: res.data?.total ?? lists.length,
+      hasMore: res.data?.hasMore ?? false,
+    },
+  };
+}
+
+function sortValue(list: HubSpotList, sortBy: ListSortBy): string | number | null {
+  switch (sortBy) {
+    case 'created_at':
+      return list.createdAt;
+    case 'updated_at':
+      return list.updatedAt;
+    case 'name':
+      return list.name || null;
+    case 'size':
+      return list.size;
+  }
+}
+
+/** Sorts in place — callers pass arrays they own. */
+function sortLists(
+  lists: HubSpotList[],
+  sortBy: ListSortBy,
+  direction: ListSortDirection,
+): HubSpotList[] {
+  const sign = direction === 'asc' ? 1 : -1;
+  return lists.sort((a, b) => {
+    const va = sortValue(a, sortBy);
+    const vb = sortValue(b, sortBy);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1; // nulls last regardless of direction
+    if (vb === null) return -1;
+    if (va < vb) return -sign;
+    if (va > vb) return sign;
+    return 0;
+  });
+}
+
+/**
+ * Search lists by name and/or page through them. Without `sortBy` this is a
+ * single request at `offset`. With `sortBy`, HubSpot's search endpoint has no
+ * usable server-side sort, so this pages through the whole catalog (up to
+ * SORT_SCAN_MAX lists), sorts locally, and slices — the only way to reliably
+ * answer "the newest segment" when there are more lists than one page.
+ */
+export async function listLists(
+  token: string,
+  opts: {
+    query?: string;
+    limit?: number;
+    offset?: number;
+    sortBy?: ListSortBy;
+    sortDirection?: ListSortDirection;
+    signal?: AbortSignal;
+  } = {},
+): Promise<ListListsResult> {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), SEARCH_PAGE_MAX);
+  const offset = Math.max(opts.offset ?? 0, 0);
+
+  if (!opts.sortBy) {
+    const res = await searchListsPage(token, {
+      query: opts.query,
+      count: limit,
+      offset,
+      signal: opts.signal,
+    });
+    if (!res.ok)
+      return { lists: [], total: 0, hasMore: false, nextOffset: offset, error: res.error };
+    const { lists, total, hasMore } = res.data;
+    return { lists, total, hasMore, nextOffset: offset + lists.length, error: null };
+  }
+
+  const direction = opts.sortDirection ?? (opts.sortBy === 'name' ? 'asc' : 'desc');
+  const all: HubSpotList[] = [];
+  let total = 0;
+  let scanOffset = 0;
+  for (;;) {
+    const res = await searchListsPage(token, {
+      query: opts.query,
+      count: SEARCH_PAGE_MAX,
+      offset: scanOffset,
+      signal: opts.signal,
+    });
+    if (!res.ok)
+      return { lists: [], total: 0, hasMore: false, nextOffset: offset, error: res.error };
+    const page = res.data.lists;
+    all.push(...page);
+    total = Math.max(res.data.total, all.length);
+    if (!res.data.hasMore || page.length === 0 || all.length >= SORT_SCAN_MAX) break;
+    scanOffset += page.length;
+  }
+
+  const sorted = sortLists(all, opts.sortBy, direction);
+  const lists = sorted.slice(offset, offset + limit);
+  return {
+    lists,
+    total,
+    hasMore: sorted.length > offset + limit,
+    nextOffset: offset + lists.length,
+    error: null,
+  };
 }
 
 export interface GetListResult {

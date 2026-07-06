@@ -15,9 +15,12 @@ import {
   createList,
   deleteList,
   listLists,
+  LIST_SORT_FIELDS,
   renameList,
   updateMemberships,
   type ListProcessingType,
+  type ListSortBy,
+  type ListSortDirection,
 } from '../../hubspot/lists';
 
 function requireToken(
@@ -45,6 +48,12 @@ function availability(deps: {
   return ch.isConnected() ? 'available' : 'not_connected';
 }
 
+/** Parse an optional numeric param that may arrive as a string. */
+function parseNumberParam(value: unknown): number | undefined {
+  const raw = typeof value === 'string' ? parseInt(value, 10) : (value as number);
+  return Number.isFinite(raw) ? raw : undefined;
+}
+
 /** Accept either an array of ids or a comma/space-separated string. */
 function parseRecordIds(raw: unknown, vars: Record<string, unknown>): string[] {
   if (Array.isArray(raw)) {
@@ -66,21 +75,25 @@ export function createHubSpotListListsAction(deps: {
     type: 'hubspot_list_lists',
     name: 'HubSpot: List Lists',
     description:
-      'List or search HubSpot lists (segments). Read-only. Returns each list id, name, type, and size.',
+      'List or search HubSpot lists (segments). Read-only. Returns each list id, name, type, size and creation date. Sort by created_at to get the newest segments first; page with offset.',
 
     chatExposable: true,
     readOnly: true,
     chatGroup: 'hubspot',
     chatLabel: { en: 'List HubSpot lists', es: 'Listar listas de HubSpot' },
     chatDescription: {
-      en: 'List or search your HubSpot lists (segments) without changing anything. Returns each list id, name, type and size.',
-      es: 'Lista o busca tus listas (segmentos) de HubSpot sin modificar nada. Devuelve el id, nombre, tipo y tamaño de cada lista.',
+      en: 'List or search your HubSpot lists (segments) without changing anything. Returns each list id, name, type, size and creation date. Sort by created_at to get the newest segments first; page with offset.',
+      es: 'Lista o busca tus listas (segmentos) de HubSpot sin modificar nada. Devuelve el id, nombre, tipo, tamaño y fecha de creación de cada lista. Ordena por created_at para ver los segmentos más recientes primero; pagina con offset.',
     },
     chatExamples: [
       { en: 'List my HubSpot lists.', es: 'Lista mis listas de HubSpot.' },
       {
         en: 'Show my HubSpot segments named VIP.',
         es: 'Muéstrame mis segmentos de HubSpot llamados VIP.',
+      },
+      {
+        en: 'What is the latest segment created in HubSpot?',
+        es: '¿Cuál es el último segmento creado en HubSpot?',
       },
     ],
     availabilityCheck: () => availability(deps),
@@ -93,7 +106,24 @@ export function createHubSpotListListsAction(deps: {
           type: 'string',
           description: 'Free-text search across list names. Optional. Templated.',
         },
-        limit: { type: 'number', description: 'Max lists to return. Default 50, capped at 100.' },
+        limit: { type: 'number', description: 'Max lists to return. Default 50, capped at 500.' },
+        offset: {
+          type: 'number',
+          description:
+            'Skip this many lists; use with next_offset from a previous call to page through large catalogs. Default 0.',
+        },
+        sort_by: {
+          type: 'string',
+          enum: [...LIST_SORT_FIELDS],
+          description:
+            'Sort results. Use created_at to find the most recently created list/segment (newest first by default).',
+        },
+        sort_direction: {
+          type: 'string',
+          enum: ['asc', 'desc'],
+          description:
+            'Sort direction. Defaults to desc for created_at/updated_at/size and asc for name.',
+        },
       },
     },
     outputSchema: {
@@ -108,10 +138,15 @@ export function createHubSpotListListsAction(deps: {
               name: { type: ['string', 'null'] },
               processing_type: { type: ['string', 'null'] },
               size: { type: ['number', 'null'] },
+              created_at: { type: ['string', 'null'] },
+              updated_at: { type: ['string', 'null'] },
             },
           },
         },
         count: { type: 'number' },
+        total: { type: 'number' },
+        has_more: { type: 'boolean' },
+        next_offset: { type: 'number' },
         error: { type: ['string', 'null'] },
       },
       required: ['lists', 'count'],
@@ -122,19 +157,36 @@ export function createHubSpotListListsAction(deps: {
       const params = input.params as Record<string, unknown>;
       const vars = input.wiredInputs ?? {};
       const query = renderTemplate(String(params.query ?? ''), vars).trim();
-      const rawLimit =
-        typeof params.limit === 'string' ? parseInt(params.limit, 10) : (params.limit as number);
-      const limit = Number.isFinite(rawLimit) ? rawLimit : undefined;
+      const limit = parseNumberParam(params.limit);
+      const offset = parseNumberParam(params.offset);
+      const sortByRaw = String(params.sort_by ?? '').toLowerCase();
+      const sortBy = (LIST_SORT_FIELDS as readonly string[]).includes(sortByRaw)
+        ? (sortByRaw as ListSortBy)
+        : undefined;
+      const sortDirectionRaw = String(params.sort_direction ?? '').toLowerCase();
+      const sortDirection = (
+        sortDirectionRaw === 'asc' || sortDirectionRaw === 'desc' ? sortDirectionRaw : undefined
+      ) as ListSortDirection | undefined;
 
       const res = await listLists(token, {
         query: query || undefined,
         limit,
+        offset,
+        sortBy,
+        sortDirection,
         signal: input.context.signal,
       });
       if (res.error) {
         input.context.log(`HubSpot list_lists failed: ${res.error}`);
         return {
-          data: { lists: [], count: 0, error: res.error },
+          data: {
+            lists: [],
+            count: 0,
+            total: 0,
+            has_more: false,
+            next_offset: 0,
+            error: res.error,
+          },
           summary: `HubSpot list lists failed: ${res.error}`,
         };
       }
@@ -143,11 +195,20 @@ export function createHubSpotListListsAction(deps: {
         name: l.name,
         processing_type: l.processingType,
         size: l.size,
+        created_at: l.createdAt,
+        updated_at: l.updatedAt,
       }));
-      input.context.log(`HubSpot list_lists: found ${lists.length}`);
+      input.context.log(`HubSpot list_lists: found ${lists.length} of ${res.total}`);
       return {
-        data: { lists, count: lists.length, error: null },
-        summary: `Found ${lists.length} HubSpot list(s)`,
+        data: {
+          lists,
+          count: lists.length,
+          total: res.total,
+          has_more: res.hasMore,
+          next_offset: res.nextOffset,
+          error: null,
+        },
+        summary: `Found ${lists.length} of ${res.total} HubSpot list(s)`,
       };
     },
   };

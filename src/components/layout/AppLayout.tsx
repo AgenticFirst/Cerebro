@@ -25,6 +25,8 @@ import CalendarScreen from '../screens/calendar/CalendarScreen';
 import EmailScreen from '../screens/email/EmailScreen';
 import FlowsScreen from '../screens/FlowsScreen';
 import CommandPalette from '../command-palette/CommandPalette';
+import ChatSearchModal from '../chat-search/ChatSearchModal';
+import { ChatSearchProvider } from '../../context/ChatSearchContext';
 import PlaceholderScreen from '../screens/PlaceholderScreen';
 import AlertModal from '../ui/AlertModal';
 
@@ -171,66 +173,69 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="flex h-full">
-      <Sidebar />
-      <main className="flex-1 flex flex-col min-h-0">
-        {IS_MAC && activeScreen !== 'files' && activeScreen !== 'knowledge-base' && (
-          <div className="app-drag-region h-11 flex-shrink-0" />
-        )}
-        <UpdateBanner />
-        {renderContent()}
-      </main>
+    <ChatSearchProvider>
+      <div className="flex h-full">
+        <Sidebar />
+        <main className="flex-1 flex flex-col min-h-0">
+          {IS_MAC && activeScreen !== 'files' && activeScreen !== 'knowledge-base' && (
+            <div className="app-drag-region h-11 flex-shrink-0" />
+          )}
+          <UpdateBanner />
+          {renderContent()}
+        </main>
 
-      <CommandPalette />
+        <CommandPalette />
+        <ChatSearchModal />
 
-      {chatError && (
-        <AlertModal
-          icon={<AlertTriangle size={18} className="text-accent" />}
-          title={chatError.title}
-          message={chatError.message}
-          onClose={dismissChatError}
-          actions={
-            chatError.navigateTo
-              ? [
-                  { label: t('common.dismiss'), onClick: dismissChatError },
-                  {
-                    label: t('nav.integrations'),
-                    primary: true,
-                    onClick: () => {
-                      dismissChatError();
-                      setActiveScreen(chatError.navigateTo!);
+        {chatError && (
+          <AlertModal
+            icon={<AlertTriangle size={18} className="text-accent" />}
+            title={chatError.title}
+            message={chatError.message}
+            onClose={dismissChatError}
+            actions={
+              chatError.navigateTo
+                ? [
+                    { label: t('common.dismiss'), onClick: dismissChatError },
+                    {
+                      label: t('nav.integrations'),
+                      primary: true,
+                      onClick: () => {
+                        dismissChatError();
+                        setActiveScreen(chatError.navigateTo!);
+                      },
                     },
-                  },
-                ]
-              : undefined
-          }
-        />
-      )}
+                  ]
+                : undefined
+            }
+          />
+        )}
 
-      {!chatError && activePrompt && (
-        <AlertModal
-          icon={<AlertTriangle size={18} className="text-accent" />}
-          title={t('tasks.queueFailedPromptTitle')}
-          message={t('tasks.queueFailedPromptMessage', {
-            reason: activePrompt.failureReason,
-            expert: targetExpertName ?? t('tasks.drawerExpert'),
-          })}
-          onClose={() => dismissFailurePrompt(activePrompt.taskId)}
-          actions={[
-            {
-              label: t('tasks.queueFailedDiscard'),
-              onClick: () => dismissFailurePrompt(activePrompt.taskId),
-            },
-            {
-              label: t('tasks.queueFailedSend', {
-                expert: targetExpertName ?? t('tasks.drawerExpert'),
-              }),
-              primary: true,
-              onClick: () => confirmFailurePrompt(activePrompt.taskId),
-            },
-          ]}
-        />
-      )}
-    </div>
+        {!chatError && activePrompt && (
+          <AlertModal
+            icon={<AlertTriangle size={18} className="text-accent" />}
+            title={t('tasks.queueFailedPromptTitle')}
+            message={t('tasks.queueFailedPromptMessage', {
+              reason: activePrompt.failureReason,
+              expert: targetExpertName ?? t('tasks.drawerExpert'),
+            })}
+            onClose={() => dismissFailurePrompt(activePrompt.taskId)}
+            actions={[
+              {
+                label: t('tasks.queueFailedDiscard'),
+                onClick: () => dismissFailurePrompt(activePrompt.taskId),
+              },
+              {
+                label: t('tasks.queueFailedSend', {
+                  expert: targetExpertName ?? t('tasks.drawerExpert'),
+                }),
+                primary: true,
+                onClick: () => confirmFailurePrompt(activePrompt.taskId),
+              },
+            ]}
+          />
+        )}
+      </div>
+    </ChatSearchProvider>
   );
 }
