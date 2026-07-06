@@ -31,7 +31,7 @@ import {
   backendJsonRequest,
   backendPutSetting,
 } from '../shared/backend-settings';
-import { SlidingWindowLimiter } from '../shared/channel-helpers';
+import { newBackendRecordId, SlidingWindowLimiter } from '../shared/channel-helpers';
 import {
   inboundPhone,
   isAllowed,
@@ -137,6 +137,10 @@ export class WhatsAppBridge implements WhatsAppChannel {
     at: 0,
   };
   private conversationCache = new Map<string, ConversationCacheEntry>();
+  /** Session-level `<lid>@lid` → phone map. Baileys 6.7.x doesn't always attach
+   *  `senderPn` to every `@lid` key, so once a lid's number has been seen we
+   *  remember it and later keyless messages from the same lid still resolve. */
+  private lidPhoneCache = new Map<string, string>();
 
   /** True when start()/stop() is in flight — guards against reentrancy. */
   private transitioning = false;
@@ -252,6 +256,7 @@ export class WhatsAppBridge implements WhatsAppChannel {
     await backendPutSetting(this.deps.backendPort, WHATSAPP_SETTING_KEYS.enabled, false);
     this.settings.enabled = false;
     this.conversationCache.clear();
+    this.lidPhoneCache.clear();
     this.setState({
       state: 'off',
       phoneNumber: null,
@@ -712,6 +717,16 @@ export class WhatsAppBridge implements WhatsAppChannel {
     }
     this.watchdogProbing = true;
     const sock = this.sock;
+    // Belt-and-braces for the init-queries-timeout zombie: if Baileys ever
+    // strands its event buffer (WS healthy, so the probe below would pass,
+    // but messages.upsert stays silent), flush releases it. Documented no-op
+    // (returns false) when nothing is buffered.
+    try {
+      const flushed = sock.ev?.flush?.();
+      if (flushed) log('watchdog: released a stranded event buffer');
+    } catch {
+      /* ignore */
+    }
     try {
       // fetchPrivacySettings(true) forces a real server round-trip (the
       // unforced call can return a cached value and mask a dead socket).
@@ -767,18 +782,29 @@ export class WhatsAppBridge implements WhatsAppChannel {
     if (!msg?.message) return;
     if (msg.key?.fromMe) return;
     const remoteJid: string | undefined = msg.key?.remoteJid;
+    const lidJid = remoteJid?.endsWith('@lid') ? remoteJid : null;
     // Accept classic `<pn>@s.whatsapp.net` and newer `<lid>@lid` 1:1 senders;
     // groups / broadcast / newsletter stay out of scope. `inboundPhone` resolves
     // the dialable number — for `@lid` that means reading `senderPn`, since the
-    // lid itself is an opaque id rather than a phone.
-    const phone = inboundPhone(msg.key);
+    // lid itself is an opaque id rather than a phone. Not every `@lid` key
+    // carries `senderPn`, so fall back to the number a previous message from
+    // the same lid resolved to.
+    const phone = inboundPhone(msg.key) || (lidJid ? (this.lidPhoneCache.get(lidJid) ?? '') : '');
     if (!phone) {
       // An `@lid` message whose phone we can't resolve would otherwise vanish
       // before any log line — surface it so a real customer isn't invisible.
-      if (remoteJid?.endsWith('@lid')) {
-        log('ignoring @lid message with no resolvable phone:', remoteJid);
+      if (lidJid) {
+        log('ignoring @lid message with no resolvable phone:', lidJid);
       }
       return;
+    }
+    if (lidJid && this.lidPhoneCache.get(lidJid) !== phone) {
+      // Bound the cache; evict the oldest entry (Map preserves insertion order).
+      if (this.lidPhoneCache.size >= 500 && !this.lidPhoneCache.has(lidJid)) {
+        const oldest = this.lidPhoneCache.keys().next().value;
+        if (oldest !== undefined) this.lidPhoneCache.delete(oldest);
+      }
+      this.lidPhoneCache.set(lidJid, phone);
     }
 
     const inbound = extractInbound(msg);
@@ -994,18 +1020,28 @@ export class WhatsAppBridge implements WhatsAppChannel {
       // Stored id was deleted server-side — fall through to create.
     }
 
+    // Send a client-generated id (same contract Telegram uses — see
+    // createConversation in src/telegram/bridge.ts). The backend can now also
+    // self-generate, but omitting it here used to 422 and silently drop the
+    // first message from every new phone.
+    const id = newBackendRecordId();
     const createRes = await backendJsonRequest<{ id: string }>(
       this.deps.backendPort,
       'POST',
       '/conversations',
       {
+        id,
         title: `WhatsApp ${toDisplayPhone(phone)}`,
         source: 'whatsapp',
         external_chat_id: phone,
       },
     );
     if (!createRes.ok || !createRes.data?.id) {
-      logError('create conversation failed:', createRes.status);
+      logError(
+        'create conversation failed:',
+        createRes.status,
+        JSON.stringify(createRes.data ?? null),
+      );
       return null;
     }
     const conversationId = createRes.data.id;

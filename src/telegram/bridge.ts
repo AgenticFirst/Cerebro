@@ -24,6 +24,7 @@ import type { ExecutionEngine } from '../engine/engine';
 import type { TelegramChannel } from '../engine/actions/telegram-channel';
 import { IPC_CHANNELS } from '../types/ipc';
 import { pickApprovalRun } from '../utils/approval-routing';
+import { newBackendRecordId } from '../shared/channel-helpers';
 import { TelegramApi, TelegramApiError, approvalKeyboard, scrubTokenish } from './api';
 import {
   encryptForStorage,
@@ -1598,7 +1599,7 @@ export class TelegramBridge implements TelegramChannel {
               'POST',
               `/conversations/${conversationId}/messages`,
               {
-                id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+                id: newBackendRecordId(),
                 role: 'assistant',
                 content: finalText,
                 metadata: { source: 'telegram', telegram_chat_id: msg.chat.id },
@@ -1688,7 +1689,7 @@ export class TelegramBridge implements TelegramChannel {
     textOrCaption: string,
   ): Promise<string> {
     const body = {
-      id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+      id: newBackendRecordId(),
       role: 'user' as const,
       content: textOrCaption || '(attachment)',
       metadata: {
@@ -1710,7 +1711,7 @@ export class TelegramBridge implements TelegramChannel {
     const fresh = await this.createConversation(msg.chat.id);
     await backendRequest(this.deps.backendPort, 'POST', `/conversations/${fresh}/messages`, {
       ...body,
-      id: crypto.randomUUID().replace(/-/g, '').slice(0, 32),
+      id: newBackendRecordId(),
     });
     return fresh;
   }
@@ -1911,7 +1912,7 @@ export class TelegramBridge implements TelegramChannel {
 
   private async createConversation(chatId: number): Promise<string> {
     const key = String(chatId);
-    const id = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
+    const id = newBackendRecordId();
     await backendRequest(this.deps.backendPort, 'POST', '/conversations', {
       id,
       title: `Telegram (${chatId})`,

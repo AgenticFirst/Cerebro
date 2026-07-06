@@ -270,6 +270,31 @@ describe('inbound dispatch', () => {
     expect(logs).toMatch(/@lid message with no resolvable phone/i);
   });
 
+  it('resolves a follow-up @lid message with NO senderPn via the session lid→phone cache', async () => {
+    const { startRun, sock } = await connectedBridge();
+
+    // First message carries senderPn — resolves and seeds the cache.
+    await sock().__fire('messages.upsert', { type: 'notify', messages: [lidMessage()] });
+    expect(startRun).toHaveBeenCalledTimes(1);
+
+    // Second message from the SAME lid arrives without any PN attribute
+    // (Baileys 6.7.x doesn't attach senderPn to every key). It must still
+    // dispatch, resolved from the cache.
+    await sock().__fire('messages.upsert', {
+      type: 'notify',
+      messages: [
+        lidMessage({
+          key: { senderPn: undefined, participantPn: undefined, id: 'm-2' },
+          message: { conversation: 'sigo aquí' },
+        }),
+      ],
+    });
+
+    expect(startRun).toHaveBeenCalledTimes(2);
+    expect(startRun.mock.calls[1][1].triggerPayload.phone_number).toBe(`+${ALLOWED}`);
+    expect(startRun.mock.calls[1][1].triggerPayload.message_text).toBe('sigo aquí');
+  });
+
   it('ignores group (@g.us) messages', async () => {
     const { startRun, sock } = await connectedBridge();
 
@@ -289,6 +314,52 @@ describe('inbound dispatch', () => {
   it('ignores non-notify (history backfill) upserts', async () => {
     const { startRun, sock } = await connectedBridge();
     await sock().__fire('messages.upsert', { type: 'append', messages: [lidMessage()] });
+    expect(startRun).not.toHaveBeenCalled();
+  });
+});
+
+// ── 1b. Conversation creation: the 422 regression ────────────────
+// The backend's ConversationCreate schema REQUIRES a client-generated `id`
+// (see backend/main.py + the Telegram bridge). Omitting it 422s on every new
+// phone, which was the production blocker: "create conversation failed: 422"
+// → message dropped → routine never fires.
+
+describe('conversation creation', () => {
+  it('POSTs /conversations with a client-generated 32-char hex id', async () => {
+    const { startRun, sock } = await connectedBridge();
+
+    await sock().__fire('messages.upsert', { type: 'notify', messages: [lidMessage()] });
+    expect(startRun).toHaveBeenCalledTimes(1);
+
+    const post = backendJsonRequest.mock.calls.find(
+      (c: any[]) => c[1] === 'POST' && c[2] === '/conversations',
+    );
+    expect(post).toBeDefined();
+    const body = (post as any[])[3];
+    expect(body.id).toMatch(/^[0-9a-f]{32}$/);
+    expect(body.title).toBe(`WhatsApp +${ALLOWED}`);
+    expect(body.source).toBe('whatsapp');
+    expect(body.external_chat_id).toBe(ALLOWED);
+  });
+
+  it('drops the message (no routine run) when conversation creation fails', async () => {
+    backendJsonRequest.mockImplementation((async (
+      _port: number,
+      method: string,
+      pathStr: string,
+    ) => {
+      if (method === 'POST' && pathStr === '/conversations') {
+        return { ok: false, status: 422, data: { detail: 'validation error' } };
+      }
+      if (method === 'GET' && pathStr === '/routines') {
+        return { ok: true, status: 200, data: { routines: [wildcardRoutineRecord()] } };
+      }
+      return { ok: true, status: 200, data: {} };
+    }) as any);
+    const { startRun, sock } = await connectedBridge();
+
+    await sock().__fire('messages.upsert', { type: 'notify', messages: [lidMessage()] });
+
     expect(startRun).not.toHaveBeenCalled();
   });
 });

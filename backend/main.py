@@ -173,7 +173,9 @@ class SettingResponse(BaseModel):
 
 
 class ConversationCreate(BaseModel):
-    id: str
+    # Optional: the backend self-generates when omitted, so a client that
+    # forgets the id gets a conversation instead of a message-dropping 422.
+    id: str | None = None
     title: str = "New Chat"
     expert_id: str | None = None
     source: str = "cerebro"
@@ -187,7 +189,7 @@ class ConversationUpdate(BaseModel):
 
 
 class MessageCreate(BaseModel):
-    id: str
+    id: str | None = None
     role: str
     content: str
     expert_id: str | None = None
@@ -291,11 +293,10 @@ def list_conversations(
 
 @app.post("/conversations", response_model=ConversationResponse, status_code=201)
 def create_conversation(body: ConversationCreate, db=Depends(get_db)):
-    existing = db.get(Conversation, body.id)
-    if existing:
+    if body.id and db.get(Conversation, body.id):
         raise HTTPException(status_code=409, detail="Conversation already exists")
     conv = Conversation(
-        id=body.id,
+        id=body.id or models._uuid_hex(),
         title=body.title,
         expert_id=body.expert_id,
         source=body.source,
@@ -313,7 +314,7 @@ def create_message(conv_id: str, body: MessageCreate, db=Depends(get_db)):
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     msg = Message(
-        id=body.id,
+        id=body.id or models._uuid_hex(),
         conversation_id=conv_id,
         role=body.role,
         content=body.content,
@@ -394,7 +395,7 @@ def patch_conversation(conv_id: str, body: ConversationUpdate, db=Depends(get_db
         conv.title = title[:200]
         touched = True
     if body.source is not None:
-        if body.source not in ("cerebro", "telegram"):
+        if body.source not in ("cerebro", "telegram", "whatsapp"):
             raise HTTPException(status_code=400, detail="Invalid source")
         conv.source = body.source
         touched = True

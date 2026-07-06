@@ -42,6 +42,15 @@ export function matchesChannelFilter(
 }
 
 /**
+ * Fresh 32-char hex id for backend rows (conversations, messages, …) whose
+ * primary keys are `String(32)` uuid-hex. Uses the global Web Crypto so the
+ * module stays renderer-safe (no `node:crypto` import).
+ */
+export function newBackendRecordId(): string {
+  return crypto.randomUUID().replace(/-/g, '');
+}
+
+/**
  * Sliding-window rate limiter. Caps total keys to prevent unbounded growth
  * if many strangers probe the bridge: once the cap is hit, the key with the
  * oldest activity is dropped.
